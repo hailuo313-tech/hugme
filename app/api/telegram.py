@@ -1,10 +1,10 @@
 """
-D1-1 + D1-3 + D2-3: Telegram Webhook 接入 + Echo 回复 + Onboarding 集成
+D1-1 + D1-3 + D2-2 + D2-3: Telegram Webhook 接入 + Onboarding + LLM Orchestrator
 
 消息路由逻辑：
   新用户（onboarding_step == 0）       → 触发 Onboarding Step 1
   Onboarding 进行中（step 1-5）        → 提交答案，发下一问题
-  Onboarding 完成（step >= 6）         → echo 回复（D2-2 Orchestrator 接入后替换）
+  Onboarding 完成（step >= 6）         → 走 LLM Orchestrator 生成回复（D2-2）
 
 幂等：Redis SET NX tg-{update_id}
 Redis 短期上下文：ctx:{conv_id} 保留最近 20 条
@@ -32,6 +32,7 @@ from api.onboarding import (
     CHAT_STYLE_MAP,
     DEFAULT_CHARACTER_ID,
 )
+from services.llm_orchestrator import generate_reply, LLMOrchestratorError
 import re
 
 router = APIRouter()
@@ -391,11 +392,22 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
         if bot_text:
             bot_reply = bot_text
     else:
-        # 普通模式：暂时 echo（D2-2 接入后替换为真实 AI 回复）
-        echo_text = f"echo: {text_content}"
-        sent_id = await _send_tg(tg_chat_id, echo_text, trace_id)
+        # 普通模式：通过 LLM Orchestrator 生成回复（D2-2）
+        try:
+            reply_text = await generate_reply(
+                user_id=user_id,
+                conversation_id=conv_id,
+                user_text=text_content,
+                trace_id=trace_id,
+            )
+        except LLMOrchestratorError as exc:
+            log.bind(result="failed", reason=str(exc)).warning("tg.orchestrator.failed")
+            reply_text = "[服务暂时不可用，请稍后再试]"
+
+        sent_id = await _send_tg(tg_chat_id, reply_text, trace_id)
         if sent_id is not None:
-            bot_reply = echo_text
+            bot_reply = reply_text
+            log.bind(result="success").info("tg.bot_reply.sent")
 
     # ── 持久化 bot 回复 ───────────────────────────────
     if bot_reply:
