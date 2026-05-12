@@ -1,0 +1,78 @@
+services:
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    container_name: eris-prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts:/etc/prometheus/alerts:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    networks:
+      - default
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: eris-alertmanager
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    volumes:
+      - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    ports:
+      - "127.0.0.1:9093:9093"
+    networks:
+      - default
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: eris-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-change_me_before_use}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana-dashboard-eris-mvp.json:/var/lib/grafana/dashboards/eris-mvp.json:ro
+      - ./monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - default
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: eris-postgres-exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:-eris}:${POSTGRES_PASSWORD:-eris_secret_2026}@postgres:5432/${POSTGRES_DB:-eris}?sslmode=disable
+    ports:
+      - "127.0.0.1:9187:9187"
+    networks:
+      - default
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.67.0
+    container_name: eris-redis-exporter
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: redis://redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_secret_2026}
+    ports:
+      - "127.0.0.1:9121:9121"
+    networks:
+      - default
+
+volumes:
+  alertmanager_data:
+  prometheus_data:
+  grafana_data:

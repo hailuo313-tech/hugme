@@ -1,0 +1,47 @@
+# --- Secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# --- Next.js / Node (admin/) ---
+admin/node_modules/
+admin/.next/
+admin/out/
+admin/.turbo/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- Logs / runtime ---
+*.log
+logs/
+tmp/
+
+# --- Data ---
+data/
+pgdata/
+redis-data/
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+
+# --- Editor / OS ---
+.DS_Store
+.vscode/
+.idea/
+
+# --- 备份文件，不进库（按需）---
+docker-compose.yml.bak.*
+.env.bak.*

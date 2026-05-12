@@ -1,0 +1,198 @@
+groups:
+  - name: eris.infrastructure
+    interval: 30s
+    rules:
+      - alert: ErisApiDown
+        expr: up{job="eris-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "ERIS API is down"
+          description: "Prometheus cannot scrape eris-api for 2 minutes. Check eris-api, Nginx, and recent deploys."
+          runbook: "/opt/eris/RUNBOOK.md"
+
+      - alert: ErisPostgresDown
+        expr: up{job="eris-postgres"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: postgres
+        annotations:
+          summary: "ERIS Postgres exporter is down"
+          description: "Postgres metrics are unavailable. Check eris-postgres, credentials, and disk pressure."
+          runbook: "/opt/eris/RUNBOOK.md"
+
+      - alert: ErisRedisDown
+        expr: up{job="eris-redis"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: redis
+        annotations:
+          summary: "ERIS Redis exporter is down"
+          description: "Redis metrics are unavailable. Check eris-redis and REDIS_PASSWORD."
+          runbook: "/opt/eris/RUNBOOK.md"
+
+      - alert: ErisMetricsMissing
+        expr: absent(eris_http_requests_total)
+        for: 15m
+        labels:
+          severity: warning
+          component: metrics
+        annotations:
+          summary: "ERIS application metrics are missing"
+          description: "Prometheus is up, but the ERIS application metrics endpoint is not exposing eris_http_requests_total yet."
+          runbook: "/opt/eris/D7-1_MONITORING_DESIGN.md"
+
+  - name: eris.api
+    interval: 30s
+    rules:
+      - alert: ErisApiHighErrorRate
+        expr: |
+          (
+            sum(rate(eris_http_requests_total{status=~"5.."}[5m]))
+            /
+            clamp_min(sum(rate(eris_http_requests_total[5m])), 1)
+          ) > 0.02
+        for: 5m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "ERIS API 5xx rate is high"
+          description: "API 5xx rate is above 2% for 5 minutes. Inspect structured logs and recent deploys."
+          runbook: "/opt/eris/RUNBOOK.md"
+
+      - alert: ErisApiLatencyHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(eris_http_request_duration_seconds_bucket[5m]))
+          ) > 1.5
+        for: 10m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "ERIS API p95 latency is high"
+          description: "API p95 latency is above 1.5s for 10 minutes. Check slow routes, Postgres, and Redis."
+          runbook: "/opt/eris/RUNBOOK.md"
+
+  - name: eris.ingress_and_ai
+    interval: 30s
+    rules:
+      - alert: ErisTelegramWebhookFailing
+        expr: |
+          (
+            sum(rate(eris_telegram_webhook_events_total{result!="success"}[5m]))
+            /
+            clamp_min(sum(rate(eris_telegram_webhook_events_total[5m])), 1)
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          component: telegram
+        annotations:
+          summary: "Telegram webhook failure rate is high"
+          description: "Telegram webhook non-success rate is above 5%. Check BotFather webhook, token, and inbound message route."
+          runbook: "/opt/eris/RUNBOOK.md"
+
+      - alert: ErisLlmFailureRateHigh
+        expr: |
+          (
+            sum(rate(eris_llm_requests_total{result!="success"}[10m]))
+            /
+            clamp_min(sum(rate(eris_llm_requests_total[10m])), 1)
+          ) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+          component: llm
+        annotations:
+          summary: "LLM failure rate is high"
+          description: "OpenRouter/LLM failure rate is above 5%. Check provider status, quota, model, and fallback behavior."
+          runbook: "/opt/eris/RUNBOOK.md"
+
+      - alert: ErisLlmLatencyHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(eris_llm_request_duration_seconds_bucket[10m]))
+          ) > 15
+        for: 10m
+        labels:
+          severity: warning
+          component: llm
+        annotations:
+          summary: "LLM p95 latency is high"
+          description: "LLM p95 latency is above 15s for 10 minutes. Consider provider fallback or degraded response mode."
+          runbook: "/opt/eris/RUNBOOK.md"
+
+  - name: eris.handoff_and_notifications
+    interval: 30s
+    rules:
+      - alert: ErisP0HandoffOld
+        expr: max(eris_handoff_oldest_open_age_seconds{priority="P0"}) > 300
+        for: 3m
+        labels:
+          severity: critical
+          component: handoff
+        annotations:
+          summary: "P0 handoff task is older than 5 minutes"
+          description: "A P0 human handoff has been open too long. An operator must claim or resolve the task."
+          runbook: "/opt/eris/D5-4_WEBSOCKET_PROTOCOL.md"
+
+      - alert: ErisHandoffBacklogHigh
+        expr: sum(eris_handoff_open_tasks) > 20
+        for: 10m
+        labels:
+          severity: warning
+          component: handoff
+        annotations:
+          summary: "Human handoff backlog is high"
+          description: "Open handoff task count is above 20 for 10 minutes. Add operator capacity or pause risky flows."
+          runbook: "/opt/eris/D5-4_WEBSOCKET_PROTOCOL.md"
+
+      - alert: ErisNotificationQueueStuck
+        expr: max(eris_notification_oldest_pending_age_seconds) > 1800
+        for: 10m
+        labels:
+          severity: warning
+          component: notifications
+        annotations:
+          summary: "Notification queue has stale pending tasks"
+          description: "Oldest pending notification is older than 30 minutes. Check queue worker before enabling real sends."
+          runbook: "/opt/eris/D6-4_NOTIFICATION_QUEUE_DESIGN.md"
+
+      - alert: ErisNotificationFailureRateHigh
+        expr: |
+          (
+            sum(rate(eris_notification_sends_total{result="failed"}[15m]))
+            /
+            clamp_min(sum(rate(eris_notification_sends_total[15m])), 1)
+          ) > 0.05
+        for: 15m
+        labels:
+          severity: warning
+          component: notifications
+        annotations:
+          summary: "Notification send failure rate is high"
+          description: "Notification failure rate is above 5%. Inspect Telegram send errors, opt-out gates, and retry policy."
+          runbook: "/opt/eris/D6-4_NOTIFICATION_QUEUE_DESIGN.md"
+
+  - name: eris.billing
+    interval: 30s
+    rules:
+      - alert: ErisStripeWebhookFailure
+        expr: increase(eris_stripe_webhook_events_total{result=~"signature_failed|failed"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          component: stripe
+        annotations:
+          summary: "Stripe webhook failure detected"
+          description: "Stripe webhook verification or processing failed. Check STRIPE_WEBHOOK_SECRET and endpoint configuration."
+          runbook: "/opt/eris/RUNBOOK.md"
+
