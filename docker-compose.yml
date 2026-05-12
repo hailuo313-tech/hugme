@@ -47,6 +47,9 @@ services:
       SECRET_KEY: ${SECRET_KEY:-change_this_secret_key_in_production}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      # pydantic-settings reads these from the container env (compose does not mount .env into api)
+      LLM_ECHO_FALLBACK: ${LLM_ECHO_FALLBACK:-0}
+      SILENT_REACTIVATION_ENABLED: ${SILENT_REACTIVATION_ENABLED:-0}
       STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
