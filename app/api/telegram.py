@@ -392,13 +392,14 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
         if bot_text:
             bot_reply = bot_text
     else:
-        # 普通模式：通过 LLM Orchestrator 生成回复（D2-2）
+        # 普通模式：通过 LLM Orchestrator 生成回复（D2-2 / D2-2.1：带 Redis 短期上下文）
         try:
             reply_text = await generate_reply(
                 user_id=user_id,
                 conversation_id=conv_id,
                 user_text=text_content,
                 trace_id=trace_id,
+                redis=redis,
             )
         except LLMOrchestratorError as exc:
             log.bind(result="failed", reason=str(exc)).warning("tg.orchestrator.failed")
