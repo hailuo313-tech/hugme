@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     # 默认 False（失败抛 LLMOrchestratorError，调用方决定如何兜底）；
     # 设为 True 用于演示 / 降级 / 离线开发。
     LLM_ECHO_FALLBACK: bool = False
+    # D6-3: 静默重激活总开关。默认 False；设为 True 时 admin 的扫描端点才会真的查 DB / 写任务。
+    SILENT_REACTIVATION_ENABLED: bool = False
     ENV: str = 'production'
 
     class Config:

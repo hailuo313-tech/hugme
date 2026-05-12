@@ -13,8 +13,11 @@ from core.database import get_db
 from core.config import settings
 from pydantic import BaseModel
 from typing import Optional
+from fastapi import Request
 from loguru import logger
 import hashlib, hmac, uuid, time, json, base64
+
+from services.silent_reactivation_runner import run_silent_reactivation_scan
 
 router = APIRouter()
 _bearer = HTTPBearer(auto_error=False)
@@ -146,3 +149,28 @@ async def admin_me(
         display_name=row[2],
         role=row[3],
     )
+
+
+# ── D6-3: Silent Reactivation 手动触发 ───────────────────────────────
+
+@router.post(
+    "/admin/silent-reactivation/run",
+    summary="D6-3：手动触发一次静默重激活扫描（需要 operator JWT）",
+)
+async def admin_silent_reactivation_run(
+    request: Request,
+    payload: dict = Depends(require_operator),
+    db: AsyncSession = Depends(get_db),
+):
+    """对当前 DB 跑一次 silent_reactivation 扫描，返回候选/创建/跳过的汇总。
+
+    ``SILENT_REACTIVATION_ENABLED=False`` 时立即返回零，不查 DB。
+    """
+    trace_id = getattr(request.state, "trace_id", None)
+    summary = await run_silent_reactivation_scan(db, trace_id=trace_id)
+    return {
+        "enabled": settings.SILENT_REACTIVATION_ENABLED,
+        "operator_id": payload.get("sub"),
+        "trace_id": trace_id,
+        **summary.as_dict(),
+    }
