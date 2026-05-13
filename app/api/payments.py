@@ -9,13 +9,20 @@ GET  /api/v1/orders/{order_id} — 从 DB 读取订单状态
 - 单元测试（Cursor 负责）
 """
 
-from fastapi import APIRouter, Request, HTTPException, Depends
+from fastapi import APIRouter, BackgroundTasks, Request, HTTPException, Depends, Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
-from core.database import get_db
+from core.database import AsyncSessionLocal, get_db
 from core.config import settings
 from loguru import logger
+from services.stripe_webhook import (
+    SignatureError,
+    claim_event,
+    handle_event,
+    verify_and_parse_event,
+)
+import json
 import stripe
 import uuid
 import time
@@ -187,11 +194,69 @@ async def get_order(
 
 
 # ── POST /api/v1/webhooks/stripe ─────────────────────
-# TODO D6-2 (Cursor): 验签 + stripe_webhook_events 幂等
+# D6-2: 验签 + stripe_webhook_events 幂等 + 5 秒内 ack（异步处理业务）
+#
+# 设计要点：
+# - 入口同步只做三件事：验签 / 幂等抢占 / 触发后台处理 → 几十毫秒内返回 200。
+# - 真正的业务（订单 paid / vip_level 累加）在 BackgroundTasks 里跑，处理完
+#   把 result 写回 stripe_webhook_events。Stripe 重发同一 event_id 时会被
+#   ``stripe_webhook_events.event_id`` 的 PK ON CONFLICT 直接挡掉。
+# - 验签失败 → 400，连 DB 都不查（防止被随便 POST 撑爆 events 表）。
+
+async def _process_event_in_background(event: dict) -> None:
+    """后台任务：在新 Session 里处理已抢占的 event。"""
+    async with AsyncSessionLocal() as session:
+        try:
+            await handle_event(session, event)
+        finally:
+            await session.close()
+
 
 @router.post("/webhooks/stripe")
-async def stripe_webhook(request: Request):
+async def stripe_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    trace_id = getattr(request.state, "trace_id", str(uuid.uuid4()))
+    log = logger.bind(trace_id=trace_id, component="stripe_webhook")
+    log.info("stripe_webhook.received")
+
     body = await request.body()
-    sig = request.headers.get("stripe-signature", "")
-    # TODO: stripe.Webhook.construct_event(body, sig, settings.STRIPE_WEBHOOK_SECRET)
-    return {"status": "received"}
+    signature = request.headers.get("stripe-signature", "")
+
+    # 1. 验签（同步）
+    try:
+        event = verify_and_parse_event(body, signature)
+    except SignatureError as exc:
+        log.bind(result="signature_failed", reason=str(exc)).warning(
+            "stripe_webhook.verify_failed"
+        )
+        response.status_code = 400
+        return {"status": "signature_failed"}
+
+    event_id = event.get("id") or ""
+    event_type = event.get("type") or ""
+    log = log.bind(event_id=event_id, event_type=event_type)
+
+    if not event_id:
+        log.warning("stripe_webhook.missing_event_id")
+        response.status_code = 400
+        return {"status": "missing_event_id"}
+
+    # 2. 抢占（DB 唯一约束保证幂等）
+    is_new = await claim_event(
+        db,
+        event_id=event_id,
+        event_type=event_type,
+        payload_json=json.dumps(event, default=str, ensure_ascii=False),
+    )
+    if not is_new:
+        log.bind(result="duplicate").info("stripe_webhook.duplicate")
+        return {"status": "duplicate", "event_id": event_id}
+
+    # 3. 5 秒内 ack；真正业务异步处理
+    background_tasks.add_task(_process_event_in_background, event)
+    log.info("stripe_webhook.queued")
+    return {"status": "queued", "event_id": event_id}

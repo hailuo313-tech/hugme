@@ -16,7 +16,7 @@ scrape_configs:
     metrics_path: /metrics
     static_configs:
       - targets:
-          - api:8000
+          - eris-api:8000
 
   - job_name: eris-postgres
     static_configs:
@@ -28,7 +28,3 @@ scrape_configs:
       - targets:
           - redis-exporter:9121
 
-  - job_name: eris-nginx
-    static_configs:
-      - targets:
-          - nginx-exporter:9113

@@ -16,9 +16,9 @@ class Settings(BaseSettings):
     # D6-3 调度：crontab 形式（分 时 日 月 周，UTC）。默认每天 UTC 02:00（北京 10:00 / PT 18:00）。
     # 仅在 SILENT_REACTIVATION_ENABLED=True 时才注册定时任务。
     SILENT_REACTIVATION_CRON: str = '0 2 * * *'
-    # D6-1: Stripe
-    STRIPE_SECRET_KEY: Optional[str] = None
+    # D6-1 / D6-2 Stripe（pydantic-settings 自动从环境变量读取，必须显式声明字段才生效）
     STRIPE_PUBLISHABLE_KEY: Optional[str] = None
+    STRIPE_SECRET_KEY: Optional[str] = None
     STRIPE_WEBHOOK_SECRET: Optional[str] = None
     STRIPE_SUCCESS_URL: str = 'https://hugme2.com/payment/success?session_id={CHECKOUT_SESSION_ID}'
     STRIPE_CANCEL_URL: str = 'https://hugme2.com/payment/cancel'

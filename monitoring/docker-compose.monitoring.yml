@@ -8,8 +8,8 @@ services:
       - --storage.tsdb.retention.time=15d
       - --web.enable-lifecycle
     volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ./monitoring/alerts:/etc/prometheus/alerts:ro
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alerts:/etc/prometheus/alerts:ro
       - prometheus_data:/prometheus
     ports:
       - "127.0.0.1:9090:9090"
@@ -21,10 +21,17 @@ services:
     container_name: eris-alertmanager
     restart: unless-stopped
     command:
-      - --config.file=/etc/alertmanager/alertmanager.yml
-      - --storage.path=/alertmanager
+      - |
+        sed "s#__DISCORD_WEBHOOK_URL__#$${DISCORD_WEBHOOK_URL:-http://127.0.0.1:9/disabled-discord-webhook}#g" \
+          /etc/alertmanager/alertmanager.yml > /tmp/alertmanager.yml
+        exec /bin/alertmanager --config.file=/tmp/alertmanager.yml --storage.path=/alertmanager
+    entrypoint:
+      - /bin/sh
+      - -c
+    environment:
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
     volumes:
-      - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanager_data:/alertmanager
     ports:
       - "127.0.0.1:9093:9093"
@@ -41,11 +48,11 @@ services:
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./monitoring/grafana-dashboard-eris-mvp.json:/var/lib/grafana/dashboards/eris-mvp.json:ro
-      - ./monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
-      - ./monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana-dashboard-eris-mvp.json:/var/lib/grafana/dashboards/eris-mvp.json:ro
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:3001:3000"
     networks:
       - default
 
@@ -76,3 +83,8 @@ volumes:
   alertmanager_data:
   prometheus_data:
   grafana_data:
+
+networks:
+  default:
+    name: eris_default
+    external: true
