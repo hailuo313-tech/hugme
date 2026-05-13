@@ -24,6 +24,17 @@ class Settings(BaseSettings):
     LLM_MEMORY_MODEL: str = 'openai/gpt-4o-mini'
     # 评分 ≥ 此阈值才入 memories 表；默认 5（preference/goal 起步）。
     MEMORY_IMPORTANCE_THRESHOLD: int = 5
+    # D3-4: 异步 embedding worker，把 memories.embedding 从 NULL 填满。
+    # 关闭时 worker scheduler 不启动；OPENAI_API_KEY 没配也会自动跳过。
+    EMBEDDING_WORKER_ENABLED: bool = True
+    # 直连 OpenAI（而不是 OpenRouter）的 API key；专给 embeddings 用。
+    OPENAI_API_KEY: Optional[str] = None
+    # OpenAI embedding 模型；1536 维需与 memories.embedding vector(1536) 对齐。
+    EMBEDDING_MODEL: str = 'text-embedding-3-small'
+    # 一次 tick 拉多少条 NULL embedding 行（OpenAI 单次最多 ~2048，但越大越容易超时）。
+    EMBEDDING_BATCH_SIZE: int = 32
+    # 多久跑一次 tick；最低 5 秒。
+    EMBEDDING_POLL_SECONDS: int = 30
     # D6-1 / D6-2 Stripe（pydantic-settings 自动从环境变量读取，必须显式声明字段才生效）
     STRIPE_PUBLISHABLE_KEY: Optional[str] = None
     STRIPE_SECRET_KEY: Optional[str] = None

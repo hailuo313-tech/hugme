@@ -26,6 +26,10 @@ from services.silent_reactivation_scheduler import (
     start_scheduler as start_silent_reactivation_scheduler,
     shutdown_scheduler as shutdown_silent_reactivation_scheduler,
 )
+from services.embedding_worker import (
+    start_scheduler as start_embedding_worker,
+    shutdown_scheduler as shutdown_embedding_worker,
+)
 
 
 def configure_logging():
@@ -53,9 +57,11 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database connected")
     start_silent_reactivation_scheduler()
+    start_embedding_worker()
     try:
         yield
     finally:
+        shutdown_embedding_worker()
         shutdown_silent_reactivation_scheduler()
         logger.info("ERIS shutting down...")
 
