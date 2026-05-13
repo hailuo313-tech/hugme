@@ -1,18 +1,20 @@
 """
-D5-1: Admin 后台 API
-- POST /api/v1/admin/login  — operator 登录，返回 JWT
-- GET  /api/v1/admin/me     — 验证 token，返回当前 operator 信息
+D5-1 / D5-2: Admin 后台 API
+- POST /api/v1/admin/login                          — operator 登录，返回 JWT
+- GET  /api/v1/admin/me                             — 验证 token，返回当前 operator 信息
+- GET  /api/v1/admin/conversations                  — D5-2 会话列表（分页 + 过滤）
+- GET  /api/v1/admin/conversations/{conversation_id}— D5-2 会话详情（含最近 50 条消息）
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from core.database import get_db
 from core.config import settings
 from pydantic import BaseModel
-from typing import Optional
+from typing import Any, Optional
 from fastapi import Request
 from loguru import logger
 import hashlib, hmac, uuid, time, json, base64
@@ -149,6 +151,192 @@ async def admin_me(
         display_name=row[2],
         role=row[3],
     )
+
+
+# ── D5-2: 会话列表 + 详情 ─────────────────────────────────────────────
+
+# 允许过滤的会话状态白名单（与 conversations.state 枚举对齐）
+_ALLOWED_CONV_STATES = {"AI_ACTIVE", "WAITING_OPERATOR", "HUMAN_LOCKED", "CLOSED"}
+_ALLOWED_CHANNELS = {"telegram", "whatsapp", "web", "discord"}
+
+
+def _serialize_row(row: Any) -> dict:
+    """``row._mapping`` -> plain dict（datetime / UUID 转字符串以便 JSON 返回）。"""
+    out = {}
+    for k, v in dict(row._mapping).items():
+        if v is None:
+            out[k] = None
+        elif hasattr(v, "isoformat"):
+            out[k] = v.isoformat()
+        elif isinstance(v, uuid.UUID):
+            out[k] = str(v)
+        else:
+            out[k] = v
+    return out
+
+
+@router.get(
+    "/admin/conversations",
+    summary="D5-2：会话列表（分页 + state/channel/search 过滤；需要 operator JWT）",
+)
+async def admin_list_conversations(
+    page: int = Query(1, ge=1, description="页码，1-based"),
+    page_size: int = Query(20, ge=1, le=100, description="每页大小，最大 100"),
+    state: Optional[str] = Query(None, description=f"按会话状态过滤；可选值：{sorted(_ALLOWED_CONV_STATES)}"),
+    channel: Optional[str] = Query(None, description=f"按渠道过滤；可选值：{sorted(_ALLOWED_CHANNELS)}"),
+    search: Optional[str] = Query(None, description="按用户 nickname / external_id 模糊搜索（ILIKE）"),
+    payload: dict = Depends(require_operator),
+    db: AsyncSession = Depends(get_db),
+):
+    if state and state not in _ALLOWED_CONV_STATES:
+        raise HTTPException(status_code=400, detail=f"state must be one of {sorted(_ALLOWED_CONV_STATES)}")
+    if channel and channel not in _ALLOWED_CHANNELS:
+        raise HTTPException(status_code=400, detail=f"channel must be one of {sorted(_ALLOWED_CHANNELS)}")
+
+    search_like = f"%{search.strip()}%" if search and search.strip() else None
+
+    params: dict[str, Any] = {
+        "state": state,
+        "channel": channel,
+        "search": search_like,
+        "limit": page_size,
+        "offset": (page - 1) * page_size,
+    }
+
+    where = """
+        WHERE (:state   IS NULL OR c.state   = :state)
+          AND (:channel IS NULL OR c.channel = :channel)
+          AND (:search  IS NULL OR u.nickname ILIKE :search OR u.external_id ILIKE :search)
+    """
+
+    total_row = (await db.execute(
+        text(f"""
+            SELECT COUNT(*)
+            FROM conversations c
+            LEFT JOIN users u ON u.id = c.user_id
+            {where}
+        """),
+        params,
+    )).fetchone()
+    total = int(total_row[0]) if total_row else 0
+
+    rows = (await db.execute(
+        text(f"""
+            SELECT
+              c.id                                            AS conversation_id,
+              c.state, c.handoff_count, c.channel,
+              c.last_message_at, c.created_at,
+              c.assigned_operator_id,
+              u.id          AS user_id,
+              u.nickname,
+              u.external_id,
+              u.channel     AS user_channel,
+              u.risk_level,
+              u.status      AS user_status,
+              p.loneliness_score,
+              p.vip_level,
+              p.relationship_stage,
+              ch.id         AS character_id,
+              ch.name       AS character_name
+            FROM conversations c
+            LEFT JOIN users          u  ON u.id  = c.user_id
+            LEFT JOIN user_profiles  p  ON p.user_id = u.id
+            LEFT JOIN characters     ch ON ch.id = c.character_id
+            {where}
+            ORDER BY COALESCE(c.last_message_at, c.created_at) DESC
+            LIMIT :limit OFFSET :offset
+        """),
+        params,
+    )).fetchall()
+
+    items = [_serialize_row(r) for r in rows]
+
+    logger.bind(
+        operator_id=payload.get("sub"),
+        page=page, page_size=page_size,
+        state=state, channel=channel, search_hit=bool(search_like),
+        total=total, returned=len(items),
+    ).info("admin.conversations.list")
+
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@router.get(
+    "/admin/conversations/{conversation_id}",
+    summary="D5-2：会话详情（会话元信息 + 用户画像 + 最近 50 条消息；需要 operator JWT）",
+)
+async def admin_get_conversation_detail(
+    conversation_id: str,
+    payload: dict = Depends(require_operator),
+    db: AsyncSession = Depends(get_db),
+):
+    # 校验 UUID 格式（防 SQL 出错时落到 5xx）
+    try:
+        uuid.UUID(conversation_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="conversation_id must be a valid UUID")
+
+    head_row = (await db.execute(
+        text("""
+            SELECT
+              c.id                                            AS conversation_id,
+              c.state, c.handoff_count, c.channel,
+              c.last_message_at, c.created_at,
+              c.assigned_operator_id, c.ai_model_used,
+              u.id          AS user_id,
+              u.nickname,
+              u.external_id,
+              u.channel     AS user_channel,
+              u.risk_level,
+              u.status      AS user_status,
+              u.language,
+              u.timezone,
+              p.loneliness_score,
+              p.vip_level,
+              p.relationship_stage,
+              p.chat_style,
+              p.interests,
+              p.forbidden_topics,
+              ch.id         AS character_id,
+              ch.name       AS character_name
+            FROM conversations c
+            LEFT JOIN users          u  ON u.id  = c.user_id
+            LEFT JOIN user_profiles  p  ON p.user_id = u.id
+            LEFT JOIN characters     ch ON ch.id = c.character_id
+            WHERE c.id = :cid
+        """),
+        {"cid": conversation_id},
+    )).fetchone()
+    if not head_row:
+        raise HTTPException(status_code=404, detail="conversation not found")
+
+    msg_rows = (await db.execute(
+        text("""
+            SELECT id, sender_type, content, content_type,
+                   is_operator_message, model_name, safety_result, created_at
+            FROM messages
+            WHERE conversation_id = :cid
+            ORDER BY created_at DESC
+            LIMIT 50
+        """),
+        {"cid": conversation_id},
+    )).fetchall()
+
+    logger.bind(
+        operator_id=payload.get("sub"),
+        conversation_id=conversation_id,
+        messages_returned=len(msg_rows),
+    ).info("admin.conversations.detail")
+
+    return {
+        "conversation": _serialize_row(head_row),
+        "messages": [_serialize_row(m) for m in msg_rows],
+    }
 
 
 # ── D6-3: Silent Reactivation 手动触发 ───────────────────────────────
