@@ -9,6 +9,8 @@ D1-1 + D1-3 + D2-2 + D2-3: Telegram Webhook 接入 + Onboarding + LLM Orchestrat
 幂等：Redis SET NX tg-{update_id}
 Redis 短期上下文：ctx:{conv_id} 保留最近 20 条
 """
+from __future__ import annotations
+
 from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -283,6 +285,52 @@ async def _handle_onboarding(
     return reply
 
 
+# ── Bot 命令处理 ──────────────────────────────────────
+
+HELP_TEXT = (
+    "🫂 <b>ERIS 命令列表</b>\n\n"
+    "/start   — 开始 Onboarding，认识 Aria\n"
+    "/help    — 查看所有命令\n"
+    "/reset   — 删除我的全部数据\n"
+    "/privacy — 隐私说明\n\n"
+    "也可以直接打字和 Aria 聊天 ✨"
+)
+
+PRIVACY_TEXT = (
+    "🔒 <b>隐私说明</b>\n\n"
+    "• 你的对话内容加密存储，仅用于为你提供陪伴服务。\n"
+    "• 我们不会将你的数据用于广告、营销或出售给第三方。\n"
+    "• 你可以随时通过 /reset 请求删除全部个人数据。\n"
+    "• 匿名化后的统计数据可能用于改进服务质量。\n\n"
+    "如有疑问，请联系：hello@hugme2.com"
+)
+
+RESET_PROMPT_TEXT = (
+    "⚠️ <b>确认删除</b>\n\n"
+    "此操作将永久删除你的全部数据，包括对话记录、记忆和个人偏好。\n\n"
+    "如需继续，请回复：<code>CONFIRM-DELETE</code>\n\n"
+    "（此功能尚在开发中，回复后暂不会执行实际删除。）"
+)
+
+
+async def _handle_command(command: str) -> str | None:
+    """
+    匹配 bot 命令，返回回复文本。
+    /start 返回 None（交给 onboarding 流程处理）。
+    未知命令返回 None。
+    """
+    cmd = command.split()[0].lower().split("@")[0]  # 去掉 @bot_username 后缀
+    if cmd == "/help":
+        return HELP_TEXT
+    if cmd == "/privacy":
+        return PRIVACY_TEXT
+    if cmd == "/reset":
+        return RESET_PROMPT_TEXT
+    if cmd == "/start":
+        return None  # 交给 onboarding 处理
+    return None
+
+
 # ── 主 Webhook 路由 ───────────────────────────────────
 
 @router.post("/telegram/webhook")
@@ -377,12 +425,38 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
     except Exception as e:
         log.warning(f"tg.context.push_failed err={e}")
 
+    # ── 命令处理（/ 开头的消息） ─────────────────────
+    bot_reply = None
+
+    if text_content.startswith("/"):
+        cmd_reply = await _handle_command(text_content)
+        if cmd_reply is not None:
+            await _send_tg(tg_chat_id, cmd_reply, trace_id)
+            bot_reply = cmd_reply
+            log.bind(command=text_content.split()[0]).info("tg.command.handled")
+
+            # 持久化命令回复 + 完成
+            if bot_reply:
+                try:
+                    bot_msg_id = await _persist_message(db, conv_id, "assistant", "bot", bot_reply)
+                    await _push_context(redis, conv_id, "assistant", bot_reply, bot_msg_id)
+                    log.bind(bot_msg_id=bot_msg_id).info("tg.bot_reply.persisted")
+                except Exception as e:
+                    log.warning(f"tg.bot_reply.persist_failed err={e}")
+
+            elapsed = (time.time() - start_ts) * 1000
+            log.bind(elapsed_ms=round(elapsed, 1)).info("tg.webhook.complete")
+            return JSONResponse({
+                "ok":         True,
+                "trace_id":   trace_id,
+                "message_id": msg_id,
+                "command":    text_content.split()[0],
+            })
+
     # ── 决策：Onboarding 还是普通对话 ─────────────────
     prefs = await _get_profile_prefs(db, user_id)
     onboarding_step = prefs.get("onboarding_step", 0)
     onboarding_done = onboarding_step >= ONBOARDING_STEPS + 1
-
-    bot_reply = None
 
     if not onboarding_done:
         # Onboarding 模式
