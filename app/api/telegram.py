@@ -33,6 +33,8 @@ from api.onboarding import (
     DEFAULT_CHARACTER_ID,
 )
 from services.llm_orchestrator import generate_reply, LLMOrchestratorError
+from services.memory_writer import maybe_write_memory
+import asyncio
 import re
 
 router = APIRouter()
@@ -381,6 +383,26 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
     prefs = await _get_profile_prefs(db, user_id)
     onboarding_step = prefs.get("onboarding_step", 0)
     onboarding_done = onboarding_step >= ONBOARDING_STEPS + 1
+
+    # ── D3-3: 触发记忆写入（fire-and-forget）──────────
+    # 只在 onboarding 完成后写；onboarding 期间的事实由 user_profiles 承接。
+    # 注意：不传 db（请求 session 会先于背景任务关闭），memory_writer 自开 session。
+    try:
+        asyncio.create_task(
+            maybe_write_memory(
+                user_id=user_id,
+                conversation_id=conv_id,
+                message_id=msg_id,
+                content=text_content,
+                trace_id=trace_id,
+                redis=redis,
+                is_onboarding=not onboarding_done,
+            )
+        )
+    except Exception as exc:
+        log.bind(error_type=type(exc).__name__).warning(
+            "tg.memory_writer.spawn_failed"
+        )
 
     bot_reply = None
 
