@@ -1,4 +1,4 @@
-# ERIS MVP Runbook v1
+﻿# ERIS MVP Runbook v1
 
 Last updated: 2026-05-12
 Host: `67.216.204.137`
@@ -86,6 +86,104 @@ Certbot logs:
 ```bash
 tail -100 /var/log/letsencrypt/letsencrypt.log
 ```
+
+## Admin: 会话列表 / 详情 (D5-2)
+
+**前端**：Next.js 应用 `admin/`，`basePath=/admin`，构建后由 Nginx 静态托管；运行时通过
+`next.config.js` 的 rewrite 把 `/admin/api/:path*` 反代到 `http://127.0.0.1:8000/api/:path*`。
+
+**后端接口（均要 operator JWT）**：
+
+- `GET /api/v1/admin/conversations` — 会话列表
+  - 查询参数：`page` (≥1, 默认 1)、`page_size` (1–100, 默认 20)
+  - 过滤：`state` ∈ {`AI_ACTIVE`, `WAITING_OPERATOR`, `HUMAN_LOCKED`, `CLOSED`}（白名单，非法 → 400）
+  - 过滤：`channel` ∈ {`telegram`, `whatsapp`, `web`, `discord`}（白名单，非法 → 400）
+  - 模糊搜索：`search` —— 对 `users.nickname` / `users.external_id` 做 `ILIKE %q%`
+  - 排序：`COALESCE(last_message_at, created_at) DESC`
+  - 返回：`{items: [...], total, page, page_size}`
+- `GET /api/v1/admin/conversations/{conversation_id}` — 会话详情
+  - 校验 UUID 格式；非法 → 400
+  - 不存在 → 404
+  - 返回 `{conversation: {...meta + 用户画像 + 角色}, messages: [...最近 50 条按时间倒序]}`
+
+**Smoke**（在服务器上跑，先拿一个 operator token，再调列表）：
+
+```bash
+TOKEN=$(curl -s -X POST http://127.0.0.1:8000/api/v1/admin/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"<your-pw>"}' | python -c "import sys,json;print(json.load(sys.stdin)['token'])")
+
+curl -s -H "Authorization: Bearer $TOKEN" \
+  "http://127.0.0.1:8000/api/v1/admin/conversations?page=1&page_size=5" | python -m json.tool
+
+curl -s -H "Authorization: Bearer $TOKEN" \
+  "http://127.0.0.1:8000/api/v1/admin/conversations?state=AI_ACTIVE&search=tg" | python -m json.tool
+
+# 401 反向验证
+curl -i http://127.0.0.1:8000/api/v1/admin/conversations
+```
+
+**期望**：
+
+- 无 token → `401`
+- 列表 → `200` + JSON `{items: [...], total: N, page: 1, page_size: 5}`
+- `state=BANANA` → `400`
+- 详情命中 → `200` + `{conversation, messages}`；不存在的 UUID → `404`
+
+**前端部署**：
+
+```bash
+cd /opt/eris/admin
+npm ci
+npm run build
+docker compose restart admin   # 若 admin 在 compose 中跑；否则按现有部署方式重启
+```
+
+## Stripe webhook (D6-2)
+
+**Required env**（宿主 `/opt/eris/.env`；compose `api.environment` 已透传）：
+
+- `STRIPE_SECRET_KEY` — D6-1 创建 Checkout Session 用
+- `STRIPE_WEBHOOK_SECRET` — D6-2 验签用；**缺失会让 webhook 返回 400 signature_failed，DB 不写**
+- `STRIPE_SUCCESS_URL` / `STRIPE_CANCEL_URL` — Checkout 跳转，默认 `https://hugme2.com/payment/{success,cancel}`
+
+**接口**：`POST /api/v1/webhooks/stripe`
+
+- 同步阶段（毫秒级）：验签 → 抢占 `stripe_webhook_events.event_id`（ON CONFLICT DO NOTHING）→ 返回 200 `queued`/`duplicate`。
+- 后台阶段：`checkout.session.completed` → `orders.status='paid' + paid_at=NOW()` → `users.vip_level += 1`；其它事件 `result='ignored'`。
+- 完成后回写 `stripe_webhook_events.result` (`processed`/`ignored`/`failed`) + `handled_at`。
+
+**首次部署需要**：新表 `stripe_webhook_events`。`init.sql` 已声明，但 docker volume 上的 PG 不会重跑该脚本，需手动建表（一次性）：
+
+```bash
+docker exec eris-postgres psql -U eris -d eris -c "
+CREATE TABLE IF NOT EXISTS stripe_webhook_events (
+    event_id VARCHAR(64) PRIMARY KEY,
+    event_type VARCHAR(80) NOT NULL,
+    payload JSONB NOT NULL,
+    result VARCHAR(20) DEFAULT 'received',
+    error TEXT,
+    received_at TIMESTAMP DEFAULT NOW(),
+    handled_at TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_stripe_webhook_events_type_received
+    ON stripe_webhook_events(event_type, received_at DESC);
+"
+```
+
+**Stripe Dashboard 配置**（手动）：在 Stripe Test 后台 Webhooks → Add endpoint → `https://hugme2.com/api/v1/webhooks/stripe`，订阅事件至少：`checkout.session.completed`；签名密钥贴到 `.env` 的 `STRIPE_WEBHOOK_SECRET`。
+
+**Smoke**（在服务器上用 Stripe CLI 转发 + 4242 测试卡走一遍 Checkout）：
+
+```bash
+docker logs --since=5m eris-api 2>&1 | grep -E 'stripe_webhook|payments\.'
+docker exec eris-postgres psql -U eris -d eris -c "
+SELECT event_id, event_type, result, handled_at FROM stripe_webhook_events ORDER BY received_at DESC LIMIT 5;"
+docker exec eris-postgres psql -U eris -d eris -c "
+SELECT id, status, paid_at, provider_order_id FROM orders ORDER BY created_at DESC LIMIT 5;"
+```
+
+期望：events 表有该 `evt_*` 行 `result='processed'`；对应 `orders.status='paid'`、`users.vip_level` +1。
 
 ## Silent reactivation (D6-3)
 
