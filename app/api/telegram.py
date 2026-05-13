@@ -400,6 +400,7 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
                 user_text=text_content,
                 trace_id=trace_id,
                 redis=redis,
+                db=db,
             )
         except LLMOrchestratorError as exc:
             log.bind(result="failed", reason=str(exc)).warning("tg.orchestrator.failed")

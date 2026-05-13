@@ -317,3 +317,161 @@ async def test_history_limit_zero_skips_redis(monkeypatch, llm_orchestrator):
         {"role": "system", "content": llm_orchestrator.DEFAULT_SYSTEM_PROMPT},
         {"role": "user", "content": "hello"},
     ]
+
+
+# ── D3-2：10 层 Prompt 结构 ─────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_system_message_contains_all_layer_markers(monkeypatch, llm_orchestrator):
+    """D3-2：system content 必含 9 个 ``## ===== Lx_NAME =====`` 标签（L8 在 messages 数组）。"""
+    captured: dict[str, Any] = {}
+
+    async def fake_chat(*, messages, trace_id, **_kwargs):
+        captured["messages"] = messages
+        return _LLMResultStub(content="ok")
+
+    monkeypatch.setattr(llm_orchestrator, "llm_chat", fake_chat)
+    monkeypatch.setattr(llm_orchestrator.settings, "LLM_ECHO_FALLBACK", False)
+
+    reply = await llm_orchestrator.generate_reply(
+        user_id="u",
+        conversation_id="c",
+        user_text="hi",
+        trace_id="trace-layers",
+    )
+
+    assert reply == "ok"
+    system = captured["messages"][0]
+    assert system["role"] == "system"
+    for label in (
+        "L1_SAFETY",
+        "L2_IDENTITY",
+        "L3_CHARACTER",
+        "L4_RELATIONSHIP",
+        "L5_USER_PROFILE",
+        "L6_MEMORY",
+        "L7_CONVERSATION_STATE",
+        "L9_FORMAT",
+        "L10_ANCHOR",
+    ):
+        assert f"## ===== {label} =====" in system["content"], f"missing {label}"
+    assert "L8_RECENT_CONTEXT" not in system["content"]  # L8 走 messages 数组
+
+
+@pytest.mark.asyncio
+async def test_db_loaded_character_and_profile_appear_in_prompt(
+    monkeypatch, llm_orchestrator
+):
+    """D3-2：传入 db → orchestrator 查 character + profile → 渲染进 L3/L4/L5/L7。"""
+    captured: dict[str, Any] = {}
+
+    async def fake_chat(*, messages, trace_id, **_kwargs):
+        captured["messages"] = messages
+        return _LLMResultStub(content="ok")
+
+    monkeypatch.setattr(llm_orchestrator, "llm_chat", fake_chat)
+    monkeypatch.setattr(llm_orchestrator.settings, "LLM_ECHO_FALLBACK", False)
+
+    class _FakeRow:
+        def __init__(self, mapping: dict[str, Any]):
+            self._mapping = mapping
+
+    class _FakeExecResult:
+        def __init__(self, row: _FakeRow | None):
+            self._row = row
+
+        def fetchone(self):
+            return self._row
+
+    class _FakeDB:
+        """根据 SQL 关键词分发返回 character / user_profile 行。"""
+
+        def __init__(self):
+            self.calls: list[str] = []
+
+        async def execute(self, stmt, params=None):  # noqa: D401 - test stub
+            sql = str(getattr(stmt, "text", stmt))
+            self.calls.append(sql)
+            if "characters" in sql or "ch.id = c.character_id" in sql:
+                return _FakeExecResult(
+                    _FakeRow(
+                        {
+                            "id": "char-1",
+                            "name": "Aria",
+                            "region": "Shanghai",
+                            "gentle_score": 80,
+                            "flirt_score": 10,
+                            "reply_length": "short",
+                            "tone": "warm",
+                            "emoji_frequency": "low",
+                        }
+                    )
+                )
+            if "user_profiles" in sql:
+                return _FakeExecResult(
+                    _FakeRow(
+                        {
+                            "relationship_stage": "S2",
+                            "vip_level": 1,
+                            "chat_style": "playful",
+                            "interests": ["音乐"],
+                            "forbidden_topics": ["政治"],
+                            "preferences": {"nickname": "小海"},
+                            "loneliness_score": 65,
+                        }
+                    )
+                )
+            return _FakeExecResult(None)
+
+    db = _FakeDB()
+
+    reply = await llm_orchestrator.generate_reply(
+        user_id="u",
+        conversation_id="c",
+        user_text="hi",
+        trace_id="trace-db",
+        db=db,
+    )
+
+    assert reply == "ok"
+    system = captured["messages"][0]["content"]
+    # L3: 角色
+    assert "Aria" in system
+    assert "Shanghai" in system
+    assert "gentle=high" in system
+    # L4: 关系 + VIP
+    assert "S2" in system and "朋友" in system
+    assert "VIP 等级：1" in system
+    # L5: 用户画像
+    assert "playful" in system
+    assert "小海" in system
+    assert "音乐" in system
+    assert "政治" in system
+    # L7: 孤独度 high band
+    assert "high" in system
+    # 至少两次 DB 查询（character + profile）
+    assert len(db.calls) >= 2
+
+
+@pytest.mark.asyncio
+async def test_db_failures_do_not_break_reply(monkeypatch, llm_orchestrator):
+    """D3-2：db.execute 抛异常 → orchestrator 仍能完成回复（降级为"未知"层）。"""
+
+    async def fake_chat(*, messages, trace_id, **_kwargs):
+        return _LLMResultStub(content="resilient")
+
+    monkeypatch.setattr(llm_orchestrator, "llm_chat", fake_chat)
+    monkeypatch.setattr(llm_orchestrator.settings, "LLM_ECHO_FALLBACK", False)
+
+    class _BadDB:
+        async def execute(self, *_a, **_k):
+            raise RuntimeError("db down")
+
+    reply = await llm_orchestrator.generate_reply(
+        user_id="u",
+        conversation_id="c",
+        user_text="hi",
+        trace_id="trace-db-down",
+        db=_BadDB(),
+    )
+    assert reply == "resilient"
