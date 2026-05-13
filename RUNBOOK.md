@@ -87,6 +87,49 @@ Certbot logs:
 tail -100 /var/log/letsencrypt/letsencrypt.log
 ```
 
+## LLM Orchestrator: 10 层 Prompt 结构 (D3-2)
+
+**核心**：`app/services/prompt_builder.py` 把 system content 拆成 10 个层，
+每层一个 `## ===== Lx_NAME =====` 标签，便于线上 grep。
+
+```text
+L1_SAFETY            硬红线（自伤 / 未成年 / 越狱抗性）
+L2_IDENTITY          "我是 Aria"
+L3_CHARACTER         characters 表 → 人格 6 维 band（low/mid/high）
+L4_RELATIONSHIP      user_profiles.relationship_stage + vip_level
+L5_USER_PROFILE      chat_style / interests / forbidden_topics / nickname
+L6_MEMORY            D4-1 接入后填实；D3-2 是占位
+L7_CONVERSATION_STATE loneliness_score 分段（low/mid/high/critical）
+L8_RECENT_CONTEXT    走 messages 数组，不在 system
+L9_FORMAT            character 决定的 reply_length / tone / emoji 频率
+L10_ANCHOR           末层锚点：再次提醒"先共情、L1 硬红线、你是 Aria"
+```
+
+**调用入口**：`generate_reply(..., db=AsyncSession)` —— 提供 db 时自动查
+`characters`（经 `conversations.character_id` LEFT JOIN）+ `user_profiles`。
+任意 db 查询失败被吞，对应层走"未知/默认"降级；不阻塞回复。
+
+**日志**：`orchestrator.prompt.assembled` 会带：
+- `layers`: 10 层名称
+- `layers_with_data`: 实际有内容的层（用于排查"为什么 L3 是默认人格"）
+- `system_chars` / `estimated_tokens`：粗估，告警阈值用
+- `has_character` / `has_profile`：bool
+
+**Smoke**：
+
+```bash
+docker exec eris-api python -c "
+from services.prompt_builder import DEFAULT_SYSTEM_PROMPT, LAYER_ORDER
+for label in LAYER_ORDER:
+    if label == 'L8_RECENT_CONTEXT':
+        continue
+    assert '## ===== ' + label + ' =====' in DEFAULT_SYSTEM_PROMPT
+print('OK: 9 system layers all present')
+"
+```
+
+发一条 Telegram 消息后，看 `docker logs eris-api | grep prompt.assembled` 应有一行带 `layers_with_data=[...]`。
+
 ## Admin: 会话列表 / 详情 (D5-2)
 
 **前端**：Next.js 应用 `admin/`，`basePath=/admin`，构建后由 Nginx 静态托管；运行时通过

@@ -122,6 +122,7 @@ async def ai_reply(
             user_text=user_text,
             trace_id=trace_id,
             redis=redis,
+            db=db,
         )
     except LLMOrchestratorError as exc:
         log.bind(result="failed", reason=str(exc)).warning(

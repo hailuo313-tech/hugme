@@ -1,5 +1,5 @@
 """
-D2-2 / D2-2.1: LLM Orchestrator
+D2-2 / D2-2.1 / D3-2: LLM Orchestrator
 
 封装 ``generate_reply()``：从一条用户消息 → LLM 调用 → 返回回复字符串。
 
@@ -9,6 +9,13 @@ D2-2 / D2-2.1: LLM Orchestrator
 - D2-2.1：可选从 Redis ``ctx:{conversation_id}`` 读取最近若干条历史消息，
   与当前 user_text 一起拼成完整 OpenAI 风格 messages。
   读取失败不阻塞主流程，只记录 ``orchestrator.context.load_failed``。
+- **D3-2：10 层 Prompt 结构** ——
+  组装 messages 的工作交给 ``services.prompt_builder.build_prompt``；
+  本模块只负责：
+  1) （可选）通过 ``db`` 取该会话的 ``characters`` 行 + 该用户的 ``user_profiles`` 行；
+  2) 加载 history（沿用 Redis ctx）；
+  3) 把这些丢给 ``build_prompt``，得到 messages + 各层日志。
+  缺数据时各层走"未知/默认"降级，但 10 个层标签永远在。
 - 失败处理
     1. 调用层抛异常（理论上 ``llm.chat`` 自吞，仅作防御）→ 视为失败。
     2. ``LLMResult.error`` 非空（``llm.chat`` 内部兜底产物）→ 视为失败。
@@ -17,6 +24,7 @@ D2-2 / D2-2.1: LLM Orchestrator
   否则抛 ``LLMOrchestratorError``。
 - 结构化日志（``ops/observability/logging-spec.md``）
     ``orchestrator.dispatch`` → ``orchestrator.context.loaded``（可选）
+                              → ``orchestrator.prompt.assembled`` (D3-2)
                               → ``orchestrator.reply`` (happy)
                               → ``orchestrator.llm.error`` / ``.llm.empty`` / ``.llm.exception``
                               → ``orchestrator.fallback`` 或 ``orchestrator.failed``
@@ -33,6 +41,12 @@ from loguru import logger
 
 from core.config import settings
 from services.llm import chat as llm_chat
+from services.prompt_builder import (
+    DEFAULT_SYSTEM_PROMPT,
+    LAYER_ORDER,
+    PromptInput,
+    build_prompt,
+)
 
 
 # ── 异常 ──────────────────────────────────────────────
@@ -43,10 +57,8 @@ class LLMOrchestratorError(RuntimeError):
 
 # ── 常量 ──────────────────────────────────────────────
 
-DEFAULT_SYSTEM_PROMPT = (
-    "你是 ERIS 的情感陪伴 AI，名叫 Aria。"
-    "用温暖、自然的中文与用户交流，回应要简洁、共情、避免说教。"
-)
+# DEFAULT_SYSTEM_PROMPT 从 prompt_builder 重导出，保持老断言兼容：
+# = build_prompt(PromptInput(user_text="__placeholder__")).system_content
 
 DEFAULT_HISTORY_LIMIT = 10  # 历史消息默认条数（不含当前消息）
 
@@ -60,8 +72,9 @@ async def generate_reply(
     trace_id: str,
     redis: Any = None,
     history_limit: int = DEFAULT_HISTORY_LIMIT,
+    db: Any = None,
 ) -> str:
-    """生成一条 AI 回复。
+    """生成一条 AI 回复（D3-2 起走 10 层 Prompt 结构）。
 
     Args:
         user_id: 内部 user id（调用方应已查/建）。
@@ -71,6 +84,9 @@ async def generate_reply(
         redis: 可选 Redis 客户端（``aioredis.Redis`` 接口）。
             为 None 时不读取历史，仅用当前 user_text。
         history_limit: 历史消息上限（不含当前消息）。
+        db: 可选 SQLAlchemy AsyncSession。提供时会加载该会话角色 + 用户画像，
+            渲染 L3 CHARACTER / L4 RELATIONSHIP / L5 USER_PROFILE / L7 STATE / L9 FORMAT。
+            为 None 时这些层走"未知/默认"，但 10 层标签仍渲染。
 
     Returns:
         非空字符串。
@@ -97,8 +113,28 @@ async def generate_reply(
             log=log,
         )
 
-    messages = _build_messages(user_text, history)
-    log.bind(history_count=len(history)).info("orchestrator.context.loaded")
+    character_row, profile_row = await _load_db_context(db, user_id, conversation_id, log)
+
+    prompt = build_prompt(
+        PromptInput(
+            user_text=user_text,
+            character=character_row,
+            profile=profile_row,
+            memories=None,  # D4-1 接入后此处传 retrieve 结果
+            history=history,
+        )
+    )
+    messages = prompt.messages
+
+    log.bind(
+        history_count=len(history),
+        layers=list(LAYER_ORDER),
+        layers_with_data=[k for k, v in prompt.layers.items() if v.strip()],
+        system_chars=len(prompt.system_content),
+        estimated_tokens=prompt.estimated_tokens,
+        has_character=character_row is not None,
+        has_profile=profile_row is not None,
+    ).info("orchestrator.prompt.assembled")
 
     try:
         result = await llm_chat(messages=messages, trace_id=trace_id)
@@ -216,13 +252,74 @@ def _build_messages(
     user_text: str,
     history: list[dict[str, str]] | None = None,
 ) -> list[dict[str, str]]:
-    messages: list[dict[str, str]] = [
-        {"role": "system", "content": DEFAULT_SYSTEM_PROMPT},
-    ]
-    if history:
-        messages.extend(history)
-    messages.append({"role": "user", "content": user_text})
-    return messages
+    """[Legacy / 兼容] 老调用方仍可用的一行版本。D3-2 起内部走 prompt_builder。"""
+    return build_prompt(
+        PromptInput(user_text=user_text, history=history)
+    ).messages
+
+
+async def _load_db_context(
+    db: Any,
+    user_id: str,
+    conversation_id: str,
+    log,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """加载 ``characters`` 行 + ``user_profiles`` 行。
+
+    任何查询失败都被吞掉（只 warning），返回 (None, None) 或部分 None；
+    prompt_builder 各层会按"未知/默认"降级。
+    """
+    if db is None:
+        return None, None
+
+    character_row: dict[str, Any] | None = None
+    profile_row: dict[str, Any] | None = None
+
+    # 局部 import，避免顶层污染（services 层不直接依赖 SQLAlchemy 入口）
+    try:
+        from sqlalchemy import text as _sql_text  # type: ignore
+    except Exception as exc:  # pragma: no cover - 防御
+        log.bind(error_type=type(exc).__name__).warning(
+            "orchestrator.db.import_failed"
+        )
+        return None, None
+
+    try:
+        row = (
+            await db.execute(
+                _sql_text(
+                    "SELECT ch.* FROM conversations c "
+                    "LEFT JOIN characters ch ON ch.id = c.character_id "
+                    "WHERE c.id = :cid"
+                ),
+                {"cid": conversation_id},
+            )
+        ).fetchone()
+        if row is not None and getattr(row, "_mapping", None) is not None:
+            mapping = dict(row._mapping)
+            # 没匹配到 character 时，左联会得到一行但所有 ch.* 为 None
+            if mapping.get("id") is not None or mapping.get("name") is not None:
+                character_row = mapping
+    except Exception as exc:
+        log.bind(error_type=type(exc).__name__).warning(
+            "orchestrator.db.character_load_failed"
+        )
+
+    try:
+        row = (
+            await db.execute(
+                _sql_text("SELECT * FROM user_profiles WHERE user_id = :uid"),
+                {"uid": user_id},
+            )
+        ).fetchone()
+        if row is not None and getattr(row, "_mapping", None) is not None:
+            profile_row = dict(row._mapping)
+    except Exception as exc:
+        log.bind(error_type=type(exc).__name__).warning(
+            "orchestrator.db.profile_load_failed"
+        )
+
+    return character_row, profile_row
 
 
 def _echo_fallback(user_text: str) -> str:
