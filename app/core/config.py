@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     LLM_ECHO_FALLBACK: bool = False
     # D6-3: 静默重激活总开关。默认 False；设为 True 时 admin 的扫描端点才会真的查 DB / 写任务。
     SILENT_REACTIVATION_ENABLED: bool = False
+    # D6-3 调度：crontab 形式（分 时 日 月 周，UTC）。默认每天 UTC 02:00（北京 10:00 / PT 18:00）。
+    # 仅在 SILENT_REACTIVATION_ENABLED=True 时才注册定时任务。
+    SILENT_REACTIVATION_CRON: str = '0 2 * * *'
     ENV: str = 'production'
 
     class Config:

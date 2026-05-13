@@ -48,6 +48,7 @@ services:
       # pydantic-settings reads these from the container env (compose does not mount .env into api)
       LLM_ECHO_FALLBACK: ${LLM_ECHO_FALLBACK:-0}
       SILENT_REACTIVATION_ENABLED: ${SILENT_REACTIVATION_ENABLED:-0}
+      SILENT_REACTIVATION_CRON: ${SILENT_REACTIVATION_CRON:-0 2 * * *}
       STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
