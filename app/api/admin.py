@@ -17,6 +17,8 @@ from pydantic import BaseModel
 from typing import Any, Optional
 from fastapi import Request
 from loguru import logger
+from decimal import Decimal
+from enum import Enum
 import hashlib, hmac, uuid, time, json, base64
 
 from services.silent_reactivation_runner import run_silent_reactivation_scan
@@ -161,17 +163,23 @@ _ALLOWED_CHANNELS = {"telegram", "whatsapp", "web", "discord"}
 
 
 def _serialize_row(row: Any) -> dict:
-    """``row._mapping`` -> plain dict（datetime / UUID 转字符串以便 JSON 返回）。"""
-    out = {}
+    """JSON-safe row mapping (PG numeric -> float, uuid/datetime -> str)."""
+    out: dict[str, Any] = {}
     for k, v in dict(row._mapping).items():
         if v is None:
             out[k] = None
-        elif hasattr(v, "isoformat"):
-            out[k] = v.isoformat()
         elif isinstance(v, uuid.UUID):
             out[k] = str(v)
-        else:
+        elif isinstance(v, Decimal):
+            out[k] = float(v)
+        elif isinstance(v, Enum):
+            out[k] = v.value
+        elif hasattr(v, "isoformat") and callable(getattr(v, "isoformat")):
+            out[k] = v.isoformat()
+        elif isinstance(v, (dict, list, int, float, str, bool)):
             out[k] = v
+        else:
+            out[k] = str(v)
     return out
 
 
@@ -218,7 +226,11 @@ async def admin_list_conversations(
         """),
         params,
     )).fetchone()
-    total = int(total_row[0]) if total_row else 0
+    raw_total = total_row[0] if total_row else 0
+    if isinstance(raw_total, Decimal):
+        total = int(raw_total)
+    else:
+        total = int(raw_total or 0)
 
     rows = (await db.execute(
         text(f"""
