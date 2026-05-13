@@ -15,8 +15,11 @@ from core.config import settings
 from pydantic import BaseModel, Field
 from typing import Optional
 from loguru import logger
+import asyncio
 import uuid, json, time
 import redis.asyncio as aioredis
+
+from services.memory_writer import maybe_write_memory
 
 router = APIRouter()
 
@@ -234,6 +237,23 @@ async def inbound_message(
     except Exception as e:
         # Redis 失败不阻塞主流程，仅记录警告
         log.warning(f"message.inbound.context.push_failed err={e}")
+
+    # ── D3-3: 触发记忆写入（fire-and-forget）─────────────
+    # /inbound 不识别 onboarding 状态（那是 telegram.py 的职责），
+    # 默认 is_onboarding=False；memory_writer 内部还有 prefilter 兜底。
+    try:
+        asyncio.create_task(
+            maybe_write_memory(
+                user_id=user_id,
+                conversation_id=conv_id,
+                message_id=msg_id,
+                content=data.content,
+                trace_id=trace_id,
+                redis=redis,
+            )
+        )
+    except Exception as e:
+        log.warning(f"message.inbound.memory_writer.spawn_failed err={e}")
 
     # ── 构造响应并缓存幂等结果 ────────────────────────────
     elapsed = (time.time() - start_ts) * 1000
