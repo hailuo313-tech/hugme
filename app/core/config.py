@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     STRIPE_PUBLISHABLE_KEY: Optional[str] = None
     STRIPE_SECRET_KEY: Optional[str] = None
     STRIPE_WEBHOOK_SECRET: Optional[str] = None
-    STRIPE_SUCCESS_URL: str = 'https://hugme2.com/payment/success'
+    STRIPE_SUCCESS_URL: str = 'https://hugme2.com/payment/success?session_id={CHECKOUT_SESSION_ID}'
     STRIPE_CANCEL_URL: str = 'https://hugme2.com/payment/cancel'
     ENV: str = 'production'
 
