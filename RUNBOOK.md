@@ -206,6 +206,83 @@ docker exec eris-postgres psql -U eris -d eris -c \
 切回好 key 后自动追平；schema 维度不匹配 → UPDATE 报错（不会出现在正常路径，
 切模型前需 migrate schema）。
 
+## Memory Retrieval: Hybrid (D4-1)
+
+**核心**：`app/services/memory_retriever.py` 把"当前 query → embed → tag-filter +
+pgvector cosine → rerank → top k"做成一个纯函数式调用；
+HTTP 入口 `POST /api/v1/users/{user_id}/memories/retrieve`。
+
+```text
+Phase 1  Embed query     ← 复用 D3-4 embedder（OpenAI text-embedding-3-small）
+                            失败 → fallback：importance DESC
+Phase 2  tag-filter SQL  ← user_id / is_active / memory_type / character_id /
+                            importance ≥ :min；ORDER BY embedding <=> :qvec
+                            LIMIT :k_candidates（默认 30）
+Phase 3  Python rerank   ← 0.55·sim + 0.25·(imp/10)
+                            + 0.15·recency(30d half-life) + 0.05·conf
+                            sort desc, 截 k_final（默认 10）
+Phase 4  touch           ← asyncio.create_task: UPDATE last_used_at = NOW()
+                            fire-and-forget；不阻塞响应
+```
+
+**为什么 Hybrid 而不是纯 vector**：纯 vector 会跨用户串味、把 importance=2 的
+废话也召回来；纯 SQL 又没法理解"颜色 ≈ 色彩"。SQL 把"哪些行是有效候选"先砍掉
+一刀，cosine + rerank 再做精排，体感"AI 真的记得我"。
+
+**API 示例**：
+
+```bash
+TOKEN=$(...)  # operator JWT (D5-2)
+USER_ID=<某个有 memories 的用户>
+
+curl -s -X POST "http://127.0.0.1:8000/api/v1/users/$USER_ID/memories/retrieve" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"我喜欢什么音乐","k":5}' | python -m json.tool
+```
+
+**日志事件**（均带 `component=memory_retriever` + `trace_id`）：
+
+```text
+retriever.skip.empty_query
+retriever.embed.fallback           error=4xx:401|no_vector|...
+retriever.sql.failed               error_type
+retriever.empty_candidates
+retriever.done                     candidates / returned / top_sim / top_score / duration_ms
+retriever.touch.ok                 touched=N
+retriever.touch.failed             error_type
+```
+
+**性能预估**：query embedding ~100–250ms；SQL `<=>` + LIMIT 30 (≤10k 行) <30ms；
+rerank <5ms。**P50 ≈ 200ms，P95 ≈ 400ms**；超 600ms 应告警。
+
+**Smoke**（服务器上跑）：
+
+```bash
+# 1) 编译 sanity
+docker exec eris-api python -m py_compile \
+  app/services/memory_retriever.py app/api/memories.py && echo OK
+
+# 2) 跑一次 retrieve（需要先有 OPENAI_API_KEY 和已 embed 的 memories）
+TOKEN=$(...)
+curl -s -X POST "http://127.0.0.1:8000/api/v1/users/<uid>/memories/retrieve" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"hello","k":3}' | python -m json.tool
+
+# 3) 验证 fallback：故意把 OPENAI_API_KEY 改错（worker 也会停）
+#    retrieve 仍应返回 embedding_used=false，hits 按 importance 排序
+```
+
+**未来索引**（D8-2 性能调优时）：
+
+```sql
+CREATE INDEX memories_embedding_ivfflat
+  ON memories USING ivfflat (embedding vector_cosine_ops)
+  WITH (lists = 100);
+ANALYZE memories;
+```
+
 ## LLM Orchestrator: 10 层 Prompt 结构 (D3-2)
 
 **核心**：`app/services/prompt_builder.py` 把 system content 拆成 10 个层，
