@@ -50,13 +50,22 @@ class _FakeResult:
 
 
 class _FakeDB:
-    """模拟 AsyncSession：记录 execute / commit。"""
+    """模拟 AsyncSession：记录 execute / commit。
+
+    同时支持 `async with` 语义，可被当作 ``AsyncSessionLocal()`` 的返回值用。
+    """
 
     def __init__(self, rows: Optional[list[dict]] = None, fail: bool = False):
         self.rows = rows or []
         self.fail = fail
         self.calls: list[tuple[str, dict]] = []
         self.commits = 0
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
 
     async def execute(self, stmt, params=None):
         if self.fail:
@@ -179,24 +188,38 @@ class TestHappy:
         assert "qvec" in params and params["qvec"].startswith("[")
 
     @pytest.mark.asyncio
-    async def test_touch_last_used_called(self, mr, monkeypatch):
+    async def test_touch_last_used_uses_own_session(self, mr, monkeypatch):
+        """关键回归：fire-and-forget 必须用独立 AsyncSessionLocal()，
+        不能借请求级 db。否则 sqlalchemy.exc.IllegalStateChangeError。
+        2026-05-13 D4-1 上线时这个 bug 触发过一次。
+        """
         _patch_embed(monkeypatch, mr, vectors=[[0.1] * 4])
         rows = [_row(rid="m1"), _row(rid="m2")]
-        db = _FakeDB(rows=rows)
+        request_db = _FakeDB(rows=rows)
+
+        # touch 应该用 _OwnDB 而不是 request_db
+        own_db = _FakeDB(rows=[])
+        monkeypatch.setattr(mr, "AsyncSessionLocal", lambda: own_db)
 
         await mr.retrieve(
-            db=db,
+            db=request_db,
             user_id="u",
             query_text="abc",
             k_final=2,
             touch_last_used=True,
         )
-        # touch 是 fire-and-forget；让事件循环过一拍
         import asyncio
         await asyncio.sleep(0.01)
-        update_calls = [c for c in db.calls if "UPDATE memories" in c[0]]
-        assert len(update_calls) == 1
-        assert update_calls[0][1]["ids"] == ["m1", "m2"]
+
+        # request_db 只应被 SELECT，绝不 UPDATE（避免 session 状态冲突）
+        request_updates = [c for c in request_db.calls if "UPDATE memories" in c[0]]
+        assert request_updates == [], "must NOT update via request session"
+
+        # own_db 应收到 UPDATE
+        own_updates = [c for c in own_db.calls if "UPDATE memories" in c[0]]
+        assert len(own_updates) == 1
+        assert own_updates[0][1]["ids"] == ["m1", "m2"]
+        assert own_db.commits == 1
 
 
 # ─────────────────────────────────────────────────────────────
