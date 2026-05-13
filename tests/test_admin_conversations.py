@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any, AsyncGenerator
 from unittest.mock import AsyncMock, MagicMock
+import uuid
 
 import pytest
 from fastapi import FastAPI
@@ -266,3 +267,23 @@ def test_detail_happy_path_returns_messages():
     assert len(data["messages"]) == 2
     assert data["messages"][0]["id"] == "m1"
     assert data["messages"][1]["sender_type"] == "assistant"
+
+
+def test_serialize_row_converts_decimal_to_float():
+    """PG numeric -> Decimal; serializer must convert to float for JSON."""
+    from decimal import Decimal
+
+    from api.admin import _serialize_row
+
+    row = MagicMock()
+    row._mapping = {
+        "loneliness_score": Decimal("42.5"),
+        "total": Decimal("7"),
+        "n": None,
+        "u": uuid.UUID("00000000-0000-0000-0000-000000000001"),
+    }
+    out = _serialize_row(row)
+    assert out["loneliness_score"] == 42.5
+    assert out["total"] == 7
+    assert out["n"] is None
+    assert out["u"] == "00000000-0000-0000-0000-000000000001"
