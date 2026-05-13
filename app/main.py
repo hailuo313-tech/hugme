@@ -21,6 +21,10 @@ from api.llm import router as llm_router
 from api.onboarding import router as onboarding_router
 from api.admin import router as admin_router
 from core.database import init_db
+from services.silent_reactivation_scheduler import (
+    start_scheduler as start_silent_reactivation_scheduler,
+    shutdown_scheduler as shutdown_silent_reactivation_scheduler,
+)
 
 
 def configure_logging():
@@ -47,8 +51,12 @@ async def lifespan(app: FastAPI):
     logger.info("ERIS starting up...")
     await init_db()
     logger.info("Database connected")
-    yield
-    logger.info("ERIS shutting down...")
+    start_silent_reactivation_scheduler()
+    try:
+        yield
+    finally:
+        shutdown_silent_reactivation_scheduler()
+        logger.info("ERIS shutting down...")
 
 
 app = FastAPI(
