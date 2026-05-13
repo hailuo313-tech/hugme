@@ -175,3 +175,8 @@ def _extract_vectors(data: dict, expected_len: int) -> Optional[list[list[float]
 
     indexed.sort(key=lambda p: p[0])
     return [v for _, v in indexed]
+
+
+def _vector_literal(vec: list[float]) -> str:
+    """Format a pgvector string literal without spaces or scientific notation."""
+    return "[" + ",".join(f"{x:.7f}" for x in vec) + "]"
