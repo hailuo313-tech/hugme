@@ -562,10 +562,10 @@ eris-postgres
 eris-redis
 ```
 
-Grafana is bound to localhost by default:
+Grafana is bound to localhost by default. The host port is `3001` to avoid colliding with the admin Next.js server on `3000`:
 
 ```text
-http://127.0.0.1:3000
+http://127.0.0.1:3001
 ```
 
 Before first use, set these in `/opt/eris/.env` and do not keep the default password:
