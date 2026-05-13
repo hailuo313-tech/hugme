@@ -87,6 +87,52 @@ Certbot logs:
 tail -100 /var/log/letsencrypt/letsencrypt.log
 ```
 
+## Stripe webhook (D6-2)
+
+**Required env**（宿主 `/opt/eris/.env`；compose `api.environment` 已透传）：
+
+- `STRIPE_SECRET_KEY` — D6-1 创建 Checkout Session 用
+- `STRIPE_WEBHOOK_SECRET` — D6-2 验签用；**缺失会让 webhook 返回 400 signature_failed，DB 不写**
+- `STRIPE_SUCCESS_URL` / `STRIPE_CANCEL_URL` — Checkout 跳转，默认 `https://hugme2.com/payment/{success,cancel}`
+
+**接口**：`POST /api/v1/webhooks/stripe`
+
+- 同步阶段（毫秒级）：验签 → 抢占 `stripe_webhook_events.event_id`（ON CONFLICT DO NOTHING）→ 返回 200 `queued`/`duplicate`。
+- 后台阶段：`checkout.session.completed` → `orders.status='paid' + paid_at=NOW()` → `users.vip_level += 1`；其它事件 `result='ignored'`。
+- 完成后回写 `stripe_webhook_events.result` (`processed`/`ignored`/`failed`) + `handled_at`。
+
+**首次部署需要**：新表 `stripe_webhook_events`。`init.sql` 已声明，但 docker volume 上的 PG 不会重跑该脚本，需手动建表（一次性）：
+
+```bash
+docker exec eris-postgres psql -U eris -d eris -c "
+CREATE TABLE IF NOT EXISTS stripe_webhook_events (
+    event_id VARCHAR(64) PRIMARY KEY,
+    event_type VARCHAR(80) NOT NULL,
+    payload JSONB NOT NULL,
+    result VARCHAR(20) DEFAULT 'received',
+    error TEXT,
+    received_at TIMESTAMP DEFAULT NOW(),
+    handled_at TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_stripe_webhook_events_type_received
+    ON stripe_webhook_events(event_type, received_at DESC);
+"
+```
+
+**Stripe Dashboard 配置**（手动）：在 Stripe Test 后台 Webhooks → Add endpoint → `https://hugme2.com/api/v1/webhooks/stripe`，订阅事件至少：`checkout.session.completed`；签名密钥贴到 `.env` 的 `STRIPE_WEBHOOK_SECRET`。
+
+**Smoke**（在服务器上用 Stripe CLI 转发 + 4242 测试卡走一遍 Checkout）：
+
+```bash
+docker logs --since=5m eris-api 2>&1 | grep -E 'stripe_webhook|payments\.'
+docker exec eris-postgres psql -U eris -d eris -c "
+SELECT event_id, event_type, result, handled_at FROM stripe_webhook_events ORDER BY received_at DESC LIMIT 5;"
+docker exec eris-postgres psql -U eris -d eris -c "
+SELECT id, status, paid_at, provider_order_id FROM orders ORDER BY created_at DESC LIMIT 5;"
+```
+
+期望：events 表有该 `evt_*` 行 `result='processed'`；对应 `orders.status='paid'`、`users.vip_level` +1。
+
 ## Silent reactivation (D6-3)
 
 **Flags**（宿主 `/opt/eris/.env`；`docker-compose.yml` 的 `api.environment` 必须显式透传，容器内才读得到）：

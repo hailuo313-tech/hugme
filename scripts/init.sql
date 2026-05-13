@@ -216,3 +216,18 @@ CREATE TABLE IF NOT EXISTS operators (
     created_at      TIMESTAMP DEFAULT NOW(),
     updated_at      TIMESTAMP DEFAULT NOW()
 );
+
+-- Stripe Webhook 幂等表 (D6-2)
+-- 同一 Stripe event.id 多次到达只处理一次；列名/约束与 payments.stripe_webhook
+-- 内逻辑对齐：先 INSERT 抢占（ON CONFLICT DO NOTHING），再处理业务，最后回填 result/handled_at。
+CREATE TABLE IF NOT EXISTS stripe_webhook_events (
+    event_id        VARCHAR(64) PRIMARY KEY,        -- Stripe event.id (evt_*)
+    event_type      VARCHAR(80) NOT NULL,           -- e.g. checkout.session.completed
+    payload         JSONB NOT NULL,                 -- 原始 event 体（剥离 signing key 后保存以便回放）
+    result          VARCHAR(20) DEFAULT 'received', -- received | processed | ignored | failed
+    error           TEXT,
+    received_at     TIMESTAMP DEFAULT NOW(),
+    handled_at      TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_stripe_webhook_events_type_received
+    ON stripe_webhook_events(event_type, received_at DESC);
