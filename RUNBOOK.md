@@ -87,6 +87,37 @@ Certbot logs:
 tail -100 /var/log/letsencrypt/letsencrypt.log
 ```
 
+## Silent reactivation (D6-3)
+
+**Flags**（宿主 `/opt/eris/.env`；`docker-compose.yml` 的 `api.environment` 必须显式透传，容器内才读得到）：
+
+- `SILENT_REACTIVATION_ENABLED=1` —— 打开后才会查库 / 写 `notification_tasks`；`0` 时 admin 接口与定时任务均 short-circuit。
+- `SILENT_REACTIVATION_CRON` —— 可选；crontab 五段，**UTC**（默认 `0 2 * * *` = 每天 UTC 02:00）。仅在 `SILENT_REACTIVATION_ENABLED=1` 时注册 APScheduler job。
+
+**手动 smoke**（在服务器上，`127.0.0.1:8000` 为 api 容器映射）：
+
+1. 登录拿 JWT —— 路径是 **`POST /api/v1/admin/login`**（不是 `/auth/login`），body 用 **`username` + `password`**（`operators` 表；默认 seed 账号 **`admin`**）。
+
+```bash
+TOKEN=$(curl -s -X POST http://127.0.0.1:8000/api/v1/admin/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"YOUR_PASSWORD"}' \
+  | docker exec -i eris-api python -c "import sys,json; print(json.load(sys.stdin)['token'])")
+```
+
+2. 触发一次扫描：
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/v1/admin/silent-reactivation/run \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{}' | docker exec -i eris-api python -m json.tool
+```
+
+期望 JSON 含 `"enabled": true`（flag 打开时）；`docker logs eris-api` 出现 `silent_reactivation.scan.start` / `candidates_loaded` / `scan.complete`。
+
+**定时调度**：合并含 scheduler 的代码后 `docker compose up -d --build --force-recreate api`（`requirements.txt` 有变更需重建镜像）。启动日志应含 `silent_reactivation.scheduler.started`（仅 `SILENT_REACTIVATION_ENABLED=1` 时）。多 worker 时同一时刻只会有一个实例抢到 `pg_try_advisory_lock`，其余打 `silent_reactivation.scheduler.skip_no_lock`。
+
 ## Restart Procedures
 
 Restart API only:
