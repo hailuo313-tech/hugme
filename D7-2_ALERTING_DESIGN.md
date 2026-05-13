@@ -11,8 +11,8 @@ Define the first ERIS alerting slice on top of the D7-1 monitoring plan. This ta
 ## Current State
 
 - D7-1 monitoring assets exist under `/opt/eris/monitoring`.
-- Prometheus and Grafana are templates only; they are not running.
-- `/metrics` is not implemented yet, so application metric alerts are design-ready but inactive until D7 Phase B.
+- Prometheus, Grafana, and Alertmanager are optional compose services, not part of the default app stack.
+- `/metrics` is exposed by the API and should be scraped at `eris-api:8000/metrics`.
 - `/health/detail` is live and returns `api/db/redis`.
 - Stripe webhook handling is still a placeholder, so Stripe alert rules are marked as pending.
 
@@ -34,9 +34,8 @@ Secrets required later:
 
 Do not store real notification secrets in repository files. Put them in `/opt/eris/.env` only when alert delivery is intentionally enabled.
 
-Alertmanager does not expand `.env` values inside YAML by itself. To enable real delivery later, copy
-`monitoring/alertmanager/receivers.example.yml` into a private deployment config and render it with the real secrets
-outside Git.
+Alertmanager delivery is disabled by default unless `DISCORD_WEBHOOK_URL` is set. The monitoring compose template renders
+`monitoring/alertmanager/alertmanager.yml` with the environment value at container startup.
 
 ## Core Alert Thresholds
 
@@ -90,7 +89,7 @@ alert names or receiver routes.
 - `monitoring/alertmanager/email-message-template.md`
 - `monitoring/alertmanager/receivers.example.yml`
 
-`alertmanager.yml` intentionally routes all alerts to `dashboard-only` for now. Real Discord/email receivers should be added only when the team is ready to test notification delivery.
+`alertmanager.yml` routes critical alerts to the `discord` receiver. If `DISCORD_WEBHOOK_URL` is empty, the compose command substitutes a disabled localhost URL so alerts cannot accidentally leave the server.
 
 Files updated:
 
@@ -101,10 +100,10 @@ Files updated:
 
 1. Implement `/metrics` and application counters/gauges.
 2. Start Prometheus/Grafana locally or behind SSH-only access.
-3. Start Alertmanager with placeholder receiver.
-4. Add real `DISCORD_WEBHOOK_URL` and/or SMTP credentials.
+3. Set `DISCORD_WEBHOOK_URL` in the private server `.env`.
+4. Start Alertmanager.
 5. Send one test alert to verify formatting.
-6. Only then enable beta alert delivery.
+6. Add email receiver later if the beta needs email escalation.
 
 ## Review Notes For Related Work
 
@@ -127,6 +126,7 @@ Files updated:
 - [x] Email notification copy template created.
 - [x] Receiver enablement example created without real secrets.
 - [x] Monitoring compose template updated for Alertmanager.
-- [x] Active runtime left unchanged.
-- [ ] Real Discord/email delivery enabled in a later task.
+- [x] Active runtime left unchanged until the optional monitoring compose stack is started.
+- [x] Discord delivery can be enabled by setting `DISCORD_WEBHOOK_URL`.
+- [ ] Real email delivery enabled in a later task.
 - [ ] Alert rules exercised after `/metrics` is implemented.

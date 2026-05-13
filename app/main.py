@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from loguru import logger
+from prometheus_fastapi_instrumentator import Instrumentator
 import sys
 import time
 import uuid
@@ -119,3 +120,5 @@ app.include_router(realtime_router, tags=["realtime"])
 app.include_router(llm_router, prefix="/api/v1", tags=["llm"])
 app.include_router(onboarding_router, prefix="/api/v1", tags=["onboarding"])
 app.include_router(admin_router, prefix="/api/v1", tags=["admin"])
+
+Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)

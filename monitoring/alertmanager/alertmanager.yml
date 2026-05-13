@@ -13,7 +13,7 @@ route:
   routes:
     - matchers:
         - severity="critical"
-      receiver: dashboard-only
+      receiver: discord
       repeat_interval: 1h
     - matchers:
         - severity="warning"
@@ -22,6 +22,11 @@ route:
 
 receivers:
   - name: dashboard-only
+
+  - name: discord
+    discord_configs:
+      - webhook_url: __DISCORD_WEBHOOK_URL__
+        send_resolved: true
 
 inhibit_rules:
   - source_matchers:

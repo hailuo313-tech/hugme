@@ -16,7 +16,8 @@ Define the first production monitoring slice for the ERIS MVP without changing r
 - Notification queue APIs exist under `/api/v1/notifications`.
 - Operator WebSocket exists at `/ws/operators/tasks`.
 - Stripe webhook is still a placeholder, so payment metrics are marked as planned until real event handling lands.
-- No Prometheus, Grafana, or `/metrics` endpoint is currently enabled.
+- `/metrics` is exposed by FastAPI via `prometheus-fastapi-instrumentator`.
+- Prometheus, Grafana, Alertmanager, Postgres exporter, and Redis exporter are provided as an optional monitoring compose stack.
 
 ## Six Core Metrics
 
@@ -102,11 +103,9 @@ Rows:
 
 Initial targets:
 
-- `api:8000/health` for blackbox-style HTTP health once blackbox exporter exists.
-- `api:8000/metrics` after the application metrics endpoint is added.
+- `eris-api:8000/metrics` for application metrics.
 - `postgres-exporter:9187/metrics` when database exporter is enabled.
 - `redis-exporter:9121/metrics` when Redis exporter is enabled.
-- `nginx-prometheus-exporter:9113/metrics` after Nginx status is configured.
 
 This D7-1 package includes `monitoring/prometheus.yml` and `monitoring/docker-compose.monitoring.yml` as a deployment template. It does not modify the active `docker-compose.yml`.
 
@@ -124,13 +123,17 @@ Completed by this task:
 
 ### Phase B: Application metrics endpoint
 
-Next Codex-safe implementation task:
+Completed by the D7-1/D7-2 rescue patch:
 
-- Add `prometheus-client` to API dependencies.
+- Add `prometheus-fastapi-instrumentator` to API dependencies.
 - Add `/metrics` route.
-- Instrument HTTP middleware.
-- Add cheap database gauges for handoff and notification queues.
+- Instrument HTTP middleware with default FastAPI/Starlette metrics.
 - Do not expose secrets or high-cardinality labels such as user IDs, message IDs, or raw trace IDs.
+
+Future app-specific metrics:
+
+- Add cheap database gauges for handoff and notification queues.
+- Add LLM and Stripe counters once those flows expose stable result categories.
 
 ### Phase C: Runtime deployment
 
@@ -175,5 +178,5 @@ Allowed labels:
 - [x] Grafana provisioning templates created.
 - [x] Monitoring compose template created.
 - [x] Active runtime left unchanged.
-- [ ] `/metrics` endpoint implemented in a later task.
+- [x] `/metrics` endpoint implemented.
 - [ ] Prometheus/Grafana deployed in a later task.

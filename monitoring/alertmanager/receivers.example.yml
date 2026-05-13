@@ -4,8 +4,8 @@
 
 receivers:
   - name: critical-ops
-    webhook_configs:
-      - url: https://discord.com/api/webhooks/REPLACE_ME
+    discord_configs:
+      - webhook_url: https://discord.com/api/webhooks/REPLACE_ME
         send_resolved: true
     email_configs:
       - to: ops@example.com
@@ -17,8 +17,8 @@ receivers:
         send_resolved: true
 
   - name: warning-ops
-    webhook_configs:
-      - url: https://discord.com/api/webhooks/REPLACE_ME
+    discord_configs:
+      - webhook_url: https://discord.com/api/webhooks/REPLACE_ME
         send_resolved: true
 
 route:
