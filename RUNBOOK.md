@@ -565,3 +565,91 @@ Before `v0.1.0`:
 - DB backup exists.
 - `.env` contains no malformed lines.
 - Runbook is updated.
+
+---
+
+## Appendix: Ops 巡检记录
+
+### Ops 巡检 2026-05-13
+
+**执行时间**：2026-05-13 07:27 UTC  
+**执行者**：Codex AI（ops/ops-health-check-20260513 分支）  
+**服务器**：`root@67.216.204.137:2222`，uptime `2 days 5:03`
+
+---
+
+#### 1. Health Check
+
+```
+$ curl -s https://hugme2.com/health/detail
+{"api":"ok","db":"ok","redis":"ok"}
+```
+
+**结果：✅ 全部 ok**
+
+---
+
+#### 2. docker compose ps（应用栈）
+
+```
+NAME            IMAGE                    COMMAND                  SERVICE    CREATED       STATUS                 PORTS
+eris-api        eris-api                 "uvicorn main:app --…"   api        6 hours ago   Up 6 hours (healthy)   127.0.0.1:8000->8000/tcp
+eris-postgres   pgvector/pgvector:pg16   "docker-entrypoint.s…"   postgres   2 days ago    Up 2 days (healthy)    127.0.0.1:5432->5432/tcp
+eris-redis      redis:7-alpine           "docker-entrypoint.s…"   redis      2 days ago    Up 2 days (healthy)    127.0.0.1:6379->6379/tcp
+```
+
+**结果：✅ 3/3 healthy**
+
+---
+
+#### 3. docker compose ps（监控栈，`monitoring/docker-compose.monitoring.yml`）
+
+```
+NAME                     IMAGE                                           SERVICE             CREATED       STATUS
+eris-alertmanager        prom/alertmanager:v0.27.0                       alertmanager        6 hours ago   Up 6 hours
+eris-grafana             grafana/grafana:11.3.0                          grafana             6 hours ago   Up 6 hours
+eris-postgres-exporter   prometheuscommunity/postgres-exporter:v0.15.0   postgres-exporter   6 hours ago   Up 6 hours
+eris-prometheus          prom/prometheus:v2.55.0                         prometheus          6 hours ago   Up 6 hours
+eris-redis-exporter      oliver006/redis_exporter:v1.67.0                redis-exporter      6 hours ago   Up 6 hours
+```
+
+**结果：✅ 5/5 Up**
+
+---
+
+#### 4. Prometheus targets（`http://127.0.0.1:9090/api/v1/targets`）
+
+```
+  eris-api             eris-api:8000                  up
+  eris-postgres        postgres-exporter:9187         up
+  eris-redis           redis-exporter:9121            up
+TOTAL active targets: 3
+```
+
+**结果：✅ 3/3 UP**（当前 `monitoring/prometheus.yml` 配置了 3 个 scrape job）
+
+> **注意**：任务卡要求"9 个 target 全 UP"；当前 `prometheus.yml` 仅配置 3 个 job（eris-api / eris-postgres / eris-redis），无 dropped targets。  
+> 若需扩展至 9 个，需在 `monitoring/prometheus.yml` 中补充 nginx-exporter、node-exporter、cadvisor、alertmanager、grafana、prometheus-self 等 job，并在 `docker-compose.monitoring.yml` 中新增对应 exporter 容器。此为后续任务，当前 3/3 均正常。
+
+---
+
+#### 5. Admin 密码轮换
+
+- **操作**：生成 24 位随机强密码（含大小写字母 + 数字 + 特殊字符）
+- **方法**：`docker exec eris-postgres psql ... UPDATE operators SET password_hash=... WHERE username='admin'`
+- **验证**：
+  - 旧密码 `D5-2-smoke-2026!` → `{"detail":"Invalid credentials"}` ✅ 已失效
+  - 新密码登录 → 返回有效 JWT token ✅
+- **密码存储**：仅保存在服务器 `/root/.eris_admin_pw_20260513.txt`（root 私有），**不进代码仓库**
+
+---
+
+#### 巡检总结
+
+| 检查项 | 结果 |
+|--------|------|
+| `/health/detail` api/db/redis | ✅ 全 ok |
+| 应用容器（api/postgres/redis） | ✅ 3/3 healthy |
+| 监控容器（prometheus/grafana/alertmanager/exporters） | ✅ 5/5 Up |
+| Prometheus scrape targets | ✅ 3/3 UP（无 DOWN，无 dropped） |
+| Admin 密码轮换 | ✅ 旧密码已失效，新密码验证通过 |
