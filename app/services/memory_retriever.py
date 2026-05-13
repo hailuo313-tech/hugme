@@ -45,6 +45,7 @@ from typing import Any, Iterable, Optional
 from loguru import logger
 from sqlalchemy import text
 
+from core.database import AsyncSessionLocal
 from services.embedder import embed
 
 
@@ -173,10 +174,14 @@ async def retrieve(
     top = hits[:k_final]
 
     # ── Phase 4：side effect — touch last_used_at ──────────
+    # 关键：开自己的 AsyncSessionLocal，不能借请求级 db。
+    # 否则 fire-and-forget task 会在 FastAPI 关 session 后还在 execute()，
+    # 触发 sqlalchemy.exc.IllegalStateChangeError。这是 D3-3 memory_writer
+    # 早就修过的同一个坑，D4-1 上线时复发，2026-05-13 hotfix。
     if touch_last_used and top:
         ids = [h.id for h in top]
         try:
-            asyncio.create_task(_touch_last_used(db=db, ids=ids, trace_id=trace_id))
+            asyncio.create_task(_touch_last_used(ids=ids, trace_id=trace_id))
         except RuntimeError:
             # 极少数：调用方没在 event loop 里跑（同步上下文）
             log.warning("retriever.touch.no_loop")
@@ -311,18 +316,25 @@ def _compute_final_score(h: MemoryHit, *, now: datetime) -> float:
     )
 
 
-async def _touch_last_used(*, db: Any, ids: list[str], trace_id: str) -> None:
-    """异步把命中行的 last_used_at 推到 NOW()；失败不影响检索结果。"""
+async def _touch_last_used(*, ids: list[str], trace_id: str) -> None:
+    """异步把命中行的 last_used_at 推到 NOW()。
+
+    自带 ``AsyncSessionLocal()`` —— **绝不**借请求级 db session，
+    因为 fire-and-forget task 的生命周期超过 FastAPI 请求作用域，
+    共享 session 会触发 ``IllegalStateChangeError``（D3-3 同样的坑）。
+    失败不影响检索结果。
+    """
     log = logger.bind(component="memory_retriever", trace_id=trace_id)
     try:
-        await db.execute(
-            text(
-                "UPDATE memories SET last_used_at = NOW() "
-                "WHERE id = ANY(:ids)"
-            ),
-            {"ids": ids},
-        )
-        await db.commit()
+        async with AsyncSessionLocal() as own_db:
+            await own_db.execute(
+                text(
+                    "UPDATE memories SET last_used_at = NOW() "
+                    "WHERE id = ANY(:ids)"
+                ),
+                {"ids": ids},
+            )
+            await own_db.commit()
         log.bind(touched=len(ids)).info("retriever.touch.ok")
     except Exception as exc:
         log.bind(error_type=type(exc).__name__).warning("retriever.touch.failed")
