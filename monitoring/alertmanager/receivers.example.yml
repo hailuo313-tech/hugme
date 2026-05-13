@@ -1,0 +1,33 @@
+# Example receivers for enabling real Discord/email delivery later.
+# Do not mount this file as-is. Copy the relevant receiver blocks into a private
+# Alertmanager config after replacing placeholders with deployment secrets.
+
+receivers:
+  - name: critical-ops
+    webhook_configs:
+      - url: https://discord.com/api/webhooks/REPLACE_ME
+        send_resolved: true
+    email_configs:
+      - to: ops@example.com
+        from: eris-alerts@example.com
+        smarthost: smtp.example.com:587
+        auth_username: eris-alerts@example.com
+        auth_password: REPLACE_ME
+        require_tls: true
+        send_resolved: true
+
+  - name: warning-ops
+    webhook_configs:
+      - url: https://discord.com/api/webhooks/REPLACE_ME
+        send_resolved: true
+
+route:
+  routes:
+    - matchers:
+        - severity="critical"
+      receiver: critical-ops
+      repeat_interval: 1h
+    - matchers:
+        - severity="warning"
+      receiver: warning-ops
+      repeat_interval: 6h

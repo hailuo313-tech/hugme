@@ -34,6 +34,10 @@ Secrets required later:
 
 Do not store real notification secrets in repository files. Put them in `/opt/eris/.env` only when alert delivery is intentionally enabled.
 
+Alertmanager does not expand `.env` values inside YAML by itself. To enable real delivery later, copy
+`monitoring/alertmanager/receivers.example.yml` into a private deployment config and render it with the real secrets
+outside Git.
+
 ## Core Alert Thresholds
 
 | Alert | Severity | Expression intent | Duration | Action |
@@ -53,6 +57,23 @@ Do not store real notification secrets in repository files. Put them in `/opt/er
 | `ErisStripeWebhookFailure` | critical | Stripe webhook verification failures > 0 | 5m | Check `STRIPE_WEBHOOK_SECRET` and endpoint |
 | `ErisMetricsMissing` | warning | expected app metric absent | 15m | Confirm `/metrics` and Prometheus scrape config |
 
+## Error Category Mapping
+
+The task asks to align thresholds with Appendix A.2 error codes. The Appendix A.2 source file is not present in this
+repository yet, so the current rules use stable metric `result` categories that can map to A.2 once the contract lands:
+
+| Metric result/category | Intended Appendix A.2 bucket |
+|---|---|
+| `failed` | generic service failure |
+| `timeout` | upstream timeout |
+| `signature_failed` | auth/signature validation failure |
+| `blocked` | policy or eligibility block |
+| `duplicate` | idempotency duplicate |
+| `fallback` | degraded-mode success |
+
+When Appendix A.2 is added, update `eris-alerts.yml` annotations with the exact error code names without changing the
+alert names or receiver routes.
+
 ## Beta Alert Policy
 
 - During beta, every critical alert should have a named human owner.
@@ -66,6 +87,8 @@ Do not store real notification secrets in repository files. Put them in `/opt/er
 - `monitoring/alerts/eris-alerts.yml`
 - `monitoring/alertmanager/alertmanager.yml`
 - `monitoring/alertmanager/discord-message-template.md`
+- `monitoring/alertmanager/email-message-template.md`
+- `monitoring/alertmanager/receivers.example.yml`
 
 `alertmanager.yml` intentionally routes all alerts to `dashboard-only` for now. Real Discord/email receivers should be added only when the team is ready to test notification delivery.
 
@@ -83,12 +106,26 @@ Files updated:
 5. Send one test alert to verify formatting.
 6. Only then enable beta alert delivery.
 
+## Review Notes For Related Work
+
+- PR #5 `chore/compose-pass-feature-flags`: accepted. It passes feature flags into the API container and is required for
+  safe fallback behavior; no monitoring conflict.
+- PR #6 `chore/compose-drop-version`: accepted. Dropping top-level compose `version` reduces Docker warning noise; no
+  runtime behavior change.
+- PR #7 `feat/silent-reactivation-scheduler`: accepted with D7 implication. Scheduler adds APScheduler and
+  `SILENT_REACTIVATION_CRON`; D7 dashboards should track notification queue depth and stale pending tasks before real
+  sends are enabled.
+- SSH hardening and roadmap scp are treated as deployment facts, not source changes in this PR. They should not be
+  reimplemented from this branch.
+
 ## D7-2 Acceptance Checklist
 
 - [x] Critical and warning thresholds defined.
 - [x] Prometheus alert rules created.
 - [x] Alertmanager routing template created.
 - [x] Discord notification copy template created.
+- [x] Email notification copy template created.
+- [x] Receiver enablement example created without real secrets.
 - [x] Monitoring compose template updated for Alertmanager.
 - [x] Active runtime left unchanged.
 - [ ] Real Discord/email delivery enabled in a later task.
