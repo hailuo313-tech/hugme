@@ -142,6 +142,70 @@ docker exec eris-postgres psql -U eris -d eris -c \
 
 **预期**：寒暄/嗯哼/表情包等不入库；身份事实/偏好/关系/创伤等 importance≥5 才入库。
 
+## Embedding Worker: 异步 backfill (D3-4)
+
+**核心**：`app/services/embedding_worker.py` 在 FastAPI lifespan 里启动一个
+APScheduler IntervalTrigger（默认每 30s），扫 `memories.embedding IS NULL` 的行,
+批量调 `services/embedder.py`（OpenAI `text-embedding-3-small` / 1536 维）后写回。
+
+**为什么异步而不同步**：D3-3 已经为每条用户消息花了一次 LLM 评分，再叠加 embedding
+会拉长用户回复路径 0.3–0.8s。embedding 失败也不影响行本身已经入库的事实，下一个
+tick 自动重试。
+
+**互斥**：`pg_try_advisory_lock(6_300_410)` + `SELECT ... FOR UPDATE SKIP LOCKED`
+双保险，多 worker 进程 / 多 pod 安全；UPDATE 条件再加 `AND embedding IS NULL` 做幂等。
+
+**环境变量**（`.env`）：
+
+```bash
+EMBEDDING_WORKER_ENABLED=true              # 总开关；false 时 scheduler 不启动
+OPENAI_API_KEY=sk-...                      # 直连 OpenAI 的 key；缺失则 worker 自动跳过
+EMBEDDING_MODEL=text-embedding-3-small     # 1536 维必须和 schema vector(1536) 对齐
+EMBEDDING_BATCH_SIZE=32                    # 单次 tick 最多处理多少行
+EMBEDDING_POLL_SECONDS=30                  # 轮询间隔，最小 5
+```
+
+**日志事件**（均带 `component=embedding_worker` 或 `component=embedder`）：
+
+```text
+embedding_worker.scheduler.started        interval_s / batch_size
+embedding_worker.scheduler.disabled       (开关关闭)
+embedding_worker.scheduler.no_api_key     (key 缺失)
+embedding_worker.tick.batch_pulled        batch=N
+embedding_worker.tick.empty               (队列空，正常)
+embedding_worker.tick.embed_failed        error
+embedding_worker.tick.persisted           selected / embedded / updated / model
+embedding_worker.skip_no_lock             (advisory lock 被别人占着)
+embedder.call.start / .ok / .timeout / .4xx / .5xx
+```
+
+**Smoke**（服务器上跑）：
+
+```bash
+# 1) 编译 sanity
+docker exec eris-api python -m py_compile \
+  app/services/embedder.py app/services/embedding_worker.py && echo OK
+
+# 2) 启动日志（应在 30s 内出现 scheduler.started）
+docker logs --tail 200 eris-api | grep -E "embedding_worker\.scheduler\."
+
+# 3) 看 tick 是否在跑
+docker logs --tail 500 eris-api | grep -E "embedding_worker\.tick\."
+
+# 4) DB 进度
+docker exec eris-postgres psql -U eris -d eris -c \
+  "SELECT COUNT(*) AS total,
+          COUNT(*) FILTER (WHERE embedding IS NOT NULL) AS embedded,
+          COUNT(*) FILTER (WHERE embedding IS NULL) AS pending
+   FROM memories WHERE is_active = true;"
+```
+
+**预期**：发完一条"值得记住"的消息后，~30s 内 `pending` 减 1、`embedded` 加 1。
+
+**降级**：OpenAI key 失效 / 5xx → 行积压，每次 tick log 一次 `embed_failed`，
+切回好 key 后自动追平；schema 维度不匹配 → UPDATE 报错（不会出现在正常路径，
+切模型前需 migrate schema）。
+
 ## LLM Orchestrator: 10 层 Prompt 结构 (D3-2)
 
 **核心**：`app/services/prompt_builder.py` 把 system content 拆成 10 个层，
