@@ -10,7 +10,7 @@ D2-1: OpenRouter LLM 客户端
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, Optional
 
 import httpx
 from loguru import logger
@@ -38,7 +38,7 @@ class LLMResult(BaseModel):
     usage:         dict[str, Any] = {}
     latency_ms:    float
     fallback_used: bool = False
-    error:         str | None = None
+    error:         Optional[str] = None
 
 
 # ── 内部工具 ──────────────────────────────────────────
@@ -108,7 +108,7 @@ async def chat(
     trace_id:    str,
     temperature: float = 0.85,
     max_tokens:  int   = 800,
-    force_model: str | None = None,
+    force_model: Optional[str] = None,
 ) -> LLMResult:
     """
     主入口：发送消息列表，返回 LLMResult。
@@ -147,7 +147,7 @@ async def chat(
             )
 
     # ── 主模型 ────────────────────────────────────────
-    primary_err: str | None = None
+    primary_err: Optional[str] = None
     try:
         content, usage = await _call_once(messages, PRIMARY_MODEL, PRIMARY_TIMEOUT_S, trace_id)
         return LLMResult(

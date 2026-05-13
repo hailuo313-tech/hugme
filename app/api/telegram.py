@@ -16,6 +16,7 @@ from sqlalchemy import text
 from core.database import get_db
 from core.config import settings
 from loguru import logger
+from typing import Optional
 import uuid, time, json
 import httpx
 import redis.asyncio as aioredis
@@ -76,7 +77,7 @@ async def _push_context(redis, conv_id: str, role: str, content: str, msg_id: st
     pipe.expire(key, CONTEXT_TTL_SECONDS)
     await pipe.execute()
 
-async def _send_tg(chat_id: int, text_content: str, trace_id: str) -> int | None:
+async def _send_tg(chat_id: int, text_content: str, trace_id: str) -> Optional[int]:
     token = settings.TELEGRAM_BOT_TOKEN
     if not token:
         return None

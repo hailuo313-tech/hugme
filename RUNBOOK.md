@@ -73,6 +73,64 @@ curl -H 'X-Trace-Id: manual-check-001' https://hugme2.com/health
 docker logs --tail 200 eris-api | grep manual-check-001
 ```
 
+## Production Deploy Guard
+
+Production deploys must use the checked-in guard script:
+
+```bash
+cd /opt/eris
+./deploy.sh
+```
+
+The script refuses to deploy when:
+
+- the server is not on `main`;
+- the worktree is dirty, including untracked files;
+- `git pull --ff-only origin main` cannot fast-forward;
+- the API health check fails after rebuild.
+
+Do not deploy production with raw commands such as:
+
+```bash
+git checkout feature/something
+git pull
+docker compose up -d --build api
+```
+
+If a rollback is needed, first preserve evidence, then follow the rollback
+section below. Any emergency deploy that bypasses `deploy.sh` must be written
+up in this runbook.
+
+## Branch Protection Emergency Bypass
+
+Normal merges must go through GitHub branch protection: PR, one approval,
+resolved conversations, up-to-date branch, and required checks.
+
+Required checks must be introduced in this order:
+
+```text
+merge workflow to main -> confirm green run on main -> add it as required
+```
+
+If branch protection itself blocks the CI bootstrap PR, or production is already
+down and a fix cannot wait for the normal queue, the only approved bypass is:
+
+```bash
+gh pr merge <pr-number> --admin --squash
+```
+
+After using `--admin`, immediately add an incident note here with:
+
+- date/time;
+- PR number and commit;
+- why the bypass was necessary;
+- production impact;
+- validation commands and output;
+- follow-up to restore normal branch protection if it was temporarily changed.
+
+Direct pushes, force pushes, branch deletion/recreation, and local protected
+branch rewrites are not approved bypass paths.
+
 Nginx logs:
 
 ```bash

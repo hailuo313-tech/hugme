@@ -46,7 +46,7 @@ LAYER_ORDER: tuple[str, ...] = (
     "L5_USER_PROFILE",
     "L6_MEMORY",
     "L7_CONVERSATION_STATE",
-    # L8_RECENT_CONTEXT 不进 system，单独走 messages[1..-1]
+    "L8_RECENT_CONTEXT",  # 不进 system，单独走 messages[1..-1]
     "L9_FORMAT",
     "L10_ANCHOR",
 )

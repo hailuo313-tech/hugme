@@ -275,19 +275,30 @@ def _rule_prefilter(content: str) -> Optional[str]:
         return "empty"
 
     stripped = content.strip()
-    if len(stripped) < MIN_CONTENT_LEN:
-        return "too_short"
+    if not stripped:
+        return "empty"
 
     # acknowledgement 全匹配（去掉末尾标点）
     normalized = re.sub(r"[\s\.\!\?\,\，\。\！\？\、]+$", "", stripped).lower()
-    if normalized in ACKNOWLEDGEMENTS:
+    if len(stripped) > 1 and normalized in ACKNOWLEDGEMENTS:
         return "acknowledgement"
 
     # 全 emoji / 全标点
     if _EMOJI_OR_PUNCT_RE.match(stripped):
         return "emoji_or_punct_only"
 
+    if _effective_len(stripped) < MIN_CONTENT_LEN:
+        return "too_short"
+
     return None
+
+
+def _effective_len(text: str) -> int:
+    """CJK 字符按 2 计，避免短中文事实被英文长度阈值误杀。"""
+    total = 0
+    for ch in text:
+        total += 2 if "\u4e00" <= ch <= "\u9fff" else 1
+    return total
 
 
 async def _is_duplicate(redis: Any, user_id: str, content: str) -> bool:

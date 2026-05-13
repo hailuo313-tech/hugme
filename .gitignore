@@ -12,6 +12,7 @@ admin/out/
 admin/.turbo/
 *.log
 logs/
+backups/
 tmp/
 data/
 pgdata/

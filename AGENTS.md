@@ -38,11 +38,11 @@
 ## 3. 标准工作流（**唯一允许的循环**）
 
 ```text
-[本机] 切分支 → 改文件 → git add / commit → git push origin feature/xxx
+[本机] 从最新 origin/main 切分支 → 改文件 → git add / commit → git push origin feature/xxx
    ↓
 [GitHub] PR → 人 / Codex review → 合并到 main
    ↓
-[服务器] ssh → cd /opt/eris → git pull origin main → docker compose up -d --build
+[服务器] ssh → cd /opt/eris → ./deploy.sh
    ↓
 [验证] docker compose logs / pytest / 监控
 
@@ -51,6 +51,19 @@ cd C:\Users\13267\Desktop\产品\eris
 git checkout main
 git pull origin main
 git checkout -b feature/<dx-x>-<short-name>
+
+3.1.1 分支基线检查（强制）
+所有功能 / 修复 / 文档 / release 分支默认必须从最新 `origin/main` 切出。
+开 PR 前必须看：
+
+git fetch origin
+git merge-base --is-ancestor origin/main HEAD
+git diff --name-only origin/main...HEAD
+
+如果 diff 里出现当前任务以外的文件，停止，重新从 `origin/main` 建分支。
+需要 stack PR 时必须在 PR 正文写清：
+Stacked on: #<parent-pr>
+Do not merge before: #<parent-pr>
 
 3.2 提交
 git status
@@ -61,11 +74,10 @@ git commit -m "feat(d2-2): llm orchestrator replaces echo (refs D2-2)"
 git push -u origin feature/<dx-x>-<short-name>
 到 GitHub 网页发 PR，标题与首行 commit 一致，正文按 §6 模板。
 
-3.4 部署（由人执行，不让 AI 自动登服务器）
+3.4 部署（由人执行；生产只允许 deploy.sh）
 ssh -i C:\Users\13267\.ssh\eris_67.216.204.137 -p 2222 root@67.216.204.137
 cd /opt/eris
-git pull origin main
-docker compose up -d --build
+./deploy.sh
 docker compose ps
 docker compose logs -f api | head -n 200
 
@@ -81,11 +93,14 @@ monitoring/                        Prometheus / Grafana / Alertmanager 配置
 nginx/                             反向代理与静态资源相关
 ops/observability/logging-spec.md  日志规范（D1-4 产出，所有日志须遵循）
 scripts/                           部署、数据库初始化等
+deploy.sh                          生产唯一部署入口；拒绝非 main / dirty tree / 非 fast-forward
 RUNBOOK.md                         上线 / 排障手册
 D*_*.md 根目录设计文档              各任务卡的设计依据，写新代码前必读对应文件
+docs/OPS_GOVERNANCE.md             分支保护、PR 顺序、生产部署护栏
 
 5. 分支与命名
-主干分支：main（只能通过 PR 合并，不允许直接 push）。
+主干分支：main（受保护；只能通过 PR 合并，不允许直接 push）。
+发布分支：release/*（同样受保护；只能通过 PR 合并，不允许直接 push）。
 功能分支：feature/<dx-x>-<slug>，如 feature/d2-2-llm-orchestrator。
 修复分支：fix/<scope>-<slug>。
 文档分支：docs/<slug>。
@@ -119,7 +134,13 @@ feat(d2-2): ...、fix(api): ...、docs(roadmap): ...、chore(ci): ...
 7. 红线（任何 AI 都不许跨越）
 ❌ SSH 上服务器后用 vim、nano、sed -i 等修改源码。
 ❌ 在服务器执行 git commit / git push（服务器只 pull）。
-❌ 直接 push 到 main（除非是 typo / docs 且经过人同意）。
+❌ 直接 push 到 main 或 release/*。
+❌ 在生产服务器从 feature / fix / docs 分支 build。
+❌ 绕过 `/opt/eris/deploy.sh` 直接 `docker compose up -d --build api` 做生产部署。
+❌ child hotfix 直接合到 main，而 parent feature PR 尚未合并。child PR 必须 target parent branch，或等 parent 合并后再开。
+❌ PR 里混入当前任务之外的文件；发现后必须重建分支或拆 PR。
+❌ 在 CI workflow 尚未合入 main 并至少跑绿一次前，把该 workflow 设为 required check。
+❌ 用普通日常改动触发 `gh pr merge --admin`；`--admin` 只允许生产火灾或 branch protection 自身锁死恢复。
 ❌ 把 .env、密钥、token、个人数据写进 commit。
 ❌ 提交 admin/node_modules/、admin/.next/、数据卷、转储文件。
 ❌ 重写本任务以外的模块（即使代码丑也先记 TODO，单独 PR）。
@@ -153,6 +174,9 @@ docker compose up -d --build
 服务器 git pull 覆盖临时改动；
 在 PR 里注明「先服务器止血、再补 PR」。
 3.密钥泄露：立刻在 GitHub 撤销对应 token；改 .env（仍不进库）；通知人。
+4.Branch protection 锁死或生产火灾：唯一合法绕过是
+gh pr merge <pr-number> --admin --squash
+使用后必须在 RUNBOOK.md 写 incident note（PR、原因、影响、验证、后续恢复）。
 
 11. 新 AI 上工的 30 秒检查表
 
@@ -169,6 +193,7 @@ docker compose up -d --build
 
 12. 修订记录
 v1（2026-05-12）：初版。定义三端职责、工作流、红线、日志、测试、紧急回滚。
+v2（2026-05-13）：补充分支保护、PR 基线检查、stack PR 顺序、生产 deploy.sh 护栏。
 
 ---
 
