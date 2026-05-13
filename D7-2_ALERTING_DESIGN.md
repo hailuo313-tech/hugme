@@ -11,8 +11,8 @@ Define the first ERIS alerting slice on top of the D7-1 monitoring plan. This ta
 ## Current State
 
 - D7-1 monitoring assets exist under `/opt/eris/monitoring`.
-- Prometheus and Grafana are templates only; they are not running.
-- `/metrics` is not implemented yet, so application metric alerts are design-ready but inactive until D7 Phase B.
+- Prometheus, Grafana, and Alertmanager are optional compose services, not part of the default app stack.
+- `/metrics` is exposed by the API and should be scraped at `eris-api:8000/metrics`.
 - `/health/detail` is live and returns `api/db/redis`.
 - Stripe webhook handling is still a placeholder, so Stripe alert rules are marked as pending.
 
@@ -34,6 +34,9 @@ Secrets required later:
 
 Do not store real notification secrets in repository files. Put them in `/opt/eris/.env` only when alert delivery is intentionally enabled.
 
+Alertmanager delivery is disabled by default unless `DISCORD_WEBHOOK_URL` is set. The monitoring compose template renders
+`monitoring/alertmanager/alertmanager.yml` with the environment value at container startup.
+
 ## Core Alert Thresholds
 
 | Alert | Severity | Expression intent | Duration | Action |
@@ -53,6 +56,23 @@ Do not store real notification secrets in repository files. Put them in `/opt/er
 | `ErisStripeWebhookFailure` | critical | Stripe webhook verification failures > 0 | 5m | Check `STRIPE_WEBHOOK_SECRET` and endpoint |
 | `ErisMetricsMissing` | warning | expected app metric absent | 15m | Confirm `/metrics` and Prometheus scrape config |
 
+## Error Category Mapping
+
+The task asks to align thresholds with Appendix A.2 error codes. The Appendix A.2 source file is not present in this
+repository yet, so the current rules use stable metric `result` categories that can map to A.2 once the contract lands:
+
+| Metric result/category | Intended Appendix A.2 bucket |
+|---|---|
+| `failed` | generic service failure |
+| `timeout` | upstream timeout |
+| `signature_failed` | auth/signature validation failure |
+| `blocked` | policy or eligibility block |
+| `duplicate` | idempotency duplicate |
+| `fallback` | degraded-mode success |
+
+When Appendix A.2 is added, update `eris-alerts.yml` annotations with the exact error code names without changing the
+alert names or receiver routes.
+
 ## Beta Alert Policy
 
 - During beta, every critical alert should have a named human owner.
@@ -66,8 +86,10 @@ Do not store real notification secrets in repository files. Put them in `/opt/er
 - `monitoring/alerts/eris-alerts.yml`
 - `monitoring/alertmanager/alertmanager.yml`
 - `monitoring/alertmanager/discord-message-template.md`
+- `monitoring/alertmanager/email-message-template.md`
+- `monitoring/alertmanager/receivers.example.yml`
 
-`alertmanager.yml` intentionally routes all alerts to `dashboard-only` for now. Real Discord/email receivers should be added only when the team is ready to test notification delivery.
+`alertmanager.yml` routes critical alerts to the `discord` receiver. If `DISCORD_WEBHOOK_URL` is empty, the compose command substitutes a disabled localhost URL so alerts cannot accidentally leave the server.
 
 Files updated:
 
@@ -78,10 +100,22 @@ Files updated:
 
 1. Implement `/metrics` and application counters/gauges.
 2. Start Prometheus/Grafana locally or behind SSH-only access.
-3. Start Alertmanager with placeholder receiver.
-4. Add real `DISCORD_WEBHOOK_URL` and/or SMTP credentials.
+3. Set `DISCORD_WEBHOOK_URL` in the private server `.env`.
+4. Start Alertmanager.
 5. Send one test alert to verify formatting.
-6. Only then enable beta alert delivery.
+6. Add email receiver later if the beta needs email escalation.
+
+## Review Notes For Related Work
+
+- PR #5 `chore/compose-pass-feature-flags`: accepted. It passes feature flags into the API container and is required for
+  safe fallback behavior; no monitoring conflict.
+- PR #6 `chore/compose-drop-version`: accepted. Dropping top-level compose `version` reduces Docker warning noise; no
+  runtime behavior change.
+- PR #7 `feat/silent-reactivation-scheduler`: accepted with D7 implication. Scheduler adds APScheduler and
+  `SILENT_REACTIVATION_CRON`; D7 dashboards should track notification queue depth and stale pending tasks before real
+  sends are enabled.
+- SSH hardening and roadmap scp are treated as deployment facts, not source changes in this PR. They should not be
+  reimplemented from this branch.
 
 ## D7-2 Acceptance Checklist
 
@@ -89,7 +123,10 @@ Files updated:
 - [x] Prometheus alert rules created.
 - [x] Alertmanager routing template created.
 - [x] Discord notification copy template created.
+- [x] Email notification copy template created.
+- [x] Receiver enablement example created without real secrets.
 - [x] Monitoring compose template updated for Alertmanager.
-- [x] Active runtime left unchanged.
-- [ ] Real Discord/email delivery enabled in a later task.
+- [x] Active runtime left unchanged until the optional monitoring compose stack is started.
+- [x] Discord delivery can be enabled by setting `DISCORD_WEBHOOK_URL`.
+- [ ] Real email delivery enabled in a later task.
 - [ ] Alert rules exercised after `/metrics` is implemented.
