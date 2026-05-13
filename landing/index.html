@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ERIS — 情绪陪伴 AI</title>
+<meta name="description" content="ERIS 情绪陪伴 AI · 24/7 倾听 · 多语言支持">
+<style>
+:root {
+  --bg: #0b1220;
+  --bg-soft: #0f172a;
+  --card: #111827;
+  --card-2: #1e293b;
+  --border: #1f2937;
+  --border-2: #334155;
+  --text: #e5e7eb;
+  --muted: #94a3b8;
+  --dim: #64748b;
+  --accent: #60a5fa;
+  --accent-2: #a78bfa;
+  --green: #10b981;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+               "Microsoft YaHei", Roboto, sans-serif;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  scroll-behavior: smooth;
+}
+
+body { min-height: 100vh; display: flex; flex-direction: column; }
+
+/* ── Hero ── */
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 100px 24px 64px;
+  position: relative;
+  overflow: hidden;
+}
+
+.hero::before {
+  content: "";
+  position: absolute;
+  top: -120px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, rgba(96,165,250,.12) 0%, rgba(167,139,250,.06) 40%, transparent 70%);
+  pointer-events: none;
+}
+
+.logo {
+  font-size: 64px;
+  line-height: 1;
+  margin-bottom: 16px;
+  position: relative;
+}
+
+.brand {
+  font-size: 42px;
+  font-weight: 800;
+  letter-spacing: -.03em;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 16px;
+}
+
+.tagline {
+  font-size: 20px;
+  color: var(--muted);
+  max-width: 480px;
+  margin-bottom: 40px;
+}
+
+.cta-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 36px;
+  font-size: 17px;
+  font-weight: 600;
+  color: #0b1220;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  border: none;
+  border-radius: 12px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform .15s, box-shadow .15s;
+}
+
+.cta-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(96,165,250,.3);
+}
+
+.cta-btn svg {
+  width: 22px;
+  height: 22px;
+  fill: currentColor;
+}
+
+/* ── Features ── */
+.features {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 24px 80px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 20px;
+}
+
+.feature-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 28px 24px;
+  transition: border-color .15s, transform .15s;
+}
+
+.feature-card:hover {
+  border-color: var(--border-2);
+  transform: translateY(-2px);
+}
+
+.feature-icon {
+  font-size: 32px;
+  margin-bottom: 14px;
+}
+
+.feature-card h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.feature-card p {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+/* ── Pricing ── */
+.pricing {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 0 24px 80px;
+  text-align: center;
+}
+
+.section-title {
+  font-size: 28px;
+  font-weight: 700;
+  margin-bottom: 12px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.section-sub {
+  color: var(--muted);
+  font-size: 15px;
+  margin-bottom: 32px;
+}
+
+.pricing-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 36px 32px;
+  position: relative;
+  overflow: hidden;
+}
+
+.pricing-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+}
+
+.pricing-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  padding: 4px 12px;
+  border-radius: 20px;
+  background: rgba(96,165,250,.12);
+  color: var(--accent);
+  border: 1px solid rgba(96,165,250,.25);
+  margin-bottom: 20px;
+}
+
+.pricing-amount {
+  font-size: 48px;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.pricing-period {
+  font-size: 14px;
+  color: var(--dim);
+  margin-bottom: 24px;
+}
+
+.pricing-features {
+  list-style: none;
+  text-align: left;
+  margin-bottom: 28px;
+}
+
+.pricing-features li {
+  font-size: 14px;
+  color: var(--muted);
+  padding: 8px 0;
+  border-bottom: 1px dashed rgba(51,65,85,.4);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pricing-features li:last-child { border-bottom: none; }
+
+.pricing-features li::before {
+  content: "";
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: rgba(16,185,129,.15);
+  border: 1.5px solid var(--green);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%2310b981'%3E%3Cpath d='M12.2 4.6a.75.75 0 0 1 .1 1.06l-5 5.5a.75.75 0 0 1-1.08.02L3.8 8.8a.75.75 0 0 1 1.1-1.02l1.9 2.05 4.44-4.88a.75.75 0 0 1 1.06-.1z'/%3E%3C/svg%3E");
+  background-size: 12px;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+.pricing-cta {
+  display: inline-block;
+  padding: 12px 32px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--accent);
+  background: transparent;
+  border: 1.5px solid var(--accent);
+  border-radius: 10px;
+  text-decoration: none;
+  transition: background .15s, color .15s;
+}
+
+.pricing-cta:hover {
+  background: var(--accent);
+  color: #0b1220;
+}
+
+/* ── Footer ── */
+.footer {
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+  padding: 28px 24px;
+  text-align: center;
+}
+
+.footer-links {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.footer-links a {
+  font-size: 13px;
+  color: var(--dim);
+  text-decoration: none;
+  transition: color .15s;
+}
+
+.footer-links a:hover { color: var(--muted); }
+
+.footer-copy {
+  font-size: 12px;
+  color: var(--dim);
+}
+
+/* ── Responsive ── */
+@media (max-width: 640px) {
+  .hero { padding: 72px 20px 48px; }
+  .logo { font-size: 52px; }
+  .brand { font-size: 32px; }
+  .tagline { font-size: 17px; }
+  .cta-btn { padding: 14px 28px; font-size: 16px; }
+  .features { gap: 14px; }
+  .feature-card { padding: 22px 20px; }
+  .section-title { font-size: 24px; }
+  .pricing-card { padding: 28px 22px; }
+  .pricing-amount { font-size: 40px; }
+}
+</style>
+</head>
+<body>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="logo" role="img" aria-label="ERIS logo">&#129746;</div>
+  <h1 class="brand">ERIS</h1>
+  <p class="tagline">情绪陪伴 AI · 24/7 倾听 · 多语言</p>
+  <!-- TODO: 替换 t.me/eris_bot 为真实 BotFather username -->
+  <a class="cta-btn" href="https://t.me/eris_bot" target="_blank" rel="noopener">
+    <svg viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12s5.37 12 12 12 12-5.37 12-12S18.63 0 12 0zm5.53 8.15l-1.83 8.63c-.14.62-.5.77-1.01.48l-2.8-2.06-1.35 1.3c-.15.15-.28.28-.57.28l.2-2.85 5.18-4.68c.23-.2-.05-.31-.35-.12l-6.4 4.03-2.76-.86c-.6-.19-.61-.6.13-.89l10.79-4.16c.5-.18.93.12.77.9z"/></svg>
+    在 Telegram 与 Aria 聊聊
+  </a>
+</section>
+
+<!-- Features -->
+<section class="features">
+  <div class="feature-card">
+    <div class="feature-icon">💜</div>
+    <h3>情绪感知</h3>
+    <p>基于对话上下文，识别你的情绪状态，在你脆弱时给予更多关注。</p>
+  </div>
+  <div class="feature-card">
+    <div class="feature-icon">🧠</div>
+    <h3>记得你</h3>
+    <p>长期记忆系统，不会忘记你说过的重要的事，越聊越懂你。</p>
+  </div>
+  <div class="feature-card">
+    <div class="feature-icon">🌐</div>
+    <h3>多语言</h3>
+    <p>支持中文、英文、日语等多种语言，用你最舒服的方式交流。</p>
+  </div>
+  <div class="feature-card">
+    <div class="feature-icon">🛡️</div>
+    <h3>隐私优先</h3>
+    <p>你的对话加密存储，不会用于广告或营销，你可以随时删除。</p>
+  </div>
+  <div class="feature-card">
+    <div class="feature-icon">👤</div>
+    <h3>真人后援</h3>
+    <p>当 AI 到达边界，真人运营团队会无缝接入，确保你始终被关心。</p>
+  </div>
+  <div class="feature-card">
+    <div class="feature-icon">🕛</div>
+    <h3>24/7 在线</h3>
+    <p>凌晨三点也好，午休时间也好，Aria 随时都在。</p>
+  </div>
+</section>
+
+<!-- Pricing -->
+<section class="pricing" id="pricing">
+  <h2 class="section-title">价格</h2>
+  <p class="section-sub">简单透明，随时取消</p>
+  <div class="pricing-card">
+    <span class="pricing-badge">内测中</span>
+    <div class="pricing-amount">$0</div>
+    <div class="pricing-period">内测期间完全免费</div>
+    <ul class="pricing-features">
+      <li>无限对话</li>
+      <li>情绪记忆 &amp; 长期陪伴</li>
+      <li>多语言支持</li>
+      <li>真人运营后援</li>
+    </ul>
+    <!-- TODO: 替换 t.me/eris_bot 为真实 BotFather username -->
+    <a class="pricing-cta" href="https://t.me/eris_bot" target="_blank" rel="noopener">开始体验</a>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer class="footer">
+  <nav class="footer-links">
+    <a href="#">隐私政策</a>
+    <a href="#">服务条款</a>
+    <a href="#">联系我们</a>
+  </nav>
+  <p class="footer-copy">© 2026 ERIS. All rights reserved.</p>
+</footer>
+
+</body>
+</html>
