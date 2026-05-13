@@ -212,9 +212,9 @@ async def admin_list_conversations(
     }
 
     where = """
-        WHERE (:state   IS NULL OR c.state   = :state)
-          AND (:channel IS NULL OR c.channel = :channel)
-          AND (:search  IS NULL OR u.nickname ILIKE :search OR u.external_id ILIKE :search)
+        WHERE (CAST(:state   AS TEXT) IS NULL OR c.state   = :state)
+          AND (CAST(:channel AS TEXT) IS NULL OR c.channel = :channel)
+          AND (CAST(:search  AS TEXT) IS NULL OR u.nickname ILIKE :search OR u.external_id ILIKE :search)
     """
 
     total_row = (await db.execute(
