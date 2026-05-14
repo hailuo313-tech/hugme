@@ -143,7 +143,13 @@ export default function DashboardPage() {
       router.replace("/login");
       return;
     }
-    setOperator(getOperator());
+    const op = getOperator();
+    if (!op) {
+      clearAuth();
+      router.replace("/login");
+      return;
+    }
+    setOperator(op);
   }, [router]);
 
   const load = useCallback(async () => {
@@ -202,7 +208,13 @@ export default function DashboardPage() {
     setAppliedSearch(search);
   }
 
-  if (!operator) return null;
+  if (!operator) {
+    return (
+      <div className="min-h-screen bg-slate-900 text-slate-400 flex items-center justify-center">
+        {isLoggedIn() ? "加载中…" : "正在跳转登录…"}
+      </div>
+    );
+  }
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -387,12 +399,21 @@ export default function DashboardPage() {
                     <td className="px-4 py-3 text-slate-400 text-xs">
                       {fmtTime(row.last_message_at || row.created_at)}
                     </td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-4 py-3 text-right space-x-2 whitespace-nowrap">
+                      {row.user_id && (
+                        <a
+                          href={`/admin/users/${row.user_id}`}
+                          className="text-sky-400 hover:text-sky-300 text-xs"
+                          title="用户画像"
+                        >
+                          画像
+                        </a>
+                      )}
                       <button
                         onClick={() => openDetail(row.conversation_id)}
                         className="text-violet-400 hover:text-violet-300 text-xs"
                       >
-                        查看 →
+                        详情
                       </button>
                     </td>
                   </tr>
@@ -513,6 +534,24 @@ export default function DashboardPage() {
                       value={fmtTime(detail.conversation.last_message_at)}
                     />
                   </div>
+
+                  {/* 快捷导航 */}
+                  {detail.conversation.user_id && (
+                    <div className="flex gap-3">
+                      <a
+                        href={`/admin/users/${detail.conversation.user_id}`}
+                        className="text-sm text-sky-400 hover:text-sky-300 transition"
+                      >
+                        查看画像
+                      </a>
+                      <a
+                        href={`/admin/memories?user_id=${detail.conversation.user_id}`}
+                        className="text-sm text-violet-400 hover:text-violet-300 transition"
+                      >
+                        查看记忆
+                      </a>
+                    </div>
+                  )}
 
                   {/* 消息流 */}
                   <div>

@@ -1,4 +1,8 @@
 // lib/auth.ts — JWT 存取工具（浏览器端，存在 localStorage）
+// 须与 next.config.js 的 basePath=/admin 一致（硬跳转不能用 "/login"）
+
+export const ADMIN_BASE_PATH = "/admin";
+export const LOGIN_PATH = `${ADMIN_BASE_PATH}/login`;
 
 export const TOKEN_KEY = "eris_admin_token";
 export const OPERATOR_KEY = "eris_admin_operator";
@@ -55,7 +59,7 @@ export async function apiFetch<T>(
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
   if (res.status === 401) {
     clearAuth();
-    window.location.href = "/login";
+    window.location.href = LOGIN_PATH;
     throw new Error("Unauthorized");
   }
   if (!res.ok) {
