@@ -19,8 +19,8 @@ Pipeline
   历史，但跨用户偏见、跨 character、importance=2 的废话也会进来。
 - 纯 SQL：好过滤 user / type，但没法理解"颜色"≈"色彩"。
 - Hybrid：用 SQL 把"哪些行是有效候选"先砍掉一刀（O(行) → O(k_candidates)），
-  再让 cosine + rerank 做精排。生产典型规模（≤10k 行/用户），全表 + IVFFLAT 都能扛；
-  IVFFLAT 索引留到 D8 性能调优阶段再加，不上预先优化。
+  再让 cosine + rerank 做精排。生产典型规模（≤10k 行/用户），全表扫描可接受；
+  **D8-1 / D8-2** 索引与迁移见 `docs/D8_PERFORMANCE_INDEXES.md`（IVFFLAT 建议在 embedding 回填后再建）。
 - 余弦 vs L2：text-embedding-3-small 是 L2-normalized，两者排序等价，
   ``<=>`` 语义更直观（[0, 2] 越小越相似；similarity = 1 - distance ∈ [-1, 1]）。
 
