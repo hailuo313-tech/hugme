@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { saveAuth, isLoggedIn, API_BASE } from "@/lib/auth";
+import { saveAuth, isLoggedIn, getOperator, clearAuth, API_BASE } from "@/lib/auth";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -12,7 +12,12 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (isLoggedIn()) router.replace("/");
+    if (!isLoggedIn()) return;
+    if (!getOperator()) {
+      clearAuth();
+      return;
+    }
+    router.replace("/");
   }, [router]);
 
   async function handleSubmit(e: React.FormEvent) {
