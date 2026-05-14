@@ -179,7 +179,7 @@ async def retrieve(
     # 触发 sqlalchemy.exc.IllegalStateChangeError。这是 D3-3 memory_writer
     # 早就修过的同一个坑，D4-1 上线时复发，2026-05-13 hotfix。
     if touch_last_used and top:
-        ids = [h.id for h in top]
+        ids = sorted(h.id for h in top)
         try:
             asyncio.create_task(_touch_last_used(ids=ids, trace_id=trace_id))
         except RuntimeError:
