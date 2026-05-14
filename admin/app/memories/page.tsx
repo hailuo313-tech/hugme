@@ -153,7 +153,7 @@ function MemoriesContent() {
     } else {
       params.delete("user_id");
     }
-    router.replace(`/memories?${params.toString()}`);
+    router.replace(`/admin/memories?${params.toString()}`);
     setUserId(uid);
   }
 
@@ -205,7 +205,7 @@ function MemoriesContent() {
               setUserId("");
               setMemories([]);
               setError(null);
-              router.replace("/memories");
+              router.replace("/admin/memories");
               setTimeout(() => inputRef.current?.focus(), 50);
             }}
             className="text-slate-400 hover:text-white text-sm transition"
@@ -240,7 +240,7 @@ function MemoriesContent() {
           <p className="text-slate-600 text-xs">
             也可以通过 URL 参数直接访问，例如{" "}
             <code className="bg-slate-700 px-1.5 py-0.5 rounded text-slate-400">
-              /memories?user_id=xxx
+              /admin/memories?user_id=xxx
             </code>
           </p>
         </div>
