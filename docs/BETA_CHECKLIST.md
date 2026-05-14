@@ -5,6 +5,10 @@ engineer in the loop.
 
 ## 1. Preflight
 
+> **运营后台 UI 检查**：除下方服务器命令外，还需完成
+> [`docs/ADMIN_BETA_PREFLIGHT.md`](./ADMIN_BETA_PREFLIGHT.md) 的 §1–§7
+> 全部步骤（约 5 分钟），确认后台可正常登录、查看会话、退出，再邀请用户。
+
 Run these checks before sending any invite:
 
 ```bash
