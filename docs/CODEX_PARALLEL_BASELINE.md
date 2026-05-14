@@ -10,7 +10,7 @@ Generated from current `main` baseline on 2026-05-14.
 
 | File | Workflow name | Trigger | Branch filter | Jobs / check names | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `.github/workflows/pr-required-gates.yml` | `PR required gates` | `pull_request` | `main` only | job ids: `admin-ci`, `backend-ci`, `ops-guard`; display names render as mojibake Chinese in the current checkout | No `push` trigger. No `release/*` trigger. All three jobs are placeholders that only `echo ... ok`. |
+| `.github/workflows/pr-required-gates.yml` | `PR required gates` | `pull_request` | `main` only | job ids: `admin-ci`, `backend-ci`, `ops-guard`; display names may render as mojibake Chinese in some clients | No `push` trigger. No `release/*` trigger. **CUR-D8-01:** `admin-ci` runs `npm ci` + `npm run build`; `backend-ci` runs Python 3.12 + `compileall` + `pytest -q`; `ops-guard` runs file/layout + `bash -n` checks (see `docs/PR_GATES_D8.md`). |
 
 ### Required Checks / Branch Protection
 
@@ -38,8 +38,9 @@ Risks to reconcile before tightening settings:
   blindly as required check labels.
 - `release/*` is protected by the ruleset, but the current workflow only runs
   for PRs targeting `main`.
-- The current jobs are placeholders. Do not make them required as a quality
-  gate until they run real admin/backend/ops checks.
+- After **CUR-D8-01** lands on `main`, smoke a fresh PR: if all three jobs are
+  green, the repo owner may enable them as required checks (still follow
+  `docs/PR_GATES_D8.md` for exact names from the PR UI).
 
 ## Minimum Post-Deploy Smoke
 
