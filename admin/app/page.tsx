@@ -143,7 +143,14 @@ export default function DashboardPage() {
       router.replace("/login");
       return;
     }
-    setOperator(getOperator());
+    const op = getOperator();
+    if (!op) {
+      // token 存在但 operator 数据缺失/损坏（half-auth）→ 清除并重新登录
+      clearAuth();
+      router.replace("/login");
+      return;
+    }
+    setOperator(op);
   }, [router]);
 
   const load = useCallback(async () => {
@@ -202,7 +209,14 @@ export default function DashboardPage() {
     setAppliedSearch(search);
   }
 
-  if (!operator) return null;
+  // operator 从 localStorage 读取时有短暂异步窗口；显示骨架而非白屏
+  if (!operator) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+        <div className="text-slate-500 text-sm animate-pulse">加载中…</div>
+      </div>
+    );
+  }
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 

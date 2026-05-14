@@ -55,7 +55,8 @@ export async function apiFetch<T>(
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
   if (res.status === 401) {
     clearAuth();
-    window.location.href = "/login";
+    // basePath=/admin 时 window.location 不会自动补 basePath，须手动加
+    window.location.href = "/admin/login";
     throw new Error("Unauthorized");
   }
   if (!res.ok) {

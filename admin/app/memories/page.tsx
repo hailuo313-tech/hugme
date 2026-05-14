@@ -358,10 +358,24 @@ export default function MemoriesPage() {
       router.replace("/login");
       return;
     }
-    setOperator(getOperator());
+    const op = getOperator();
+    if (!op) {
+      // half-auth：token 有但 operator 数据损坏 → 清除并重新登录
+      clearAuth();
+      router.replace("/login");
+      return;
+    }
+    setOperator(op);
   }, [router]);
 
-  if (!operator) return null;
+  // 显示加载骨架而非白屏
+  if (!operator) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+        <div className="text-slate-500 text-sm animate-pulse">加载中…</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-900 text-white">
