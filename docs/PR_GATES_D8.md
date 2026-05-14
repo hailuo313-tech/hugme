@@ -27,6 +27,227 @@ check names GitHub shows on PRs. Avoid guessing from job ids if display names
 change. Some Windows shells may render these Chinese names as mojibake; use the
 GitHub PR UI as the source of truth.
 
+## COD-D8-01 CI Replacement Acceptance Details
+
+This section is the copy source for replacing the placeholder jobs in
+`.github/workflows/pr-required-gates.yml`. Cursor can implement the workflow
+from these details without inventing commands.
+
+Global workflow rules:
+
+- Trigger stays `pull_request` to `main`.
+- `permissions: contents: read` stays unchanged.
+- `concurrency` stays enabled with `cancel-in-progress: true`.
+- Runner stays `ubuntu-latest` for all three jobs.
+- Use built-in dependency caching from `actions/setup-python` and
+  `actions/setup-node`; do not add a separate `actions/cache` step unless a
+  measured cache miss proves it is needed.
+- Do not enable branch-protection required checks until this real workflow has
+  already landed on `main` and passed once on a fresh PR.
+
+### `backend-ci`
+
+Display name:
+
+```yaml
+name: 后端-ci
+```
+
+Exact setup and commands:
+
+```yaml
+steps:
+  - uses: actions/checkout@v4
+
+  - uses: actions/setup-python@v5
+    with:
+      python-version: "3.12"
+      cache: pip
+      cache-dependency-path: |
+        app/requirements.txt
+        requirements-dev.txt
+
+  - name: Install backend dependencies
+    run: |
+      python -m pip install --upgrade pip
+      python -m pip install -r app/requirements.txt -r requirements-dev.txt
+
+  - name: Compile Python sources
+    run: python -m compileall app tests
+
+  - name: Run backend tests
+    run: pytest -q
+```
+
+Cache strategy:
+
+- Cache manager: `actions/setup-python@v5`.
+- Cache key inputs: Python version plus `app/requirements.txt` and
+  `requirements-dev.txt`.
+- Do not cache `.venv`; CI installs into the runner Python environment.
+- Do not cache `.pytest_cache`; test results must not influence later PRs.
+
+Failure examples that must fail this job:
+
+- `ModuleNotFoundError: No module named 'fastapi'`: dependency install is broken
+  or `app/requirements.txt` was not installed.
+- `zoneinfo._common.ZoneInfoNotFoundError`: `requirements-dev.txt` no longer
+  provides the Windows/local test dependency `tzdata`, or tests now depend on a
+  timezone database that is not declared.
+- `SyntaxError` or import errors from `python -m compileall app tests`.
+- Any failing test collected by `pytest -q`.
+
+Windows dev setup compatibility:
+
+- Compatible with `docs/WINDOWS_DEV_SETUP.md`: both use Python 3.12 and install
+  `app/requirements.txt` plus `requirements-dev.txt`.
+- CI uses Bash path separators (`app/requirements.txt`); Windows local docs use
+  PowerShell path separators (`app\requirements.txt`). This is expected and is
+  not a policy conflict.
+- CI must not run `scripts/bootstrap_windows_dev.ps1`; that script is for local
+  Windows bootstrap only.
+- Do not use Python 3.14 in CI. The Windows guide documents wheel failures for
+  `asyncpg` and `pydantic-core`; CI should avoid that class of failure by
+  pinning Python 3.12.
+
+### `admin-ci`
+
+Display name:
+
+```yaml
+name: 管理员-ci
+```
+
+Exact setup and commands:
+
+```yaml
+steps:
+  - uses: actions/checkout@v4
+
+  - uses: actions/setup-node@v4
+    with:
+      node-version: "20"
+      cache: npm
+      cache-dependency-path: admin/package-lock.json
+
+  - name: Install admin dependencies
+    working-directory: admin
+    run: npm ci
+
+  - name: Build admin
+    working-directory: admin
+    run: npm run build
+
+  - name: Lint admin
+    working-directory: admin
+    run: npm run lint
+```
+
+Cache strategy:
+
+- Cache manager: `actions/setup-node@v4`.
+- Cache key input: `admin/package-lock.json`.
+- Do not cache `admin/node_modules`; `npm ci` must recreate it from the lockfile.
+- Do not cache `admin/.next`; every PR must prove a fresh production build.
+
+Failure examples that must fail this job:
+
+- `npm ci` fails because `admin/package.json` and `admin/package-lock.json` are
+  out of sync.
+- `npm run build` fails on TypeScript, Next.js route, import, or basePath build
+  errors.
+- `npm run lint` fails on ESLint or Next lint violations.
+- A PR commits generated files under `admin/node_modules/` or `admin/.next/`;
+  `ops-guard` also catches this, but admin reviewers should treat it as a hard
+  failure.
+
+Windows dev setup compatibility:
+
+- No conflict with `docs/WINDOWS_DEV_SETUP.md`; that document covers Python
+  backend setup only.
+- Node 20 is the CI baseline for admin. If a future Windows admin setup doc
+  chooses another local Node version, update this section and the workflow in
+  the same PR.
+
+### `ops-guard`
+
+Display name:
+
+```yaml
+name: 操作守卫
+```
+
+Exact setup and commands:
+
+```yaml
+steps:
+  - uses: actions/checkout@v4
+    with:
+      fetch-depth: 0
+
+  - name: List changed files
+    run: git diff --name-only origin/${{ github.base_ref }}...HEAD > /tmp/changed_files
+
+  - name: Reject generated admin artifacts
+    shell: bash
+    run: |
+      if grep -E '(^|/)admin/(node_modules|\.next)/' /tmp/changed_files; then
+        echo "Generated admin artifacts must not be committed" >&2
+        exit 1
+      fi
+
+  - name: Check shell scripts
+    shell: bash
+    run: |
+      shopt -s globstar nullglob
+      scripts=(scripts/*.sh scripts/**/*.sh)
+      if [ ${#scripts[@]} -gt 0 ]; then
+        bash -n "${scripts[@]}"
+      fi
+
+  - name: Reject obvious live secrets
+    shell: bash
+    run: |
+      if git grep -nE '(sk_live_[A-Za-z0-9]+|whsec_[A-Za-z0-9]+|xox[baprs]-[A-Za-z0-9-]+)' -- .; then
+        echo "Possible live secret committed" >&2
+        exit 1
+      fi
+```
+
+Cache strategy:
+
+- No dependency cache. This job only uses Git and Bash on `ubuntu-latest`.
+- Do not install extra packages in this job.
+
+Failure examples that must fail this job:
+
+- A changed file path matches `admin/node_modules/**`.
+- A changed file path matches `admin/.next/**`.
+- `bash -n` reports syntax errors in any `scripts/**/*.sh` file.
+- `git grep` finds an obvious live key pattern such as `sk_live_...`,
+  `whsec_...`, or Slack-style `xox...` tokens.
+
+Windows dev setup compatibility:
+
+- No conflict with `docs/WINDOWS_DEV_SETUP.md`; `ops-guard` runs only in Linux
+  CI and does not replace local Windows bootstrap instructions.
+- Bash syntax checks are intentionally Linux-based because production scripts
+  run on the AlmaLinux server, not in PowerShell.
+
+### Required Check Names After Replacement
+
+After the real workflow lands on `main`, open a fresh PR and copy the exact
+check names from the GitHub PR UI. The expected names are:
+
+| Job id | Expected GitHub check name | Required status check? |
+| --- | --- | --- |
+| `backend-ci` | `后端-ci` | Yes, after the real job passes on `main` |
+| `admin-ci` | `管理员-ci` | Yes, after the real job passes on `main` |
+| `ops-guard` | `操作守卫` | Yes, after the real job passes on `main` |
+
+Do not mark the old placeholder run as proof. The acceptance run is the first
+PR run after these commands replace every `echo "... ok"` placeholder.
+
 ## Manual D8 Gate Matrix
 
 Until the workflow jobs are real, every PR body should list the commands below
