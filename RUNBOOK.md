@@ -804,3 +804,27 @@ Before `v0.1.0`:
 - DB backup exists.
 - `.env` contains no malformed lines.
 - Runbook is updated.
+
+## D8-4 Second Beta Data Report
+
+D8-4 uses a read-only report for the second beta wave. It does not add schema
+or APIs.
+
+```bash
+cd /opt/eris
+REPORT_FILE=/opt/eris/backups/d8_4_report_$(date -u +%Y%m%dT%H%M%SZ).txt \
+  DAYS=7 \
+  bash scripts/beta/d8_4_report.sh
+```
+
+The report prints D1 retention, score distribution, persisted-message token
+volume, optional cost floor estimates, 24-hour operational guardrails, and data
+quality checks.
+
+Token cost is a floor estimate until the app persists provider token usage.
+Set `PROMPT_USD_PER_1K` and `COMPLETION_USD_PER_1K` explicitly when using the
+cost column.
+
+Do not start the second beta invite wave if the report fails, `/health/detail`
+is degraded, backups are stale, or any private user endpoint is reachable
+without operator auth.

@@ -57,3 +57,24 @@ How to read results:
   creation. To manually complete the hosted Checkout page with card `4242 4242
   4242 4242`, run with `STRIPE_TEST_MODE=manual_4242` and open the printed
   `checkout_url`.
+
+## D8-4 Beta Dashboard
+
+Generate the second-beta seven-day data report from the repository root:
+
+```bash
+DAYS=7 bash scripts/beta/d8_4_report.sh
+```
+
+On the production server:
+
+```bash
+cd /opt/eris
+REPORT_FILE=/opt/eris/backups/d8_4_report_$(date -u +%Y%m%dT%H%M%SZ).txt \
+  DAYS=7 \
+  bash scripts/beta/d8_4_report.sh
+```
+
+The report covers D1 retention, score distribution, token/cost floor estimates,
+and operational guardrails for the beta window. See
+`docs/D8_4_BETA_DASHBOARD.md` for metric definitions and readiness gates.
