@@ -3,24 +3,24 @@
 This is the lightweight D8 merge-gate policy for Cursor, Devin, Codex, and
 human reviewers.
 
-Current state:
+Current state (**CUR-D8-01** — workflow is real):
 
-- `.github/workflows/pr-required-gates.yml` exists.
-- It runs on `pull_request` to `main`.
-- It defines jobs `admin-ci`, `backend-ci`, and `ops-guard`.
-- Those jobs are still placeholders (`echo "... ok"`).
+- `.github/workflows/pr-required-gates.yml` runs on `pull_request` to `main`.
+- **`admin-ci`**: `actions/setup-node@v4` (Node 20) → `npm ci` → `npm run build` in `admin/` (with npm cache from `admin/package-lock.json`).
+- **`backend-ci`**: `actions/setup-python@v5` (Python **3.12**) → `pip install -r app/requirements.txt -r requirements-dev.txt` → `python -m compileall -q app tests` → `pytest -q` (repo root; `pytest.ini` applies).
+- **`ops-guard`**: asserts `RUNBOOK.md`, `docker-compose.yml`, `app/requirements.txt`, `requirements-dev.txt`, `scripts/init.sql`, compose `services` + `api` + `postgres`; rejects **tracked** files under `admin/node_modules` or `admin/.next`; `find scripts -name '*.sh' -exec bash -n {} \;`.
 
-Decision for this task: do not change workflow YAML yet. Use this document as
-the team contract first, then make GitHub Actions real in a separate coordinated
-CI task when nobody else is editing `.github/workflows/*.yml`.
+`npm run lint` for admin is **not** in CI yet (D8 minimum remains **build**; see Admin Gate Details). Add a follow-up task if lint should block merges.
+
+This document remains the **reviewer contract**; CI is the **automated minimum**.
 
 ## Current Check Name Mapping
 
 | Job id in workflow | GitHub check display name currently seen on PRs | Current behavior | D8 risk |
 | --- | --- | --- | --- |
-| `admin-ci` | `管理员-ci` | placeholder echo | Green check does not prove admin build/lint |
-| `backend-ci` | `后端-ci` | placeholder echo | Green check does not prove pytest/import safety |
-| `ops-guard` | `操作守卫` | placeholder echo | Green check does not prove deploy/docs guardrails |
+| `admin-ci` | `管理员-ci` | `npm ci` + `npm run build` in `admin/` | Fails on lockfile drift / TS or Next build errors |
+| `backend-ci` | `后端-ci` | pip install + `compileall` + `pytest -q` | Fails on missing deps / syntax / test regressions |
+| `ops-guard` | `操作守卫` | key files + no tracked admin artifacts + `bash -n` on `scripts/**/*.sh` | Fails on broken ops layout or committed `node_modules`/`.next` |
 
 When repository Settings later enables required status checks, use the exact
 check names GitHub shows on PRs. Avoid guessing from job ids if display names
@@ -245,13 +245,15 @@ check names from the GitHub PR UI. The expected names are:
 | `admin-ci` | `管理员-ci` | Yes, after the real job passes on `main` |
 | `ops-guard` | `操作守卫` | Yes, after the real job passes on `main` |
 
-Do not mark the old placeholder run as proof. The acceptance run is the first
-PR run after these commands replace every `echo "... ok"` placeholder.
+Do not treat a **pre-CUR-D8-01** placeholder run as proof. The acceptance run is
+the first PR where all three jobs execute the real steps above.
 
 ## Manual D8 Gate Matrix
 
-Until the workflow jobs are real, every PR body should list the commands below
-that were run, or explicitly explain why a gate is not applicable.
+CI now runs the commands above on every PR to `main`. Reviewers should still use
+the matrix below for **scope judgment** (targeted tests, migrations, deploy
+notes). For non-obvious PRs, the PR body should list any **extra** verification
+that CI does not cover (for example migration dry-runs or manual staging smoke).
 
 | PR type | Examples | Required before review | Required before merge |
 | --- | --- | --- | --- |
@@ -365,52 +367,30 @@ Only keep the lines that apply. Do not claim a command ran if it did not.
 
 ## Two-Phase CI Plan
 
-### Phase 1: Manual Policy, Current D8
+### Phase 1: Manual policy (still in force)
 
-Use this document as the active rule:
-
-- Reviewers block PRs that do not list applicable verification.
-- Placeholder GitHub checks are treated as "workflow wiring works", not as test
-  proof.
+- Reviewers use this document for migrations, deploy risk, and anything CI does
+  not model (secrets, production-only smoke, data backfills).
 - The release owner keeps merge order: schema/indexes, backend API, admin UI,
   ops/docs, deploy.
 
-### Phase 2: Make Workflow Real
+### Phase 2: Automated gates (**landed** — CUR-D8-01)
 
-In a separate coordinated PR, replace placeholders with real commands:
+The workflow `.github/workflows/pr-required-gates.yml` now runs real commands
+(see **Current state** at the top of this file). The YAML excerpts under
+**COD-D8-01 CI Replacement Acceptance Details** remain the human-readable spec;
+implementation may differ slightly (for example `compileall -q`, `find … bash -n`
+instead of `globstar`).
 
-`backend-ci`:
+**Optional follow-ups** (not in CI yet): `npm run lint` in `admin-ci`;
+`ops-guard` patterns for live secrets (`git grep` heuristics from the COD-D8-01
+draft); `deploy.sh` guard when that script exists on `main`.
 
-```yaml
-- setup Python 3.9 or production-compatible version
-- install app/requirements.txt and requirements-dev.txt
-- python -m compileall app tests
-- pytest -q
-```
+Do not enable **branch protection required checks** in GitHub Settings until:
 
-`admin-ci`:
-
-```yaml
-- setup Node 20
-- cd admin
-- npm ci
-- npm run build
-```
-
-`ops-guard`:
-
-```yaml
-- verify no admin/.next or admin/node_modules files are committed
-- check shell scripts with bash -n
-- check docs-only PRs do not edit runtime paths unexpectedly
-- optionally verify deploy.sh guard once deploy.sh is on main
-```
-
-Do not enable these as required status checks in Settings until:
-
-- The workflow is already merged to `main`.
-- The checks pass on a fresh PR.
-- The exact required check names are copied from GitHub's PR UI.
+- This workflow is merged to `main` and has gone **green on at least one real PR**.
+- The exact required check names are copied from the GitHub PR UI (display names
+  may differ from job ids).
 - There is an agreed emergency/admin bypass procedure.
 
 ## Merge Rhythm
@@ -419,7 +399,8 @@ Keep D8 merges boring:
 
 1. One production-affecting merge line at a time.
 2. Rebase stale branches before review.
-3. Do not merge placeholder-only green checks as proof of quality.
+3. Treat a green PR gate run as the automated minimum; still require human
+   review for migrations and deploy risk.
 4. Do not admin-merge except for documented production incidents or protection
    lockout.
 5. After merge, deploy from clean `main` only during a maintenance window.
