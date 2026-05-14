@@ -227,6 +227,248 @@ Expected:
   the embedder is unavailable.
 - `/health/detail` stays all `ok`.
 
+## 24h Post-Execution Audit
+
+Run this audit 24 hours after the production rollout, or after one real beta
+traffic window if traffic is sparse. Fill the note template at the end of this
+section with booleans and dates so the rollout can be closed without guessing.
+
+### Audit Checklist
+
+| Item | Command / evidence | Pass | Fail / action |
+| --- | --- | --- | --- |
+| Health stayed green | `/health/detail` and `docker compose ps` | `api`, `db`, and `redis` are `ok`; containers are healthy/up | Any non-ok health or restart loop. Pause invites and inspect logs before judging index success. |
+| Indexes still valid | "Index validity" query below | All applied indexes have `is_valid=true` and `is_ready=true` | Any false value. Treat as interrupted concurrent build; use invalid-index cleanup. |
+| Statistics refreshed | `ANALYZE memories;` plus `last_analyze` query below | `last_analyze` or `last_autoanalyze` is after rollout time | Neither timestamp moved after rollout. Run `ANALYZE memories;` and re-check plans. |
+| B-tree usage visible | `pg_stat_user_indexes` query below | `idx_scan > 0` for at least one D8-1 index after real traffic or targeted fallback smoke | `idx_scan=0` after targeted fallback smoke. Capture EXPLAIN and check whether query shape changed. |
+| IVFFLAT usage visible | `pg_stat_user_indexes` query below | `memories_embedding_ivfflat.idx_scan > 0` after vector smoke with non-null embeddings | `idx_scan=0` after vector smoke. Check row volume, `embedding IS NOT NULL`, and EXPLAIN plan. |
+| Fallback plan acceptable | Fallback EXPLAIN sample below | Plan uses `idx_memories_user_active_importance_created` or finishes under threshold | Sequential scan with high cost/latency on production-sized user data. Keep D8-1 but investigate query filters/stats. |
+| Vector plan acceptable | Vector EXPLAIN sample below | Plan uses `memories_embedding_ivfflat` or finishes under threshold on small tables | Sequential scan over a large embedded set, or latency over threshold. Consider IVFFLAT `lists` retune on staging. |
+| No write regression | App logs and DB health | No new DB timeout/write-lock symptoms during the 24h window | New write latency, lock, or disk-pressure symptoms. Drop D8-2 first if vector index is suspect. |
+
+Thresholds for this MVP:
+
+- Fallback memory query: `Execution Time <= 50 ms` for `LIMIT 30` on a single
+  user after warm-up.
+- Vector memory query: `Execution Time <= 150 ms` for `LIMIT 30` on a single
+  user after warm-up.
+- If the table has fewer than 1,000 active memories or fewer than 500 non-null
+  embeddings, an index may not be chosen. In that case, pass can be based on
+  execution time plus valid/ready index state.
+
+### Index Validity
+
+```bash
+docker exec eris-postgres psql -U eris -d eris -c "
+SELECT
+  i.relname AS index_name,
+  am.amname AS access_method,
+  idx.indisvalid AS is_valid,
+  idx.indisready AS is_ready,
+  pg_size_pretty(pg_relation_size(i.oid)) AS index_size,
+  pg_get_indexdef(i.oid) AS definition
+FROM pg_class c
+JOIN pg_index idx ON idx.indrelid = c.oid
+JOIN pg_class i ON i.oid = idx.indexrelid
+JOIN pg_am am ON am.oid = i.relam
+WHERE c.relname = 'memories'
+  AND i.relname IN (
+    'idx_memories_user_active_created_at',
+    'idx_memories_user_active_importance_created',
+    'memories_embedding_ivfflat'
+  )
+ORDER BY i.relname;"
+```
+
+Pass criteria:
+
+- Every index that was intentionally applied is present.
+- `is_valid=true` and `is_ready=true` for every present D8 index.
+
+Fail criteria:
+
+- Missing intended index, or any `is_valid=false` / `is_ready=false`.
+- Follow "Interrupted `CREATE INDEX CONCURRENTLY`" cleanup before re-running.
+
+### `pg_stat_user_indexes` 24h Snapshot
+
+```bash
+docker exec eris-postgres psql -U eris -d eris -c "
+SELECT
+  s.indexrelname,
+  s.idx_scan,
+  s.idx_tup_read,
+  s.idx_tup_fetch,
+  pg_size_pretty(pg_relation_size(s.indexrelid)) AS index_size
+FROM pg_stat_user_indexes s
+WHERE s.relname = 'memories'
+  AND s.indexrelname IN (
+    'idx_memories_user_active_created_at',
+    'idx_memories_user_active_importance_created',
+    'memories_embedding_ivfflat'
+  )
+ORDER BY s.indexrelname;"
+```
+
+Pass criteria:
+
+- D8-1: at least one B-tree index has `idx_scan > 0` after real traffic or
+  targeted smoke.
+- D8-2: `memories_embedding_ivfflat.idx_scan > 0` after a vector smoke on a user
+  with embedded memories.
+- `idx_tup_read` is not exploding unexpectedly compared with the small `LIMIT`
+  query shape.
+
+Fail criteria:
+
+- `idx_scan=0` for an index after a targeted smoke that should exercise it.
+- `idx_tup_read` is unexpectedly huge for a small beta user. Capture EXPLAIN
+  output and compare filters.
+
+### Analyze Timestamp
+
+```bash
+docker exec eris-postgres psql -U eris -d eris -c "
+SELECT
+  relname,
+  last_analyze,
+  last_autoanalyze,
+  n_live_tup,
+  n_dead_tup
+FROM pg_stat_user_tables
+WHERE relname = 'memories';"
+```
+
+Pass criteria:
+
+- `last_analyze` or `last_autoanalyze` is after the index rollout time.
+- `n_dead_tup` is not growing unexpectedly during the audit window.
+
+Fail criteria:
+
+- No analyze timestamp after rollout. Run `ANALYZE memories;` and rerun the
+  EXPLAIN checks.
+
+### Plan Comparison Inputs
+
+Pick one real beta user with memories:
+
+```bash
+USER_ID=<user-with-memories>
+```
+
+Pick one query vector from an existing embedded memory for that user. This keeps
+the EXPLAIN sample read-only and avoids hard-coding external API keys:
+
+```bash
+QVEC=$(docker exec eris-postgres psql -U eris -d eris -At -v uid="$USER_ID" -c "
+SELECT embedding::text
+FROM memories
+WHERE user_id = :'uid'
+  AND is_active = true
+  AND embedding IS NOT NULL
+LIMIT 1;")
+```
+
+Pass criteria:
+
+- `QVEC` is non-empty before running the vector EXPLAIN sample.
+
+Fail criteria:
+
+- Empty `QVEC`: D8-2 cannot be audited for that user. Choose another user or
+  wait for embedding backfill.
+
+### Fallback EXPLAIN Sample
+
+This matches the no-embedding fallback ordering in
+`app/services/memory_retriever.py`:
+
+```bash
+docker exec eris-postgres psql -U eris -d eris -v uid="$USER_ID" -c "
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id, content, memory_type, importance_score, confidence_score,
+       emotion_tags, created_at, last_used_at,
+       NULL::float AS similarity
+FROM memories
+WHERE user_id = :'uid'
+  AND is_active = true
+  AND importance_score >= 0
+ORDER BY importance_score DESC, created_at DESC
+LIMIT 30;"
+```
+
+Pass criteria:
+
+- Plan includes `idx_memories_user_active_importance_created`, or
+  `Execution Time <= 50 ms`.
+- Buffers do not show a large table-wide read for a single-user query.
+
+Fail criteria:
+
+- Sequential scan over a large `memories` table and `Execution Time > 50 ms`.
+- Sort spills to disk. Investigate stats, query filters, and whether the index
+  definition matches production query shape.
+
+### Vector EXPLAIN Sample
+
+Run only when `QVEC` is non-empty:
+
+```bash
+docker exec eris-postgres psql -U eris -d eris -v uid="$USER_ID" -v qvec="$QVEC" -c "
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT id, content, memory_type, importance_score, confidence_score,
+       emotion_tags, created_at, last_used_at,
+       1 - (embedding <=> CAST(:'qvec' AS vector)) AS similarity
+FROM memories
+WHERE user_id = :'uid'
+  AND is_active = true
+  AND importance_score >= 0
+  AND embedding IS NOT NULL
+ORDER BY embedding <=> CAST(:'qvec' AS vector) ASC
+LIMIT 30;"
+```
+
+Pass criteria:
+
+- Plan includes `memories_embedding_ivfflat`, or `Execution Time <= 150 ms` on a
+  small table where PostgreSQL reasonably prefers a sequential scan.
+- Returned rows are limited and no disk spill appears in the plan.
+
+Fail criteria:
+
+- Large embedded set, sequential scan, and `Execution Time > 150 ms`.
+- IVFFLAT is chosen but still slow. Retune `lists` only after testing on staging
+  or a restored backup.
+
+### 24h Audit Note Template
+
+```text
+D8 index 24h audit
+rollout date:
+audit date:
+operator:
+production commit:
+backup file before rollout:
+
+health_ok: true/false
+indexes_valid_ready: true/false
+analyze_after_rollout: true/false
+btree_idx_scan_seen: true/false
+ivfflat_applicable: true/false
+ivfflat_idx_scan_seen: true/false
+fallback_explain_pass: true/false
+vector_explain_applicable: true/false
+vector_explain_pass: true/false
+write_regression_seen: true/false
+
+pg_stat_user_indexes snapshot:
+fallback explain execution_time_ms:
+vector explain execution_time_ms:
+decision: keep / drop D8-2 / rollback indexes / investigate
+follow-up:
+```
+
 ## Rollback / Cleanup
 
 Index rollback is a metadata/storage cleanup, not a data rollback. Dropping
