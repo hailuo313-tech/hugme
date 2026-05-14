@@ -1,0 +1,40 @@
+name: PR required gates
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-gates-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  admin-ci:
+    name: 管理员-ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Placeholder (replace with admin checks)
+        run: echo "admin-ci ok"
+
+  backend-ci:
+    name: 后端-ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Placeholder (replace with backend tests)
+        run: echo "backend-ci ok"
+
+  ops-guard:
+    name: 操作守卫
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Placeholder (replace with ops policy checks)
+        run: echo "ops-guard ok"

@@ -129,6 +129,15 @@ CREATE TABLE IF NOT EXISTS memories (
     updated_at          TIMESTAMP DEFAULT NOW()
 );
 
+-- D8-1：memories B-tree / 部分索引（loneliness 时间窗、retrieve fallback 排序；见 docs/D8_PERFORMANCE_INDEXES.md）
+CREATE INDEX IF NOT EXISTS idx_memories_user_active_created_at
+    ON memories (user_id, created_at DESC)
+    WHERE is_active = true;
+
+CREATE INDEX IF NOT EXISTS idx_memories_user_active_importance_created
+    ON memories (user_id, importance_score DESC, created_at DESC)
+    WHERE is_active = true;
+
 -- 接管任务表
 CREATE TABLE IF NOT EXISTS handoff_tasks (
     id                      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -203,7 +212,10 @@ CREATE TABLE IF NOT EXISTS scripts (
     conversion_goal         VARCHAR(50),
     review_status           VARCHAR(20) DEFAULT 'draft',
     forbidden_scenarios     JSONB DEFAULT '[]',
-    cre
+    created_at              TIMESTAMP DEFAULT NOW(),
+    updated_at              TIMESTAMP DEFAULT NOW()
+);
+
 -- 运营后台账号表 (D5-1)
 CREATE TABLE IF NOT EXISTS operators (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
