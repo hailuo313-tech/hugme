@@ -1,14 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import {
   apiFetch,
   clearAuth,
-  getOperator,
-  isLoggedIn,
+  LOGIN_PATH,
   Operator,
 } from "@/lib/auth";
+import AuthGate from "@/components/AuthGate";
 
 // ── 类型 ──────────────────────────────────────────────────────────
 
@@ -115,12 +114,9 @@ function riskColor(r: string | null): string {
   }
 }
 
-// ── 主页面 ────────────────────────────────────────────────────────
+// ── 主页面（内部组件，由 AuthGate 传入 operator） ─────────────────
 
-export default function DashboardPage() {
-  const router = useRouter();
-  const [operator, setOperator] = useState<Operator | null>(null);
-
+function DashboardContent({ operator }: { operator: Operator }) {
   // 列表状态
   const [items, setItems] = useState<ConversationRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -137,20 +133,6 @@ export default function DashboardPage() {
   const [detail, setDetail] = useState<DetailResponse | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!isLoggedIn()) {
-      router.replace("/login");
-      return;
-    }
-    const op = getOperator();
-    if (!op) {
-      clearAuth();
-      router.replace("/login");
-      return;
-    }
-    setOperator(op);
-  }, [router]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -178,8 +160,8 @@ export default function DashboardPage() {
   }, [page, state, channel, appliedSearch]);
 
   useEffect(() => {
-    if (operator) load();
-  }, [operator, load]);
+    load();
+  }, [load]);
 
   async function openDetail(cid: string) {
     setDetail(null);
@@ -199,21 +181,13 @@ export default function DashboardPage() {
 
   function handleLogout() {
     clearAuth();
-    router.replace("/login");
+    window.location.href = LOGIN_PATH;
   }
 
   function handleSearchSubmit(e: React.FormEvent) {
     e.preventDefault();
     setPage(1);
     setAppliedSearch(search);
-  }
-
-  if (!operator) {
-    return (
-      <div className="min-h-screen bg-slate-900 text-slate-400 flex items-center justify-center">
-        {isLoggedIn() ? "加载中…" : "正在跳转登录…"}
-      </div>
-    );
   }
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -575,6 +549,16 @@ export default function DashboardPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// ── 页面入口（AuthGate 包裹，守卫由 AuthGate 统一处理） ───────────
+
+export default function DashboardPage() {
+  return (
+    <AuthGate>
+      {(operator) => <DashboardContent operator={operator} />}
+    </AuthGate>
   );
 }
 
