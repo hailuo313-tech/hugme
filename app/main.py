@@ -30,6 +30,10 @@ from services.embedding_worker import (
     start_scheduler as start_embedding_worker,
     shutdown_scheduler as shutdown_embedding_worker,
 )
+from services.profile_score_scheduler import (
+    start_scheduler as start_profile_score_scheduler,
+    shutdown_scheduler as shutdown_profile_score_scheduler,
+)
 
 
 def configure_logging():
@@ -58,9 +62,11 @@ async def lifespan(app: FastAPI):
     logger.info("Database connected")
     start_silent_reactivation_scheduler()
     start_embedding_worker()
+    start_profile_score_scheduler()
     try:
         yield
     finally:
+        shutdown_profile_score_scheduler()
         shutdown_embedding_worker()
         shutdown_silent_reactivation_scheduler()
         logger.info("ERIS shutting down...")

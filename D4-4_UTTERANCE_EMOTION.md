@@ -38,3 +38,10 @@
 
 - 关键词会有误报 / 漏报；后续可换 **小型分类模型** 或上游 NLU，仍通过同一 `utterance_tags` 接口并入。
 - 未做分词；中文依赖子串，扩展词表时避免过短词根。
+
+## Score worker（D4-4 剩余：initiation + trigger_threshold）
+
+- **模块**：`app/services/profile_score_worker.py`（计算 + DB 写回）、`app/services/profile_score_scheduler.py`（APScheduler）。
+- **开关**：`SCORE_WORKER_ENABLED`（默认 `false`）、`SCORE_WORKER_POLL_SECONDS` 等见 `app/core/config.py`。
+- **initiation_score**：近 `SCORE_INITIATION_LOOKBACK_DAYS` 天 `sender_type='user'` 消息数 / `SCORE_INITIATION_CAP_MESSAGES` 饱和到 0–100。
+- **trigger_threshold**：min-only 聚合 + 与 `LONELINESS_BASELINE` 对齐的 pivot 线性式；冷启动 `loneliness≈35` 且其余未建模为 0 时与 `init.sql` 默认 **65** 一致。

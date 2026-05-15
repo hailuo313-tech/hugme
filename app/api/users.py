@@ -55,7 +55,18 @@ async def update_notification_settings(user_id: str, data: NotificationSettings,
         await db.commit()
     return {"status": "ok"}
 
-@router.get("/{user_id}/data-export")
+@router.get(
+    "/{user_id}/data-export",
+    summary="用户 + 画像 + 记忆导出（供 admin 画像页等）",
+    description=(
+        "返回 ``user``、``profile``、``memories``。``profile`` 含与 "
+        "``scripts/init.sql`` / Admin 一致的画像分字段，包括 "
+        "``initiation_score``、``emotion_score``、``retention_score``、``dependency_score``、"
+        "``loneliness_score``、``trigger_threshold``、``score_stage``、``score_updated_at``；"
+        "其中 ``initiation_score`` / ``trigger_threshold`` 由 ``profile_score_worker``（D4-4）"
+        "在 ``SCORE_WORKER_ENABLED=true`` 时周期性写回。"
+    ),
+)
 async def data_export(user_id: str, db: AsyncSession = Depends(get_db)):
     user = (await db.execute(text("SELECT * FROM users WHERE id=:uid"), {"uid": user_id})).fetchone()
     profile = (await db.execute(text("SELECT * FROM user_profiles WHERE user_id=:uid"), {"uid": user_id})).fetchone()
