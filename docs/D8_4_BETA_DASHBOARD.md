@@ -14,6 +14,13 @@ D8-4 data preparation can run now. Do not start the second invite wave until:
 - `/health/detail` returns `api`, `db`, and `redis` as `ok`.
 - A backup newer than 24 hours exists in `/opt/eris/backups/`.
 
+## Latest Production Runs
+
+- [2026-05-15 read-only run](D8_4_BETA_RUN_20260515.md): first reachable
+  7-day-window report captured 9 users, 11.1% D1 retention, score distribution,
+  and token-volume floor estimates. Provider token usage is still not persisted,
+  so billing-grade token cost remains pending.
+
 ## Run The Report
 
 On the production server:
