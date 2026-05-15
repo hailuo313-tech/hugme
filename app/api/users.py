@@ -73,13 +73,13 @@ async def data_export(user_id: str, db: AsyncSession = Depends(get_db)):
         "memories": [dict(m._mapping) for m in memories],
     }
 
-@router.post("/{user_id}/risk-events")
+@router.post("/{user_id}/risk-events", status_code=201)
 async def create_risk_event(
     user_id: str,
     data: RiskEventCreate,
     db: AsyncSession = Depends(get_db),
 ):
-    """V001-P0-3：写入 risk_events；若用户有 profile 则同步 risk_score → users.risk_level。"""
+    """V001-P0-3：写入 risk_events；按 severity 提升 risk_score 并派生 users.risk_level。"""
     try:
         uuid.UUID(user_id)
     except ValueError:
@@ -99,36 +99,26 @@ async def create_risk_event(
                 status_code=400, detail="trigger_message_id must be a valid UUID"
             )
 
-    from services.risk_events import insert_risk_event, risk_level_from_score
+    from services.risk_events import (
+        bump_profile_risk_score,
+        insert_risk_event,
+        severity_to_risk_score,
+    )
+
+    severity = (data.severity or "P1").upper()
+    score = severity_to_risk_score(severity)
 
     event_id = await insert_risk_event(
         db,
         user_id=user_id,
         risk_type=data.risk_type,
-        severity=data.severity or "P1",
+        severity=severity,
         trigger_message_id=data.trigger_message_id,
         description=data.description,
         commit=False,
     )
-
-    sev = (data.severity or "P1").upper()
-    score_map = {"P0": 95, "P1": 75, "P2": 55, "P3": 35}
-    score = score_map.get(sev, 50)
-    await db.execute(
-        text(
-            """
-            UPDATE user_profiles
-            SET risk_score = GREATEST(COALESCE(risk_score, 0), :score),
-                updated_at = NOW()
-            WHERE user_id = :uid
-            """
-        ),
-        {"uid": user_id, "score": score},
-    )
-    level = risk_level_from_score(score)
-    await db.execute(
-        text("UPDATE users SET risk_level=:rl, updated_at=NOW() WHERE id=:uid"),
-        {"rl": level, "uid": user_id},
+    level = await bump_profile_risk_score(
+        db, user_id=user_id, risk_score=score, commit=False
     )
     await db.commit()
 
@@ -136,6 +126,7 @@ async def create_risk_event(
         "status": "created",
         "user_id": user_id,
         "risk_event_id": event_id,
+        "risk_score": score,
         "risk_level": level,
     }
 
@@ -150,6 +141,12 @@ async def list_user_risk_events(
         uuid.UUID(user_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="user_id must be a valid UUID")
+
+    user = (
+        await db.execute(text("SELECT id FROM users WHERE id=:uid"), {"uid": user_id})
+    ).fetchone()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
 
     from services.risk_events import list_risk_events_for_user
 

@@ -7,6 +7,19 @@ from typing import Any, Optional
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+# severity → profile risk_score floor（与 users.risk_level 阈值配套）
+SEVERITY_SCORE_MAP: dict[str, int] = {
+    "P0": 95,
+    "P1": 75,
+    "P2": 55,
+    "P3": 35,
+}
+
+
+def severity_to_risk_score(severity: str | None) -> int:
+    sev = (severity or "P1").upper()
+    return SEVERITY_SCORE_MAP.get(sev, 50)
+
 
 def risk_level_from_score(score: int) -> str:
     if score >= 90:
@@ -61,7 +74,7 @@ async def sync_user_risk_from_profile_score(
     risk_score: int,
     commit: bool = False,
 ) -> str:
-    """同事务更新 users.risk_level（V001 P1 与危机协议共用）。"""
+    """同事务更新 users.risk_level（V001 P0-3 / 危机协议共用）。"""
     level = risk_level_from_score(int(risk_score))
     await db.execute(
         text("UPDATE users SET risk_level=:rl, updated_at=NOW() WHERE id=:uid"),
@@ -70,6 +83,30 @@ async def sync_user_risk_from_profile_score(
     if commit:
         await db.commit()
     return level
+
+
+async def bump_profile_risk_score(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    risk_score: int,
+    commit: bool = False,
+) -> str:
+    """GREATEST 提升 user_profiles.risk_score 并派生 users.risk_level。"""
+    await db.execute(
+        text(
+            """
+            UPDATE user_profiles
+            SET risk_score = GREATEST(COALESCE(risk_score, 0), :score),
+                updated_at = NOW()
+            WHERE user_id = :uid
+            """
+        ),
+        {"uid": user_id, "score": int(risk_score)},
+    )
+    return await sync_user_risk_from_profile_score(
+        db, user_id=user_id, risk_score=risk_score, commit=commit
+    )
 
 
 async def list_risk_events_for_user(
