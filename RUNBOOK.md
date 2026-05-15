@@ -1,6 +1,6 @@
 # ERIS MVP Runbook v1
 
-Last updated: 2026-05-12
+Last updated: 2026-05-16
 Host: `67.216.204.137`
 Domain: `hugme2.com`
 Project root: `/opt/eris`
@@ -25,10 +25,34 @@ Public endpoints:
 ```text
 https://hugme2.com/health
 https://hugme2.com/health/detail
-https://hugme2.com/roadmap
-https://hugme2.com/ops/20260514v001.html   # 仓库 docs/ 下 HTML；勿用 /docs/（Swagger）
+https://hugme2.com/roadmap                    # 对外短链；见下「公开路线图」
+https://hugme2.com/ops/eris-roadmap.html      # 与 roadmap 同源：仓库 docs/eris-roadmap.html
+https://hugme2.com/ops/20260514v001.html      # 仓库 docs/ 下其它 HTML；勿用 /docs/（Swagger）
 wss://hugme2.com/ws/operators/tasks?operator_id=<operator-id>
 ```
+
+## 公开路线图（`hugme2.com/roadmap` = 静态 `eris-roadmap.html`）
+
+**源文件（Git）**：[`docs/eris-roadmap.html`](docs/eris-roadmap.html)。与 [`docs/ROADMAP_RECONCILE_D8.md`](docs/ROADMAP_RECONCILE_D8.md) 一起在 PR 里审完再合 `main`。
+
+**线上如何生效**：
+
+1. `docker-compose.yml` 将宿主机 **`/opt/eris/docs`** 只读挂进 API 容器的 **`/srv/ops-docs`**（`api.volumes`）。
+2. FastAPI **`GET /ops/{filename}.html`**（[`app/main.py`](app/main.py)）从该目录读文件 → **`https://hugme2.com/ops/eris-roadmap.html`** 与仓库 `docs/` 同步。
+3. **`https://hugme2.com/roadmap`** 由 **Nginx**（不在本仓库）配置：常见为 **`alias` 到** `/opt/eris/docs/eris-roadmap.html`、或 **`proxy_pass`** 到 `http://127.0.0.1:8000/ops/eris-roadmap.html`、或 **301** 到 `/ops/eris-roadmap.html`。只要最终读的是 **`/opt/eris/docs/eris-roadmap.html`**，发布流程一致。
+
+**发布步骤（改完 HTML 后）**：
+
+```bash
+cd /opt/eris
+git pull origin main
+# bind mount 下一般立刻生效；若 CDN/浏览器强缓存，可 restart api 或换带版本 query
+docker compose restart api
+curl -fsS -o /dev/null -w "%{http_code}\n" https://hugme2.com/ops/eris-roadmap.html
+curl -fsS -o /dev/null -w "%{http_code}\n" https://hugme2.com/roadmap
+```
+
+若 Nginx 对 `/roadmap` 指向 **另一目录的拷贝**（非 `/opt/eris/docs`），需在该目录 **额外同步** `eris-roadmap.html`，并在服务器 Nginx `location` 旁注释真实路径，避免与 compose 挂载两套源。
 
 SSH:
 

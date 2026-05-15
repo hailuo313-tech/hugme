@@ -6,7 +6,7 @@ D8-2, D8-4 versus the current `main` branch.
 Scope:
 
 - Source branch checked: repo tip (post-`main` merge + D4-2 task 9 branch); re-run this table after each `main` release.
-- Live roadmap checked on 2026-05-14 from `https://hugme2.com/roadmap` (HTML may lag git).
+- Live roadmap checked on 2026-05-14 from `https://hugme2.com/roadmap` (static `docs/eris-roadmap.html`; **站点可能滞后 git**，发布见 [RUNBOOK.md](../RUNBOOK.md)「公开路线图」)。
 - This table does not mark roadmap cards done by inference. Each conclusion is
   based on merged code, merged docs, or an explicit PR number.
 
