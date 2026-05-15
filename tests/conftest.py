@@ -22,7 +22,11 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _isolate_crisis_detection_for_unrelated_tests(request, monkeypatch):
-    """Crisis short-circuit only in ``test_crisis_intervention`` module."""
+    """P0-2: crisis short-circuit only in ``test_crisis_intervention`` module.
+
+    ``generate_reply(..., db=...)`` runs ``detect_crisis_in_text`` before the LLM path.
+    Other unit tests use stub DBs and must not enter ``apply_crisis_protocol``.
+    """
     module_name = getattr(request.module, "__name__", "")
     if module_name.endswith("test_crisis_intervention"):
         return

@@ -47,12 +47,26 @@ def test_create_risk_event_persists():
                 "description": "test",
             },
         )
-    assert r.status_code == 200, r.text
+    assert r.status_code == 201, r.text
     data = r.json()
     assert data["status"] == "created"
     assert uuid.UUID(data["risk_event_id"])
+    assert data["risk_level"] == "high"
+    assert data["risk_score"] == 75
     assert db.execute.await_count >= 3
     db.commit.assert_awaited_once()
+
+
+def test_create_risk_event_user_not_found():
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=MagicMock(fetchone=lambda: None))
+    app = _mini_app(db)
+    with TestClient(app) as client:
+        r = client.post(
+            f"/api/v1/users/{USER_ID}/risk-events",
+            json={"risk_type": "policy_flag", "severity": "P2"},
+        )
+    assert r.status_code == 404
 
 
 def test_list_risk_events():
@@ -70,11 +84,23 @@ def test_list_risk_events():
             "created_at": None,
         }
     )
+    user_row = _row({"id": USER_ID})
+    user_result = MagicMock(fetchone=lambda: user_row)
+    list_result = MagicMock(fetchall=lambda: [item])
     db = MagicMock()
-    db.execute = AsyncMock(return_value=MagicMock(fetchall=lambda: [item]))
+    db.execute = AsyncMock(side_effect=[user_result, list_result])
 
     app = _mini_app(db)
     with TestClient(app) as client:
         r = client.get(f"/api/v1/users/{USER_ID}/risk-events")
     assert r.status_code == 200
     assert r.json()["total"] == 1
+
+
+def test_list_risk_events_user_not_found():
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=MagicMock(fetchone=lambda: None))
+    app = _mini_app(db)
+    with TestClient(app) as client:
+        r = client.get(f"/api/v1/users/{USER_ID}/risk-events")
+    assert r.status_code == 404
