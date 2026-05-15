@@ -36,6 +36,7 @@ Rerank 权重出处
 from __future__ import annotations
 
 import asyncio
+import inspect
 import math
 import time
 from dataclasses import dataclass, field
@@ -269,7 +270,10 @@ async def _candidate_query(
     """
 
     result = await db.execute(text(sql), params)
-    return list(result.fetchall())
+    rows = result.fetchall()
+    if inspect.isawaitable(rows):
+        rows = await rows
+    return list(rows)
 
 
 def _row_to_hit(row: Any) -> MemoryHit:

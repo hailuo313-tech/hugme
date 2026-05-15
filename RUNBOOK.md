@@ -1,6 +1,6 @@
-﻿# ERIS MVP Runbook v1
+# ERIS MVP Runbook v1
 
-Last updated: 2026-05-12
+Last updated: 2026-05-16
 Host: `67.216.204.137`
 Domain: `hugme2.com`
 Project root: `/opt/eris`
@@ -25,9 +25,34 @@ Public endpoints:
 ```text
 https://hugme2.com/health
 https://hugme2.com/health/detail
-https://hugme2.com/roadmap
+https://hugme2.com/roadmap                    # 对外短链；见下「公开路线图」
+https://hugme2.com/ops/eris-roadmap.html      # 与 roadmap 同源：仓库 docs/eris-roadmap.html
+https://hugme2.com/ops/20260514v001.html      # 仓库 docs/ 下其它 HTML；勿用 /docs/（Swagger）
 wss://hugme2.com/ws/operators/tasks?operator_id=<operator-id>
 ```
+
+## 公开路线图（`hugme2.com/roadmap` = 静态 `eris-roadmap.html`）
+
+**源文件（Git）**：[`docs/eris-roadmap.html`](docs/eris-roadmap.html)。与 [`docs/ROADMAP_RECONCILE_D8.md`](docs/ROADMAP_RECONCILE_D8.md) 一起在 PR 里审完再合 `main`。
+
+**线上如何生效**：
+
+1. `docker-compose.yml` 将宿主机 **`/opt/eris/docs`** 只读挂进 API 容器的 **`/srv/ops-docs`**（`api.volumes`）。
+2. FastAPI **`GET /ops/{filename}.html`**（[`app/main.py`](app/main.py)）从该目录读文件 → **`https://hugme2.com/ops/eris-roadmap.html`** 与仓库 `docs/` 同步。
+3. **`https://hugme2.com/roadmap`** 由 **Nginx**（不在本仓库）配置：常见为 **`alias` 到** `/opt/eris/docs/eris-roadmap.html`、或 **`proxy_pass`** 到 `http://127.0.0.1:8000/ops/eris-roadmap.html`、或 **301** 到 `/ops/eris-roadmap.html`。只要最终读的是 **`/opt/eris/docs/eris-roadmap.html`**，发布流程一致。
+
+**发布步骤（改完 HTML 后）**：
+
+```bash
+cd /opt/eris
+git pull origin main
+# bind mount 下一般立刻生效；若 CDN/浏览器强缓存，可 restart api 或换带版本 query
+docker compose restart api
+curl -fsS -o /dev/null -w "%{http_code}\n" https://hugme2.com/ops/eris-roadmap.html
+curl -fsS -o /dev/null -w "%{http_code}\n" https://hugme2.com/roadmap
+```
+
+若 Nginx 对 `/roadmap` 指向 **另一目录的拷贝**（非 `/opt/eris/docs`），需在该目录 **额外同步** `eris-roadmap.html`，并在服务器 Nginx `location` 旁注释真实路径，避免与 compose 挂载两套源。
 
 SSH:
 
@@ -210,6 +235,41 @@ docker exec eris-postgres psql -U eris -d eris -c \
 切回好 key 后自动追平；schema 维度不匹配 → UPDATE 报错（不会出现在正常路径，
 切模型前需 migrate schema）。
 
+## Profile score worker（D4-4：initiation_score + trigger_threshold）
+
+**核心**：`app/services/profile_score_worker.py` 周期性写回 `user_profiles.initiation_score`
+（近 N 天 `sender_type='user'` 消息条数 / cap 饱和到 0–100）与 **min-only**
+`trigger_threshold`（与 `scripts/init.sql` 默认 65、`LONELINESS_BASELINE` pivot 对齐）。
+调度：`app/services/profile_score_scheduler.py`（APScheduler，`main` lifespan 启停）。
+
+**互斥**：`pg_try_advisory_lock(6_300_413)`，与 embedding / silent_reactivation 错开。
+
+**环境变量**（`.env`）：
+
+```bash
+SCORE_WORKER_ENABLED=true                 # 默认 false；生产需显式打开
+SCORE_WORKER_POLL_SECONDS=120
+SCORE_INITIATION_LOOKBACK_DAYS=7
+SCORE_INITIATION_CAP_MESSAGES=40
+SCORE_PROFILE_MIN_UPDATE_DELTA=0.05
+TRIGGER_THRESHOLD_BASE=65
+TRIGGER_THRESHOLD_PIVOT=35
+TRIGGER_THRESHOLD_K=0.15
+TRIGGER_THRESHOLD_FLOOR=50
+TRIGGER_THRESHOLD_CEIL=82
+```
+
+**日志**：`profile_score_worker.tick.done`（`profiles_scanned` / `profiles_updated`）、
+`profile_score_worker.skip_no_lock`、`profile_score.scheduler.*`。
+
+**Smoke**：
+
+```bash
+docker exec eris-api python -m py_compile \
+  services/profile_score_worker.py services/profile_score_scheduler.py && echo OK
+docker logs --tail 200 eris-api | grep -E "profile_score"
+```
+
 ## Memory Retrieval: Hybrid (D4-1)
 
 **核心**：`app/services/memory_retriever.py` 把"当前 query → embed → tag-filter +
@@ -282,8 +342,9 @@ curl -s -X POST "http://127.0.0.1:8000/api/v1/users/<uid>/memories/retrieve" \
 `memory_retriever.retrieve`（query = 当前 `user_text`，`k_final` = `MEMORY_RETRIEVE_TOP_K`，默认 8）。
 **编排顺序**：同一次调用里 **D4-3 / D4-4**（`loneliness_updater`：记忆标签 + 当前句关键词）先执行，**D4-2** 检索后执行（见 `app/services/llm_orchestrator.py`）。
 环境变量 `MEMORY_RETRIEVE_IN_PROMPT=false` 可关掉（避免每次回复都打 embed）。
+**D4-2 记忆一致性（任务卡 9）**：仅当 `MEMORY_CONSISTENCY_ENABLED=true`（默认）且 `MEMORY_RETRIEVE_IN_PROMPT=true` 时，在写入 L6 前用 `services/memory_consistency.py` 做轻量规则过滤；默认 `MEMORY_CONSISTENCY_LLM_MAX_OUTPUT_TOKENS=0`（不调 LLM）故额外 completion 为 0，有滤除时打 `memory.consistency.filtered`。
 结构化日志 `orchestrator.prompt.assembled` 增加 `memory_hits` /
-`memory_embedding_used` / `memory_candidates_scanned`。
+`memory_embedding_used` / `memory_candidates_scanned` / `memory_consistency_dropped`。
 
 ## D8：memories 性能索引（D8-1 / D8-2）
 
@@ -297,6 +358,11 @@ psql "postgresql://eris:...@host:5432/eris" -v ON_ERROR_STOP=1 \
 psql "postgresql://eris:...@host:5432/eris" -v ON_ERROR_STOP=1 \
   -f scripts/migrations/d8-2_memories_embedding_ivfflat.sql
 ```
+
+**D8-2 压测（retrieve）**：`scripts/perf/d8_2_retrieval_load.py` 对 `POST .../memories/retrieve`
+打并发；需 **`ERIS_OPERATOR_JWT`**（该路由走 `require_operator`）。证据与结论写入
+`docs/D8_2_PERFORMANCE_PROOF.md`。可调 worker 相关：`EMBEDDING_HTTP_TIMEOUT_SECONDS`、
+`EMBEDDING_SCHEDULER_MAX_INSTANCES`、`SCORE_WORKER_SCHEDULER_MAX_INSTANCES`（见 `.env.example`）。
 
 ## LLM Orchestrator: 10 层 Prompt 结构 (D3-2)
 

@@ -24,6 +24,40 @@ class Settings(BaseSettings):
     LLM_MEMORY_MODEL: str = 'openai/gpt-4o-mini'
     # 评分 ≥ 此阈值才入 memories 表；默认 5（preference/goal 起步）。
     MEMORY_IMPORTANCE_THRESHOLD: int = 5
+    # D4-2：是否在 generate_reply 主路径调用 memory_retriever 填充 L6_MEMORY。
+    # 关闭时与旧行为一致（不占 embed / SQL）；生产需 OPENAI_API_KEY 才能语义检索。
+    MEMORY_RETRIEVE_IN_PROMPT: bool = False
+    # D4-2：注入条数与候选池，与 app/api/memories.py MemoryRetrieveRequest 默认对齐。
+    MEMORY_RETRIEVE_TOP_K: int = 10
+    MEMORY_RETRIEVE_K_CANDIDATES: int = 30
+    # D4-2 任务卡 9：注入 L6 前过滤与当前用户句互斥的记忆（默认仅规则，不调 LLM）。
+    MEMORY_CONSISTENCY_ENABLED: bool = True
+    # >0 时预留「轻量 LLM 二次校验」上限（当前未实现，保持 0 即零额外 completion）。
+    MEMORY_CONSISTENCY_LLM_MAX_OUTPUT_TOKENS: int = 0
+    # D4-3 / D4-4：loneliness_updater（须显式声明，单测 monkeypatch 与 RUNBOOK 对齐）
+    LONELINESS_REFRESH_ENABLED: bool = True
+    LONELINESS_LOOKBACK_DAYS: int = 30
+    LONELINESS_MEMORY_CAP: int = 40
+    LONELINESS_PER_MEMORY_CLAMP: float = 12.0
+    LONELINESS_GLOBAL_DELTA_CLAMP: float = 20.0
+    LONELINESS_DECAY_FACTOR: float = 0.08
+    LONELINESS_BASELINE: float = 35.0
+    LONELINESS_MIN_UPDATE_DELTA: float = 0.05
+    LONELINESS_UTTERANCE_ENABLED: bool = True
+    LONELINESS_UTTERANCE_MAX_DELTA: float = 10.0
+    # D4-4 剩余：画像分 Worker（initiation_score + min-only trigger_threshold）。
+    # False 时不启动 scheduler；与 embedding / silent_reactivation 模式一致。
+    SCORE_WORKER_ENABLED: bool = False
+    SCORE_WORKER_POLL_SECONDS: int = 120
+    SCORE_INITIATION_LOOKBACK_DAYS: int = 7
+    SCORE_INITIATION_CAP_MESSAGES: int = 40
+    SCORE_PROFILE_MIN_UPDATE_DELTA: float = 0.05
+    # trigger_threshold：与 scripts/init.sql 默认 65 对齐；pivot 与 LONELINESS_BASELINE 一致。
+    TRIGGER_THRESHOLD_BASE: float = 65.0
+    TRIGGER_THRESHOLD_PIVOT: float = 35.0
+    TRIGGER_THRESHOLD_K: float = 0.15
+    TRIGGER_THRESHOLD_FLOOR: float = 50.0
+    TRIGGER_THRESHOLD_CEIL: float = 82.0
     # D3-4: 异步 embedding worker，把 memories.embedding 从 NULL 填满。
     # 关闭时 worker scheduler 不启动；OPENAI_API_KEY 没配也会自动跳过。
     EMBEDDING_WORKER_ENABLED: bool = True
@@ -35,6 +69,12 @@ class Settings(BaseSettings):
     EMBEDDING_BATCH_SIZE: int = 32
     # 多久跑一次 tick；最低 5 秒。
     EMBEDDING_POLL_SECONDS: int = 30
+    # D8-2b：OpenAI embeddings HTTP 超时（秒）；过大拉长单次 tick 占用 advisory lock 时间。
+    EMBEDDING_HTTP_TIMEOUT_SECONDS: float = 20.0
+    # D8-2b：APScheduler 单进程内 embedding tick 最大并发实例；>1 会叠多个 tick，仍受 DB advisory lock 串行，通常无收益且徒增日志噪声。默认 1。
+    EMBEDDING_SCHEDULER_MAX_INSTANCES: int = 1
+    # D8-2b：画像分 worker 调度 max_instances（与 embedding 同理，默认 1）。
+    SCORE_WORKER_SCHEDULER_MAX_INSTANCES: int = 1
     # D6-1 / D6-2 Stripe（pydantic-settings 自动从环境变量读取，必须显式声明字段才生效）
     STRIPE_PUBLISHABLE_KEY: Optional[str] = None
     STRIPE_SECRET_KEY: Optional[str] = None

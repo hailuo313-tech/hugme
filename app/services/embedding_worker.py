@@ -3,6 +3,8 @@
 设计要点
 ========
 - APScheduler 在 FastAPI lifespan 里启动一个 IntervalTrigger（默认每 30s）。
+- ``add_job`` 的 ``max_instances`` 来自 ``EMBEDDING_SCHEDULER_MAX_INSTANCES``（默认 1）；
+  多 uvicorn worker 时每进程各有一个 scheduler；跨进程仍由 advisory lock 串行化 tick。
 - 每 tick：
   1. ``SELECT FOR UPDATE SKIP LOCKED`` 拉一批 ``embedding IS NULL`` 的 memories
      —— 多 worker / 多 pod 安全，不会重复处理同一行。
@@ -175,12 +177,13 @@ def start_scheduler() -> Optional[AsyncIOScheduler]:
         return _scheduler
 
     interval = max(5, int(settings.EMBEDDING_POLL_SECONDS or 30))
+    max_inst = max(1, int(settings.EMBEDDING_SCHEDULER_MAX_INSTANCES or 1))
     scheduler = AsyncIOScheduler(timezone="UTC")
     scheduler.add_job(
         run_one_tick,
         trigger=IntervalTrigger(seconds=interval),
         id=JOB_ID,
-        max_instances=1,
+        max_instances=max_inst,
         coalesce=True,
         replace_existing=True,
     )
@@ -190,6 +193,7 @@ def start_scheduler() -> Optional[AsyncIOScheduler]:
         component="embedding_worker",
         interval_s=interval,
         batch_size=settings.EMBEDDING_BATCH_SIZE,
+        max_instances=max_inst,
     ).info("embedding_worker.scheduler.started")
     return scheduler
 

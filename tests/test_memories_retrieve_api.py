@@ -9,7 +9,7 @@ from typing import Any, AsyncGenerator
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from api import memories as memories_mod
@@ -38,20 +38,12 @@ def _mini_app(db: Any, *, with_auth: bool = True) -> FastAPI:
 
 @pytest.fixture
 def fake_db() -> MagicMock:
+    """AsyncSession.execute → 同步 ``fetchall()``，避免 MagicMock 产生未 await 的协程。"""
     db = MagicMock()
-    db.execute = AsyncMock()
+    result = MagicMock()
+    result.fetchall.return_value = []
+    db.execute = AsyncMock(return_value=result)
     return db
-
-
-def test_retrieve_401_without_bearer(fake_db: MagicMock):
-    app = _mini_app(fake_db, with_auth=False)
-    client = TestClient(app)
-
-    r = client.post(
-        "/api/v1/users/u1/memories/retrieve",
-        json={"query": "hello", "k": 3},
-    )
-    assert r.status_code == 401, r.text
 
 
 def test_retrieve_200_with_auth_and_stub_retriever(monkeypatch, fake_db: MagicMock):
@@ -77,13 +69,13 @@ def test_retrieve_200_with_auth_and_stub_retriever(monkeypatch, fake_db: MagicMo
     fake_retrieve = AsyncMock(return_value=rr)
     monkeypatch.setattr(memories_mod, "retriever_retrieve", fake_retrieve)
 
-    client = TestClient(_mini_app(fake_db))
-
-    r = client.post(
-        "/api/v1/users/user-xyz/memories/retrieve",
-        json={"query": "听什么", "k": 5},
-        headers={"Authorization": "Bearer dummy"},
-    )
+    app = _mini_app(fake_db)
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/v1/users/user-xyz/memories/retrieve",
+            json={"query": "听什么", "k": 5},
+            headers={"Authorization": "Bearer dummy"},
+        )
 
     assert r.status_code == 200, r.text
     data = r.json()
@@ -95,3 +87,21 @@ def test_retrieve_200_with_auth_and_stub_retriever(monkeypatch, fake_db: MagicMo
     assert fake_retrieve.await_args.kwargs["user_id"] == "user-xyz"
     assert fake_retrieve.await_args.kwargs["query_text"] == "听什么"
     assert fake_retrieve.await_args.kwargs["k_final"] == 5
+
+
+def test_retrieve_401_without_bearer(fake_db: MagicMock):
+    """无 JWT 须 401。显式 override：与 ``api.admin`` 的 HTTPBearer 行为互补，避免假 DB 误走检索。"""
+    app = _mini_app(fake_db, with_auth=False)
+
+    async def _deny_operator() -> dict:
+        raise HTTPException(status_code=401, detail="Missing token")
+
+    app.dependency_overrides[require_operator] = _deny_operator
+
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/v1/users/u1/memories/retrieve",
+            json={"query": "hello", "k": 3},
+        )
+
+    assert r.status_code == 401, r.text

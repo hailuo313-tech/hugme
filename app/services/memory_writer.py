@@ -105,7 +105,7 @@ MEMORY_TYPE_WHITELIST = {
     "milestone",     # 已达成的里程碑
 }
 
-# emoji / 纯符号正则
+# emoji / 纯符号正则（含常见全角标点区段，避免仅靠 \W 的平台差异）
 _EMOJI_OR_PUNCT_RE = re.compile(
     r"^[\s\W\d_"
     r"\u2600-\u27BF"
@@ -113,6 +113,8 @@ _EMOJI_OR_PUNCT_RE = re.compile(
     r"\U0001F600-\U0001F64F"
     r"\U0001F680-\U0001F6FF"
     r"\U0001F900-\U0001F9FF"
+    r"\u3000-\u303F"
+    r"\uFF00-\uFFEF"
     r"]*$",
     re.UNICODE,
 )
@@ -275,17 +277,19 @@ def _rule_prefilter(content: str) -> Optional[str]:
         return "empty"
 
     stripped = content.strip()
-    if len(stripped) < MIN_CONTENT_LEN:
-        return "too_short"
+    if not stripped:
+        return "empty"
 
-    # acknowledgement 全匹配（去掉末尾标点）
+    # 先识别寒暄 / 纯符号，再判长度：短词如 ok/好的 仍应归为 acknowledgement
     normalized = re.sub(r"[\s\.\!\?\,\，\。\！\？\、]+$", "", stripped).lower()
     if normalized in ACKNOWLEDGEMENTS:
         return "acknowledgement"
 
-    # 全 emoji / 全标点
     if _EMOJI_OR_PUNCT_RE.match(stripped):
         return "emoji_or_punct_only"
+
+    if len(stripped) < MIN_CONTENT_LEN:
+        return "too_short"
 
     return None
 
