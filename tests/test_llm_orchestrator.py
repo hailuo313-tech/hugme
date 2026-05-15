@@ -10,6 +10,8 @@
   最末一条（=当前消息）被丢弃。
 - D2-2.1：redis.lrange 抛异常 → 仍能完成调用，仅记录 warning。
 - D2-2.1：history_limit=0 / redis=None → 不读取历史。
+- D4-2：MEMORY_RETRIEVE_IN_PROMPT 开关 + mock retrieve → L6 含记忆正文。
+- D4-3 / D4-4：refresh_loneliness_score 先于 memory_retrieve；无 profile 不调 refresh。
 
 所有外部 IO（实际的 LLM HTTP 调用 + Redis）通过 monkeypatch / fake 对象拦截。
 """
@@ -475,3 +477,292 @@ async def test_db_failures_do_not_break_reply(monkeypatch, llm_orchestrator):
         db=_BadDB(),
     )
     assert reply == "resilient"
+
+
+# ── D4-2：记忆检索注入 L6 ─────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_memory_retrieve_skipped_when_flag_off(monkeypatch, llm_orchestrator):
+    """MEMORY_RETRIEVE_IN_PROMPT=false → 不调 memory_retrieve（即使有 db）。"""
+
+    async def boom_retrieve(**_kwargs):
+        raise AssertionError("retrieve should not run")
+
+    monkeypatch.setattr(llm_orchestrator, "memory_retrieve", boom_retrieve)
+    monkeypatch.setattr(llm_orchestrator.settings, "MEMORY_RETRIEVE_IN_PROMPT", False)
+
+    async def fake_chat(*, messages, trace_id, **_kwargs):
+        return _LLMResultStub(content="ok")
+
+    monkeypatch.setattr(llm_orchestrator, "llm_chat", fake_chat)
+    monkeypatch.setattr(llm_orchestrator.settings, "LLM_ECHO_FALLBACK", False)
+
+    class _EmptyDB:
+        async def execute(self, *_a, **_k):
+            class _R:
+                def fetchone(self):
+                    return None
+
+            return _R()
+
+    reply = await llm_orchestrator.generate_reply(
+        user_id="u",
+        conversation_id="c",
+        user_text="hello",
+        trace_id="t-skip",
+        db=_EmptyDB(),
+    )
+    assert reply == "ok"
+
+
+@pytest.mark.asyncio
+async def test_memory_retrieve_injected_into_prompt_when_enabled(
+    monkeypatch, llm_orchestrator
+):
+    """MEMORY_RETRIEVE_IN_PROMPT=true → retrieve 入参与 API 一致，L6 出现记忆正文。"""
+    from datetime import datetime, timezone
+
+    from services.memory_retriever import MemoryHit, RetrieveResult
+
+    captured: dict[str, Any] = {}
+
+    async def fake_chat(*, messages, trace_id, **_kwargs):
+        captured["messages"] = messages
+        return _LLMResultStub(content="ok")
+
+    async def fake_retrieve(**kwargs):
+        assert kwargs["user_id"] == "u1"
+        assert kwargs["query_text"] == "remember my dog"
+        assert kwargs["k_final"] == llm_orchestrator.settings.MEMORY_RETRIEVE_TOP_K
+        assert kwargs["k_candidates"] == llm_orchestrator.settings.MEMORY_RETRIEVE_K_CANDIDATES
+        assert kwargs["memory_types"] is None
+        assert kwargs["min_importance"] == 0.0
+        assert kwargs["include_global"] is True
+        assert kwargs["touch_last_used"] is True
+        assert kwargs["character_id"] == "char-9"
+        hit = MemoryHit(
+            id="m1",
+            content="User loves a golden retriever named Max",
+            memory_type="fact",
+            importance_score=8.0,
+            confidence_score=0.9,
+            emotion_tags=[],
+            created_at=datetime.now(timezone.utc),
+            last_used_at=None,
+            similarity=0.88,
+            final_score=0.91,
+        )
+        return RetrieveResult(hits=[hit], embedding_used=True)
+
+    monkeypatch.setattr(llm_orchestrator, "memory_retrieve", fake_retrieve)
+    monkeypatch.setattr(llm_orchestrator, "llm_chat", fake_chat)
+    monkeypatch.setattr(llm_orchestrator.settings, "LLM_ECHO_FALLBACK", False)
+    monkeypatch.setattr(llm_orchestrator.settings, "MEMORY_RETRIEVE_IN_PROMPT", True)
+    monkeypatch.setattr(llm_orchestrator.settings, "MEMORY_RETRIEVE_TOP_K", 10)
+    monkeypatch.setattr(llm_orchestrator.settings, "MEMORY_RETRIEVE_K_CANDIDATES", 30)
+
+    async def _pass_refresh(**kwargs):
+        return kwargs["profile_row"]
+
+    monkeypatch.setattr(llm_orchestrator, "refresh_loneliness_score", _pass_refresh)
+
+    class _FakeRow:
+        def __init__(self, mapping: dict[str, Any]):
+            self._mapping = mapping
+
+    class _FakeExecResult:
+        def __init__(self, row):
+            self._row = row
+
+        def fetchone(self):
+            return self._row
+
+    class _FakeDB:
+        async def execute(self, stmt, params=None):
+            sql = str(getattr(stmt, "text", stmt))
+            if "ch.id = c.character_id" in sql or "characters" in sql:
+                return _FakeExecResult(
+                    _FakeRow({"id": "char-9", "name": "Aria", "region": "EU"})
+                )
+            if "user_profiles" in sql:
+                return _FakeExecResult(_FakeRow({"loneliness_score": 40}))
+            return _FakeExecResult(None)
+
+    reply = await llm_orchestrator.generate_reply(
+        user_id="u1",
+        conversation_id="c1",
+        user_text="remember my dog",
+        trace_id="t-mem",
+        db=_FakeDB(),
+    )
+
+    assert reply == "ok"
+    system = captured["messages"][0]["content"]
+    assert "L6_MEMORY" in system
+    assert "golden retriever" in system
+
+
+# ── D4-3 / D4-4：loneliness 主链路写回（先于 D4-2 retrieve）────────────────
+
+
+@pytest.mark.asyncio
+async def test_refresh_loneliness_score_runs_before_memory_retrieve(
+    monkeypatch, llm_orchestrator
+):
+    """RUNBOOK 顺序：refresh_loneliness_score → memory_retrieve。"""
+    from services.memory_retriever import RetrieveResult
+
+    order: list[str] = []
+
+    async def fake_refresh(**kwargs):
+        order.append("loneliness")
+        return kwargs["profile_row"]
+
+    async def fake_retrieve(**_kwargs):
+        order.append("retrieve")
+        return RetrieveResult(hits=[])
+
+    monkeypatch.setattr(llm_orchestrator, "refresh_loneliness_score", fake_refresh)
+    monkeypatch.setattr(llm_orchestrator, "memory_retrieve", fake_retrieve)
+    monkeypatch.setattr(llm_orchestrator.settings, "MEMORY_RETRIEVE_IN_PROMPT", True)
+    monkeypatch.setattr(llm_orchestrator.settings, "LLM_ECHO_FALLBACK", False)
+
+    async def fake_chat(*, messages, trace_id, **_kwargs):
+        return _LLMResultStub(content="ok")
+
+    monkeypatch.setattr(llm_orchestrator, "llm_chat", fake_chat)
+
+    class _FakeRow:
+        def __init__(self, mapping: dict[str, Any]):
+            self._mapping = mapping
+
+    class _FakeExecResult:
+        def __init__(self, row):
+            self._row = row
+
+        def fetchone(self):
+            return self._row
+
+    class _FakeDB:
+        async def execute(self, stmt, params=None):
+            sql = str(getattr(stmt, "text", stmt))
+            if "ch.id = c.character_id" in sql or "characters" in sql:
+                return _FakeExecResult(_FakeRow({"id": "cid", "name": "Aria"}))
+            if "user_profiles" in sql:
+                return _FakeExecResult(_FakeRow({"loneliness_score": 40.0}))
+            return _FakeExecResult(None)
+
+    await llm_orchestrator.generate_reply(
+        user_id="u1",
+        conversation_id="c1",
+        user_text="hello there",
+        trace_id="t-order",
+        db=_FakeDB(),
+    )
+    assert order == ["loneliness", "retrieve"]
+
+
+@pytest.mark.asyncio
+async def test_refresh_loneliness_score_skipped_without_profile(
+    monkeypatch, llm_orchestrator
+):
+    """无 user_profiles 行时不调 refresh（仍可调 retrieve）。"""
+
+    async def boom_refresh(**_kwargs):
+        raise AssertionError("refresh should not run without profile")
+
+    monkeypatch.setattr(llm_orchestrator, "refresh_loneliness_score", boom_refresh)
+    monkeypatch.setattr(llm_orchestrator.settings, "MEMORY_RETRIEVE_IN_PROMPT", False)
+    monkeypatch.setattr(llm_orchestrator.settings, "LLM_ECHO_FALLBACK", False)
+
+    async def fake_chat(*, messages, trace_id, **_kwargs):
+        return _LLMResultStub(content="ok")
+
+    monkeypatch.setattr(llm_orchestrator, "llm_chat", fake_chat)
+
+    class _FakeRow:
+        def __init__(self, mapping: dict[str, Any]):
+            self._mapping = mapping
+
+    class _FakeExecResult:
+        def __init__(self, row):
+            self._row = row
+
+        def fetchone(self):
+            return self._row
+
+    class _FakeDBCharOnly:
+        async def execute(self, stmt, params=None):
+            sql = str(getattr(stmt, "text", stmt))
+            if "ch.id = c.character_id" in sql or "characters" in sql:
+                return _FakeExecResult(_FakeRow({"id": "cid", "name": "Aria"}))
+            if "user_profiles" in sql:
+                return _FakeExecResult(None)
+            return _FakeExecResult(None)
+
+    await llm_orchestrator.generate_reply(
+        user_id="u1",
+        conversation_id="c1",
+        user_text="hi",
+        trace_id="t-noprof",
+        db=_FakeDBCharOnly(),
+    )
+
+
+@pytest.mark.asyncio
+async def test_refresh_loneliness_score_updates_l7_band(monkeypatch, llm_orchestrator):
+    """mock refresh 提高 loneliness_score → L7 分段变化。"""
+
+    async def bump_refresh(**kwargs):
+        p = dict(kwargs["profile_row"])
+        p["loneliness_score"] = 72.0
+        return p
+
+    async def noop_retrieve(**_kwargs):
+        from services.memory_retriever import RetrieveResult
+
+        return RetrieveResult(hits=[])
+
+    monkeypatch.setattr(llm_orchestrator, "refresh_loneliness_score", bump_refresh)
+    monkeypatch.setattr(llm_orchestrator, "memory_retrieve", noop_retrieve)
+    monkeypatch.setattr(llm_orchestrator.settings, "MEMORY_RETRIEVE_IN_PROMPT", True)
+    monkeypatch.setattr(llm_orchestrator.settings, "LLM_ECHO_FALLBACK", False)
+
+    captured: dict[str, Any] = {}
+
+    async def fake_chat(*, messages, trace_id, **_kwargs):
+        captured["messages"] = messages
+        return _LLMResultStub(content="ok")
+
+    monkeypatch.setattr(llm_orchestrator, "llm_chat", fake_chat)
+
+    class _FakeRow:
+        def __init__(self, mapping: dict[str, Any]):
+            self._mapping = mapping
+
+    class _FakeExecResult:
+        def __init__(self, row):
+            self._row = row
+
+        def fetchone(self):
+            return self._row
+
+    class _FakeDB:
+        async def execute(self, stmt, params=None):
+            sql = str(getattr(stmt, "text", stmt))
+            if "ch.id = c.character_id" in sql or "characters" in sql:
+                return _FakeExecResult(_FakeRow({"id": "cid", "name": "Aria"}))
+            if "user_profiles" in sql:
+                return _FakeExecResult(_FakeRow({"loneliness_score": 40.0}))
+            return _FakeExecResult(None)
+
+    await llm_orchestrator.generate_reply(
+        user_id="u1",
+        conversation_id="c1",
+        user_text="y",
+        trace_id="t-l7",
+        db=_FakeDB(),
+    )
+    system = captured["messages"][0]["content"]
+    assert "72.0" in system or "high" in system

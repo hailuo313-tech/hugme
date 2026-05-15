@@ -14,7 +14,13 @@ D2-2 / D2-2.1 / D3-2: LLM Orchestrator
   本模块只负责：
   1) （可选）通过 ``db`` 取该会话的 ``characters`` 行 + 该用户的 ``user_profiles`` 行；
   2) 加载 history（沿用 Redis ctx）；
-  3) 把这些丢给 ``build_prompt``，得到 messages + 各层日志。
+  3) **D4-3 / D4-4**：在 ``db`` + ``user_profiles`` 行存在时，先于 D4-2 调用
+     ``loneliness_updater.refresh_loneliness_score``，用当前 ``user_text`` 写回
+     ``loneliness_score``，并用返回的 profile 参与后续 prompt（L7）；
+  4) **D4-2**：在 ``MEMORY_RETRIEVE_IN_PROMPT`` 为真且 ``db`` 非空时，用当前 ``user_text``
+     调用 ``memory_retriever.retrieve``（参数与 ``POST .../memories/retrieve`` 一致），
+     将 Top-K 命中写入 ``PromptInput.memories`` → ``L6_MEMORY``；
+  5) 把这些丢给 ``build_prompt``，得到 messages + 各层日志。
   缺数据时各层走"未知/默认"降级，但 10 个层标签永远在。
 - 失败处理
     1. 调用层抛异常（理论上 ``llm.chat`` 自吞，仅作防御）→ 视为失败。
@@ -40,7 +46,12 @@ from typing import Any
 from loguru import logger
 
 from core.config import settings
+from services.loneliness_updater import (
+    infer_utterance_emotion_tags,
+    refresh_loneliness_score,
+)
 from services.llm import chat as llm_chat
+from services.memory_retriever import retrieve as memory_retrieve
 from services.prompt_builder import (
     DEFAULT_SYSTEM_PROMPT,
     LAYER_ORDER,
@@ -85,8 +96,8 @@ async def generate_reply(
             为 None 时不读取历史，仅用当前 user_text。
         history_limit: 历史消息上限（不含当前消息）。
         db: 可选 SQLAlchemy AsyncSession。提供时会加载该会话角色 + 用户画像，
-            渲染 L3 CHARACTER / L4 RELATIONSHIP / L5 USER_PROFILE / L7 STATE / L9 FORMAT。
-            为 None 时这些层走"未知/默认"，但 10 层标签仍渲染。
+            并在有画像行时先刷新 ``loneliness_score``（D4-3/D4-4），再按需检索记忆（D4-2），
+            渲染 L3–L7 / L6 等。为 None 时跳过 DB 相关步骤。
 
     Returns:
         非空字符串。
@@ -115,12 +126,49 @@ async def generate_reply(
 
     character_row, profile_row = await _load_db_context(db, user_id, conversation_id, log)
 
+    if db is not None and profile_row is not None:
+        try:
+            profile_row = await refresh_loneliness_score(
+                db=db,
+                user_id=str(user_id),
+                profile_row=profile_row,
+                trace_id=trace_id,
+                log=log,
+                user_text=user_text,
+            )
+        except Exception as exc:  # pragma: no cover - refresh 内部多已吞异常，防御性
+            log.bind(error_type=type(exc).__name__).warning(
+                "orchestrator.loneliness_refresh.exception"
+            )
+
+    memories = await _maybe_retrieve_memories_for_prompt(
+        db=db,
+        user_id=user_id,
+        user_text=user_text,
+        character_row=character_row,
+        trace_id=trace_id,
+        log=log,
+    )
+
+    loneliness_score_log: float | None = None
+    if profile_row is not None:
+        try:
+            ls = profile_row.get("loneliness_score")
+            loneliness_score_log = float(ls) if ls is not None else None
+        except (TypeError, ValueError):
+            loneliness_score_log = None
+
+    loneliness_utterance_tags: list[str] | None = None
+    if settings.LONELINESS_UTTERANCE_ENABLED and (user_text or "").strip():
+        utags = infer_utterance_emotion_tags(user_text)
+        loneliness_utterance_tags = utags if utags else None
+
     prompt = build_prompt(
         PromptInput(
             user_text=user_text,
             character=character_row,
             profile=profile_row,
-            memories=None,  # D4-1 接入后此处传 retrieve 结果
+            memories=memories,
             history=history,
         )
     )
@@ -134,6 +182,9 @@ async def generate_reply(
         estimated_tokens=prompt.estimated_tokens,
         has_character=character_row is not None,
         has_profile=profile_row is not None,
+        memory_hits=len(memories) if memories else 0,
+        loneliness_score=loneliness_score_log,
+        loneliness_utterance_tags=loneliness_utterance_tags,
     ).info("orchestrator.prompt.assembled")
 
     try:
@@ -181,6 +232,71 @@ async def generate_reply(
 
 
 # ── 内部 ──────────────────────────────────────────────
+
+
+def _memory_hits_to_prompt_dicts(hits: list[Any]) -> list[dict[str, Any]]:
+    """MemoryHit → ``prompt_builder._render_memory`` 所需 dict 列表。"""
+    rows: list[dict[str, Any]] = []
+    for h in hits:
+        rows.append(
+            {
+                "memory_type": getattr(h, "memory_type", None),
+                "content": getattr(h, "content", "") or "",
+                "importance_score": getattr(h, "importance_score", None),
+            }
+        )
+    return rows
+
+
+async def _maybe_retrieve_memories_for_prompt(
+    *,
+    db: Any,
+    user_id: str,
+    user_text: str,
+    character_row: dict[str, Any] | None,
+    trace_id: str,
+    log,
+) -> list[dict[str, Any]] | None:
+    """D4-2：与 ``POST .../memories/retrieve`` 同参调用 hybrid retrieve；失败或空则 None。
+
+    不包含「记忆一致性检查」——见产品单开任务。
+    """
+    if not settings.MEMORY_RETRIEVE_IN_PROMPT:
+        return None
+    if db is None:
+        return None
+    q = (user_text or "").strip()
+    if not q:
+        return None
+
+    char_id: str | None = None
+    if character_row:
+        raw_id = character_row.get("id")
+        if raw_id is not None:
+            char_id = str(raw_id)
+
+    try:
+        result = await memory_retrieve(
+            db=db,
+            user_id=str(user_id),
+            query_text=q,
+            k_final=int(settings.MEMORY_RETRIEVE_TOP_K),
+            k_candidates=int(settings.MEMORY_RETRIEVE_K_CANDIDATES),
+            memory_types=None,
+            min_importance=0.0,
+            character_id=char_id,
+            include_global=True,
+            trace_id=trace_id,
+            touch_last_used=True,
+        )
+    except Exception as exc:  # pragma: no cover - retriever 设计上不抛，防御性
+        log.bind(error_type=type(exc).__name__).warning("orchestrator.memory_retrieve.exception")
+        return None
+
+    if not result.hits:
+        return None
+    return _memory_hits_to_prompt_dicts(result.hits)
+
 
 async def _load_recent_context(
     redis: Any,
