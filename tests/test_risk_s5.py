@@ -1,7 +1,7 @@
 """RISK-S5：S5 阶段、通知门控、handoff 恢复规则。"""
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -33,10 +33,11 @@ def test_compute_s5_phase_boundaries():
 
 
 def test_notification_blocks_marketing_and_care_window():
+    now = datetime(2026, 5, 10, 12, 0, 0, tzinfo=UTC).replace(tzinfo=None)
     acute = S5Restrictions(
         active=True,
         phase=S5Phase.ACUTE,
-        entered_at=datetime.utcnow(),
+        entered_at=now,
         hours_since_entry=1.0,
     )
     assert notification_block_reason(acute, "silent_reactivation")
@@ -45,7 +46,7 @@ def test_notification_blocks_marketing_and_care_window():
     care = S5Restrictions(
         active=True,
         phase=S5Phase.CARE_WINDOW,
-        entered_at=datetime.utcnow() - timedelta(hours=50),
+        entered_at=now - timedelta(hours=50),
         hours_since_entry=50.0,
     )
     assert notification_block_reason(care, S5_CARE_NOTIFICATION_TYPE) is None
@@ -53,10 +54,11 @@ def test_notification_blocks_marketing_and_care_window():
 
 
 def test_handoff_return_ai_rules():
+    now = datetime(2026, 5, 10, 12, 0, 0, tzinfo=UTC).replace(tzinfo=None)
     stab = S5Restrictions(
         active=True,
         phase=S5Phase.STABILIZATION,
-        entered_at=datetime.utcnow() - timedelta(days=3),
+        entered_at=now - timedelta(days=3),
         hours_since_entry=72.0,
     )
     assert handoff_return_ai_block_reason(stab, allow_upsell=False)
@@ -65,7 +67,7 @@ def test_handoff_return_ai_rules():
     rec = S5Restrictions(
         active=True,
         phase=S5Phase.RECOVERY_ELIGIBLE,
-        entered_at=datetime.utcnow() - timedelta(days=8),
+        entered_at=now - timedelta(days=8),
         hours_since_entry=192.0,
     )
     assert handoff_return_ai_block_reason(rec, allow_upsell=False) is None
