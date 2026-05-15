@@ -166,6 +166,10 @@ def evaluate_user(
         return EligibilityResult(ok=False, skip_reason="is_minor_suspected")
     if user_row["risk_level"] in ("high", "critical"):
         return EligibilityResult(ok=False, skip_reason=f"risk_level:{user_row['risk_level']}")
+
+    stage = str(user_row.get("relationship_stage") or "").strip().upper()
+    if stage == "S5":
+        return EligibilityResult(ok=False, skip_reason="relationship_stage:S5")
     if has_open_handoff:
         return EligibilityResult(ok=False, skip_reason="open_handoff_task")
 
