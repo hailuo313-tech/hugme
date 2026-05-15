@@ -1,4 +1,4 @@
-﻿# ERIS MVP Runbook v1
+# ERIS MVP Runbook v1
 
 Last updated: 2026-05-12
 Host: `67.216.204.137`
@@ -318,8 +318,9 @@ curl -s -X POST "http://127.0.0.1:8000/api/v1/users/<uid>/memories/retrieve" \
 `memory_retriever.retrieve`（query = 当前 `user_text`，`k_final` = `MEMORY_RETRIEVE_TOP_K`，默认 8）。
 **编排顺序**：同一次调用里 **D4-3 / D4-4**（`loneliness_updater`：记忆标签 + 当前句关键词）先执行，**D4-2** 检索后执行（见 `app/services/llm_orchestrator.py`）。
 环境变量 `MEMORY_RETRIEVE_IN_PROMPT=false` 可关掉（避免每次回复都打 embed）。
+**D4-2 记忆一致性（任务卡 9）**：仅当 `MEMORY_CONSISTENCY_ENABLED=true`（默认）且 `MEMORY_RETRIEVE_IN_PROMPT=true` 时，在写入 L6 前用 `services/memory_consistency.py` 做轻量规则过滤；默认 `MEMORY_CONSISTENCY_LLM_MAX_OUTPUT_TOKENS=0`（不调 LLM）故额外 completion 为 0，有滤除时打 `memory.consistency.filtered`。
 结构化日志 `orchestrator.prompt.assembled` 增加 `memory_hits` /
-`memory_embedding_used` / `memory_candidates_scanned`。
+`memory_embedding_used` / `memory_candidates_scanned` / `memory_consistency_dropped`。
 
 ## D8：memories 性能索引（D8-1 / D8-2）
 

@@ -10,7 +10,7 @@
   最末一条（=当前消息）被丢弃。
 - D2-2.1：redis.lrange 抛异常 → 仍能完成调用，仅记录 warning。
 - D2-2.1：history_limit=0 / redis=None → 不读取历史。
-- D4-2：MEMORY_RETRIEVE_IN_PROMPT 开关 + mock retrieve → L6 含记忆正文。
+- D4-2：MEMORY_RETRIEVE_IN_PROMPT 开关 + mock retrieve → L6 含记忆正文；任务卡 9 一致性过滤。
 - D4-3 / D4-4：refresh_loneliness_score 先于 memory_retrieve；无 profile 不调 refresh。
 
 所有外部 IO（实际的 LLM HTTP 调用 + Redis）通过 monkeypatch / fake 对象拦截。
@@ -601,6 +601,92 @@ async def test_memory_retrieve_injected_into_prompt_when_enabled(
     system = captured["messages"][0]["content"]
     assert "L6_MEMORY" in system
     assert "golden retriever" in system
+
+
+@pytest.mark.asyncio
+async def test_memory_consistency_filters_conflicting_hit_before_l6(
+    monkeypatch, llm_orchestrator
+):
+    """任务卡 9：感情结束信号 + 记忆仍写伴侣 → 该条不进 L6，其余仍注入。"""
+    from datetime import datetime, timezone
+
+    from services.memory_retriever import MemoryHit, RetrieveResult
+
+    captured: dict[str, Any] = {}
+
+    async def fake_chat(*, messages, trace_id, **_kwargs):
+        captured["messages"] = messages
+        return _LLMResultStub(content="ok")
+
+    async def fake_retrieve(**_kwargs):
+        h_bad = MemoryHit(
+            id="m1",
+            content="用户和男朋友感情很好，每周约会",
+            memory_type="relationship",
+            importance_score=9.0,
+            confidence_score=0.9,
+            emotion_tags=[],
+            created_at=datetime.now(timezone.utc),
+            last_used_at=None,
+            similarity=0.9,
+            final_score=0.95,
+        )
+        h_ok = MemoryHit(
+            id="m2",
+            content="用户喜欢喝燕麦拿铁",
+            memory_type="preference",
+            importance_score=6.0,
+            confidence_score=0.8,
+            emotion_tags=[],
+            created_at=datetime.now(timezone.utc),
+            last_used_at=None,
+            similarity=0.5,
+            final_score=0.6,
+        )
+        return RetrieveResult(hits=[h_bad, h_ok], embedding_used=False)
+
+    monkeypatch.setattr(llm_orchestrator, "memory_retrieve", fake_retrieve)
+    monkeypatch.setattr(llm_orchestrator, "llm_chat", fake_chat)
+    monkeypatch.setattr(llm_orchestrator.settings, "LLM_ECHO_FALLBACK", False)
+    monkeypatch.setattr(llm_orchestrator.settings, "MEMORY_RETRIEVE_IN_PROMPT", True)
+    monkeypatch.setattr(llm_orchestrator.settings, "MEMORY_CONSISTENCY_ENABLED", True)
+
+    async def _pass_refresh(**kwargs):
+        return kwargs["profile_row"]
+
+    monkeypatch.setattr(llm_orchestrator, "refresh_loneliness_score", _pass_refresh)
+
+    class _FakeRow:
+        def __init__(self, mapping: dict[str, Any]):
+            self._mapping = mapping
+
+    class _FakeExecResult:
+        def __init__(self, row):
+            self._row = row
+
+        def fetchone(self):
+            return self._row
+
+    class _FakeDB:
+        async def execute(self, stmt, params=None):
+            sql = str(getattr(stmt, "text", stmt))
+            if "characters" in sql:
+                return _FakeExecResult(_FakeRow({"id": "c2", "name": "Aria"}))
+            if "user_profiles" in sql:
+                return _FakeExecResult(_FakeRow({"loneliness_score": 40.0}))
+            return _FakeExecResult(None)
+
+    await llm_orchestrator.generate_reply(
+        user_id="u1",
+        conversation_id="c1",
+        user_text="我们分手了，别再提他",
+        trace_id="t-consistency",
+        db=_FakeDB(),
+    )
+
+    system = captured["messages"][0]["content"]
+    assert "燕麦拿铁" in system
+    assert "男朋友" not in system
 
 
 # ── D4-3 / D4-4：loneliness 主链路写回（先于 D4-2 retrieve）────────────────

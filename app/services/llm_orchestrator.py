@@ -19,7 +19,8 @@ D2-2 / D2-2.1 / D3-2: LLM Orchestrator
      ``loneliness_score``，并用返回的 profile 参与后续 prompt（L7）；
   4) **D4-2**：在 ``MEMORY_RETRIEVE_IN_PROMPT`` 为真且 ``db`` 非空时，用当前 ``user_text``
      调用 ``memory_retriever.retrieve``（参数与 ``POST .../memories/retrieve`` 一致），
-     将 Top-K 命中写入 ``PromptInput.memories`` → ``L6_MEMORY``；
+     再经 ``memory_consistency`` 过滤与当前句互斥的命中，将剩余 Top-K 写入
+     ``PromptInput.memories`` → ``L6_MEMORY``（任务卡 9；默认仅规则、零额外 LLM）；
   5) 把这些丢给 ``build_prompt``，得到 messages + 各层日志。
   缺数据时各层走"未知/默认"降级，但 10 个层标签永远在。
 - 失败处理
@@ -51,6 +52,7 @@ from services.loneliness_updater import (
     refresh_loneliness_score,
 )
 from services.llm import chat as llm_chat
+from services.memory_consistency import filter_memory_hits_for_current_utterance
 from services.memory_retriever import retrieve as memory_retrieve
 from services.prompt_builder import (
     DEFAULT_SYSTEM_PROMPT,
@@ -141,7 +143,7 @@ async def generate_reply(
                 "orchestrator.loneliness_refresh.exception"
             )
 
-    memories = await _maybe_retrieve_memories_for_prompt(
+    memories, memory_consistency_dropped = await _maybe_retrieve_memories_for_prompt(
         db=db,
         user_id=user_id,
         user_text=user_text,
@@ -183,6 +185,7 @@ async def generate_reply(
         has_character=character_row is not None,
         has_profile=profile_row is not None,
         memory_hits=len(memories) if memories else 0,
+        memory_consistency_dropped=memory_consistency_dropped,
         loneliness_score=loneliness_score_log,
         loneliness_utterance_tags=loneliness_utterance_tags,
     ).info("orchestrator.prompt.assembled")
@@ -256,18 +259,19 @@ async def _maybe_retrieve_memories_for_prompt(
     character_row: dict[str, Any] | None,
     trace_id: str,
     log,
-) -> list[dict[str, Any]] | None:
-    """D4-2：与 ``POST .../memories/retrieve`` 同参调用 hybrid retrieve；失败或空则 None。
+) -> tuple[list[dict[str, Any]] | None, int]:
+    """D4-2：hybrid retrieve →（可选）一致性过滤 → ``prompt_builder`` 用 dict 列表。
 
-    不包含「记忆一致性检查」——见产品单开任务。
+    Returns:
+        ``(memories_dicts_or_none, consistency_dropped_count)``
     """
     if not settings.MEMORY_RETRIEVE_IN_PROMPT:
-        return None
+        return None, 0
     if db is None:
-        return None
+        return None, 0
     q = (user_text or "").strip()
     if not q:
-        return None
+        return None, 0
 
     char_id: str | None = None
     if character_row:
@@ -291,11 +295,26 @@ async def _maybe_retrieve_memories_for_prompt(
         )
     except Exception as exc:  # pragma: no cover - retriever 设计上不抛，防御性
         log.bind(error_type=type(exc).__name__).warning("orchestrator.memory_retrieve.exception")
-        return None
+        return None, 0
 
     if not result.hits:
-        return None
-    return _memory_hits_to_prompt_dicts(result.hits)
+        return None, 0
+
+    hits: list[Any] = list(result.hits)
+    dropped = 0
+    if settings.MEMORY_CONSISTENCY_ENABLED:
+        hits, dropped = filter_memory_hits_for_current_utterance(q, hits)
+        if dropped:
+            log.bind(
+                component="memory_consistency",
+                dropped=dropped,
+                kept=len(hits),
+            ).info("memory.consistency.filtered")
+
+    if not hits:
+        return None, dropped
+
+    return _memory_hits_to_prompt_dicts(hits), dropped
 
 
 async def _load_recent_context(
