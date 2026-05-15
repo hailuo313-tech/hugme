@@ -185,6 +185,21 @@ def test_l4_no_profile_falls_back_to_s0():
     assert "S0" in body
 
 
+def test_l4_s5_renders_crisis_restrictions_not_upsell():
+    out = build_prompt(
+        PromptInput(
+            user_text="hi",
+            profile={"relationship_stage": "S5"},
+            s5_phase="care_window",
+        )
+    )
+    body = out.layers["L4_RELATIONSHIP"]
+    assert "S5 危机恢复" in body
+    assert "禁止" in body
+    assert "高粘性" not in body
+    assert "Upsell" in out.layers["L10_ANCHOR"]
+
+
 # ─────────────────────────────────────────────────────────────
 # L5 USER_PROFILE
 # ─────────────────────────────────────────────────────────────

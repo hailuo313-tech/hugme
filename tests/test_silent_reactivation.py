@@ -29,6 +29,7 @@ def _user_row(
     is_minor_suspected: bool = False,
     risk_level: str = "normal",
     timezone_name: str = "UTC",
+    relationship_stage: str = "S2",
 ) -> dict:
     return {
         "id": user_id,
@@ -39,6 +40,7 @@ def _user_row(
         "is_minor_suspected": is_minor_suspected,
         "risk_level": risk_level,
         "timezone": timezone_name,
+        "relationship_stage": relationship_stage,
     }
 
 
@@ -219,6 +221,20 @@ def test_evaluate_skips_when_open_handoff():
     )
     assert res.ok is False
     assert res.skip_reason == "open_handoff_task"
+
+
+def test_evaluate_skips_when_relationship_stage_s5():
+    user = _user_row(relationship_stage="S5")
+    res = evaluate_user(
+        user,
+        now_utc=NOW,
+        last_user_message_at=_last_msg_hours_ago(30),
+        has_open_handoff=False,
+        has_meaningful_memory=False,
+        telegram_bot_token_present=True,
+    )
+    assert res.ok is False
+    assert res.skip_reason == "relationship_stage:S5"
 
 
 def test_evaluate_skips_when_no_user_message_history():
