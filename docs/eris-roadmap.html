@@ -672,9 +672,9 @@ const DATA = [
   ]},
   {id:"D4", title:"记忆检索 + loneliness_score", milestone:"AI 真的\"记得你\"，系统识别脆弱时刻", blocks:[
     {id:"D4-1", owner:"cursor", task:"Hybrid Retrieval：tag filter → pgvector TopK=30 → Rerank Top10", deliv:"API 返回相关历史记忆", done:true},
-    {id:"D4-2", owner:"cursor", task:"【进行中】retrieve API + L6 渲染已有；orchestrator 注入 Top-K 与一致性检查未接 main", deliv:"llm_orchestrator 仍 memories=None；见 docs/ROADMAP_RECONCILE_D8.md"},
-    {id:"D4-3", owner:"cursor", task:"【进行中】loneliness 记忆聚合+衰减+当前句（D4-4）逻辑与单测在库；主链路每轮写回未接线", deliv:"refresh_loneliness_score 未从 generate_reply 调用；initiation 等四维分轨未算"},
-    {id:"D4-4", owner:"cursor", task:"【进行中】utterance→loneliness 已并入 loneliness 模块；独立 Score Worker 与 trigger_threshold 动态计算未实现", deliv:"schema 默认列仍在；min-only 与 handoff 触发待落地"},
+    {id:"D4-2", owner:"cursor", task:"L6：retrieve → orchestrator 注入 Top-K；任务卡 9 规则一致性过滤（默认不调 LLM）", deliv:"`memory_consistency.py` + RUNBOOK 一句触发/成本；`orchestrator.prompt.assembled` 含 memory_consistency_dropped", done:true},
+    {id:"D4-3", owner:"cursor", task:"loneliness：记忆聚合+衰减+当前句（D4-4）+ generate_reply 每轮 refresh（L7）", deliv:"`refresh_loneliness_score` 先于 retrieve；initiation 等四维仍以 worker 周期写回为主", done:true},
+    {id:"D4-4", owner:"cursor", task:"profile_score_worker + scheduler（initiation_score / trigger_threshold）；默认 SCORE_WORKER_ENABLED=false", deliv:"代码在库；生产启用 + handoff 触发证明仍属运维验收", done:false},
   ]},
   {id:"D5", title:"运营后台 + 真人接管", milestone:"真人能从后台接管会话并发消息", blocks:[
     {id:"D5-1", owner:"devin",  task:"Next.js 后台脚手架 + operator JWT 登录（operators 表）", deliv:"/admin 能登录", done:true},
@@ -696,7 +696,7 @@ const DATA = [
   ]},
   {id:"D8", title:"缓冲日 / 修补", milestone:"修内测发现的问题 + 第二轮内测", blocks:[
     {id:"D8-1", owner:"cursor", task:"【进行中】修 D7 内测 bug；issue 清单待 PR 收敛", deliv:"闸门/基线文档已合；开放修复 PR 仍可能存在"},
-    {id:"D8-2", owner:"cursor", task:"【进行中】memories 索引（d8-1/d8-2 migration + rollout 清单已合 main）；Worker 并发与 P95 压测待定", deliv:"P95<2s 未举证；见 docs/ROADMAP_RECONCILE_D8.md"},
+    {id:"D8-2", owner:"cursor", task:"索引+migration 已合 main；prod rollout 需 SQL 自证。Worker：可调 HTTP 超时与 scheduler max_instances（默认=旧行为）。压测脚本需 ERIS_OPERATOR_JWT；D8_2 文档已记 fallback P95 smoke，向量 P95 仍待 embedding backfill 后复跑", deliv:"部分举证 docs/D8_2_PERFORMANCE_PROOF.md + ROADMAP_RECONCILE；全绿需 vector P95"},
     {id:"D8-3", owner:"codex",  task:"文档 / ENV 同步 + Runbook（出故障怎么办）", deliv:"Runbook v1", done:true},
     {id:"D8-4", owner:"codex",  task:"【进行中】二测指标：Day1 指标包已合；全量看板/七日数据/token 成本未闭环", deliv:"见 docs/ROADMAP_RECONCILE_D8.md（#29 等）"},
   ]},
