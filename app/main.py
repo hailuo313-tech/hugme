@@ -1,5 +1,9 @@
-from fastapi import FastAPI, Request
+import os
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from contextlib import asynccontextmanager
 from loguru import logger
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -30,6 +34,10 @@ from services.embedding_worker import (
     start_scheduler as start_embedding_worker,
     shutdown_scheduler as shutdown_embedding_worker,
 )
+from services.profile_score_scheduler import (
+    start_scheduler as start_profile_score_scheduler,
+    shutdown_scheduler as shutdown_profile_score_scheduler,
+)
 
 
 def configure_logging():
@@ -58,9 +66,11 @@ async def lifespan(app: FastAPI):
     logger.info("Database connected")
     start_silent_reactivation_scheduler()
     start_embedding_worker()
+    start_profile_score_scheduler()
     try:
         yield
     finally:
+        shutdown_profile_score_scheduler()
         shutdown_embedding_worker()
         shutdown_silent_reactivation_scheduler()
         logger.info("ERIS shutting down...")
@@ -74,6 +84,24 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+@app.get("/ops/{filename}", include_in_schema=False)
+async def ops_static_html(filename: str):
+    """只读提供仓库 ``docs/`` 下已审核的 HTML（与 Swagger ``/docs`` 路径区分）。"""
+    if ".." in filename or "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=400, detail="invalid path")
+    if not filename.endswith(".html"):
+        raise HTTPException(status_code=404, detail="未找到")
+    base = Path(os.environ.get("OPS_DOCS_DIR", "/srv/ops-docs")).resolve()
+    path = (base / filename).resolve()
+    try:
+        path.relative_to(base)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid path")
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="未找到")
+    return FileResponse(path, media_type="text/html; charset=utf-8")
+
 
 app.add_middleware(
     CORSMiddleware,
