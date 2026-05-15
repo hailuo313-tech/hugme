@@ -27,13 +27,14 @@ https://hugme2.com/health
 https://hugme2.com/health/detail
 https://hugme2.com/roadmap                    # 对外短链；见下「公开路线图」
 https://hugme2.com/ops/eris-roadmap.html      # 与 roadmap 同源：仓库 docs/eris-roadmap.html
-https://hugme2.com/ops/20260514v001.html      # 仓库 docs/ 下其它 HTML；勿用 /docs/（Swagger）
+https://hugme2.com/ops/20260514v001.html      # 仓库 docs/ 下的版本化 smoke HTML；勿用 /docs/（Swagger）
 wss://hugme2.com/ws/operators/tasks?operator_id=<operator-id>
 ```
 
 ## 公开路线图（`hugme2.com/roadmap` = 静态 `eris-roadmap.html`）
 
 **源文件（Git）**：[`docs/eris-roadmap.html`](docs/eris-roadmap.html)。与 [`docs/ROADMAP_RECONCILE_D8.md`](docs/ROADMAP_RECONCILE_D8.md) 一起在 PR 里审完再合 `main`。
+版本化 smoke 页：[`docs/20260514v001.html`](docs/20260514v001.html)。
 
 **线上如何生效**：
 
@@ -293,7 +294,7 @@ Phase 4  touch           ← asyncio.create_task: UPDATE last_used_at = NOW()
 废话也召回来；纯 SQL 又没法理解"颜色 ≈ 色彩"。SQL 把"哪些行是有效候选"先砍掉
 一刀，cosine + rerank 再做精排，体感"AI 真的记得我"。
 
-**API 示例**（须 operator JWT；无 `Authorization` 头返回 **401**）：
+**API 示例**（目标行为：须 operator JWT；当前 `main` 尚未在 memories 路由调用 `require_operator`，见 [`docs/A8_2_AUTH_JWT.md`](docs/A8_2_AUTH_JWT.md) 与 CUR-API-01）：
 
 ```bash
 TOKEN=$(...)  # operator JWT (D5-2)
@@ -360,7 +361,7 @@ psql "postgresql://eris:...@host:5432/eris" -v ON_ERROR_STOP=1 \
 ```
 
 **D8-2 压测（retrieve）**：`scripts/perf/d8_2_retrieval_load.py` 对 `POST .../memories/retrieve`
-打并发；需 **`ERIS_OPERATOR_JWT`**（该路由走 `require_operator`）。证据与结论写入
+打并发；脚本可带 **`ERIS_OPERATOR_JWT`**，但当前 `main` 的 memories 路由尚未强制 `require_operator`。证据与结论写入
 `docs/D8_2_PERFORMANCE_PROOF.md`。可调 worker 相关：`EMBEDDING_HTTP_TIMEOUT_SECONDS`、
 `EMBEDDING_SCHEDULER_MAX_INSTANCES`、`SCORE_WORKER_SCHEDULER_MAX_INSTANCES`（见 `.env.example`）。
 
@@ -415,6 +416,10 @@ print('OK: 9 system layers all present')
 发一条 Telegram 消息后，看 `docker logs eris-api | grep prompt.assembled` 应有一行带 `layers_with_data=[...]`。
 
 ## Admin: 会话列表 / 详情 (D5-2)
+
+A8-2 Auth/JWT 契约见 [`docs/A8_2_AUTH_JWT.md`](docs/A8_2_AUTH_JWT.md)。该文档以当前
+`app/api/admin.py` 和 `admin/lib/auth.ts` 为准：MVP 只有 operator JWT，没有 `scope=user`
+token 或 refresh token。
 
 **前端**：Next.js 应用 `admin/`，`basePath=/admin`，构建后由 Nginx 静态托管；运行时通过
 `next.config.js` 的 rewrite 把 `/admin/api/:path*` 反代到 `http://127.0.0.1:8000/api/:path*`。
