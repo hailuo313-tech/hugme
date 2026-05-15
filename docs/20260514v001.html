@@ -1,39 +1,1796 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="refresh" content="0; url=/ops/eris-roadmap.html">
-  <title>ERIS Roadmap Snapshot 20260514v001</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>未完成任务 · v001 · 2026-05-14</title>
   <style>
-    body {
-      margin: 0;
-      min-height: 100vh;
-      display: grid;
-      place-items: center;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      color: #1f2937;
-      background: #f8fafc;
+    :root {
+      --bg: #0f1117;
+      --card: #1a1d27;
+      --border: #2a2d3e;
+      --text: #e2e5f0;
+      --muted: #7a7f9a;
+      --accent: #6c8fff;
+      --red: #ff4d6d;
+      --orange: #ff8c42;
+      --yellow: #ffd166;
+      --green: #06d6a0;
+      --tag-bg: #252840;
+      --done-bg: #0d2e1f;
+      --done-text: #06d6a0;
+      --done-border: #0a4030;
+      --radius: 10px;
+      --shadow: 0 4px 24px rgba(0,0,0,0.4);
     }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+      font-size: 14px;
+      line-height: 1.7;
+      min-height: 100vh;
+    }
+
+    /* ── 顶部 Header ─────────────────────────────── */
+    header {
+      background: linear-gradient(135deg, #1a1d27 0%, #0f1117 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 36px 40px 28px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(12px);
+    }
+
+    header .meta {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    header .badge {
+      background: var(--accent);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 20px;
+      letter-spacing: 0.5px;
+    }
+
+    header .date-badge {
+      background: var(--tag-bg);
+      color: var(--muted);
+      font-size: 11px;
+      padding: 3px 10px;
+      border-radius: 20px;
+      letter-spacing: 0.5px;
+    }
+
+    header h1 {
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      line-height: 1.3;
+    }
+
+    header h1 span { color: var(--accent); }
+
+    header p.subtitle {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 6px;
+    }
+
+    /* ── 总览卡片 ─────────────────────────────────── */
+    .overview {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      padding: 28px 40px 0;
+    }
+
+    .overview-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      text-align: center;
+    }
+
+    .overview-card .num {
+      font-size: 36px;
+      font-weight: 800;
+      line-height: 1;
+      margin-bottom: 6px;
+    }
+
+    .overview-card .label {
+      font-size: 12px;
+      color: var(--muted);
+      letter-spacing: 0.5px;
+    }
+
+    .num-red    { color: var(--red); }
+    .num-orange { color: var(--orange); }
+    .num-yellow { color: var(--yellow); }
+    .num-green  { color: var(--green); }
+    .num-accent { color: var(--accent); }
+    .num-done   { color: var(--done-text); }
+
+    /* ── 主体内容 ─────────────────────────────────── */
     main {
-      max-width: 560px;
-      padding: 32px;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 32px 40px 60px;
+    }
+
+    /* ── 优先级汇总表 ─────────────────────────────── */
+    .priority-table-wrap {
+      margin-bottom: 40px;
+    }
+
+    .section-title {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    th {
+      background: #20243a;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      padding: 12px 16px;
+      text-align: left;
+    }
+
+    td {
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+      font-size: 13px;
+      vertical-align: middle;
+    }
+
+    tr:hover td { background: rgba(108,143,255,0.04); }
+
+    .p-tag {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 9px;
+      border-radius: 20px;
+      white-space: nowrap;
+    }
+
+    .p-tag.p0 { background: rgba(255,77,109,0.15); color: var(--red); border: 1px solid rgba(255,77,109,0.3); }
+    .p-tag.p1 { background: rgba(255,140,66,0.15); color: var(--orange); border: 1px solid rgba(255,140,66,0.3); }
+    .p-tag.p2 { background: rgba(255,209,102,0.12); color: var(--yellow); border: 1px solid rgba(255,209,102,0.3); }
+    .p-tag.p3 { background: rgba(6,214,160,0.10); color: var(--green); border: 1px solid rgba(6,214,160,0.25); }
+
+    /* ── 已完成区块 ──────────────────────────────── */
+    .done-section {
+      background: var(--done-bg);
+      border: 1px solid var(--done-border);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      margin-bottom: 40px;
+    }
+
+    .done-section h2 {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--done-text);
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .done-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 8px;
+    }
+
+    .done-item {
+      background: rgba(6,214,160,0.06);
+      border: 1px solid rgba(6,214,160,0.15);
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 12px;
+      color: var(--done-text);
+      display: flex;
+      align-items: flex-start;
+      gap: 7px;
+    }
+
+    .done-item::before { content: "✓"; font-weight: 700; flex-shrink: 0; }
+
+    /* ── 未完成区块 ──────────────────────────────── */
+    .todo-group {
+      margin-bottom: 32px;
+    }
+
+    .group-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .group-header h2 {
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .group-count {
+      font-size: 11px;
+      background: var(--tag-bg);
+      color: var(--muted);
+      padding: 2px 9px;
+      border-radius: 20px;
+    }
+
+    .todo-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .todo-item {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      transition: border-color 0.15s;
+    }
+
+    .todo-item:hover { border-color: var(--accent); }
+
+    .todo-item .icon {
+      font-size: 16px;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .todo-item .body { flex: 1; min-width: 0; }
+
+    .todo-item .title {
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 3px;
+      line-height: 1.4;
+    }
+
+    .todo-item .desc {
+      font-size: 12px;
+      color: var(--muted);
       line-height: 1.6;
     }
-    a {
-      color: #2563eb;
+
+    .todo-item .desc code {
+      background: var(--tag-bg);
+      color: var(--accent);
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-size: 11px;
+    }
+
+    .todo-item .tags {
+      display: flex;
+      gap: 5px;
+      flex-wrap: wrap;
+      margin-top: 6px;
+    }
+
+    .tag {
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 20px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+
+    .tag.backend { background: rgba(108,143,255,0.12); color: var(--accent); border: 1px solid rgba(108,143,255,0.25); }
+    .tag.frontend { background: rgba(255,140,66,0.12); color: var(--orange); border: 1px solid rgba(255,140,66,0.25); }
+    .tag.db { background: rgba(255,209,102,0.10); color: var(--yellow); border: 1px solid rgba(255,209,102,0.25); }
+    .tag.compliance { background: rgba(255,77,109,0.12); color: var(--red); border: 1px solid rgba(255,77,109,0.25); }
+    .tag.worker { background: rgba(6,214,160,0.10); color: var(--green); border: 1px solid rgba(6,214,160,0.25); }
+
+    .p-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      margin-top: 6px;
+    }
+
+    .p-dot.p0 { background: var(--red); box-shadow: 0 0 6px var(--red); }
+    .p-dot.p1 { background: var(--orange); box-shadow: 0 0 6px var(--orange); }
+    .p-dot.p2 { background: var(--yellow); }
+    .p-dot.p3 { background: var(--green); }
+
+    /* ── 页面切换 Tab ─────────────────────────────── */
+    .page-tabs {
+      display: flex;
+      gap: 8px;
+      padding: 0 40px 20px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, #141824 0%, #0f1117 100%);
+      position: sticky;
+      top: 0;
+      z-index: 99;
+      flex-wrap: wrap;
+    }
+
+    .page-tab {
+      background: var(--tag-bg);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+      padding: 10px 18px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+      font-family: inherit;
+    }
+
+    .page-tab:hover {
+      color: var(--text);
+      border-color: rgba(108,143,255,0.4);
+    }
+
+    .page-tab.active {
+      background: rgba(108,143,255,0.15);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .page-panel { display: none; }
+    .page-panel.active { display: block; }
+
+    /* Rev-C 页用表格展示全量待办；隐藏旧版损坏的 todo-group 块 */
+    #panel-revc .todo-group { display: none; }
+
+    .tag.owner-cursor { background: rgba(108,143,255,0.12); color: #8ab4ff; border: 1px solid rgba(108,143,255,0.3); }
+    .tag.owner-devin { background: rgba(255,140,66,0.12); color: var(--orange); border: 1px solid rgba(255,140,66,0.3); }
+    .tag.owner-codex { background: rgba(6,214,160,0.10); color: var(--green); border: 1px solid rgba(6,214,160,0.25); }
+    .tag.owner-you { background: rgba(200,180,255,0.12); color: #c4b5fd; border: 1px solid rgba(200,180,255,0.3); }
+    .tag.owner-legal { background: rgba(255,77,109,0.12); color: var(--red); border: 1px solid rgba(255,77,109,0.25); }
+    .tag.partial { background: rgba(255,209,102,0.10); color: var(--yellow); border: 1px solid rgba(255,209,102,0.25); }
+
+    .revc-intro {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      margin-bottom: 28px;
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+
+    .revc-intro strong { color: var(--text); }
+
+    /* ── AI 分派 Tab ─────────────────────────────── */
+    :root {
+      --devin: #22d3ee;
+      --cursor-ai: #a78bfa;
+      --codex-ai: #f59e0b;
+    }
+
+    .dispatch-banner {
+      margin: 0 40px 0;
+      padding: 12px 16px;
+      background: rgba(108,143,255,0.08);
+      border: 1px solid rgba(108,143,255,0.25);
+      border-radius: var(--radius);
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .dispatch-banner button.link-tab {
+      background: none;
+      border: none;
+      color: var(--accent);
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: underline;
+      padding: 0;
+    }
+
+    .ai-roles {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+
+    .ai-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      border-top: 3px solid var(--border);
+    }
+
+    .ai-card.devin { border-top-color: var(--devin); }
+    .ai-card.cursor { border-top-color: var(--cursor-ai); }
+    .ai-card.codex { border-top-color: var(--codex-ai); }
+
+    .ai-card h3 {
+      font-size: 15px;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .ai-card.devin h3 { color: var(--devin); }
+    .ai-card.cursor h3 { color: var(--cursor-ai); }
+    .ai-card.codex h3 { color: var(--codex-ai); }
+
+    .ai-card .slogan {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 10px;
+      letter-spacing: 0.3px;
+    }
+
+    .ai-card ul {
+      margin: 0;
+      padding-left: 18px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+
+    .ai-card ul strong { color: var(--text); font-weight: 600; }
+
+    .dispatch-rules {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      margin-bottom: 28px;
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    .dispatch-rules ol {
+      margin: 10px 0 0 20px;
+    }
+
+    .dispatch-rules li { margin-bottom: 4px; }
+
+    .wave-block {
+      margin-bottom: 32px;
+    }
+
+    .wave-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .wave-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 12px;
+      border-radius: 20px;
+      letter-spacing: 0.4px;
+    }
+
+    .wave-0 .wave-badge { background: rgba(6,214,160,0.15); color: var(--green); border: 1px solid rgba(6,214,160,0.35); }
+    .wave-1 .wave-badge { background: rgba(108,143,255,0.12); color: var(--accent); border: 1px solid rgba(108,143,255,0.3); }
+    .wave-2 .wave-badge { background: rgba(255,209,102,0.12); color: var(--yellow); border: 1px solid rgba(255,209,102,0.3); }
+    .wave-3 .wave-badge { background: rgba(122,127,154,0.15); color: var(--muted); border: 1px solid var(--border); }
+
+    .wave-header h2 {
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .wave-note {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    .parallel-tag {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 12px;
+      background: rgba(6,214,160,0.12);
+      color: var(--green);
+      border: 1px solid rgba(6,214,160,0.3);
+    }
+
+    .parallel-tag.seq {
+      background: rgba(255,140,66,0.12);
+      color: var(--orange);
+      border-color: rgba(255,140,66,0.3);
+    }
+
+    .parallel-tag.lock {
+      background: rgba(255,77,109,0.12);
+      color: var(--red);
+      border-color: rgba(255,77,109,0.3);
+    }
+
+    .ai-pill {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 12px;
+      white-space: nowrap;
+    }
+
+    .ai-pill.devin { background: rgba(34,211,238,0.12); color: var(--devin); border: 1px solid rgba(34,211,238,0.3); }
+    .ai-pill.cursor { background: rgba(167,139,250,0.12); color: var(--cursor-ai); border: 1px solid rgba(167,139,250,0.3); }
+    .ai-pill.codex { background: rgba(245,158,11,0.12); color: var(--codex-ai); border: 1px solid rgba(245,158,11,0.3); }
+    .ai-pill.you { background: rgba(16,185,129,0.12); color: var(--green); border: 1px solid rgba(16,185,129,0.3); }
+    .ai-pill.pair { background: rgba(200,180,255,0.1); color: #c4b5fd; border: 1px solid rgba(200,180,255,0.25); }
+
+    .dispatch-flow {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 28px;
+      overflow-x: auto;
+    }
+
+    .dispatch-flow pre {
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-size: 11px;
+      line-height: 1.55;
+      color: var(--muted);
+      white-space: pre;
+    }
+
+    table.dispatch-table td, table.dispatch-table th {
+      vertical-align: top;
+    }
+
+    table.dispatch-table .dep-list {
+      font-size: 11px;
+      color: var(--muted);
+      margin: 0;
+      padding-left: 16px;
+    }
+
+    /* ── Footer ──────────────────────────────────── */
+    footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: 12px;
+      padding: 24px 0 40px;
+      border-top: 1px solid var(--border);
+    }
+
+    /* ── 响应式 ──────────────────────────────────── */
+    @media (max-width: 640px) {
+      header { padding: 24px 20px 18px; }
+      .overview { padding: 20px 20px 0; }
+      main { padding: 24px 20px 40px; }
+      header h1 { font-size: 20px; }
+      .dispatch-banner { margin: 0 20px; }
+      .page-tabs { padding: 0 20px 16px; }
     }
   </style>
 </head>
 <body>
-  <main>
-    <h1>ERIS Roadmap Snapshot 20260514v001</h1>
-    <p>
-      The canonical roadmap HTML now lives at
-      <a href="/ops/eris-roadmap.html">/ops/eris-roadmap.html</a>.
-      This versioned URL is kept in Git so production smoke checks have a stable
-      `/ops/*.html` target served from the same docs mount.
-    </p>
-  </main>
+
+<!-- ══ HEADER ══════════════════════════════════════════════════════ -->
+<header>
+  <div class="meta">
+    <span class="badge">v001</span>
+    <span class="date-badge">2026-05-15</span>
+  </div>
+  <h1>ERIS — <span>未完成任务清单</span></h1>
+  <p class="subtitle" id="page-subtitle">架构方案 Dev-Ready Rev-C 与本地仓库代码对比 · 共 12 大模块存在缺口</p>
+</header>
+
+<nav class="page-tabs" role="tablist" aria-label="任务清单视图">
+  <button type="button" class="page-tab active" role="tab" aria-selected="true" data-panel="panel-v001" id="tab-v001">
+    v001 · 代码缺口
+  </button>
+  <button type="button" class="page-tab" role="tab" aria-selected="false" data-panel="panel-revc" id="tab-revc">
+    Rev-C · 架构待办（全量）
+  </button>
+  <button type="button" class="page-tab" role="tab" aria-selected="false" data-panel="panel-dispatch" id="tab-dispatch">
+    AI 分派与排期
+  </button>
+</nav>
+
+<p class="dispatch-banner" id="dispatch-banner">
+  👉 三方 AI 谁做什么、谁先谁后、哪些可并行：
+  <button type="button" class="link-tab" data-panel="panel-dispatch">打开「AI 分派与排期」</button>
+</p>
+
+<!-- ══ PANEL: v001 代码缺口 ═══════════════════════════════════════════ -->
+<div id="panel-v001" class="page-panel active" role="tabpanel" aria-labelledby="tab-v001">
+
+<div class="overview" id="overview-v001">
+  <div class="overview-card">
+    <div class="num num-red">6</div>
+    <div class="label">🔴 P0 紧急</div>
+  </div>
+  <div class="overview-card">
+    <div class="num num-orange">6</div>
+    <div class="label">🟠 P1 重要</div>
+  </div>
+  <div class="overview-card">
+    <div class="num num-yellow">6</div>
+    <div class="label">🟡 P2 待办</div>
+  </div>
+  <div class="overview-card">
+    <div class="num num-green">6</div>
+    <div class="label">🟢 P3 规划中</div>
+  </div>
+  <div class="overview-card">
+    <div class="num num-accent">12</div>
+    <div class="label">缺口模块数</div>
+  </div>
+  <div class="overview-card">
+    <div class="num num-done">23</div>
+    <div class="label">已完成功能点</div>
+  </div>
+</div>
+
+<!-- ══ MAIN ════════════════════════════════════════════════════════ -->
+<main>
+
+  <!-- ── 优先级汇总表 ─────────────────────────────────────────────── -->
+  <div class="priority-table-wrap">
+    <p class="section-title">优先级汇总</p>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:70px">优先级</th>
+          <th>未完成项</th>
+          <th>原因</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><span class="p-tag p0">P0</span></td><td>Handoff reply 实际发消息</td><td>运营后台核心功能，当前接管后用户收不到任何消息</td></tr>
+        <tr><td><span class="p-tag p0">P0</span></td><td>危机干预流程（高危词 → 安全话术 → P0任务）</td><td>合规和用户安全底线</td></tr>
+        <tr><td><span class="p-tag p0">P0</span></td><td>风险事件写入（risk_events 表）</td><td>当前 POST risk-events 仅返回 ok，不写库</td></tr>
+        <tr><td><span class="p-tag p0">P0</span></td><td>Telegram 通知实际发送 Worker</td><td>沉默回流任务已入库，但无 worker 调用 Bot API 发出消息</td></tr>
+        <tr><td><span class="p-tag p0">P0</span></td><td>内容安全双层过滤（OpenAI Moderation）</td><td>所有 safety_result 字段目前为 null，无实际过滤</td></tr>
+        <tr><td><span class="p-tag p0">P0</span></td><td>账号删除接口（GDPR 遗忘权）</td><td>路由完全未注册，合规强制要求</td></tr>
+        <tr><td><span class="p-tag p1">P1</span></td><td>接管自动触发 Policy Service</td><td>AI→人工切换没有自动化，需要手动创建任务</td></tr>
+        <tr><td><span class="p-tag p1">P1</span></td><td>关系阶段自动升降级逻辑</td><td>数据库有字段，但没有任何代码根据行为信号自动升降级</td></tr>
+        <tr><td><span class="p-tag p1">P1</span></td><td>S5 进入/退出限制执行</td><td>高风险用户仍可收到商业推送，禁令没有实际生效</td></tr>
+        <tr><td><span class="p-tag p1">P1</span></td><td>GDPR 字段对齐（marketing_opt_in / is_eu_user）</td><td>数据库字段名与架构方案不一致，EU强制 opt-in 未实现</td></tr>
+        <tr><td><span class="p-tag p1">P1</span></td><td>Handoff 任务分布式锁（5分钟超时释放）</td><td>当前无并发防护，多运营可能重复锁同一任务</td></tr>
+        <tr><td><span class="p-tag p1">P1</span></td><td>risk_score → risk_level 派生更新</td><td>写入 risk_score 后未同事务更新 users.risk_level 分桶</td></tr>
+        <tr><td><span class="p-tag p2">P2</span></td><td>话术库完整实现（scripts 表 + 全部接口）</td><td>运营效率核心工具，表和路由均未存在</td></tr>
+        <tr><td><span class="p-tag p2">P2</span></td><td>角色管理完整接口（POST / PATCH / stats）</td><td>目前只有 GET，运营无法上线新角色</td></tr>
+        <tr><td><span class="p-tag p2">P2</span></td><td>角色一致性引擎（ConsistencyScore）</td><td>真人发送前三层校验未实现</td></tr>
+        <tr><td><span class="p-tag p2">P2</span></td><td>支付退款接口 + 防沉迷限制</td><td>商业完整性，退款路由未注册</td></tr>
+        <tr><td><span class="p-tag p2">P2</span></td><td>用户冻结接口（POST /freeze）</td><td>路由未注册</td></tr>
+        <tr><td><span class="p-tag p2">P2</span></td><td>运营绩效质检（operator_quality_scores 表）</td><td>表未创建，指标计算逻辑未实现</td></tr>
+        <tr><td><span class="p-tag p3">P3</span></td><td>A/B 测试基础设施（4张表 + 全部接口）</td><td>第三阶段规划，表和路由均缺失</td></tr>
+        <tr><td><span class="p-tag p3">P3</span></td><td>未成年人保护（消费上限 / 内容强制）</td><td>字段存在，但无实际限制逻辑执行</td></tr>
+        <tr><td><span class="p-tag p3">P3</span></td><td>多语言情绪词库 + Prompt 按语言切换</td><td>第二阶段扩展，数据库字段有但逻辑无</td></tr>
+        <tr><td><span class="p-tag p3">P3</span></td><td>角色推荐匹配算法（Onboarding后智能分配）</td><td>当前 hardcode DEFAULT_CHARACTER_ID</td></tr>
+        <tr><td><span class="p-tag p3">P3</span></td><td>AI 辅助运营内容（摘要+推荐话术+禁忌提醒）</td><td>运营后台 API 未提供这些辅助数据</td></tr>
+        <tr><td><span class="p-tag p3">P3</span></td><td>POST /api/v1/notifications/send-now</td><td>即时推送接口未实现</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ── 已完成（参考） ──────────────────────────────────────────── -->
+  <div class="done-section">
+    <h2>✅ 已完成功能（参考基线）</h2>
+    <div class="done-grid">
+      <div class="done-item">数据库全表 DDL（含 pgvector）</div>
+      <div class="done-item">trace_id 全链路透传 + 结构化日志</div>
+      <div class="done-item">Prometheus 监控指标暴露</div>
+      <div class="done-item">POST /messages/inbound（限流+幂等+Redis上下文）</div>
+      <div class="done-item">POST /conversations/{id}/reply（LLM Orchestrator）</div>
+      <div class="done-item">POST /onboarding（5步状态机）</div>
+      <div class="done-item">10层 Prompt 结构（L1-L10）</div>
+      <div class="done-item">LLM 主备模型 + LLM_ECHO_FALLBACK 降级</div>
+      <div class="done-item">memory_writer 规则过滤 + LLM评分 + 异步写入</div>
+      <div class="done-item">memory_retriever Hybrid Retrieval（标签+向量+rerank）</div>
+      <div class="done-item">embedding_worker 异步调度器</div>
+      <div class="done-item">记忆 CRUD 接口（GET/POST/PATCH/DELETE）</div>
+      <div class="done-item">loneliness_updater 四维评分+衰减+冷启动</div>
+      <div class="done-item">Handoff 基础接口（lock/return-ai/escalate）</div>
+      <div class="done-item">通知调度（schedule/cancel/logs/tasks）</div>
+      <div class="done-item">silent_reactivation_scheduler（D1/D3/D7/D14）</div>
+      <div class="done-item">Stripe Checkout 创建订单</div>
+      <div class="done-item">Stripe Webhook 验签+幂等+5秒ack</div>
+      <div class="done-item">Admin API（登录+JWT+会话列表+详情）</div>
+      <div class="done-item">WebSocket 任务实时推送（增量diff）</div>
+      <div class="done-item">Telegram Webhook + Onboarding 引导</div>
+      <div class="done-item">GDPR 数据导出接口</div>
+      <div class="done-item">Prometheus + Grafana + Alertmanager 配置</div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- P0 ─────────────────────────────────────────────────────────── -->
+  <div class="todo-group">
+    <div class="group-header">
+      <span style="font-size:18px">🔴</span>
+      <h2>P0 — 紧急（影响基本可用性 / 合规底线）</h2>
+      <span class="group-count">6 项</span>
+    </div>
+    <div class="todo-list">
+
+      <div class="todo-item">
+        <div class="p-dot p0"></div>
+        <div class="body">
+          <div class="title">Handoff reply 实际发消息给用户</div>
+          <div class="desc">
+            <code>POST /api/v1/handoff/{task_id}/reply</code> 目前是存根，仅返回 <code>{"status":"sent"}</code>。
+            需要把运营回复内容写入 messages 表，并通过 Telegram Bot API（或对应渠道）实际发送给用户。
+          </div>
+          <div class="tags">
+            <span class="tag backend">Backend</span>
+            <span class="tag worker">Telegram Bot</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="todo-item">
+        <div class="p-dot p0"></div>
+        <div class="body">
+          <div class="title">危机干预完整流程</div>
+          <div class="desc">
+            检测到高危表达（self-harm / suicide / I want to die 等关键词）时：AI 立即切换安全话术 →
+            禁止商业引导 → 创建 P0 handoff 任务 → 写入 <code>risk_events</code>（risk_type='crisis'）→
+            用户标记进入 S5。当前这整条流程代码不存在。
+          </div>
+          <div class="tags">
+            <span class="tag backend">Backend</span>
+            <span class="tag compliance">合规</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="todo-item">
+        <div class="p-dot p0"></div>
+        <div class="body">
+          <div class="title">风险事件实际写库（risk_events 表）</div>
+          <div class="desc">
+            <code>POST /api/v1/users/{id}/risk-events</code> 当前只返回 <code>{"status":"ok"}</code>，
+            完全没有写入 <code>risk_events</code> 表的逻辑。
+            <code>GET /api/v1/users/{id}/risk-events</code> 查询接口也未实现。
+          </div>
+          <div class="tags">
+            <span class="tag backend">Backend</span>
+            <span class="tag db">DB</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="todo-item">
+        <div class="p-dot p0"></div>
+        <div class="body">
+          <div class="title">Telegram 通知实际发送 Worker</div>
+          <div class="desc">
+            <code>silent_reactivation_scheduler</code> 已将任务写入 <code>notification_tasks</code> 表，
+            但没有任何 Worker 消费这张表并调用 Telegram Bot API 发送消息。
+            用户永远收不到沉默回流通知。
+          </div>
+          <div class="tags">
+            <span class="tag worker">Worker</span>
+            <span class="tag backend">Backend</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="todo-item">
+        <div class="p-dot p0"></div>
+        <div class="body">
+          <div class="title">内容安全双层过滤（OpenAI Moderation API）</div>
+          <div class="desc">
+            架构要求所有 AI 回复和用户输入经过：① OpenAI Moderation API（异步）② 关键词库（同步阻塞）。
+            当前 <code>messages.safety_result</code> 字段始终为 null，没有任何过滤执行。
+          </div>
+          <div class="tags">
+            <span class="tag backend">Backend</span>
+            <span class="tag compliance">合规</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="todo-item">
+        <div class="p-dot p0"></div>
+        <div class="body">
+          <div class="title">账号删除接口（GDPR 遗忘权）</div>
+          <div class="desc">
+            <code>POST /api/v1/users/{id}/delete-request</code> 路由完全未注册。
+            需实现：接收删除申请 → 级联删除用户数据（或匿名化）→ 保留法规要求的最小审计记录 → 确认通知。
+          </div>
+          <div class="tags">
+            <span class="tag compliance">合规</span>
+            <span class="tag backend">Backend</span>
+            <span class="tag db">DB</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- P1 ─────────────────────────────────────────────────────────── -->
+  <div class="todo-group">
+    <div class="group-header">
+      <span style="font-size:18px">🟠</span>
+      <h2>P1 — 重要（核心业务逻辑缺失）</h2>
+      <span class="group-count">6 项</span>
+    </div>
+    <div class="todo-list">
+
+      <div class="todo-item">
+        <div class="p-dot p1"></div>
+        <div class="body">
+          <div class="title">接管自动触发 Policy Service</div>
+          <div class="desc">
+            架构方案 §2.3 定义了 7 个触发条件（loneliness_score 超阈值、VIP 阈值更低、危机信号、
+            AI 置信度低、用户明确要求真人等），满足任一条件时自动创建 handoff_task 入队。
+            当前这个"Policy Service"判断逻辑不存在，接管完全依赖手动触发。
+          </div>
+          <div class="tags">
+            <span class="tag backend">Backend</span>
+            <span class="tag worker">Worker</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="todo-item">
+        <div class="p-dot p1"></div>
+        <div class="body">
+          <div class="title">关系阶段自动升降级逻辑（S0→S5）</div>
+          <div class="desc">
+            <code>user_profiles.relationship_stage</code> 字段存在，但没有任何代码根据行为信号
+            （会话频率、平均长度、主动发起占比、付费行为等）自动升级或降级。
+            当前所有用户永远停留在 S0。
+          </div>
+          <div class="tags">
+            <span class="tag backend">Backend</span>
+            <span class="tag worker">Worker</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="todo-item">
+        <div class="p-dot p1"></div>
+        <div class="body">
+          <div class="title">S5 进入/退出限制实际执行</div>
+          <div class="desc">
+            当 risk_score ≥ 70 进入 S5 后，应冻结所有商业推送、禁止 Upsell、
+            每 48-72 小时仅允许安全关怀、强制 P0 接管。
+            连续 7 天 risk_score &lt; 40 后恢复。这些限制逻辑均未实现，高风险用户仍可收到营销推送。
+          </div>
+          <div class="tags">
+            <span class="tag backend">Backend</span>
+            <span class="tag compliance">合规</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="todo-item">
+        <div class="p-dot p1"></div>
+        <div class="body">
+          <div class="title">GDPR 字段对齐 + 欧盟强制 opt-in 流程</div>
+          <div class="desc">
+            当前数据库用 <code>notification_opt_in</code> / <code>opt_out_marketing</code>，
+            而架构方案要求 <code>marketing_opt_in</code> / <code>transactional_notifications_allowed</code> /
+            <code>is_eu_user</code> / <code>region</code>。字段名和语义不一致。
+            <code>is_eu_user</code> 字段在 init.sql 里不存在，EU 强制 opt-in 流程未实现。
+          </div>
+          <div class="tags">
+            <span class="tag db">DB Migration</span>
+            <span class="tag compliance">合规</span>
+            <span class="tag backend">Backend</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="todo-item">
+        <div class="p-dot p1"></div>
+        <div class="body">
+          <div class="title">Handoff 任务分布式锁（5 分钟超时自动释放）</div>
+          <div class="desc">
+            架构 §8.3 要求：每个任务只能被一个运营锁定（Redis 分布式锁），
+            超过 5 分钟未处理自动释放重新入队，P0 任务可抢占低优先级任务。
+            当前 lock 接口只是一个简单 UPDATE，无分布式锁、无超时机制。
+          </div>
+          <div class="tags">
+            <span class="tag backend">Backend</span>
+            <span class="tag worker">Redis</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="todo-item">
+        <div class="p-dot p1"></div>
+        <div class="body">
+          <div class="title">risk_score → users.risk_level 派生更新</div>
+          <div class="desc">
+            架构 §14.2 要求：写入 <code>user_profiles.risk_score</code> 后，
+            同事务更新 <code>users.risk_level</code> 分桶（0-39=normal, 40-69=elevated, 70-89=high, 90-100=crisis）。
+            当前写 risk_score 后 risk_level 永远不变。
+          </div>
+          <div class="tags">
+            <span class="tag backend">Backend</span>
+            <span class="tag db">DB</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- P2 ─────────────────────────────────────────────────────────── -->
+  <div class="todo-group">
+    <div class="group-header">
+      <span style="font-size:18px">🟡</span>
+      <h2>P2 — 待办（运营效率 / 商业完整性）</h2>
+      <span class="group-count">6 项</span>
+    </div>
+    <div class="todo-list">
+
+      <div class="todo-item">
+        <div class="p-dot p2"></div>
+        <div class="body">
+          <div class="title">话术库完整实现</div>
+          <div class="desc">
+            <code>scripts</code> 表在 init.sql 里不存在，所有话术相关接口均未注册：
+            <code>GET/POST /api/v1/scripts</code>、
+            <code>POST /api/v1/scripts/suggest</code>（运营核心工具）、
+            <code>PATCH /api/v1/scripts/{id}/review</code>。
+            运营后台的"AI推荐话术"功能完全无法工作。
+          </div>
+          <div class="tags">
+            <span class="tag db">DB</span>
+            <span class="tag backend">Backend</span>
+            <span class="tag frontend">Admin前端</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="todo-item">
+        <div class="p-dot p2"></div>
+        <div class="body">
+          <div class="title">角色管理完整接口</div>
+          <div class="desc">
+            当前只有 <code>GET /api/v1/characters</code> 和 <code>GET /api/v1/characters/{id}</code>。
+            缺少 <code>POST /api/v1/characters</code>（创建角色）、
+            <code>PATCH /api/v1/characters/{id}</code>（更新配置）、
+            <code>GET /api/v1/characters/{id}/stats</code>（效果数据）。
+            运营无法通过 API 上线新角色。
+          </div>
+          <div class="tags">
+            <span class="tag backend">Backend</span>
+            <span class="tag frontend">Admin前端</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="todo-item">
+        <div class="p-dot p2"></div>
+        <div class="body">
+          <div class="title">角色一致性引擎（ConsistencyScore）</div>
+          <div class="desc">
+            架构 §6.5 要求每次 AI 或真人发送内容前，计算
+            ConsistencyScore（人格一致性×0.35 + 语言风格×0.25 + 关系阶段×0.25 + 记忆引用×0.15）。
+            &lt;60 禁止发送。当前 <code>messages.consistency_score</code> 字段始终为 null。
+          </div>
+          <div class="tags">
+            <span class="tag backend">Backend</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="todo-item">
+        <div class="p-dot p2"></div>
+        <div class="body">
+          <div class="title">支付退款接口 + 防沉迷限制</div>
+          <div class="desc">
+            <code>POST /api/v1/orders/{id}/refund</code> 路由未注册。
+            架构要求的防沉迷限制（单笔≤$50、日消费≤$100、月≤$300、未成年单次≤$5、24小时冷静期）
+            均未实现。Stripe Webhook 发放 VIP 权益逻辑需验证是否完整。
+          </div>
+          <div class="tags">
+            <span class="tag backend">Backend</span>
+            <span class="tag compliance">合规</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="todo-item">
+        <div class="p-dot p2"></div>
+        <div class="body">
+          <div class="title">用户冻结接口（POST /api/v1/users/{id}/freeze）</div>
+          <div class="desc">
+            架构 §15.8 要求的冻结商业推送接口路由未注册。高风险用户 Risk > Revenue 裁决规则
+            需要能够以编程方式冻结某用户的所有商业触达，当前只能手动修改数据库。
+          </div>
+          <div class="tags">
+            <span class="tag backend">Backend</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="todo-item">
+        <div class="p-dot p2"></div>
+        <div class="body">
+          <div class="title">运营绩效质检系统</div>
+          <div class="desc">
+            <code>operator_quality_scores</code> 表在 init.sql 里不存在。
+            架构 §8.9 要求的 9 项质量指标（平均响应时间、用户继续回复率、
+            付费转化率、人设偏离率、AI推荐话术使用率等）计算逻辑均未实现。
+          </div>
+          <div class="tags">
+            <span class="tag db">DB</span>
+            <span class="tag backend">Backend</span>
+            <span class="tag frontend">Admin前端</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- P3 ─────────────────────────────────────────────────────────── -->
+  <div class="todo-group">
+    <div class="group-header">
+      <span style="font-size:18px">🟢</span>
+      <h2>P3 — 规划中（第二/三阶段）</h2>
+      <span class="group-count">6 项</span>
+    </div>
+    <div class="todo-list">
+
+      <div class="todo-item">
+        <div class="p-dot p3"></div>
+        <div class="body">
+          <div class="title">A/B 测试基础设施</div>
+          <div class="desc">
+            4 张表（<code>experiments</code>、<code>experiment_groups</code>、
+            <code>user_experiment_assignments</code>、<code>experiment_metrics</code>）在 init.sql 里不存在。
+            所有实验相关接口均未注册。loneliness_score 阈值 min-only/连乘切换开关当前 hardcode。
+          </div>
+          <div class="tags">
+            <span class="tag db">DB</span>
+            <span class="tag backend">Backend</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="todo-item">
+        <div class="p-dot p3"></div>
+        <div class="body">
+          <div class="title">未成年人保护实际执行</div>
+          <div class="desc">
+            <code>is_minor_suspected</code> 字段存在，但没有任何限制逻辑生效：
+            flirt_score 强制 = 0、深夜推送完全静默（22:00-08:00）、禁止付费引导、
+            单次消费 ≤$5 / 月度 ≤$20 上限均未实现。
+          </div>
+          <div class="tags">
+            <span class="tag backend">Backend</span>
+            <span class="tag compliance">合规</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="todo-item">
+        <div class="p-dot p3"></div>
+        <div class="body">
+          <div class="title">多语言情绪词库 + Prompt 按语言切换</div>
+          <div class="desc">
+            数据库有 <code>prompt_en/es/fr/de</code> 字段，架构定义了 en/es/fr/de 四套情绪词库，
+            但 <code>prompt_builder</code> 里没有按用户语言切换 Prompt 的逻辑，
+            也没有集成 <code>langdetect</code> 语言识别。
+          </div>
+          <div class="tags">
+            <span class="tag backend">Backend</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="todo-item">
+        <div class="p-dot p3"></div>
+        <div class="body">
+          <div class="title">角色推荐匹配算法（Onboarding 后智能分配）</div>
+          <div class="desc">
+            架构 §6.6 定义了按用户特征（loneliness_score、表达风格、活跃时段、幽默词汇等）
+            推荐角色类型的逻辑。当前 Onboarding 完成后 hardcode 分配
+            <code>DEFAULT_CHARACTER_ID = "00000000-0000-0000-0000-000000000001"</code>。
+          </div>
+          <div class="tags">
+            <span class="tag backend">Backend</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="todo-item">
+        <div class="p-dot p3"></div>
+        <div class="body">
+          <div class="title">AI 辅助运营内容（摘要 + 推荐话术 + 禁忌提醒）</div>
+          <div class="desc">
+            架构 §8.6 要求在接管时为运营提供：最近10轮摘要、当前情绪判断、
+            3条推荐回复（安抚型/升温型/转移型）、不建议说的话、是否适合推付费。
+            当前运营后台 API 没有提供这些数据。
+          </div>
+          <div class="tags">
+            <span class="tag backend">Backend</span>
+            <span class="tag frontend">Admin前端</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="todo-item">
+        <div class="p-dot p3"></div>
+        <div class="body">
+          <div class="title">POST /api/v1/notifications/send-now（即时推送）</div>
+          <div class="desc">
+            架构 §15.7 要求的即时推送接口路由未注册。
+            运营后台目前只能排期推送，无法立即向指定用户发送一条通知。
+          </div>
+          <div class="tags">
+            <span class="tag backend">Backend</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</main>
+
+</div><!-- /panel-v001 -->
+
+<!-- ══ PANEL: Rev-C 架构待办全量 ═════════════════════════════════════ -->
+<div id="panel-revc" class="page-panel" role="tabpanel" aria-labelledby="tab-revc" hidden>
+
+<div class="overview" id="overview-revc">
+  <div class="overview-card">
+    <div class="num num-red">9</div>
+    <div class="label">🔴 P0 / 阻塞</div>
+  </div>
+  <div class="overview-card">
+    <div class="num num-orange">14</div>
+    <div class="label">🟠 P1 重要</div>
+  </div>
+  <div class="overview-card">
+    <div class="num num-yellow">18</div>
+    <div class="label">🟡 P2 待办</div>
+  </div>
+  <div class="overview-card">
+    <div class="num num-green">22</div>
+    <div class="label">🟢 P3+ 规划</div>
+  </div>
+  <div class="overview-card">
+    <div class="num num-accent">63</div>
+    <div class="label">待办条目（全量）</div>
+  </div>
+  <div class="overview-card">
+    <div class="num num-done">MVP✓</div>
+    <div class="label">D0–D7 主链路已通</div>
+  </div>
+</div>
+
+<main>
+
+  <div class="revc-intro">
+    <strong>来源</strong>：《AI 情绪陪伴平台 ERIS 全栈架构方案（开发版）Rev-C》§0–§20 + 附录 A.8，对照 hugme <code>main</code> 与 <code>ROADMAP_RECONCILE_D8.md</code>（2026-05-15）。<br>
+    <strong>说明</strong>：D0–D8 路线图主卡多数已 done；本页列的是<strong>架构文档仍要求、但代码/运维/合规尚未闭环</strong>的项。与「v001 · 代码缺口」Tab 有重叠，本 Tab 按文档章节与阶段组织。
+  </div>
+
+  <div class="priority-table-wrap">
+    <p class="section-title">建议下一批任务卡（可派工）</p>
+    <table>
+      <thead>
+        <tr><th style="width:70px">优先级</th><th>编号</th><th>任务</th><th>建议负责</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><span class="p-tag p0">P0</span></td><td>OPS-02</td><td>roadmap HTML + PR #55 合 main；服务器 git pull 与 compose 纳入 Git</td><td>You / Codex</td></tr>
+        <tr><td><span class="p-tag p0">P0</span></td><td>D4-4-OPS</td><td>生产启用 SCORE_WORKER + handoff 阈值端到端 smoke</td><td>Codex</td></tr>
+        <tr><td><span class="p-tag p1">P1</span></td><td>DEV-D8-01</td><td>Admin 鉴权 + basePath（PR #33）</td><td>Devin</td></tr>
+        <tr><td><span class="p-tag p1">P1</span></td><td>CUR-API-01</td><td><code>GET /admin/users/{id}</code> + memories operator JWT</td><td>Cursor</td></tr>
+        <tr><td><span class="p-tag p1">P1</span></td><td>D8-2b</td><td>生产 migration 执行 + vector P95 压测复跑</td><td>Cursor / Codex</td></tr>
+        <tr><td><span class="p-tag p2">P2</span></td><td>REL-01</td><td>关系阶段 S0–S5 自动升降级引擎</td><td>Cursor</td></tr>
+        <tr><td><span class="p-tag p2">P2</span></td><td>NOTIF-01</td><td><code>PATCH notification-settings</code> + GDPR 同意审计日志</td><td>Cursor + 法务</td></tr>
+        <tr><td><span class="p-tag p2">P2</span></td><td>OPS-AI-01</td><td>运营辅助：10 轮摘要 + 3 条推荐回复 API</td><td>Cursor + Devin UI</td></tr>
+        <tr><td><span class="p-tag p3">P3</span></td><td>AB-01</td><td>A/B 四表 + 分配 + 指标回写</td><td>Cursor</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- A.8 Go/No-Go -->
+  <div class="todo-group">
+    <div class="group-header">
+      <span style="font-size:18px">📋</span>
+      <h2>附录 A.8 · Sprint 0 Go/No-Go（开工签字项）</h2>
+      <span class="group-count">7 项</span>
+    <div class="todo-list">
+      <div class="todo-item"><div class="p-dot p0"><div class="body"><div class="title">A8-1 · OpenAPI 三方确认<div class="desc"><code>eris-mvp.openapi.yaml</code> 前端/后端/Admin 评审签字；仓库内文件缺失或未对齐。</div><div class="tags"><span class="tag owner-you">You</span><span class="tag partial">未完成</span></div></div></div>
+      <div class="todo-item"><div class="p-dot p1"><div class="body"><div class="title">A8-2 · Auth 体系成文</div><div class="desc">JWT 颁发方、刷新策略、密钥轮换；operator 有，<code>scope=user</code> / App 端未成体系。</div><div class="tags"><span class="tag owner-codex">Codex</span><span class="tag partial">部分</span></div></div>
+      <div class="todo-item"><div class="p-dot p1"></div><div class="body"><div class="title">A8-3 · DDL 开发环境验收<div class="desc">users / user_profiles / operators / stripe_webhook_events 与 Rev-C 字段逐项对表。<div class="tags"><span class="tag owner-cursor">Cursor</span><span class="tag partial">部分</span></div></div></div>
+      <div class="todo-item"><div class="p-dot p1"></div><div class="body"><div class="title">A8-4 · Embedding + ivfflat 生产举证</div><div class="desc">A.5 模型维度已锁；生产 <code>CONCURRENTLY</code> migration + vector P95 待 backfill 后复跑。<div class="tags"><span class="tag owner-codex">Codex</span><span class="tag partial">部分</span></div></div>
+      <div class="todo-item"><div class="p-dot p1"></div><div class="body"><div class="title">A8-5 · Stripe Webhook 生产验收<div class="desc">验签+幂等+5s 代码在库；billing Prometheus 告警仍 gap（CUR-D8-03）。</div><div class="tags"><span class="tag owner-cursor">Cursor</span><span class="tag partial">部分</span></div></div></div>
+      <div class="todo-item"><div class="p-dot p0"></div><div class="body"><div class="title">A8-6 · GDPR 营销 opt-in 法务签字</div><div class="desc">EU 强制 opt-in 流程需法务 review 通过并留痕。<div class="tags"><span class="tag owner-legal">法务</span><span class="tag compliance">合规</span></div></div></div>
+      <div class="todo-item"><div class="p-dot p1"></div><div class="body"><div class="title">A8-7 · A.2 错误码指标+告警全覆盖</div><div class="desc">部分已有 Grafana；Stripe 等专用 metric 未导出。</div><div class="tags"><span class="tag owner-codex">Codex</span><span class="tag partial">部分</span></div>    </div>
+  </div>
+
+  <!-- §18 Phase 1 -->
+  <div class="todo-group">
+    <div class="group-header"><span style="font-size:18px">①</span><h2>§18 第一阶段 MVP（第 1–2 周）— 仍欠项</h2><span class="group-count">3 项</span></div>
+    <div class="todo-list">
+      <div class="todo-item"><div class="p-dot p1"></div><div class="body"><div class="title">M1-1 · 沉默推送分层落地<div class="desc">silent_reactivation 有；D1/D3/D7/D14 分层话术与 §7.4 表未全实现；生产常关。</div></div></div>
+      <div class="todo-item"><div class="p-dot p1"></div><div class="body"><div class="title">M1-2 · Admin 画像真数据<div class="desc">会话/接管有；<code>GET /admin/users/{id}</code> 缺，画像多 mock。</div><div class="tags"><span class="tag owner-cursor">Cursor</span><span class="tag owner-devin">Devin</span></div></div>
+      <div class="todo-item"><div class="p-dot p2"><div class="body"><div class="title">M1-3 · 可观测性进阶</div><div class="desc">Prometheus/Grafana 有；OpenTelemetry、Loki 文档目标未做。</div></div></div>
+    </div>
+  </div>
+
+  <!-- §18 Phase 2 -->
+  <div class="todo-group">
+    <div class="group-header"><span style="font-size:18px">②</span><h2>§18 第二阶段：关系与转化（第 3–4 周）</h2><span class="group-count">7 项</span></div>
+    <div class="todo-list">
+      <div class="todo-item"><div class="p-dot p1"></div><div class="body"><div class="title">P2-1 · 关系阶段自动升降级<div class="desc">§3.2–3.4；库有字段，无规则引擎。</div><div class="tags"><span class="tag owner-cursor">Cursor</span></div>      <div class="todo-item"><div class="p-dot p1"></div><div class="body"><div class="title">P2-2 · loneliness 四维完整闭环</div><div class="desc">每轮 refresh 有；initiation/trigger 偏 worker；生产 worker 默认关。</div></div>      <div class="todo-item"><div class="p-dot p1"></div><div class="body"><div class="title">P2-3 · 沉默回流 D1/D3/D7/D14/D30</div><div class="desc">§7.4 全表策略 vs 当前单一 silent_reactivation。</div>
+      <div class="todo-item"><div class="p-dot p2"><div class="body"><div class="title">P2-4 · VIP 权益体系</div><div class="desc">Stripe + vip_level；权益包/优惠券/SKU 未齐。</div></div></div>
+      <div class="todo-item"><div class="p-dot p2"></div><div class="body"><div class="title">P2-5 · AI 辅助运营</div><div class="desc">§8.1 摘要 + 3 条推荐回复 — 未实现。</div></div>
+      <div class="todo-item"><div class="p-dot p2"></div><div class="body"><div class="title">P2-6 · 话术库基础版<div class="desc">运营可编辑话术 + 三层校验 — 未实现。</div></div>
+      <div class="todo-item"><div class="p-dot p2"></div><div class="body"><div class="title">P2-7 · 转化漏斗分析<div class="desc">漏斗表/报表/看板 — 未实现。</div></div></div>
+    </div>
+  </div>
+
+  <!-- §18 Phase 3 -->
+  <div class="todo-group">
+    <div class="group-header"><span style="font-size:18px">③</span><h2>§18 第三阶段：规模化运营（第 5–8 周）</h2><span class="group-count">6 项</span></div>
+    <div class="todo-list">
+      <div class="todo-item"><div class="p-dot p2"></div><div class="body"><div class="title">P3-1 · P0–P4 并发工作台完整版</div><div class="desc">Handoff 基础有；§8.1 队列/抢占/质检入口未齐。</div></div>
+      <div class="todo-item"><div class="p-dot p0"></div><div class="body"><div class="title">P3-2 · 风控系统（危机/NSFW/Moderation）</div><div class="desc">见 v001 Tab P0 重叠项。</div></div></div>
+      <div class="todo-item"><div class="p-dot p3"><div class="body"><div class="title">P3-3 · 未成年人保护机制</div><div class="desc">§10.3 系统化 — 未做。</div></div></div>
+      <div class="todo-item"><div class="p-dot p2"></div><div class="body"><div class="title">P3-4 · 质检 + 运营绩效</div><div class="desc">operator_quality_scores — 未落地。</div>
+      <div class="todo-item"><div class="p-dot p3"></div><div class="body"><div class="title">P3-5 · A/B 测试基础设施</div><div class="desc">§13 四表+接口 — 不存在。</div></div></div>
+      <div class="todo-item"><div class="p-dot p3"><div class="body"><div class="title">P3-6 · 多语言（先西语）</div><div class="desc">§12 — MVP 仅 en 策略。</div></div>    </div>
+  </div>
+
+  <!-- §18 Phase 4 -->
+  <div class="todo-group">
+    <div class="group-header"><span style="font-size:18px">④</span><h2>§18 第四阶段：平台化</h2><span class="group-count">5 项</span></div>
+    <div class="todo-list">
+      <div class="todo-item"><div class="p-dot p3"></div><div class="body"><div class="title">P4-1 · App（React Native）接入</div></div>
+      <div class="todo-item"><div class="p-dot p3"></div><div class="body"><div class="title">P4-2 · Web Chat 独立接入</div></div></div>
+      <div class="todo-item"><div class="p-dot p3"></div><div class="body"><div class="title">P4-3 · 多角色商城</div></div>
+      <div class="todo-item"><div class="p-dot p3"></div><div class="body"><div class="title">P4-4 · 开放 API</div></div></div>
+      <div class="todo-item"><div class="p-dot p3"></div><div class="body"><div class="title">P4-5 · 数据仓库 + 推荐系统</div></div></div>
+    </div>
+  </div>
+
+  <!-- 正文章节缺口 -->
+  <div class="priority-table-wrap">
+    <p class="section-title">正文章节 · 跨阶段缺口（摘要表）</p>
+    <table>
+      <thead><tr><th>章节</th><th>主题</th><th>状态</th></tr></thead>
+      <tbody>
+        <tr><td>§1</td><td>API Gateway / user JWT / S3 / K8s / OTel</td><td>未做或 MVP 合并在 FastAPI</td></tr>
+        <tr><td>§2</td><td>Policy Service 统一判定；回复后 Moderation；Risk&gt;Revenue 冻结 Upsell</td><td>分散实现 / 未做</td></tr>
+        <tr><td>§3</td><td>S5 进出自动化；阶段与推送节奏联动</td><td>未做</td></tr>
+        <tr><td>§4</td><td>付费调节系数；handoff 阈值 A/B 算法</td><td>部分</td></tr>
+        <tr><td>§5</td><td>记忆候选池确认；低质降权；rerank 按角色/实验</td><td>部分</td></tr>
+        <tr><td>§6</td><td>多角色上线；角色推荐；Prompt 质量可调</td><td>主要仅 Aria</td></tr>
+        <tr><td>§7</td><td>notification-settings；多类型推送；同意审计日志</td><td>部分</td></tr>
+        <tr><td>§8–9</td><td>运营摘要/推荐回复；三层真人校验；WebSocket 1s SLA 实测</td><td>部分</td></tr>
+        <tr><td>§10</td><td>危机 P0 SLA；标准错误 envelope 全 API</td><td>部分 / v001 P0</td></tr>
+        <tr><td>§11</td><td>退款自动化；Stripe billing metrics</td><td>部分</td></tr>
+        <tr><td>§14–16</td><td>DDL 对 Rev-C；OpenAPI 一致；独立 worker 容器；Loki</td><td>部分</td></tr>
+        <tr><td>§17</td><td>D1/D7 留存；token 真实成本；七日二测；扩展告警</td><td>D8-4 partial</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="done-section">
+    <h2>✅ MVP 主链路已完成（Rev-C §18 第一阶段主体）</h2>
+    <div class="done-grid">
+      <div class="done-item">Telegram Webhook + 消息入库 + 幂等</div>
+      <div class="done-item">Onboarding 五步 + OpenRouter + Orchestrator</div>
+      <div class="done-item">Redis 上下文 + pgvector 记忆写入/检索</div>
+      <div class="done-item">Handoff lock/reply/return-ai + Admin JWT</div>
+      <div class="done-item">Stripe Checkout + Webhook 幂等</div>
+      <div class="done-item">Prometheus / Grafana / RUNBOOK v1</div>
+      <div class="done-item">memory_consistency（任务卡 9）+ profile_score_worker（默认关）</div>
+      <div class="done-item">DEV-OPS-01：/ops/eris-roadmap.html 挂载（PR #55）</div>
+    </div>
+  </div>
+
+</main>
+
+</div><!-- /panel-revc -->
+
+<!-- ══ PANEL: AI 分派与排期 ═════════════════════════════════════════ -->
+<div id="panel-dispatch" class="page-panel" role="tabpanel" aria-labelledby="tab-dispatch" hidden>
+
+<div class="overview" id="overview-dispatch">
+  <div class="overview-card">
+    <div class="num num-green">3</div>
+    <div class="label">并行泳道（Wave 0）</div>
+  </div>
+  <div class="overview-card">
+    <div class="num num-accent">10</div>
+    <div class="label">Wave 0 可立即开工</div>
+  </div>
+  <div class="overview-card">
+    <div class="num num-orange">8</div>
+    <div class="label">不可单独开工项</div>
+  </div>
+  <div class="overview-card">
+    <div class="num num-yellow">4</div>
+    <div class="label">排期波次（0→3）</div>
+  </div>
+</div>
+
+<main>
+
+  <div class="revc-intro">
+    <strong>原则</strong>：Devin 做出来 · Cursor 做好 · Codex 做对并上线 —— <strong>不抢同一块代码</strong>。<br>
+    <strong>合并顺序</strong>（Codex 守门）：DB schema → Pipeline → LLM/Memory → Admin → Payment → E2E smoke。<br>
+    <strong>本页用法</strong>：按波次派工；标 <span class="parallel-tag">可并行</span> 的与别泳道同时开工；标 <span class="parallel-tag lock">不可单独</span> 的必须等前置合并或配对 AI 就位。
+  </div>
+
+  <div class="ai-roles">
+    <article class="ai-card devin">
+      <h3>Devin AI</h3>
+      <p class="slogan">做出来 · Admin / 前端集成 / 可运行原型</p>
+      <ul>
+        <li><strong>擅长</strong>：Next.js Admin、鉴权壳、basePath、页面联调、Stripe/Onboarding 形态验证</li>
+        <li><strong>主责卡</strong>：DEV-D8-01（PR #33）、M1-2 画像页接线、OPS-AI-01 UI</li>
+        <li><strong>不碰</strong>：<code>app/services/*</code> 深度逻辑、migration、pytest、生产 compose</li>
+      </ul>
+    </article>
+    <article class="ai-card cursor">
+      <h3>Cursor AI</h3>
+      <p class="slogan">做好 · 仓库内后端 / 测试 / 数据层</p>
+      <ul>
+        <li><strong>擅长</strong>：FastAPI 路由、Service 层、SQLAlchemy、pgvector、worker、单测与类型</li>
+        <li><strong>主责卡</strong>：CUR-API-01、v001 全部 P0 后端、REL-01、NOTIF-01、D8-2b migration 代码</li>
+        <li><strong>不碰</strong>：服务器 SSH、PR 合并裁决、Nginx/compose 热修（交给 Codex）</li>
+      </ul>
+    </article>
+    <article class="ai-card codex">
+      <h3>Codex AI</h3>
+      <p class="slogan">做对并上线 · 集成 / 审查 / 部署 / 验收</p>
+      <ul>
+        <li><strong>擅长</strong>：任务拆解、OpenAPI/Runbook、PR 门禁、git pull + compose、smoke、Grafana 告警</li>
+        <li><strong>主责卡</strong>：OPS-02、D4-4-OPS、A8-2/7、生产 migration 执行与压测举证</li>
+        <li><strong>不碰</strong>：Devin 的 admin 组件库、Cursor 的业务实现文件（只 review 不抢写）</li>
+      </ul>
+    </article>
+  </div>
+
+  <div class="dispatch-rules">
+    <strong>协作红线</strong>
+    <ol>
+      <li>同一文件同一时刻只有一个 AI 主责提交。</li>
+      <li>接口先契约后实现：Codex 或 You 锁定 path/schema → Cursor 实现 → Devin 接线。</li>
+      <li>生产变更必须走 Git：main 合并 → 服务器 git pull → docker compose up -d（禁止长期仅 SCP 漂移）。</li>
+      <li>Worker 开关类任务（D4-4、通知 Worker）由 Codex 上机，Cursor 只交代码与单测。</li>
+    </ol>
+  </div>
+
+  <div class="dispatch-flow">
+    <p class="section-title">总览时间线（泳道互不阻塞部分可并行）</p>
+    <pre>
+Wave 0  【今日可开工 — 三条泳道并行】
+  ├─ Codex+You  : OPS-02 ─┬─► D4-4-OPS ─► P2-2 生产 worker 闭环
+  │                       └─► A8-2 成文 / A8-7 告警
+  ├─ Devin      : DEV-D8-01 ─────────────► M1-2 Admin UI（需 API）
+  └─ Cursor     : CUR-API-01 + v001 P0 后端簇（见下表顺序）
+
+Wave 1  【Wave 0 局部合并后】
+  ├─ Cursor→Codex : D8-2b（migration PR → 生产执行 + P95）
+  ├─ Cursor       : CUR-D8-03 billing metrics
+  └─ Devin+Cursor : OPS-AI-01（先 API 后 UI）
+
+Wave 2  【业务增强 — 依赖 Wave 1】
+  └─ Cursor : REL-01 · NOTIF-01 · 沉默分层 M1-1 / P2-3
+
+Wave 3  【规划】
+  └─ Cursor : AB-01 · 多语言 · 平台化项
+    </pre>
+  </div>
+
+  <div class="wave-block wave-0">
+    <div class="wave-header">
+      <span class="wave-badge">WAVE 0</span>
+      <h2>立刻可开工 · 三泳道可并行</h2>
+    </div>
+    <p class="wave-note">下列任务彼此<strong>不抢文件</strong>，可同时派给三个 AI。Cursor 泳道内部建议按表中顺序串行。</p>
+    <div class="priority-table-wrap">
+      <table class="dispatch-table">
+        <thead>
+          <tr><th>泳道</th><th>编号</th><th>任务</th><th>主责</th><th>并行</th><th>备注</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Ops</td><td>OPS-02</td>
+            <td>roadmap HTML 合 main；PR #55；服务器 compose 纳入 Git</td>
+            <td><span class="ai-pill codex">Codex</span> <span class="ai-pill you">You</span></td>
+            <td><span class="parallel-tag">可并行 A</span></td>
+            <td>全队部署基线</td>
+          </tr>
+          <tr>
+            <td>Ops</td><td>A8-2</td>
+            <td>Auth/JWT 体系成文</td>
+            <td><span class="ai-pill codex">Codex</span></td>
+            <td><span class="parallel-tag">可并行 A</span></td>
+            <td>文档契约</td>
+          </tr>
+          <tr>
+            <td>Admin</td><td>DEV-D8-01</td>
+            <td>Admin 鉴权 + basePath（PR #33）</td>
+            <td><span class="ai-pill devin">Devin</span></td>
+            <td><span class="parallel-tag">可并行 B</span></td>
+            <td>不依赖 CUR-API-01</td>
+          </tr>
+          <tr>
+            <td>Backend</td><td>CUR-API-01</td>
+            <td>GET /admin/users/{id} + memories operator JWT</td>
+            <td><span class="ai-pill cursor">Cursor</span></td>
+            <td><span class="parallel-tag">可并行 C</span></td>
+            <td>Devin M1-2 的硬前置</td>
+          </tr>
+          <tr>
+            <td>Backend</td><td>V001-P0-1</td>
+            <td>Handoff reply 实际发 Telegram</td>
+            <td><span class="ai-pill cursor">Cursor</span></td>
+            <td><span class="parallel-tag seq">C 内①</span></td>
+            <td>建议 Cursor 泳道第一项</td>
+          </tr>
+          <tr>
+            <td>Backend</td><td>V001-P0-3</td>
+            <td>risk_events 真实写库</td>
+            <td><span class="ai-pill cursor">Cursor</span></td>
+            <td><span class="parallel-tag seq">C 内②</span></td>
+            <td>危机流程依赖</td>
+          </tr>
+          <tr>
+            <td>Backend</td><td>V001-P0-2</td>
+            <td>危机干预（高危词→安全话术→P0 任务）</td>
+            <td><span class="ai-pill cursor">Cursor</span></td>
+            <td><span class="parallel-tag seq">C 内③</span></td>
+            <td>依赖 P0-3</td>
+          </tr>
+          <tr>
+            <td>Backend</td><td>V001-P0-5</td>
+            <td>OpenAI Moderation 双层过滤</td>
+            <td><span class="ai-pill cursor">Cursor</span></td>
+            <td><span class="parallel-tag seq">C 内④</span></td>
+            <td>可略后</td>
+          </tr>
+          <tr>
+            <td>Backend</td><td>V001-P0-6</td>
+            <td>GDPR 账号删除接口</td>
+            <td><span class="ai-pill cursor">Cursor</span></td>
+            <td><span class="parallel-tag seq">C 内⑤</span></td>
+            <td>独立 PR</td>
+          </tr>
+          <tr>
+            <td>Backend</td><td>A8-3</td>
+            <td>DDL 与 Rev-C 字段对表</td>
+            <td><span class="ai-pill cursor">Cursor</span></td>
+            <td><span class="parallel-tag">可并行 C</span></td>
+            <td>为 D8-2b 做准备</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="wave-block wave-1">
+    <div class="wave-header">
+      <span class="wave-badge">WAVE 1</span>
+      <h2>Wave 0 局部合并后</h2>
+    </div>
+    <p class="wave-note">Ops 需 OPS-02 合 main 后再开 D4-4；Admin 画像 UI 需 CUR-API-01 合并。</p>
+    <div class="priority-table-wrap">
+      <table class="dispatch-table">
+        <thead>
+          <tr><th>编号</th><th>任务</th><th>主责</th><th>并行</th><th>前置</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>D4-4-OPS</td>
+            <td>生产启用 SCORE_WORKER + handoff 阈值 smoke</td>
+            <td><span class="ai-pill codex">Codex</span></td>
+            <td><span class="parallel-tag lock">不可单独</span></td>
+            <td>OPS-02</td>
+          </tr>
+          <tr>
+            <td>D8-2b</td>
+            <td>生产 migration + vector P95</td>
+            <td><span class="ai-pill pair">Cursor→Codex</span></td>
+            <td><span class="parallel-tag">可并行</span></td>
+            <td>Codex 不可单独；需 Cursor PR 合并</td>
+          </tr>
+          <tr>
+            <td>CUR-D8-03</td>
+            <td>Stripe billing 指标 + 告警</td>
+            <td><span class="ai-pill cursor">Cursor</span> <span class="ai-pill codex">Codex</span></td>
+            <td><span class="parallel-tag">可并行</span></td>
+            <td>代码 / 部署分工</td>
+          </tr>
+          <tr>
+            <td>M1-2</td>
+            <td>Admin 用户画像真数据</td>
+            <td><span class="ai-pill devin">Devin</span></td>
+            <td><span class="parallel-tag lock">不可单独</span></td>
+            <td>DEV-D8-01 + CUR-API-01</td>
+          </tr>
+          <tr>
+            <td>V001-P0-4</td>
+            <td>Telegram 通知 Worker 真发送</td>
+            <td><span class="ai-pill cursor">Cursor</span></td>
+            <td><span class="parallel-tag">可并行</span></td>
+            <td>生产开关与 D4-4 协调</td>
+          </tr>
+          <tr>
+            <td>OPS-AI-01</td>
+            <td>10 轮摘要 + 3 条推荐回复</td>
+            <td><span class="ai-pill pair">Cursor→Devin</span></td>
+            <td><span class="parallel-tag lock">不可单独</span></td>
+            <td>先 API 后 UI；Devin 不可先做</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="wave-block wave-2">
+    <div class="wave-header">
+      <span class="wave-badge">WAVE 2</span>
+      <h2>业务增强</h2>
+    </div>
+    <div class="priority-table-wrap">
+      <table class="dispatch-table">
+        <thead>
+          <tr><th>编号</th><th>任务</th><th>主责</th><th>并行</th><th>前置</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>P2-2</td>
+            <td>loneliness 四维生产闭环</td>
+            <td><span class="ai-pill codex">Codex</span></td>
+            <td><span class="parallel-tag lock">不可单独</span></td>
+            <td>D4-4-OPS</td>
+          </tr>
+          <tr>
+            <td>REL-01</td>
+            <td>关系阶段 S0–S5 自动升降级</td>
+            <td><span class="ai-pill cursor">Cursor</span></td>
+            <td><span class="parallel-tag">可并行</span></td>
+            <td>Cursor 可单独开工</td>
+          </tr>
+          <tr>
+            <td>NOTIF-01</td>
+            <td>notification-settings + GDPR 审计</td>
+            <td><span class="ai-pill cursor">Cursor</span></td>
+            <td><span class="parallel-tag">可并行</span></td>
+            <td>A8-6 法务并行</td>
+          </tr>
+          <tr>
+            <td>M1-1</td>
+            <td>沉默推送 D1/D3/D7/D14 分层</td>
+            <td><span class="ai-pill cursor">Cursor</span></td>
+            <td><span class="parallel-tag lock">不可单独</span></td>
+            <td>V001-P0-4 Worker</td>
+          </tr>
+          <tr>
+            <td>A8-4</td>
+            <td>Embedding ivfflat 生产举证</td>
+            <td><span class="ai-pill pair">Cursor→Codex</span></td>
+            <td><span class="parallel-tag lock">不可单独</span></td>
+            <td>D8-2b backfill</td>
+          </tr>
+          <tr>
+            <td>A8-5</td>
+            <td>Stripe Webhook 验收闭环</td>
+            <td><span class="ai-pill pair">Cursor+Codex</span></td>
+            <td><span class="parallel-tag lock">不可单独</span></td>
+            <td>CUR-D8-03</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="wave-block wave-3">
+    <div class="wave-header">
+      <span class="wave-badge">WAVE 3</span>
+      <h2>规划项 · 排队</h2>
+    </div>
+    <div class="priority-table-wrap">
+      <table class="dispatch-table">
+        <thead><tr><th>编号</th><th>任务</th><th>主责</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td>AB-01</td><td>A/B 四表 + 分配 + 指标</td><td><span class="ai-pill cursor">Cursor</span></td><td>§18 第三阶段</td></tr>
+          <tr><td>P3-2</td><td>风控系统完整版</td><td><span class="ai-pill cursor">Cursor</span></td><td>承接 v001 P0</td></tr>
+          <tr><td>P4-*</td><td>App / Web Chat / 开放 API</td><td><span class="ai-pill codex">Codex</span></td><td>拆卡 → Devin 原型 → Cursor 正式库</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="priority-table-wrap">
+    <p class="section-title">不可单独开工 · 汇总（派工前必查）</p>
+    <table class="dispatch-table">
+      <thead>
+        <tr><th>任务</th><th>主责</th><th>为何不能单独</th><th>必须先完成</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>M1-2 Admin 画像 UI</td>
+          <td><span class="ai-pill devin">Devin</span></td>
+          <td>无真实 API，只能 mock</td>
+          <td>CUR-API-01 + DEV-D8-01</td>
+        </tr>
+        <tr>
+          <td>D4-4-OPS</td>
+          <td><span class="ai-pill codex">Codex</span></td>
+          <td>compose/env 未跟 Git 不可复现</td>
+          <td>OPS-02</td>
+        </tr>
+        <tr>
+          <td>D8-2b 生产压测</td>
+          <td><span class="ai-pill codex">Codex</span></td>
+          <td>无 migration 无法执行</td>
+          <td>Cursor D8-2b PR → main</td>
+        </tr>
+        <tr>
+          <td>OPS-AI-01 UI</td>
+          <td><span class="ai-pill devin">Devin</span></td>
+          <td>无摘要/推荐 API</td>
+          <td>OPS-AI-01 API（Cursor）</td>
+        </tr>
+        <tr>
+          <td>P2-2 生产 worker</td>
+          <td><span class="ai-pill codex">Codex</span></td>
+          <td>SCORE_WORKER 默认关</td>
+          <td>D4-4-OPS</td>
+        </tr>
+        <tr>
+          <td>A8-4 生产举证</td>
+          <td><span class="ai-pill codex">Codex</span></td>
+          <td>依赖 backfill 与索引</td>
+          <td>D8-2b</td>
+        </tr>
+        <tr>
+          <td>A8-5 验收闭环</td>
+          <td><span class="ai-pill codex">Codex</span></td>
+          <td>缺 billing metric</td>
+          <td>CUR-D8-03</td>
+        </tr>
+        <tr>
+          <td>M1-1 沉默分层</td>
+          <td><span class="ai-pill cursor">Cursor</span></td>
+          <td>任务入库但发不出消息</td>
+          <td>V001-P0-4</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="done-section">
+    <h2>今日建议派工口令（复制给各 AI）</h2>
+    <div class="done-grid">
+      <div class="done-item"><strong>Codex</strong>：OPS-02 + A8-2；OPS-02 合并后 D4-4-OPS smoke；审 PR，不抢实现。</div>
+      <div class="done-item"><strong>Devin</strong>：DEV-D8-01（PR #33）；勿先做 M1-2，等 CUR-API-01。</div>
+      <div class="done-item"><strong>Cursor</strong>：CUR-API-01 → P0-1 handoff → P0-3 risk → P0-2 危机；穿插 A8-3 / D8-2b migration。</div>
+    </div>
+  </div>
+
+</main>
+
+</div><!-- /panel-dispatch -->
+
+<footer>
+  ERIS 未完成任务清单 · v001 + Rev-C + AI 分派 · 更新 2026-05-15 ·
+  <a href="/ops/eris-roadmap.html" style="color:var(--accent)">路线图</a> ·
+  <a href="/ops/20260514v001.html" style="color:var(--accent)">本页</a>
+</footer>
+
+<script>
+(function () {
+  const tabs = document.querySelectorAll(".page-tab");
+  const panels = document.querySelectorAll(".page-panel");
+  const subtitle = document.getElementById("page-subtitle");
+  const subtitles = {
+    "panel-v001": "架构方案 Dev-Ready Rev-C 与本地仓库代码对比 · 共 12 大模块存在缺口",
+    "panel-revc": "Rev-C 全文档对照 · 附录 A.8 + §18 四阶段 + 正文章节缺口 · 共 63 条待办（含与 v001 重叠项）",
+    "panel-dispatch": "Devin / Cursor / Codex 三方分派 · Wave 0 三泳道可并行 · 8 项不可单独开工"
+  };
+
+  function activate(panelId) {
+    tabs.forEach(function (t) {
+      const on = t.dataset.panel === panelId;
+      t.classList.toggle("active", on);
+      t.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    panels.forEach(function (p) {
+      const on = p.id === panelId;
+      p.classList.toggle("active", on);
+      if (on) {
+        p.removeAttribute("hidden");
+      } else {
+        p.setAttribute("hidden", "");
+      }
+    });
+    if (subtitle && subtitles[panelId]) {
+      subtitle.textContent = subtitles[panelId];
+    }
+    if (banner) {
+      banner.style.display = panelId === "panel-dispatch" ? "none" : "";
+    }
+    try {
+      localStorage.setItem("eris-v001-tab", panelId);
+    } catch (e) {}
+  }
+
+  tabs.forEach(function (t) {
+    t.addEventListener("click", function () {
+      activate(t.dataset.panel);
+    });
+  });
+
+  document.querySelectorAll(".link-tab").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      activate(btn.dataset.panel);
+    });
+  });
+
+  var banner = document.getElementById("dispatch-banner");
+  var saved = null;
+  try {
+    saved = localStorage.getItem("eris-v001-tab");
+  } catch (e) {}
+  if (saved && document.getElementById(saved)) {
+    activate(saved);
+  }
+})();
+</script>
+
 </body>
 </html>
