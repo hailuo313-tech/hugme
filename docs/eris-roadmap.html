@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ERIS MVP 进度 & 三方协作</title>
+<style>
+:root{
+  --bg:#0b1220; --bg-soft:#0f172a; --card:#111827; --card-2:#1e293b;
+  --border:#1f2937; --border-2:#334155;
+  --text:#e5e7eb; --muted:#94a3b8; --dim:#64748b;
+  --accent:#60a5fa; --accent-2:#a78bfa;
+  --green:#10b981; --amber:#f59e0b; --red:#ef4444; --cyan:#22d3ee; --pink:#f472b6;
+  --devin:#22d3ee;    /* 青  - 做出来 */
+  --cursor:#a78bfa;   /* 紫  - 做好 */
+  --codex:#f59e0b;    /* 橙  - 做对并上线 */
+  --you:#10b981;      /* 绿  - 你 */
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",Roboto,sans-serif;line-height:1.6;-webkit-font-smoothing:antialiased}
+.container{max-width:1200px;margin:0 auto;padding:32px 20px 80px}
+
+/* Header */
+header.hero{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:20px;padding-bottom:20px;border-bottom:1px solid var(--border)}
+.hero h1{font-size:30px;font-weight:700;letter-spacing:-.02em;background:linear-gradient(135deg,var(--accent),var(--accent-2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero .sub{color:var(--muted);font-size:14px;margin-top:6px}
+.hero .meta{color:var(--dim);font-size:12px;margin-top:6px;font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+.hero-right{text-align:right}
+.hero-right .pct{font-size:42px;font-weight:700;color:var(--accent);line-height:1}
+.hero-right .pct-sub{font-size:12px;color:var(--muted);margin-top:4px}
+
+/* Tabs */
+.tabs{display:flex;gap:6px;border-bottom:1px solid var(--border);margin-bottom:24px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.tab{background:transparent;border:none;color:var(--muted);padding:12px 16px;cursor:pointer;font-size:14px;font-family:inherit;border-bottom:2px solid transparent;transition:all .15s;white-space:nowrap}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.tab .badge{background:var(--card-2);color:var(--muted);padding:1px 7px;border-radius:10px;font-size:11px;margin-left:6px}
+.panel{display:none}
+.panel.active{display:block;animation:fade .25s ease}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+/* Progress bar */
+.progress-track{background:#0a1426;height:8px;border-radius:999px;margin:0 0 20px;overflow:hidden;border:1px solid var(--border)}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent-2));transition:width .4s ease;border-radius:999px}
+
+/* Stats */
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:24px}
+.stat{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 18px}
+.stat .label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.stat .value{font-size:22px;font-weight:700;margin-top:4px}
+.stat.green .value{color:var(--green)}
+.stat.amber .value{color:var(--amber)}
+.stat.cyan .value{color:var(--cyan)}
+.stat.accent .value{color:var(--accent)}
+
+/* Toolbar */
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;align-items:center}
+.btn{background:var(--card);border:1px solid var(--border);color:var(--text);padding:7px 13px;border-radius:8px;cursor:pointer;font-size:13px;font-family:inherit;transition:all .15s}
+.btn:hover{background:var(--card-2);border-color:var(--border-2)}
+.btn.active{background:var(--accent);border-color:var(--accent);color:#0b1220;font-weight:600}
+.btn.danger:hover{background:#3f1d1d;border-color:var(--red);color:var(--red)}
+
+/* Day card */
+.day{background:var(--card);border:1px solid var(--border);border-radius:14px;margin-bottom:18px;overflow:hidden}
+.day-head{padding:14px 20px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,rgba(96,165,250,.04),transparent)}
+.day-head .left{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.day-id{font-family:ui-monospace,monospace;font-size:13px;color:var(--accent);background:rgba(96,165,250,.1);padding:3px 10px;border-radius:6px;border:1px solid rgba(96,165,250,.2)}
+.day-title{font-size:15px;font-weight:600}
+.day-progress{font-size:12px;color:var(--muted);font-family:ui-monospace,monospace}
+.day-progress .num{color:var(--green);font-weight:600}
+.day-milestone{color:var(--dim)}
+
+.blocks{padding:4px 0}
+.block{display:grid;grid-template-columns:78px 84px 1fr auto;gap:14px;padding:14px 18px;border-bottom:1px solid rgba(31,41,55,.6);cursor:pointer;transition:background .12s;align-items:start}
+.block:last-child{border-bottom:none}
+.block:hover{background:rgba(96,165,250,.04)}
+.block-id{font-family:ui-monospace,monospace;font-size:12px;color:var(--dim);padding-top:3px}
+.owner-pill{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:3px 8px;border-radius:5px;text-align:center;height:fit-content;white-space:nowrap}
+.owner-devin{background:rgba(34,211,238,.12);color:var(--devin);border:1px solid rgba(34,211,238,.25)}
+.owner-cursor{background:rgba(167,139,250,.12);color:var(--cursor);border:1px solid rgba(167,139,250,.25)}
+.owner-codex{background:rgba(245,158,11,.12);color:var(--codex);border:1px solid rgba(245,158,11,.25)}
+.owner-you{background:rgba(16,185,129,.12);color:var(--you);border:1px solid rgba(16,185,129,.25)}
+.block-body .task{font-size:14px;font-weight:500;color:var(--text)}
+.block-body .deliverable{font-size:12px;color:var(--muted);margin-top:3px}
+.block-check{width:22px;height:22px;border:2px solid var(--border-2);border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s;margin-top:1px}
+.block.done{background:rgba(16,185,129,.04)}
+.block.done .block-id{color:var(--green)}
+.block.done .block-body .task{color:var(--muted);text-decoration:line-through;text-decoration-color:rgba(148,163,184,.4)}
+.block.done .block-body .deliverable{color:var(--dim);text-decoration:line-through;text-decoration-color:rgba(148,163,184,.3)}
+.block.done .block-check{background:var(--green);border-color:var(--green)}
+.block.done .block-check::after{content:"";display:block;width:6px;height:11px;border:solid #0b1220;border-width:0 2px 2px 0;transform:rotate(45deg);margin-bottom:2px}
+
+/* Sections */
+.sections{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:18px;margin-top:24px}
+.section{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px 22px}
+.section h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:14px;font-weight:600}
+.section ul{list-style:none}
+.section li{padding:8px 0;font-size:13px;border-bottom:1px dashed rgba(51,65,85,.4);display:flex;gap:10px;align-items:flex-start}
+.section li:last-child{border-bottom:none}
+.tag{font-size:10px;padding:2px 6px;border-radius:4px;text-transform:uppercase;letter-spacing:.05em;font-weight:600;flex-shrink:0;margin-top:2px}
+.tag.high{background:rgba(239,68,68,.15);color:var(--red)}
+.tag.mid{background:rgba(245,158,11,.15);color:var(--amber)}
+.tag.low{background:rgba(34,211,238,.15);color:var(--cyan)}
+.tag.todo{background:rgba(96,165,250,.15);color:var(--accent)}
+.checklist li{cursor:pointer;user-select:none}
+.checklist li .cl-check{width:16px;height:16px;border:1.5px solid var(--border-2);border-radius:4px;flex-shrink:0;margin-top:3px;transition:all .15s}
+.checklist li.checked .cl-check{background:var(--green);border-color:var(--green);position:relative}
+.checklist li.checked .cl-check::after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;border:solid #0b1220;border-width:0 1.5px 1.5px 0;transform:rotate(45deg)}
+.checklist li.checked .cl-text{color:var(--muted);text-decoration:line-through}
+
+/* AI Cards */
+.ai-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin-bottom:24px}
+.ai-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:22px;position:relative;overflow:hidden}
+.ai-card::before{content:"";position:absolute;top:0;left:0;right:0;height:3px}
+.ai-card.devin::before{background:var(--devin)}
+.ai-card.cursor::before{background:var(--cursor)}
+.ai-card.codex::before{background:var(--codex)}
+.ai-card .role{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:6px}
+.ai-card .name{font-size:20px;font-weight:700;margin-bottom:4px}
+.ai-card.devin .name{color:var(--devin)}
+.ai-card.cursor .name{color:var(--cursor)}
+.ai-card.codex .name{color:var(--codex)}
+.ai-card .slogan{font-size:13px;color:var(--muted);margin-bottom:16px;font-style:italic}
+.ai-card .scope{font-size:13px;color:var(--text);margin-bottom:14px;line-height:1.5}
+.ai-card .scope strong{color:var(--text);display:block;margin-bottom:4px;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+.ai-card .scope ul{list-style:none;font-size:12px;color:var(--text)}
+.ai-card .scope ul li{padding:3px 0;color:var(--muted)}
+.ai-card .scope ul li::before{content:"▸ ";color:var(--dim)}
+.ai-card .blocks-count{font-size:11px;color:var(--muted);padding-top:12px;border-top:1px solid var(--border);margin-top:12px}
+.ai-card .blocks-count strong{color:var(--text);font-size:20px;font-weight:700}
+
+/* 三方任务卡 + 串行提醒 */
+.serial-box{background:rgba(239,68,68,.06);border:1px solid rgba(239,68,68,.2);border-radius:12px;padding:14px 18px;margin-bottom:16px;font-size:12px;line-height:1.55}
+.serial-box strong{color:var(--red)}
+
+/* Rules */
+.rule-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-bottom:20px}
+.rule{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px 20px}
+.rule .num{display:inline-block;width:24px;height:24px;background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#0b1220;border-radius:50%;text-align:center;line-height:24px;font-weight:700;font-size:12px;margin-right:10px;vertical-align:middle}
+.rule h3{display:inline;font-size:15px;font-weight:600}
+.rule p{font-size:13px;color:var(--muted);margin-top:10px;line-height:1.6}
+.rule code{font-family:ui-monospace,monospace;background:var(--bg-soft);padding:1px 6px;border-radius:4px;color:var(--cyan);font-size:12px}
+
+/* Red lines */
+.redlines{background:linear-gradient(135deg,rgba(239,68,68,.08),rgba(239,68,68,.02));border:1px solid rgba(239,68,68,.2);border-radius:14px;padding:20px 24px;margin-bottom:24px}
+.redlines h2{color:var(--red);font-size:14px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:14px;font-weight:600}
+.redlines ul{list-style:none}
+.redlines li{padding:8px 0;font-size:13px;display:grid;grid-template-columns:120px 1fr 100px;gap:14px;align-items:center;border-bottom:1px dashed rgba(239,68,68,.15)}
+.redlines li:last-child{border-bottom:none}
+.redlines li .who{font-weight:600;font-size:12px}
+.redlines li .guard{font-size:11px;color:var(--muted);text-align:right}
+
+/* Merge order */
+.merge-order{counter-reset:step}
+.merge-step{display:grid;grid-template-columns:42px 1fr;gap:14px;padding:12px 16px;background:var(--card);border:1px solid var(--border);border-radius:10px;margin-bottom:8px;align-items:center}
+.merge-step::before{counter-increment:step;content:counter(step);background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#0b1220;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px}
+.merge-step .title{font-size:14px;font-weight:500}
+.merge-step .desc{font-size:12px;color:var(--muted);margin-top:2px}
+
+/* Template */
+.template{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:0;overflow:hidden;margin-bottom:20px}
+.template-head{padding:14px 18px;background:var(--bg-soft);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.template-head .title{font-size:14px;font-weight:600}
+.template-head .copy{background:var(--card-2);border:1px solid var(--border-2);color:var(--text);font-size:12px;padding:5px 12px;border-radius:6px;cursor:pointer;font-family:inherit}
+.template-head .copy:hover{background:var(--accent);color:#0b1220;border-color:var(--accent)}
+.template pre{padding:16px 18px;margin:0;overflow-x:auto;font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:12.5px;line-height:1.7;color:var(--text);white-space:pre-wrap;word-break:break-word}
+
+/* Legend */
+.legend{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:18px;font-size:12px;color:var(--muted)}
+.legend-item{display:flex;align-items:center;gap:6px}
+.legend-dot{width:10px;height:10px;border-radius:50%}
+
+footer{text-align:center;color:var(--dim);font-size:12px;margin-top:48px;padding-top:24px;border-top:1px solid var(--border)}
+footer code{font-family:ui-monospace,monospace;background:var(--card);padding:2px 6px;border-radius:4px;color:var(--muted)}
+
+@media (max-width:720px){
+  .block{grid-template-columns:60px 68px 1fr auto;gap:8px;padding:12px 12px}
+  .block-id{font-size:11px}
+  .owner-pill{font-size:9px;padding:2px 5px}
+  .hero h1{font-size:22px}
+  .day-head{padding:12px 14px}
+  .redlines li{grid-template-columns:1fr;gap:4px}
+  .redlines li .guard{text-align:left}
+}
+
+@media print{
+  body{background:#fff;color:#000}
+  .toolbar,.block-check,.checklist li .cl-check,.tabs,.template-head .copy{display:none}
+  .panel{display:block !important}
+  .day,.section,.stat,.rule,.ai-card,.template{break-inside:avoid;border:1px solid #ccc;background:#fff;color:#000}
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header class="hero">
+    <div>
+      <h1>ERIS MVP 进度 & 三方协作</h1>
+      <div class="sub">情绪陪伴平台 · 7 个工作日 · 36 个 2 小时块 · Devin / Cursor / Codex 三方分工</div>
+      <div class="meta">Rev-D · 起点 D0 末 · 服务器 67.216.204.137 · 16GB / 6 vCPU / 320GB</div>
+    </div>
+    <div class="hero-right">
+      <div class="pct" id="pct">0%</div>
+      <div class="pct-sub"><span id="done-n">0</span> / <span id="total-n">36</span> blocks</div>
+    </div>
+  </header>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="roadmap">📋 进度表 <span class="badge" id="tab-roadmap-n">36</span></button>
+    <button class="tab" data-tab="team">👥 AI 分工</button>
+    <button class="tab" data-tab="rules">📜 协作规则</button>
+    <button class="tab" data-tab="templates">📝 任务卡模板</button>
+  </div>
+
+  <!-- ROADMAP TAB -->
+  <div class="panel active" id="panel-roadmap">
+
+    <div class="progress-track"><div class="progress-fill" id="bar" style="width:0%"></div></div>
+
+    <div class="summary">
+      <div class="stat green"><div class="label">已完成</div><div class="value" id="s-done">0</div></div>
+      <div class="stat amber"><div class="label">待办 / 进行</div><div class="value" id="s-todo">36</div></div>
+      <div class="stat cyan"><div class="label">预计工时</div><div class="value">56h</div></div>
+      <div class="stat accent"><div class="label">目标周期</div><div class="value">7天</div></div>
+    </div>
+
+    <div class="legend">
+      <div class="legend-item"><span class="legend-dot" style="background:var(--devin)"></span>Devin · 做出来</div>
+      <div class="legend-item"><span class="legend-dot" style="background:var(--cursor)"></span>Cursor · 做好</div>
+      <div class="legend-item"><span class="legend-dot" style="background:var(--codex)"></span>Codex · 做对并上线</div>
+      <div class="legend-item"><span class="legend-dot" style="background:var(--you)"></span>You · 决策 / 凭证</div>
+    </div>
+
+    <div class="toolbar">
+      <button class="btn active" data-filter="all">全部</button>
+      <button class="btn" data-filter="todo">待办</button>
+      <button class="btn" data-filter="done">已完成</button>
+      <button class="btn" data-filter="devin">Devin</button>
+      <button class="btn" data-filter="cursor">Cursor</button>
+      <button class="btn" data-filter="codex">Codex</button>
+      <span style="flex:1"></span>
+      <button class="btn" id="export">导出进度</button>
+      <button class="btn danger" id="reset">重置全部</button>
+    </div>
+
+    <div id="days"></div>
+
+    <div class="sections">
+      <div class="section">
+        <h2>启动条件（开 D1 前）</h2>
+        <ul class="checklist" id="prereq">
+          <li><span class="cl-check"></span><span class="cl-text">域名 + DNS A 记录已生效（→ 67.216.204.137）</span></li>
+          <li><span class="cl-check"></span><span class="cl-text">https://your-domain/health 返回 200</span></li>
+          <li><span class="cl-check"></span><span class="cl-text">Telegram BotFather 拿到 bot_token</span></li>
+          <li><span class="cl-check"></span><span class="cl-text">OpenRouter API key（充值 ≥ $10）</span></li>
+          <li><span class="cl-check"></span><span class="cl-text">Stripe 测试 sk_test_* + whsec_*</span></li>
+          <li><span class="cl-check"></span><span class="cl-text">续签提醒邮箱（Let's Encrypt）</span></li>
+        </ul>
+      </div>
+      <div class="section">
+        <h2>核心里程碑</h2>
+        <ul>
+          <li><span class="tag todo">D1</span><div>Telegram → API → DB → Bot 闭环</div></li>
+          <li><span class="tag todo">D2</span><div>AI 能多轮对话 + Onboarding 完成</div></li>
+          <li><span class="tag todo">D4</span><div>AI 真的"记得你" + 系统识别脆弱时刻</div></li>
+          <li><span class="tag todo">D5</span><div>真人能接管会话并发消息</div></li>
+          <li><span class="tag todo">D6</span><div>能赚钱（Stripe）+ 能召回（沉默通知）</div></li>
+          <li><span class="tag todo">D7</span><div>v0.1.0 发布 + 2–3 个内测用户</div></li>
+        </ul>
+      </div>
+      <div class="section">
+        <h2>风险与缓冲</h2>
+        <ul>
+          <li><span class="tag mid">中</span><div><strong>DNS 慢生效</strong> · 用 duckdns 兜底</div></li>
+          <li><span class="tag mid">中</span><div><strong>三方账号审核</strong> · D0 末提前注册</div></li>
+          <li><span class="tag low">低</span><div><strong>Prompt 调不像</strong> · 先跑通流程，宽松版优先</div></li>
+          <li><span class="tag low">低</span><div><strong>UI 不漂亮</strong> · 后台先做"列表+按钮"丑版</div></li>
+          <li><span class="tag high">高</span><div><strong>个人节奏被打断</strong> · 每块原子，可单日只做 1–2 块</div></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- TEAM TAB -->
+  <div class="panel" id="panel-team">
+
+    <div style="background:linear-gradient(135deg,rgba(96,165,250,.06),rgba(167,139,250,.04));border:1px solid var(--border);border-radius:14px;padding:22px 26px;margin-bottom:24px">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:6px">一句话定位</div>
+      <div style="font-size:17px;font-weight:600;line-height:1.6">
+        <span style="color:var(--devin)">Devin 负责"做出来"</span> ·
+        <span style="color:var(--cursor)">Cursor 负责"做好"</span> ·
+        <span style="color:var(--codex)">Codex 负责"做对并上线"</span>
+      </div>
+      <div style="font-size:13px;color:var(--muted);margin-top:10px">三者不抢同一块代码，按边界分工。你的角色：控节奏、看风险、把各块接起来。</div>
+    </div>
+
+    <div class="ai-cards">
+      <div class="ai-card devin">
+        <div class="role">原型与功能交付</div>
+        <div class="name">Devin AI</div>
+        <div class="slogan">"先跑起来，有 demo，有接口形状"</div>
+        <div class="scope">
+          <strong>负责内容</strong>
+          <ul>
+            <li>Telegram handler</li>
+            <li>FastAPI endpoint 原型</li>
+            <li>OpenRouter 客户端</li>
+            <li>Onboarding 状态机</li>
+            <li>Next.js admin 原型</li>
+            <li>Stripe 测试流程</li>
+          </ul>
+        </div>
+        <div class="blocks-count">承担 block 数：<strong id="cnt-devin">0</strong></div>
+      </div>
+
+      <div class="ai-card cursor">
+        <div class="role">代码库深度实现</div>
+        <div class="name">Cursor AI</div>
+        <div class="slogan">"把原型变成可维护、可测试、能进主线"</div>
+        <div class="scope">
+          <strong>负责内容</strong>
+          <ul>
+            <li>数据模型 / 服务层</li>
+            <li>测试 / 类型 / 错误处理</li>
+            <li>前后端联调</li>
+            <li>复杂 bug / 性能问题</li>
+            <li>代码质量统一</li>
+            <li>记忆 / 评分 / handoff 核心</li>
+          </ul>
+        </div>
+        <div class="blocks-count">承担 block 数：<strong id="cnt-cursor">0</strong></div>
+      </div>
+
+      <div class="ai-card codex">
+        <div class="role">总工程师 / 集成 / 上线</div>
+        <div class="name">Codex AI</div>
+        <div class="slogan">"拆任务、定义契约、审查 PR、合并冲突、上线"</div>
+        <div class="scope">
+          <strong>负责内容</strong>
+          <ul>
+            <li>架构拆解 / 接口契约</li>
+            <li>PR 审查 / 合并顺序</li>
+            <li>部署 / 域名 / HTTPS</li>
+            <li>监控 / 告警 / E2E</li>
+            <li>发布 / tag / 备份</li>
+            <li>风险控制 / 越界守卫</li>
+          </ul>
+        </div>
+        <div class="blocks-count">承担 block 数：<strong id="cnt-codex">0</strong></div>
+      </div>
+    </div>
+
+    <div class="section" style="margin-top:8px">
+      <h2>三方任务卡（Cursor / Devin / Codex · 简化版 · 2026-05）</h2>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.55">
+        每张卡四格：<strong>和谁并行</strong> → <strong>干什么</strong> → <strong>别干什么</strong> → <strong>交什么货</strong>。
+        三人各用<strong>独立 feature 分支</strong>；合 <code>main</code>、改 <code>.github/workflows/*.yml</code>、生产部署须<strong>串行</strong>（见下方红框）。
+      </p>
+
+      <div class="rule-grid">
+        <div class="rule">
+          <span class="num">D</span><h3 style="color:var(--devin)">Devin（Admin 前端）</h3>
+          <p><strong>现在能跟 Codex 并行吗？</strong>能。只动 <code>admin/</code>。</p>
+          <p><strong>干什么</strong><br>
+          ① 错链：<code>/memories</code> → <code>/admin/memories</code><br>
+          ② 会话列表加「进用户画像」（用列表里的 <code>user_id</code>）<br>
+          ③ 画像页 loading / 错误态（数据可仍用 mock）</p>
+          <p><strong>别干</strong><br>不改 <code>app/api</code>、不上服务器、接口未发布不做真数据对接。</p>
+          <p><strong>交货</strong><br>一个 PR：写清链接/入口 + 截图。</p>
+        </div>
+        <div class="rule">
+          <span class="num">C</span><h3 style="color:var(--codex)">Codex（CI / 运维 / 文档）</h3>
+          <p><strong>现在能跟 Devin 并行吗？</strong>能。不动 <code>admin/</code>。</p>
+          <p><strong>干什么</strong><br>
+          ① 只读 <code>.github/workflows/pr-required-gates.yml</code>，记下 job 与 GitHub 上中文 check 名的对应<br>
+          ② 读 <code>RUNBOOK</code>，写部署后最小 smoke（如 <code>/health/detail</code>、admin 登录、<code>GET /api/v1/admin/conversations</code>）<br>
+          ③ 整理 env 清单 + 合并纪律（文档 PR，如 <code>docs/CODEX_PARALLEL_BASELINE.md</code>）</p>
+          <p><strong>别干</strong><br>本阶段<strong>不要改</strong> <code>.github/workflows/*.yml</code>、不写业务代码、不做生产破坏性操作。</p>
+          <p><strong>交货</strong><br>文档 PR + review 通过。</p>
+        </div>
+        <div class="rule">
+          <span class="num">R</span><h3 style="color:var(--cursor)">Cursor（后端）</h3>
+          <p><strong>和 Devin / Codex 并行？</strong>可以；<strong>不要</strong>与 Codex<strong>同时改</strong>同一个 workflow 文件。</p>
+          <p><strong>干什么</strong><br>
+          ① 补 <code>GET /api/v1/admin/users/{user_id}</code>（或等价：画像 + 分项分一次返回）<br>
+          ② 记忆相关路径：<strong>operator JWT 鉴权</strong><br>
+          ③ <code>.env.example</code> 与 <code>config</code> / RUNBOOK 对齐（D4-2/D4-3 开关名）</p>
+          <p><strong>别干</strong><br>不改 <code>admin/**</code>（交给 Devin）。</p>
+          <p><strong>交货</strong><br>一个 PR：示例 JSON + <code>curl</code> 验收 + 单测绿。</p>
+        </div>
+      </div>
+
+      <p style="font-size:12px;color:var(--dim);margin-top:14px;line-height:1.65;font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;background:var(--bg-soft);border:1px solid var(--border);border-radius:10px;padding:14px 16px"><strong style="color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',Roboto,sans-serif">一眼并行</strong><br>
+Devin  →  只动 <code>admin/</code>（链接、入口、UI 壳子）<br>
+Codex  →  只读 workflow + 文档 PR<br>
+Cursor →  <code>app/api</code>、鉴权、<code>.env.example</code><br>
+三者目录基本不打架；Codex 若要改 <code>*.yml</code>：先喊停，<strong>独占</strong>再改。</p>
+
+      <div class="serial-box">
+        <strong>必须串行（不可两人同时改同一处）</strong>
+        <ul style="margin:8px 0 0;padding-left:18px">
+          <li>同一文件例如 <code>.github/workflows/*.yml</code>、同一段 <code>llm_orchestrator.py</code>：<strong>先合并一方 PR → 另一方 rebase 后再改</strong>。</li>
+          <li>进入 <code>main</code> 的合并：<strong>同一时间只推进一条合并线</strong>（避免互相覆盖）。</li>
+          <li>生产 <code>git pull</code> / 重启：<strong>与下一波开发 push 错开窗口</strong>，由 Codex 统一发「维护窗口」。</li>
+        </ul>
+      </div>
+
+      <p style="font-size:12px;color:var(--dim);margin-top:14px;line-height:1.55">
+        <strong>依赖顺序（短）：</strong>产品确认「vulnerability」与后端字段映射 → Cursor 接口与鉴权进 <code>main</code> → Devin 接真数据 → Codex 部署与冒烟。
+      </p>
+    </div>
+
+    <div class="section">
+      <h2>按 Roadmap 一览（点击切到对应 AI 视图）</h2>
+      <div id="owner-table"></div>
+    </div>
+
+  </div>
+
+  <!-- RULES TAB -->
+  <div class="panel" id="panel-rules">
+
+    <div class="redlines">
+      <h2>⛔ 红线（越界 Codex 会拦）</h2>
+      <ul>
+        <li><span class="who" style="color:var(--devin)">Devin</span><div>不改生产部署脚本（Nginx / Certbot / docker-compose 生产配置）</div><div class="guard">Codex 守</div></li>
+        <li><span class="who" style="color:var(--cursor)">Cursor</span><div>不重写 Devin 正在做的原型模块（除非 Devin 已交付）</div><div class="guard">Codex 守</div></li>
+        <li><span class="who" style="color:var(--codex)">Codex</span><div>不抢业务功能实现（只做整合、审查、测试、部署）</div><div class="guard">自我约束</div></li>
+        <li><span class="who" style="color:var(--text)">任何人</span><div>改 schema 必须先改契约文件（openapi.yaml + DDL）</div><div class="guard">Codex 拦</div></li>
+        <li><span class="who" style="color:var(--text)">任何人</span><div>合并顺序不可乱（见下方 7 步）</div><div class="guard">Codex 拦</div></li>
+      </ul>
+    </div>
+
+    <h2 style="font-size:14px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:14px;font-weight:600">协作 5 大规则</h2>
+    <div class="rule-grid">
+      <div class="rule">
+        <span class="num">1</span><h3>接口契约优先</h3>
+        <p>每个 block 开工前，Codex 先给出契约骨架（schema、API path、字段）；Devin 和 Cursor 按契约填空。任何 schema / API 变更先改 <code>openapi.yaml</code> + DDL，再写代码。</p>
+      </div>
+      <div class="rule">
+        <span class="num">2</span><h3>单一事实来源</h3>
+        <p>这些文件由 Codex 维护：<br><code>ERIS 全栈架构方案.md</code><br><code>eris-mvp.openapi.yaml</code><br>DDL（users / memories / handoff_tasks ...）<br><code>.env.example</code></p>
+      </div>
+      <div class="rule">
+        <span class="num">3</span><h3>合并顺序不可乱</h3>
+        <p>按下方 7 步走，任何一步没绿，下一步不开 PR。Codex 每天确认进度后告诉你"今天该合什么"。</p>
+      </div>
+      <div class="rule">
+        <span class="num">4</span><h3>每日 2 次汇合点</h3>
+        <p><strong>中午</strong>：今天有人改的字段 / API？谁引入了未在 openapi 的接口？<br><strong>晚上</strong>：今天可跑的？明天阻塞的？等待合并的？</p>
+      </div>
+      <div class="rule">
+        <span class="num">5</span><h3>PR 合并门禁</h3>
+        <p>合进 main 前必须有：<br>✓ 接口与 openapi 一致<br>✓ DB 改动有 migration<br>✓ 日志带 trace_id<br>✓ 单测或 curl 自测<br>✓ 不破坏前面合过的 block</p>
+      </div>
+    </div>
+
+    <h2 style="font-size:14px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:14px;margin-top:8px;font-weight:600">合并顺序（7 步走）</h2>
+    <div class="merge-order">
+      <div class="merge-step"><div><div class="title">DB schema + API contract</div><div class="desc">openapi.yaml + DDL，所有人先按这个写</div></div></div>
+      <div class="merge-step"><div><div class="title">Telegram + message pipeline</div><div class="desc">D1 全部：Webhook、inbound、echo、日志</div></div></div>
+      <div class="merge-step"><div><div class="title">LLM / Onboarding</div><div class="desc">D2 全部：OpenRouter、Orchestrator、五步引导</div></div></div>
+      <div class="merge-step"><div><div class="title">Memory + Score</div><div class="desc">D3 + D4：记忆管线、Hybrid Retrieval、loneliness_score</div></div></div>
+      <div class="merge-step"><div><div class="title">Admin + Handoff</div><div class="desc">D5：后台、接管、WebSocket 推送</div></div></div>
+      <div class="merge-step"><div><div class="title">Payment + Notification</div><div class="desc">D6：Stripe webhook 幂等、回流策略、推送队列</div></div></div>
+      <div class="merge-step"><div><div class="title">E2E + 部署</div><div class="desc">D7：监控、告警、端到端测试、tag v0.1.0、内测</div></div></div>
+    </div>
+
+    <div class="section" style="margin-top:24px">
+      <h2>你的角色（项目经理）</h2>
+      <ul>
+        <li><span class="tag low">1</span><div>跑 Codex 给的脚本（域名、加固、部署）</div></li>
+        <li><span class="tag low">2</span><div>把任务卡传话（Codex 出卡 → 你贴给 Devin / Cursor）</div></li>
+        <li><span class="tag low">3</span><div>出现矛盾时拍板（接口分歧、范围争议）</div></li>
+        <li><span class="tag low">4</span><div>持有所有凭证（Token / Key / 密码不进聊天）</div></li>
+        <li><span class="tag low">5</span><div>定节奏（哪天工作几小时，由你说）</div></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- TEMPLATES TAB -->
+  <div class="panel" id="panel-templates">
+
+    <div style="background:linear-gradient(135deg,rgba(34,211,238,.06),rgba(96,165,250,.04));border:1px solid var(--border);border-radius:14px;padding:18px 22px;margin-bottom:24px">
+      <div style="font-size:14px;font-weight:600;margin-bottom:6px">📋 使用方式</div>
+      <div style="font-size:13px;color:var(--muted);line-height:1.6">
+        Codex 每次给你 block 任务时按这些模板写好。<br>
+        你直接复制 → 粘贴给 Devin / Cursor → 它们按契约开工。
+      </div>
+    </div>
+
+    <div class="template">
+      <div class="template-head">
+        <div class="title">🎯 任务下发模板（给 Devin / Cursor）</div>
+        <button class="copy" data-target="tpl-task">复制</button>
+      </div>
+<pre id="tpl-task">## 任务：D1-2 inbound messages API 初版
+执行者：Devin AI（或 Cursor AI）
+
+### 范围（做这些）
+- POST /api/v1/messages/inbound（见 openapi.yaml 第 N 行 InboundMessageRequest）
+- Telegram update → messages 表（异步）
+- Redis 短期上下文写入（最近 20 条）
+- 幂等键：tg-{update_id}
+
+### 不要做（后续接手）
+- 不写单元测试（Cursor 做）
+- 不优化性能（Cursor 做）
+- 不修 schema（必须先改 openapi.yaml + DDL，由 Codex 协调）
+
+### 完成标准
+- curl -X POST .../messages/inbound 返回 202
+- DB 里能看到记录
+- 提交 PR 到 develop 分支
+
+### 接口契约
+[粘贴 openapi.yaml 对应片段]
+
+### 已知坑 / 提醒
+- 必须返回 202（不是 200）
+- Telegram update_id 用于幂等
+- 失败必须有 trace_id 写入日志</pre>
+    </div>
+
+    <div class="template">
+      <div class="template-head">
+        <div class="title">🤝 交接卡（Devin → Cursor）</div>
+        <button class="copy" data-target="tpl-handoff">复制</button>
+      </div>
+<pre id="tpl-handoff">## 交接：D1-2 → Cursor 精修
+原作者：Devin AI
+新主责：Cursor AI
+
+### 文件清单
+- app/api/v1/messages.py
+- app/services/telegram_inbound.py
+- alembic/versions/xxx_add_messages_indexes.py
+
+### 已知坑 / 偷懒的地方
+- error handling 只做了 try/except，没分错误码
+- DB 写入未用事务
+- Redis 写入失败时静默吞了异常
+
+### Cursor 要补的 7 件事
+1. 类型注解（mypy strict 通过）
+2. 单元测试(pytest 覆盖 ≥ 80%)
+3. 错误码（按 openapi.yaml 附录 A.2）
+4. 结构化日志（trace_id 全链路）
+5. 事务边界（DB 写入 + Redis）
+6. 并发安全（幂等表 + 锁）
+7. 文档（docstring + README 更新）
+
+### 不要动
+- API 接口形状（已与 openapi.yaml 对齐）
+- DB schema（要改先找 Codex）</pre>
+    </div>
+
+    <div class="template">
+      <div class="template-head">
+        <div class="title">☀️ 中午汇合点（接口检查）</div>
+        <button class="copy" data-target="tpl-noon">复制</button>
+      </div>
+<pre id="tpl-noon">## 中午汇合 - YYYY-MM-DD
+
+### 今天有人改动的字段 / API：
+- [ ] (谁) 改了 (什么)
+- [ ] ...
+
+### 有人引入但未在 openapi.yaml 的接口？
+- [ ] 有 / 无
+
+### 阻塞项
+- [ ] ...
+
+### 下午计划
+- Devin: ...
+- Cursor: ...
+- Codex: ...</pre>
+    </div>
+
+    <div class="template">
+      <div class="template-head">
+        <div class="title">🌙 晚上汇合点（功能检查）</div>
+        <button class="copy" data-target="tpl-night">复制</button>
+      </div>
+<pre id="tpl-night">## 晚上汇合 - YYYY-MM-DD
+
+### 今天可跑的功能
+- [x] ...
+- [x] ...
+
+### 明天阻塞项
+- [ ] ...
+
+### 等待合并的 PR
+- [ ] #N (来源) → 合并顺序：第 X 步
+- [ ] ...
+
+### 风险 / 偏离 roadmap
+- ...
+
+### 完成的 block
+- D?-? done</pre>
+    </div>
+
+    <div class="template">
+      <div class="template-head">
+        <div class="title">✅ PR 合并门禁清单</div>
+        <button class="copy" data-target="tpl-merge">复制</button>
+      </div>
+<pre id="tpl-merge">## PR 合并门禁 - #PR_NUMBER
+
+提交人：(Devin / Cursor)
+对应 block：D?-?
+合并顺序步骤：第 ? 步（DB → Pipeline → LLM → Memory → Admin → Payment → E2E）
+
+### 必查项（Codex 审）
+- [ ] 接口与 openapi.yaml 一致（无新增未文档化的路径）
+- [ ] DB 改动有 alembic migration 文件
+- [ ] 日志带 trace_id（grep 验证）
+- [ ] 单元测试 或 curl 自测脚本
+- [ ] CI 通过（lint + test）
+- [ ] 不破坏前面合过的 block（回归测试）
+- [ ] .env.example 同步新增变量
+- [ ] README / docstring 更新
+
+### 决议
+- [ ] 通过，可合并
+- [ ] 退回（原因：...）
+
+### 合并后 Codex 行动
+- [ ] 在 roadmap 网页打勾对应 block
+- [ ] 更新 changelog
+- [ ] 通知其他 AI（如有依赖）</pre>
+    </div>
+
+  </div>
+
+  <footer>
+    Last updated <code id="lu">—</code> · 进度保存于浏览器 localStorage<br>
+    配套文档：<code>ERIS 全栈架构方案（开发版）Rev-C.md</code> + <code>eris-mvp.openapi.yaml</code>
+  </footer>
+
+</div>
+
+<script>
+const DATA = [
+  {id:"D0", title:"启动日（基础设施就绪）", milestone:"服务器与基础设施就绪", blocks:[
+    {id:"D0-1", owner:"codex", task:"服务器加固（SSH 端口 / root / 防火墙 / fail2ban）", deliv:"只能用密钥登录新端口", done:true},
+    {id:"D0-2", owner:"codex", task:"Docker + PostgreSQL/pgvector + Redis + FastAPI 骨架", deliv:"三容器 healthy；10 张表建好；/health/detail 全 ok", done:true},
+    {id:"D0-3", owner:"codex", task:"域名解析 + Nginx 反代 + Certbot 证书", deliv:"https://your-domain/health 返回 200", done:true},
+    {id:"D0-4", owner:"you",   task:"注册 BotFather / OpenRouter / Stripe 测试账号", deliv:"3 个 token 存入 .env（不进聊天）", done:true},
+  ]},
+  {id:"D1", title:"Telegram 入口打通", milestone:"Telegram → API → DB → Bot 回复 完整闭环", blocks:[
+    {id:"D1-1", owner:"devin",  task:"Telegram Webhook 接入：setWebhook → /telegram/webhook", deliv:"BotFather 显示 webhook 已设；不再需要 ngrok", done:true},
+    {id:"D1-2", owner:"devin",  task:"POST /api/v1/messages/inbound：入库 + Redis 短期上下文（20 条）", deliv:"用户消息出现在 messages 表", done:true},
+    {id:"D1-3", owner:"devin",  task:"tg-bot 回 echo（先不接 AI）+ 幂等键 tg-{update_id}", deliv:"用户发\"在吗\" → bot 回\"echo: 在吗\"", done:true},
+    {id:"D1-4", owner:"codex",  task:"结构化日志规范：trace_id 贯穿 7 个步骤", deliv:"一条消息可在 docker logs 追到完整链路", done:true},
+  ]},
+  {id:"D2", title:"AI 对话 + Onboarding", milestone:"陌生用户能完成 Onboarding 并与 AI 聊天", blocks:[
+    {id:"D2-1", owner:"devin",  task:"OpenRouter 客户端 + 模型路由 + 失败降级", deliv:"curl 拿到回复；超时降级到备用模型", done:true},
+    {id:"D2-2", owner:"cursor", task:"LLM Orchestrator：组装 system + 上下文 → 替换 echo", deliv:"bot 多轮自然对话，P95 < 3s", done:true},
+    {id:"D2-3", owner:"devin",  task:"Onboarding step 1–3（称呼 / 兴趣 / 风格）→ user_profiles", deliv:"新用户被问 3 个问题", done:true},
+    {id:"D2-4", owner:"devin",  task:"Onboarding step 4–5 + 默认角色分配 + gdpr_consent_at（EU）", deliv:"5 步完成后切普通对话", done:true},
+  ]},
+  {id:"D3", title:"角色系统 + 记忆写入", milestone:"用户聊到关键信息会被记下", blocks:[
+    {id:"D3-1", owner:"cursor", task:"characters 表 + 第一个角色 \"Aria\" 完整配置", deliv:"DB 有 1 条 character，人格参数齐全", done:true},
+    {id:"D3-2", owner:"cursor", task:"Prompt 10 层结构落地（Safety / Identity / ... / Format）", deliv:"生成 prompt 能看到 10 层标记", done:true},
+    {id:"D3-3", owner:"cursor", task:"记忆写入：规则预过滤 + LLM 重要性评分（结构化 JSON）", deliv:"\"我生日是 5 月 10 日\" 被打 8+ 分", done:true},
+    {id:"D3-4", owner:"cursor", task:"异步队列:embedding + 写入 memories 表 + 标签自动化", deliv:"重要消息几秒内入库，带 emotion_tags", done:true},
+  ]},
+  {id:"D4", title:"记忆检索 + loneliness_score", milestone:"AI 真的\"记得你\"，系统识别脆弱时刻", blocks:[
+    {id:"D4-1", owner:"cursor", task:"Hybrid Retrieval：tag filter → pgvector TopK=30 → Rerank Top10", deliv:"API 返回相关历史记忆", done:true},
+    {id:"D4-2", owner:"cursor", task:"【进行中】retrieve API + L6 渲染已有；orchestrator 注入 Top-K 与一致性检查未接 main", deliv:"llm_orchestrator 仍 memories=None；见 docs/ROADMAP_RECONCILE_D8.md"},
+    {id:"D4-3", owner:"cursor", task:"【进行中】loneliness 记忆聚合+衰减+当前句（D4-4）逻辑与单测在库；主链路每轮写回未接线", deliv:"refresh_loneliness_score 未从 generate_reply 调用；initiation 等四维分轨未算"},
+    {id:"D4-4", owner:"cursor", task:"【进行中】utterance→loneliness 已并入 loneliness 模块；独立 Score Worker 与 trigger_threshold 动态计算未实现", deliv:"schema 默认列仍在；min-only 与 handoff 触发待落地"},
+  ]},
+  {id:"D5", title:"运营后台 + 真人接管", milestone:"真人能从后台接管会话并发消息", blocks:[
+    {id:"D5-1", owner:"devin",  task:"Next.js 后台脚手架 + operator JWT 登录（operators 表）", deliv:"/admin 能登录", done:true},
+    {id:"D5-2", owner:"devin",  task:"会话列表（last_message_at）+ 用户画像页（含 score 分项）", deliv:"后台看见正在聊天的用户", done:true},
+    {id:"D5-3", owner:"cursor", task:"Handoff API：/lock /reply /return-ai（5 分钟分布式锁）", deliv:"点\"接管\"该会话被独占", done:true},
+    {id:"D5-4", owner:"codex",  task:"WebSocket 任务推送方案 + 协议定义", deliv:"用户触发关键词后 1 秒内弹任务", done:true},
+  ]},
+  {id:"D6", title:"支付 + 主动通知", milestone:"能赚钱、能召回用户", blocks:[
+    {id:"D6-1", owner:"devin",  task:"Stripe Checkout：创建 orders 记录 → 跳转测试卡", deliv:"4242 卡能完成测试支付", done:true},
+    {id:"D6-2", owner:"cursor", task:"Stripe Webhook：验签 + stripe_webhook_events 幂等 + 5s 返回", deliv:"vip_level 10 秒内更新", done:true},
+    {id:"D6-3", owner:"codex",  task:"沉默回流策略审查（D1/D3/D7 + 静默时段 + marketing_opt_in）", deliv:"策略文档 + 回退方案", done:true},
+    {id:"D6-4", owner:"codex",  task:"notification_tasks 队列设计 + Telegram 主动推送 + 频率上限", deliv:"队列方案 + 后台可见", done:true},
+  ]},
+  {id:"D7", title:"监控 + 联调 + 内测发布", milestone:"v0.1.0 上线，开始收集真实反馈", blocks:[
+    {id:"D7-1", owner:"codex",  task:"Prometheus + Grafana 看板设计（6 个核心指标）", deliv:"P95 latency / AI 成功率 / Webhook / 队列", done:true},
+    {id:"D7-2", owner:"codex",  task:"告警阈值（按附录 A.2 错误码）+ Discord / 邮件通知", deliv:"模拟 LLM 5xx 能收到告警", done:true},
+    {id:"D7-3", owner:"codex",  task:"端到端测试脚本（注册→Onboarding→50 轮→接管→付费）", deliv:"全链路一次跑通无错", done:true},
+    {id:"D7-4", owner:"codex",  task:"git tag v0.1.0 + 备份脚本 + 内测清单", deliv:"内测用户能从 Telegram 加 bot 用起来", done:true},
+  ]},
+  {id:"D8", title:"缓冲日 / 修补", milestone:"修内测发现的问题 + 第二轮内测", blocks:[
+    {id:"D8-1", owner:"cursor", task:"【进行中】修 D7 内测 bug；issue 清单待 PR 收敛", deliv:"闸门/基线文档已合；开放修复 PR 仍可能存在"},
+    {id:"D8-2", owner:"cursor", task:"【进行中】memories 索引（d8-1/d8-2 migration + rollout 清单已合 main）；Worker 并发与 P95 压测待定", deliv:"P95<2s 未举证；见 docs/ROADMAP_RECONCILE_D8.md"},
+    {id:"D8-3", owner:"codex",  task:"文档 / ENV 同步 + Runbook（出故障怎么办）", deliv:"Runbook v1", done:true},
+    {id:"D8-4", owner:"codex",  task:"【进行中】二测指标：Day1 指标包已合；全量看板/七日数据/token 成本未闭环", deliv:"见 docs/ROADMAP_RECONCILE_D8.md（#29 等）"},
+  ]},
+];
+
+const OWNER_LABEL = {devin:"Devin", cursor:"Cursor", codex:"Codex", you:"You"};
+
+const STORAGE_KEY = "eris-roadmap-v2";
+const PREREQ_KEY  = "eris-roadmap-prereq-v2";
+let state = {};
+let prereq = {};
+let currentFilter = "all";
+
+function load(){
+  try{ state = JSON.parse(localStorage.getItem(STORAGE_KEY))||{}; }catch(e){state={}}
+  try{ prereq = JSON.parse(localStorage.getItem(PREREQ_KEY))||{}; }catch(e){prereq={}}
+  for(const day of DATA){
+    for(const b of day.blocks){
+      if(state[b.id]===undefined && b.done){ state[b.id]=true }
+    }
+  }
+}
+function save(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  localStorage.setItem(PREREQ_KEY, JSON.stringify(prereq));
+  document.getElementById("lu").textContent = new Date().toLocaleString();
+}
+
+function render(){
+  const wrap = document.getElementById("days");
+  wrap.innerHTML = "";
+  let done = 0, total = 0;
+  const ownerCount = {devin:0, cursor:0, codex:0, you:0};
+  for(const day of DATA){
+    let dDone = 0;
+    const blocksHtml = day.blocks.map(b=>{
+      total++;
+      ownerCount[b.owner] = (ownerCount[b.owner]||0)+1;
+      const isDone = !!state[b.id];
+      if(isDone){ done++; dDone++; }
+      if(currentFilter==="todo" && isDone) return "";
+      if(currentFilter==="done" && !isDone) return "";
+      if(["devin","cursor","codex"].includes(currentFilter) && b.owner!==currentFilter) return "";
+      return `<div class="block ${isDone?'done':''}" data-id="${b.id}">
+        <div class="block-id">${b.id}</div>
+        <div><span class="owner-pill owner-${b.owner}">${OWNER_LABEL[b.owner]}</span></div>
+        <div class="block-body">
+          <div class="task">${b.task}</div>
+          <div class="deliverable">交付：${b.deliv}</div>
+        </div>
+        <div class="block-check"></div>
+      </div>`;
+    }).join("");
+    if(currentFilter!=="all" && currentFilter!=="todo" && currentFilter!=="done" && !blocksHtml) continue;
+    if(currentFilter!=="all" && !blocksHtml.trim()) continue;
+    const card = document.createElement("div");
+    card.className = "day";
+    card.innerHTML = `
+      <div class="day-head">
+        <div class="left">
+          <span class="day-id">${day.id}</span>
+          <span class="day-title">${day.title}</span>
+        </div>
+        <div class="day-progress">
+          <span class="num">${dDone}</span> / ${day.blocks.length}
+          <span class="day-milestone" style="margin-left:14px">${day.milestone}</span>
+        </div>
+      </div>
+      <div class="blocks">${blocksHtml}</div>`;
+    wrap.appendChild(card);
+  }
+  document.getElementById("done-n").textContent = done;
+  document.getElementById("total-n").textContent = total;
+  document.getElementById("s-done").textContent = done;
+  document.getElementById("s-todo").textContent = total - done;
+  document.getElementById("tab-roadmap-n").textContent = total;
+  const pct = total ? Math.round(done/total*100) : 0;
+  document.getElementById("pct").textContent = pct + "%";
+  document.getElementById("bar").style.width = pct + "%";
+  document.getElementById("cnt-devin").textContent = ownerCount.devin || 0;
+  document.getElementById("cnt-cursor").textContent = ownerCount.cursor || 0;
+  document.getElementById("cnt-codex").textContent = ownerCount.codex || 0;
+  renderOwnerTable();
+}
+
+function renderOwnerTable(){
+  const c = document.getElementById("owner-table");
+  if(!c) return;
+  const rows = [];
+  for(const day of DATA){
+    for(const b of day.blocks){
+      rows.push(`<li><span class="tag" style="background:rgba(96,165,250,.15);color:var(--accent);font-family:ui-monospace,monospace;font-size:11px">${b.id}</span><div style="flex:1">${b.task}</div><span class="owner-pill owner-${b.owner}" style="flex-shrink:0">${OWNER_LABEL[b.owner]}</span></li>`);
+    }
+  }
+  c.innerHTML = `<ul style="list-style:none">${rows.join("")}</ul>`;
+}
+
+document.addEventListener("click", e=>{
+  const tab = e.target.closest(".tab");
+  if(tab){
+    document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+    document.querySelectorAll(".panel").forEach(p=>p.classList.remove("active"));
+    tab.classList.add("active");
+    document.getElementById("panel-"+tab.dataset.tab).classList.add("active");
+    return;
+  }
+  const block = e.target.closest(".block");
+  if(block){
+    const id = block.dataset.id;
+    state[id] = !state[id];
+    save(); render();
+    return;
+  }
+  const filterBtn = e.target.closest("[data-filter]");
+  if(filterBtn){
+    document.querySelectorAll("[data-filter]").forEach(b=>b.classList.remove("active"));
+    filterBtn.classList.add("active");
+    currentFilter = filterBtn.dataset.filter;
+    render();
+    return;
+  }
+  const pre = e.target.closest("#prereq li");
+  if(pre){
+    const idx = [...pre.parentNode.children].indexOf(pre);
+    prereq[idx] = !prereq[idx];
+    pre.classList.toggle("checked", prereq[idx]);
+    save();
+    return;
+  }
+  const copy = e.target.closest(".copy");
+  if(copy){
+    const target = document.getElementById(copy.dataset.target);
+    if(target){
+      navigator.clipboard.writeText(target.textContent).then(()=>{
+        const old = copy.textContent;
+        copy.textContent = "已复制 ✓";
+        copy.style.color = "var(--green)";
+        setTimeout(()=>{copy.textContent=old;copy.style.color=""}, 1500);
+      });
+    }
+    return;
+  }
+});
+
+document.getElementById("reset").addEventListener("click", ()=>{
+  if(confirm("确认重置所有进度？此操作不可撤销。")){
+    state = {}; prereq = {};
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(PREREQ_KEY);
+    document.querySelectorAll("#prereq li").forEach(li=>li.classList.remove("checked"));
+    render();
+  }
+});
+
+document.getElementById("export").addEventListener("click", ()=>{
+  const lines = ["# ERIS MVP 进度导出  ("+new Date().toLocaleString()+")\n"];
+  for(const day of DATA){
+    lines.push("## "+day.id+" "+day.title);
+    for(const b of day.blocks){
+      lines.push((state[b.id]?"[x] ":"[ ] ")+b.id+" ["+OWNER_LABEL[b.owner]+"] "+b.task);
+    }
+    lines.push("");
+  }
+  const blob = new Blob([lines.join("\n")], {type:"text/plain"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "eris-progress-"+new Date().toISOString().slice(0,10)+".md";
+  a.click(); URL.revokeObjectURL(url);
+});
+
+(function init(){
+  load();
+  for(const idx in prereq){
+    if(prereq[idx]) document.querySelectorAll("#prereq li")[idx]?.classList.add("checked");
+  }
+  document.getElementById("lu").textContent = new Date().toLocaleString();
+  render();
+})();
+</script>
+</body>
+</html>
