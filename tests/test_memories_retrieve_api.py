@@ -1,11 +1,6 @@
-"""D4-1 / D5-2：``POST /api/v1/users/{user_id}/memories/retrieve`` 须带 operator JWT。
-
-最小 FastAPI 只挂 ``api.memories.router``；``dependency_overrides`` 注入假 DB；
-``retriever_retrieve`` 用 monkeypatch 替换，避免真 embedding / SQL。
-"""
+"""D4-1: POST /api/v1/users/{user_id}/memories/retrieve requires operator JWT."""
 from __future__ import annotations
 
-import importlib
 from typing import Any, AsyncGenerator
 from unittest.mock import AsyncMock, MagicMock
 
@@ -19,7 +14,6 @@ from core.database import get_db
 
 
 def _mini_app(db: Any, *, with_auth: bool = True) -> FastAPI:
-    importlib.reload(memories_mod)
     app = FastAPI()
     app.include_router(memories_mod.router, prefix="/api/v1")
 
@@ -40,7 +34,6 @@ def _mini_app(db: Any, *, with_auth: bool = True) -> FastAPI:
 
 @pytest.fixture
 def fake_db() -> MagicMock:
-    """AsyncSession.execute → 同步 ``fetchall()``，避免 MagicMock 产生未 await 的协程。"""
     db = MagicMock()
     result = MagicMock()
     result.fetchall.return_value = []
@@ -92,7 +85,6 @@ def test_retrieve_200_with_auth_and_stub_retriever(monkeypatch, fake_db: MagicMo
 
 
 def test_retrieve_401_without_bearer(fake_db: MagicMock):
-    """无 JWT 须 401。显式 override：与 ``api.admin`` 的 HTTPBearer 行为互补，避免假 DB 误走检索。"""
     app = _mini_app(fake_db, with_auth=False)
 
     async def _deny_operator() -> dict:

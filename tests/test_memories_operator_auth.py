@@ -1,7 +1,6 @@
-"""CUR-API-01：memories CRUD 路由须 operator JWT（retrieve 见 test_memories_retrieve_api）。"""
+"""CUR-API-01: memories CRUD routes require operator JWT."""
 from __future__ import annotations
 
-import importlib
 from typing import Any, AsyncGenerator
 from unittest.mock import AsyncMock, MagicMock
 
@@ -22,7 +21,6 @@ def _fake_db(rows: list | None = None) -> MagicMock:
 
 
 def _mini_app(db: Any, *, with_auth: bool = True) -> FastAPI:
-    importlib.reload(memories_mod)
     app = FastAPI()
     app.include_router(memories_mod.router, prefix="/api/v1")
 
