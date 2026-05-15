@@ -548,6 +548,21 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/admin/silent-reactivation/run \
 
 **定时调度**：合并含 scheduler 的代码后 `docker compose up -d --build --force-recreate api`（`requirements.txt` 有变更需重建镜像）。启动日志应含 `silent_reactivation.scheduler.started`（仅 `SILENT_REACTIVATION_ENABLED=1` 时）。多 worker 时同一时刻只会有一个实例抢到 `pg_try_advisory_lock`，其余打 `silent_reactivation.scheduler.skip_no_lock`。
 
+## Notification sender (D6-4 / V001-P0-4)
+
+**Flags**（与 D6-3 一样经 compose 透传到 `api` 容器）：
+
+- `NOTIFICATION_SENDER_ENABLED=1` —— 注册 APScheduler，按间隔从 `notification_tasks` 拉 `pending` → 调 Telegram `sendMessage`。
+- `NOTIFICATION_SENDER_POLL_SECONDS` —— 轮询间隔（秒），默认 `20`，最低 `5`。
+- 依赖 **`TELEGRAM_BOT_TOKEN`**；未配置时 worker **不启动**（打 `notification_sender_worker.scheduler.no_bot_token`）。
+
+**支持的通知类型**（其余类型会 `failed` + `unsupported_notification_type:…`）：
+
+- `silent_reactivation`（按 `payload.tier` D1/D3/D7 选文案）
+- `s5_care_checkin`
+
+**Smoke**：插入一条 `pending` + `scheduled_at <= now` 的 `telegram` 任务后，打开 flag 并重建 `api`；日志应出现 `notification_sender_worker.sent` 或 `send_failed`；DB 中该行 `status` 变为 `sent` / `failed`。
+
 ## Restart Procedures
 
 Restart API only:

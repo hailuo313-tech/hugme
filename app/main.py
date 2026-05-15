@@ -38,6 +38,10 @@ from services.profile_score_scheduler import (
     start_scheduler as start_profile_score_scheduler,
     shutdown_scheduler as shutdown_profile_score_scheduler,
 )
+from services.notification_sender_worker import (
+    start_scheduler as start_notification_sender_worker,
+    shutdown_scheduler as shutdown_notification_sender_worker,
+)
 
 
 def configure_logging():
@@ -67,10 +71,12 @@ async def lifespan(app: FastAPI):
     start_silent_reactivation_scheduler()
     start_embedding_worker()
     start_profile_score_scheduler()
+    start_notification_sender_worker()
     try:
         yield
     finally:
         shutdown_profile_score_scheduler()
+        shutdown_notification_sender_worker()
         shutdown_embedding_worker()
         shutdown_silent_reactivation_scheduler()
         logger.info("ERIS shutting down...")
