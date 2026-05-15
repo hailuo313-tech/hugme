@@ -1,16 +1,9 @@
 "use client";
 
 /**
- * D8-DEV-01 — 用户画像页  /admin/users/[id]
+ * D8-DEV-01 / CUR-API-01 — 用户画像页  /admin/users/[id]
  *
- * 数据来源：降级策略（无独立 /admin/users/{id}/profile 端点时）
- *   1. GET /api/v1/users/{id}/data-export  → user + profile + memories 汇总
- *   2. GET /api/v1/admin/conversations?search=  → 找该用户最近会话（含 score 字段）
- *
- * 待 Cursor 实现 CUR-D8-04b（GET /api/v1/admin/users/{id}/profile，含 JWT 守护）后，
- * 可将 data source 切换至该端点并移除对 /data-export 的依赖。
- *
- * 导航入口已在 admin/app/page.tsx 的「画像」链接预留（/admin/users/${user_id}）。
+ * 数据来源：GET /api/v1/admin/users/{id}（operator JWT，user + profile + memories）
  */
 
 import { useEffect, useState } from "react";
@@ -71,7 +64,7 @@ interface MemoryRow {
   created_at: string | null;
 }
 
-interface DataExportResponse {
+interface AdminUserResponse {
   user: UserRow | null;
   profile: ProfileRow | null;
   memories: MemoryRow[];
@@ -192,7 +185,7 @@ function UserProfileContent({ operator }: { operator: Operator }) {
   const params = useParams<{ id: string }>();
   const userId = params.id;
 
-  const [data, setData] = useState<DataExportResponse | null>(null);
+  const [data, setData] = useState<AdminUserResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -201,10 +194,9 @@ function UserProfileContent({ operator }: { operator: Operator }) {
     setLoading(true);
     setError(null);
 
-    // 降级：使用 /users/{id}/data-export（无需新建后端路由）
-    // 注意：该端点未受 JWT 守护，但在 admin basePath 下仅 operator 能到达此页面。
-    // 待 CUR-D8-04b 完成后切换至 /admin/users/{id}/profile（含 JWT 守护）。
-    apiFetch<DataExportResponse>(`/users/${encodeURIComponent(userId)}/data-export`)
+    apiFetch<AdminUserResponse>(
+      `/admin/users/${encodeURIComponent(userId)}`
+    )
       .then((d) => setData(d))
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
