@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import importlib
 from typing import Any, AsyncGenerator
 from unittest.mock import AsyncMock, MagicMock
 
@@ -12,12 +13,13 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
-from api import memories as memories_mod
+import api.memories as memories_mod
 from api.admin import require_operator
 from core.database import get_db
 
 
 def _mini_app(db: Any, *, with_auth: bool = True) -> FastAPI:
+    importlib.reload(memories_mod)
     app = FastAPI()
     app.include_router(memories_mod.router, prefix="/api/v1")
 
