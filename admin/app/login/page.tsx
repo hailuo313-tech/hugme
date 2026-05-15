@@ -1,11 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { saveAuth, isLoggedIn, getOperator, clearAuth, API_BASE } from "@/lib/auth";
+import { saveAuth, isLoggedIn, getOperator, clearAuth, API_BASE, ADMIN_BASE_PATH } from "@/lib/auth";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -14,11 +12,13 @@ export default function LoginPage() {
   useEffect(() => {
     if (!isLoggedIn()) return;
     if (!getOperator()) {
+      // half-auth：清理后留在登录页即可
       clearAuth();
       return;
     }
-    router.replace("/");
-  }, [router]);
+    // 已完整登录 → 跳首页
+    window.location.href = ADMIN_BASE_PATH + "/";
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -44,7 +44,7 @@ export default function LoginPage() {
         display_name: data.display_name,
         role: data.role,
       });
-      router.replace("/");
+      window.location.href = ADMIN_BASE_PATH + "/";
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "用户名或密码错误");
     } finally {

@@ -14,15 +14,14 @@
  */
 
 import { useEffect, useState } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useParams } from "next/navigation";
 import {
   apiFetch,
   clearAuth,
-  getOperator,
-  isLoggedIn,
   LOGIN_PATH,
   Operator,
 } from "@/lib/auth";
+import AuthGate from "@/components/AuthGate";
 
 // ── 类型 ──────────────────────────────────────────────────────────
 
@@ -187,25 +186,15 @@ function MetaItem({
   );
 }
 
-// ── 主页面 ────────────────────────────────────────────────────────
+// ── 主页面（内部组件，由 AuthGate 传入 operator） ─────────────────
 
-export default function UserProfilePage() {
-  const router = useRouter();
+function UserProfileContent({ operator }: { operator: Operator }) {
   const params = useParams<{ id: string }>();
   const userId = params.id;
 
-  const [operator, setOperator] = useState<Operator | null>(null);
   const [data, setData] = useState<DataExportResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!isLoggedIn()) {
-      window.location.href = LOGIN_PATH;
-      return;
-    }
-    setOperator(getOperator());
-  }, []);
 
   useEffect(() => {
     if (!userId) return;
@@ -223,7 +212,7 @@ export default function UserProfilePage() {
 
   function handleLogout() {
     clearAuth();
-    router.replace("/login");
+    window.location.href = LOGIN_PATH;
   }
 
   // ── 渲染 ────────────────────────────────────────────────────────
@@ -563,5 +552,15 @@ export default function UserProfilePage() {
         )}
       </main>
     </div>
+  );
+}
+
+// ── 页面入口（AuthGate 统一守卫） ──────────────────────────────────
+
+export default function UserProfilePage() {
+  return (
+    <AuthGate>
+      {(operator) => <UserProfileContent operator={operator} />}
+    </AuthGate>
   );
 }

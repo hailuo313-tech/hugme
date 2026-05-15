@@ -5,10 +5,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   apiFetch,
   clearAuth,
-  getOperator,
-  isLoggedIn,
+  LOGIN_PATH,
   Operator,
 } from "@/lib/auth";
+import AuthGate from "@/components/AuthGate";
 
 // ── 类型 ──────────────────────────────────────────────────────────
 
@@ -153,7 +153,7 @@ function MemoriesContent() {
     } else {
       params.delete("user_id");
     }
-    router.replace(`/memories?${params.toString()}`);
+    router.replace(`/memories?${params.toString()}`); // basePath 下 Next Router 自动加 /admin 前缀
     setUserId(uid);
   }
 
@@ -205,7 +205,7 @@ function MemoriesContent() {
               setUserId("");
               setMemories([]);
               setError(null);
-              router.replace("/memories");
+              router.replace("/memories"); // basePath 下 Next Router 自动加 /admin 前缀
               setTimeout(() => inputRef.current?.focus(), 50);
             }}
             className="text-slate-400 hover:text-white text-sm transition"
@@ -347,38 +347,29 @@ function MemoriesContent() {
   );
 }
 
-// ── 页面入口（auth guard + Suspense 包裹 searchParams 消费者） ────
+// ── 页面入口（AuthGate 统一守卫 + Suspense 包裹 searchParams 消费者） ─
 
 export default function MemoriesPage() {
-  const router = useRouter();
-  const [operator, setOperator] = useState<Operator | null>(null);
-
-  useEffect(() => {
-    if (!isLoggedIn()) {
-      router.replace("/login");
-      return;
-    }
-    setOperator(getOperator());
-  }, [router]);
-
-  if (!operator) return null;
-
   return (
-    <div className="min-h-screen bg-slate-900 text-white">
-      <NavHeader
-        operator={operator}
-        onLogout={() => {
-          clearAuth();
-          router.replace("/login");
-        }}
-      />
-      <Suspense
-        fallback={
-          <main className="p-8 text-slate-500 text-sm">加载中…</main>
-        }
-      >
-        <MemoriesContent />
-      </Suspense>
-    </div>
+    <AuthGate>
+      {(operator) => (
+        <div className="min-h-screen bg-slate-900 text-white">
+          <NavHeader
+            operator={operator}
+            onLogout={() => {
+              clearAuth();
+              window.location.href = LOGIN_PATH;
+            }}
+          />
+          <Suspense
+            fallback={
+              <main className="p-8 text-slate-500 text-sm">加载中…</main>
+            }
+          >
+            <MemoriesContent />
+          </Suspense>
+        </div>
+      )}
+    </AuthGate>
   );
 }
