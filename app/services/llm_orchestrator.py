@@ -86,6 +86,7 @@ async def generate_reply(
     redis: Any = None,
     history_limit: int = DEFAULT_HISTORY_LIMIT,
     db: Any = None,
+    trigger_message_id: str | None = None,
 ) -> str:
     """生成一条 AI 回复（D3-2 起走 10 层 Prompt 结构）。
 
@@ -100,6 +101,7 @@ async def generate_reply(
         db: 可选 SQLAlchemy AsyncSession。提供时会加载该会话角色 + 用户画像，
             并在有画像行时先刷新 ``loneliness_score``（D4-3/D4-4），再按需检索记忆（D4-2），
             渲染 L3–L7 / L6 等。为 None 时跳过 DB 相关步骤。
+        trigger_message_id: 触发本轮的用户消息 id（危机流程写 risk_events 用）。
 
     Returns:
         非空字符串。
@@ -114,6 +116,27 @@ async def generate_reply(
         conversation_id_hash=_short_hash(conversation_id),
     )
     log.info("orchestrator.dispatch")
+
+    if db is not None:
+        from services.crisis_intervention import (
+            apply_crisis_protocol,
+            detect_crisis_in_text,
+        )
+
+        if detect_crisis_in_text(user_text):
+            crisis = await apply_crisis_protocol(
+                db,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                user_text=user_text,
+                trigger_message_id=trigger_message_id,
+                trace_id=trace_id,
+            )
+            log.bind(
+                risk_event_id=crisis.risk_event_id,
+                handoff_task_id=crisis.handoff_task_id,
+            ).info("orchestrator.crisis.short_circuit")
+            return crisis.safety_reply
 
     started_at = time.time()
 
