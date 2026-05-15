@@ -64,6 +64,31 @@ async def _get_user(db: AsyncSession, user_id: str):
     return row
 
 
+async def _assert_s5_notification(
+    db: AsyncSession,
+    user_id: str,
+    notification_type: str,
+) -> None:
+    from services.risk_s5 import load_s5_restrictions, notification_block_reason
+
+    profile_row = (
+        await db.execute(
+            text(
+                "SELECT relationship_stage, updated_at FROM user_profiles WHERE user_id=:uid"
+            ),
+            {"uid": user_id},
+        )
+    ).mappings().fetchone()
+    if not profile_row:
+        return
+    s5 = await load_s5_restrictions(
+        db, user_id=user_id, profile=dict(profile_row)
+    )
+    reason = notification_block_reason(s5, notification_type)
+    if reason:
+        raise HTTPException(status_code=409, detail=reason)
+
+
 async def _assert_eligible(db: AsyncSession, user, channel: str):
     if channel not in ALLOWED_CHANNELS:
         raise HTTPException(status_code=422, detail="Unsupported notification channel")
@@ -150,6 +175,7 @@ async def schedule_notification(
     scheduled_at = (data.scheduled_at or _utcnow()).replace(tzinfo=None)
     user = await _get_user(db, user_id)
     await _assert_eligible(db, user, data.channel)
+    await _assert_s5_notification(db, user_id, data.notification_type)
 
     payload = dict(data.payload or {})
     if data.notification_type == "silent_reactivation":

@@ -188,6 +188,22 @@ async def generate_reply(
         utags = infer_utterance_emotion_tags(user_text)
         loneliness_utterance_tags = utags if utags else None
 
+    s5_phase: str | None = None
+    if profile_row is not None and db is not None:
+        from services.risk_s5 import load_s5_restrictions, relationship_stage_is_s5
+
+        if relationship_stage_is_s5(profile_row):
+            s5_res = await load_s5_restrictions(
+                db, user_id=str(user_id), profile=profile_row
+            )
+            if s5_res.phase is not None:
+                s5_phase = s5_res.phase.value
+            log.bind(
+                s5_phase=s5_phase,
+                s5_hours_since_entry=s5_res.hours_since_entry,
+                s5_upsell_allowed=s5_res.upsell_allowed,
+            ).info("orchestrator.s5.restrictions")
+
     prompt = build_prompt(
         PromptInput(
             user_text=user_text,
@@ -195,6 +211,7 @@ async def generate_reply(
             profile=profile_row,
             memories=memories,
             history=history,
+            s5_phase=s5_phase,
         )
     )
     messages = prompt.messages

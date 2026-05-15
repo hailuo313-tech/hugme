@@ -202,6 +202,7 @@ async def _fetch_candidates(
                     u.id, u.channel, u.status, u.notification_opt_in,
                     u.opt_out_marketing, u.is_minor_suspected, u.risk_level,
                     u.timezone,
+                    up.relationship_stage,
                     lm.last_user_message_at,
                     COALESCE(oh.open_handoff_count, 0)   AS open_handoff_count,
                     COALESCE(ms.has_memory_signal, FALSE) AS has_memory_signal
@@ -215,6 +216,7 @@ async def _fetch_candidates(
                   AND u.opt_out_marketing = FALSE
                   AND u.is_minor_suspected = FALSE
                   AND u.risk_level NOT IN ('high', 'critical')
+                  AND COALESCE(up.relationship_stage, 'S0') <> 'S5'
                   AND lm.last_user_message_at <= :max_seen
                   AND lm.last_user_message_at >= :min_seen
                 ORDER BY lm.last_user_message_at ASC

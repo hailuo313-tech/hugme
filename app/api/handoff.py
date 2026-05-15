@@ -214,12 +214,83 @@ async def return_to_ai(
     db: AsyncSession = Depends(get_db),
     _operator: dict = Depends(require_operator),
 ):
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT ht.user_id, ht.conversation_id
+                FROM handoff_tasks ht
+                WHERE ht.id = :tid
+                """
+            ),
+            {"tid": task_id},
+        )
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="handoff task not found")
+
+    user_id = str(row[0])
+    conv_id = str(row[1])
+
+    profile_row = (
+        await db.execute(
+            text(
+                "SELECT relationship_stage, updated_at FROM user_profiles WHERE user_id=:uid"
+            ),
+            {"uid": user_id},
+        )
+    ).fetchone()
+    profile = dict(profile_row._mapping) if profile_row else {}
+
+    from services.risk_s5 import (
+        RECOVERY_TARGET_STAGE,
+        handoff_return_ai_block_reason,
+        load_s5_restrictions,
+    )
+
+    s5 = await load_s5_restrictions(db, user_id=user_id, profile=profile)
+    block = handoff_return_ai_block_reason(s5, allow_upsell=data.allow_upsell)
+    if block:
+        raise HTTPException(status_code=409, detail=block)
+
     await db.execute(
         text("UPDATE handoff_tasks SET status='CLOSED', closed_at=NOW() WHERE id=:id"),
         {"id": task_id},
     )
+    if s5.active and s5.recovery_eligible:
+        await db.execute(
+            text(
+                """
+                UPDATE user_profiles
+                SET relationship_stage = :stage, updated_at = NOW()
+                WHERE user_id = :uid
+                """
+            ),
+            {"stage": RECOVERY_TARGET_STAGE, "uid": user_id},
+        )
+        await db.execute(
+            text(
+                """
+                UPDATE conversations
+                SET state = 'AI_ACTIVE', updated_at = NOW()
+                WHERE id = :cid
+                """
+            ),
+            {"cid": conv_id},
+        )
     await db.commit()
-    return {"status": "returned_to_ai", "task_id": task_id}
+
+    logger.bind(
+        task_id=task_id,
+        user_id=user_id,
+        s5_recovery_applied=bool(s5.active and s5.recovery_eligible),
+    ).info("handoff.return_ai")
+
+    return {
+        "status": "returned_to_ai",
+        "task_id": task_id,
+        "s5_recovery_applied": bool(s5.active and s5.recovery_eligible),
+    }
 
 
 @router.post("/{task_id}/escalate")
