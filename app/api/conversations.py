@@ -97,21 +97,22 @@ async def ai_reply(
     last_user = (
         await db.execute(
             text(
-                "SELECT content FROM messages "
+                "SELECT id, content FROM messages "
                 "WHERE conversation_id=:cid AND sender_type='user' "
                 "ORDER BY created_at DESC LIMIT 1"
             ),
             {"cid": conv_id},
         )
     ).fetchone()
-    if not last_user or not last_user[0]:
+    if not last_user or not last_user[1]:
         log.warning("conversation.reply.no_user_message")
         raise HTTPException(
             status_code=404,
             detail="No user message found in this conversation",
         )
 
-    user_text = str(last_user[0])
+    trigger_msg_id = str(last_user[0])
+    user_text = str(last_user[1])
 
     redis = await get_redis()
 
@@ -123,6 +124,7 @@ async def ai_reply(
             trace_id=trace_id,
             redis=redis,
             db=db,
+            trigger_message_id=trigger_msg_id,
         )
     except LLMOrchestratorError as exc:
         log.bind(result="failed", reason=str(exc)).warning(

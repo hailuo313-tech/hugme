@@ -96,3 +96,60 @@ def test_handoff_reply_200(mock_redis, mock_send):
     assert uuid.UUID(data["message_id"])
     mock_send.assert_awaited_once()
     assert mock_send.await_args.kwargs["chat_id"] == 123456789
+    assert mock_send.await_args.kwargs.get("parse_mode") is None
+    db.commit.assert_awaited_once()
+
+
+@patch("api.handoff.send_telegram_text", new_callable=AsyncMock)
+def test_handoff_reply_502_telegram_failed_rolls_back(mock_send):
+    task_row = _row(
+        {
+            "task_id": TASK_ID,
+            "conversation_id": CONV_ID,
+            "task_status": "HUMAN_LOCKED",
+            "user_id": USER_ID,
+            "channel": "telegram",
+            "external_id": "tg_123456789",
+        }
+    )
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=MagicMock(fetchone=lambda: task_row))
+    db.commit = AsyncMock()
+    db.rollback = AsyncMock()
+    mock_send.return_value = None
+
+    app = _mini_app(db)
+    with TestClient(app) as client:
+        r = client.post(
+            f"/api/v1/handoff/{TASK_ID}/reply",
+            json={"content": "hi"},
+            headers={"Authorization": "Bearer x"},
+        )
+
+    assert r.status_code == 502, r.text
+    db.rollback.assert_awaited_once()
+    db.commit.assert_not_called()
+
+
+def test_handoff_reply_400_non_telegram_channel():
+    task_row = _row(
+        {
+            "task_id": TASK_ID,
+            "conversation_id": CONV_ID,
+            "task_status": "HUMAN_LOCKED",
+            "user_id": USER_ID,
+            "channel": "web",
+            "external_id": "web-1",
+        }
+    )
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=MagicMock(fetchone=lambda: task_row))
+
+    app = _mini_app(db)
+    with TestClient(app) as client:
+        r = client.post(
+            f"/api/v1/handoff/{TASK_ID}/reply",
+            json={"content": "hi"},
+            headers={"Authorization": "Bearer x"},
+        )
+    assert r.status_code == 400, r.text

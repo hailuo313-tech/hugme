@@ -19,6 +19,13 @@ class NotificationSettings(BaseModel):
     notification_opt_in: Optional[bool] = None
     opt_out_marketing: Optional[bool] = None
 
+
+class RiskEventCreate(BaseModel):
+    risk_type: str
+    severity: Optional[str] = "P1"
+    trigger_message_id: Optional[str] = None
+    description: Optional[str] = None
+
 @router.post("/onboarding")
 async def onboarding(data: OnboardingStep, db: AsyncSession = Depends(get_db)):
     result = await db.execute(
@@ -67,5 +74,84 @@ async def data_export(user_id: str, db: AsyncSession = Depends(get_db)):
     }
 
 @router.post("/{user_id}/risk-events")
-async def create_risk_event(user_id: str, db: AsyncSession = Depends(get_db)):
-    return {"status": "ok", "user_id": user_id}
+async def create_risk_event(
+    user_id: str,
+    data: RiskEventCreate,
+    db: AsyncSession = Depends(get_db),
+):
+    """V001-P0-3：写入 risk_events；若用户有 profile 则同步 risk_score → users.risk_level。"""
+    try:
+        uuid.UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="user_id must be a valid UUID")
+
+    user = (
+        await db.execute(text("SELECT id FROM users WHERE id=:uid"), {"uid": user_id})
+    ).fetchone()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if data.trigger_message_id:
+        try:
+            uuid.UUID(data.trigger_message_id)
+        except ValueError:
+            raise HTTPException(
+                status_code=400, detail="trigger_message_id must be a valid UUID"
+            )
+
+    from services.risk_events import insert_risk_event, risk_level_from_score
+
+    event_id = await insert_risk_event(
+        db,
+        user_id=user_id,
+        risk_type=data.risk_type,
+        severity=data.severity or "P1",
+        trigger_message_id=data.trigger_message_id,
+        description=data.description,
+        commit=False,
+    )
+
+    sev = (data.severity or "P1").upper()
+    score_map = {"P0": 95, "P1": 75, "P2": 55, "P3": 35}
+    score = score_map.get(sev, 50)
+    await db.execute(
+        text(
+            """
+            UPDATE user_profiles
+            SET risk_score = GREATEST(COALESCE(risk_score, 0), :score),
+                updated_at = NOW()
+            WHERE user_id = :uid
+            """
+        ),
+        {"uid": user_id, "score": score},
+    )
+    level = risk_level_from_score(score)
+    await db.execute(
+        text("UPDATE users SET risk_level=:rl, updated_at=NOW() WHERE id=:uid"),
+        {"rl": level, "uid": user_id},
+    )
+    await db.commit()
+
+    return {
+        "status": "created",
+        "user_id": user_id,
+        "risk_event_id": event_id,
+        "risk_level": level,
+    }
+
+
+@router.get("/{user_id}/risk-events")
+async def list_user_risk_events(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """V001-P0-3：查询用户风险事件列表。"""
+    try:
+        uuid.UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="user_id must be a valid UUID")
+
+    from services.risk_events import list_risk_events_for_user
+
+    items = await list_risk_events_for_user(db, user_id)
+    return {"user_id": user_id, "items": items, "total": len(items)}
