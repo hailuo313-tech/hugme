@@ -88,7 +88,7 @@ class MeResponse(BaseModel):
 async def require_operator(
     creds: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
 ) -> dict:
-    if not creds:
+    if creds is None or not getattr(creds, "credentials", ""):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing token")
     payload = _verify_jwt(creds.credentials, settings.SECRET_KEY)
     if not payload or payload.get("type") != "operator":

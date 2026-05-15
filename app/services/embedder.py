@@ -29,7 +29,6 @@ from core.config import settings
 
 
 OPENAI_BASE = "https://api.openai.com/v1"
-TIMEOUT_S = 20.0
 RETRY_COUNT = 1  # 失败后再试 1 次
 
 
@@ -84,10 +83,12 @@ async def embed(texts: list[str], trace_id: str) -> EmbedResult:
     last_error: Optional[str] = None
     started = time.time()
 
+    timeout_s = float(settings.EMBEDDING_HTTP_TIMEOUT_SECONDS or 20.0)
+
     for attempt in range(RETRY_COUNT + 1):
         log.bind(attempt=attempt).info("embedder.call.start")
         try:
-            async with httpx.AsyncClient(timeout=TIMEOUT_S) as client:
+            async with httpx.AsyncClient(timeout=timeout_s) as client:
                 resp = await client.post(url, json=body, headers=headers)
         except httpx.TimeoutException as exc:
             last_error = f"timeout:{exc}"
@@ -175,3 +176,15 @@ def _extract_vectors(data: dict, expected_len: int) -> Optional[list[list[float]
 
     indexed.sort(key=lambda p: p[0])
     return [v for _, v in indexed]
+
+
+def _vector_literal(vec: list[float]) -> str:
+    """pgvector 字面量（单测历史名）。
+
+    实现与 ``memory_retriever._vector_literal`` 相同；用惰性 import 避免
+    ``embedder`` ↔ ``memory_retriever`` 顶层循环依赖。
+    """
+
+    from services import memory_retriever as _mr
+
+    return _mr._vector_literal(vec)
