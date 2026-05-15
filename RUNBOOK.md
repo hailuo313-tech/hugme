@@ -210,6 +210,41 @@ docker exec eris-postgres psql -U eris -d eris -c \
 切回好 key 后自动追平；schema 维度不匹配 → UPDATE 报错（不会出现在正常路径，
 切模型前需 migrate schema）。
 
+## Profile score worker（D4-4：initiation_score + trigger_threshold）
+
+**核心**：`app/services/profile_score_worker.py` 周期性写回 `user_profiles.initiation_score`
+（近 N 天 `sender_type='user'` 消息条数 / cap 饱和到 0–100）与 **min-only**
+`trigger_threshold`（与 `scripts/init.sql` 默认 65、`LONELINESS_BASELINE` pivot 对齐）。
+调度：`app/services/profile_score_scheduler.py`（APScheduler，`main` lifespan 启停）。
+
+**互斥**：`pg_try_advisory_lock(6_300_413)`，与 embedding / silent_reactivation 错开。
+
+**环境变量**（`.env`）：
+
+```bash
+SCORE_WORKER_ENABLED=true                 # 默认 false；生产需显式打开
+SCORE_WORKER_POLL_SECONDS=120
+SCORE_INITIATION_LOOKBACK_DAYS=7
+SCORE_INITIATION_CAP_MESSAGES=40
+SCORE_PROFILE_MIN_UPDATE_DELTA=0.05
+TRIGGER_THRESHOLD_BASE=65
+TRIGGER_THRESHOLD_PIVOT=35
+TRIGGER_THRESHOLD_K=0.15
+TRIGGER_THRESHOLD_FLOOR=50
+TRIGGER_THRESHOLD_CEIL=82
+```
+
+**日志**：`profile_score_worker.tick.done`（`profiles_scanned` / `profiles_updated`）、
+`profile_score_worker.skip_no_lock`、`profile_score.scheduler.*`。
+
+**Smoke**：
+
+```bash
+docker exec eris-api python -m py_compile \
+  services/profile_score_worker.py services/profile_score_scheduler.py && echo OK
+docker logs --tail 200 eris-api | grep -E "profile_score"
+```
+
 ## Memory Retrieval: Hybrid (D4-1)
 
 **核心**：`app/services/memory_retriever.py` 把"当前 query → embed → tag-filter +
