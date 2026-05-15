@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 import uuid
 
+from api.admin import require_operator
 from services.memory_retriever import retrieve as retriever_retrieve
 
 router = APIRouter()
@@ -20,7 +21,7 @@ class MemoryCreate(BaseModel):
 
 
 class MemoryRetrieveRequest(BaseModel):
-    """D4-1 检索入参。"""
+    """D4-1 retrieval request."""
 
     query: str = Field(..., min_length=1, max_length=2000)
     k: int = Field(10, ge=1, le=50)
@@ -31,7 +32,11 @@ class MemoryRetrieveRequest(BaseModel):
     include_global: bool = True
 
 @router.get("/users/{user_id}/memories")
-async def get_memories(user_id: str, db: AsyncSession = Depends(get_db)):
+async def get_memories(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    _operator: dict = Depends(require_operator),
+):
     result = await db.execute(
         text("SELECT * FROM memories WHERE user_id=:uid AND is_active=true ORDER BY importance_score DESC"),
         {"uid": user_id}
@@ -39,7 +44,12 @@ async def get_memories(user_id: str, db: AsyncSession = Depends(get_db)):
     return [dict(r._mapping) for r in result.fetchall()]
 
 @router.post("/users/{user_id}/memories")
-async def create_memory(user_id: str, data: MemoryCreate, db: AsyncSession = Depends(get_db)):
+async def create_memory(
+    user_id: str,
+    data: MemoryCreate,
+    db: AsyncSession = Depends(get_db),
+    _operator: dict = Depends(require_operator),
+):
     mid = str(uuid.uuid4())
     await db.execute(
         text("INSERT INTO memories (id,user_id,memory_type,content,importance_score,memory_scope,character_id) VALUES (:id,:uid,:mt,:ct,:sc,:ms,:cid)"),
@@ -49,11 +59,19 @@ async def create_memory(user_id: str, data: MemoryCreate, db: AsyncSession = Dep
     return {"memory_id": mid, "status": "created"}
 
 @router.patch("/memories/{memory_id}")
-async def update_memory(memory_id: str, db: AsyncSession = Depends(get_db)):
+async def update_memory(
+    memory_id: str,
+    db: AsyncSession = Depends(get_db),
+    _operator: dict = Depends(require_operator),
+):
     return {"status": "ok", "memory_id": memory_id}
 
 @router.delete("/memories/{memory_id}")
-async def delete_memory(memory_id: str, db: AsyncSession = Depends(get_db)):
+async def delete_memory(
+    memory_id: str,
+    db: AsyncSession = Depends(get_db),
+    _operator: dict = Depends(require_operator),
+):
     await db.execute(text("UPDATE memories SET is_active=false WHERE id=:id"), {"id": memory_id})
     await db.commit()
     return {"status": "deleted"}
@@ -65,12 +83,9 @@ async def retrieve_memories(
     body: MemoryRetrieveRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
+    _operator: dict = Depends(require_operator),
 ):
-    """D4-1: Hybrid retrieval.
-
-    返回该用户最相关的 ≤k 条 memories。
-    embedding 失败时自动降级到 importance 排序（response.embedding_used=false）。
-    """
+    """D4-1: Hybrid retrieval (operator JWT required)."""
     trace_id = getattr(request.state, "trace_id", None)
     result = await retriever_retrieve(
         db=db,

@@ -95,9 +95,11 @@ wrong-type tokens return `401`.
 | `GET /api/v1/admin/conversations` | Requires operator JWT | Calls `require_operator`. |
 | `GET /api/v1/admin/conversations/{conversation_id}` | Requires operator JWT | Calls `require_operator`. |
 | `POST /api/v1/admin/silent-reactivation/run` | Requires operator JWT | Calls `require_operator`; feature behavior still depends on `SILENT_REACTIVATION_ENABLED`. |
-| `POST /api/v1/users/{user_id}/memories/retrieve` | Not protected on current `main` | Current code does not call `require_operator`; CUR-API-01 should add operator JWT before treating it as private admin data. |
-| Other `app/api/memories.py` routes | Not protected on current `main` | Must be treated as pending auth hardening if exposed outside trusted paths. |
-| `app/api/handoff.py` routes | Not protected on current `main` | Operator auth should be added before public exposure. |
+| `GET /api/v1/admin/users/{user_id}` | Requires operator JWT | CUR-API-01; Admin 画像页（user + profile + memories）。 |
+| `GET/POST/PATCH/DELETE` memories routes under `/api/v1/users/.../memories` and `/api/v1/memories/...` | Requires operator JWT | CUR-API-01; all call `require_operator`. |
+| `POST /api/v1/users/{user_id}/memories/retrieve` | Requires operator JWT | D4-1 + CUR-API-01. |
+| `GET /api/v1/users/{user_id}/data-export` | **Not** protected | Legacy/debug; Admin UI should use `/admin/users/{id}` instead. |
+| `POST /api/v1/handoff/{task_id}/lock`, `/reply`, `/return-ai`, `/escalate` | Requires operator JWT | V001-P0-1 + CUR-API-01; all call `require_operator`. |
 | `app/api/notifications.py` operator-style list/cancel/log routes | Not protected on current `main` | Keep behind trusted network or harden in a follow-up. |
 
 ## 8. Admin Frontend
@@ -139,8 +141,8 @@ Planned but not implemented:
 - Refresh tokens and token revocation.
 - Telegram WebApp `initData` verification.
 - Password hashing migration from SHA256 hex to bcrypt or Argon2.
-- Operator JWT enforcement for memories, handoff, and notification operator
-  surfaces.
+- Operator JWT enforcement for notification operator surfaces
+  (memories, `GET /admin/users/{id}`, and handoff mutations done in CUR-API-01).
 
 Keep these as design placeholders until Rev-C or a dedicated Cursor task lands
 the code and tests.

@@ -351,6 +351,60 @@ async def admin_get_conversation_detail(
     }
 
 
+@router.get(
+    "/admin/users/{user_id}",
+    summary="CUR-API-01: admin user profile (user + profile + memories; operator JWT)",
+)
+async def admin_get_user(
+    user_id: str,
+    payload: dict = Depends(require_operator),
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin profile payload for M1-2; same fields as data-export, requires operator JWT."""
+    try:
+        uuid.UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="user_id must be a valid UUID")
+
+    user_row = (
+        await db.execute(text("SELECT * FROM users WHERE id=:uid"), {"uid": user_id})
+    ).fetchone()
+    if not user_row:
+        raise HTTPException(status_code=404, detail="user not found")
+
+    profile_row = (
+        await db.execute(
+            text("SELECT * FROM user_profiles WHERE user_id=:uid"),
+            {"uid": user_id},
+        )
+    ).fetchone()
+    memory_rows = (
+        await db.execute(
+            text(
+                """
+                SELECT id, memory_type, content, importance_score, created_at
+                FROM memories
+                WHERE user_id=:uid AND is_active=true
+                ORDER BY importance_score DESC NULLS LAST, created_at DESC
+                """
+            ),
+            {"uid": user_id},
+        )
+    ).fetchall()
+
+    logger.bind(
+        operator_id=payload.get("sub"),
+        user_id=user_id,
+        memories_returned=len(memory_rows),
+    ).info("admin.users.detail")
+
+    return {
+        "user": _serialize_row(user_row),
+        "profile": _serialize_row(profile_row) if profile_row else None,
+        "memories": [_serialize_row(m) for m in memory_rows],
+    }
+
+
 # ── D6-3: Silent Reactivation 手动触发 ───────────────────────────────
 
 @router.post(
