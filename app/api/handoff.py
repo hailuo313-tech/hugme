@@ -162,18 +162,27 @@ async def operator_reply(
         ),
         {"id": conv_id},
     )
-    await db.commit()
 
     tg_message_id = await send_telegram_text(
         chat_id=chat_id,
         text_content=data.content,
         trace_id=trace_id,
+        parse_mode=None,
     )
     if tg_message_id is None:
+        await db.rollback()
+        logger.bind(
+            trace_id=trace_id,
+            task_id=task_id,
+            conversation_id=conv_id,
+            chat_id=chat_id,
+        ).warning("handoff.reply.telegram_failed_rollback")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="telegram_send_failed",
         )
+
+    await db.commit()
 
     try:
         redis = await get_redis()
