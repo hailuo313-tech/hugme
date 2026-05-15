@@ -4,7 +4,7 @@ Scope: read-only inventory for CI, deployment smoke, environment variables, and
 merge discipline. This document intentionally does not change `admin/**`,
 business APIs, or `.github/workflows/*.yml`.
 
-Generated from current `main` baseline on 2026-05-14.
+Generated from repo tip on 2026-05-16 (reconcile with `main` after each release).
 
 ## Workflow Inventory
 
@@ -67,6 +67,9 @@ curl -fsS -H "Authorization: Bearer $TOKEN" \
 
 # 4. Negative auth check for the same read surface.
 curl -i http://127.0.0.1:8000/api/v1/admin/conversations
+
+# 5. Ops static roadmap (./docs bind mount → /ops/*.html)
+curl -fsS -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/ops/eris-roadmap.html
 ```
 
 Expected:
@@ -76,6 +79,7 @@ Expected:
 - Protected read API returns JSON with `items`, `total`, `page`, and
   `page_size`.
 - Unauthenticated admin read returns `401`, not `200`.
+- `/ops/eris-roadmap.html` returns `200`.
 
 Optional beta smoke:
 
@@ -116,30 +120,28 @@ API_BASE=http://127.0.0.1:8000 bash scripts/e2e/run.sh
 | `GRAFANA_ADMIN_PASSWORD` | Grafana bootstrap password | Yes | Required only when Grafana is deployed | Observability |
 | `DISCORD_WEBHOOK_URL` | Alertmanager Discord receiver URL | Yes | Required only when Discord alerts are enabled | Observability |
 | `ENV` | Runtime environment marker | No | Recommended | Not memory-specific |
+| `MEMORY_RETRIEVE_IN_PROMPT` | When true, `generate_reply` calls `memory_retriever.retrieve` and fills L6 | No | Optional; prod semantic memory needs `OPENAI_API_KEY` | D4-2 |
+| `MEMORY_RETRIEVE_TOP_K` / `MEMORY_RETRIEVE_K_CANDIDATES` | Injected hit count / SQL candidate pool | No | Optional | D4-2 |
+| `MEMORY_CONSISTENCY_ENABLED` | Task 9: rule-filter conflicting hits before L6 | No | Optional (default true in `Settings`) | D4-2 |
+| `MEMORY_CONSISTENCY_LLM_MAX_OUTPUT_TOKENS` | Reserved cap for optional LLM double-check (`0` = off) | No | Optional | D4-2 |
+| `LONELINESS_REFRESH_ENABLED` | When true, orchestrator calls `refresh_loneliness_score` before retrieve | No | Optional | D4-3 |
+| `LONELINESS_*` (lookback/clamps/decay/utterance) | Tunables for loneliness updater | No | Optional | D4-3 / D4-4 |
+| `SCORE_WORKER_ENABLED` | Enables profile score scheduler/worker | No | Optional; default false | D4-4 |
 
-### D4-2 / D4-3 Env Mismatches To Reconcile
+### D4-2 / D4-3 / Compose: reconciled notes
 
-`RUNBOOK.md` references these D4 names:
+- **`app/core/config.py` + `.env.example`** now include `MEMORY_RETRIEVE_*`, `MEMORY_CONSISTENCY_*`,
+  `LONELINESS_*`, and score-worker keys. **`app/services/llm_orchestrator.py`** calls
+  `refresh_loneliness_score` (D4-3) before `memory_retrieve` (D4-2) when enabled.
+- **`docker-compose.yml`** still lists only a subset under `api.environment` (DB/Redis/LLM/Telegram/Silent/Stripe/ENV/OPS).
+  Pydantic `Settings` reads `env_file='.env'` **inside the built image** unless you mount a host `.env` or extend compose
+  to pass `MEMORY_*` / `LONELINESS_*` / `OPENAI_API_KEY` explicitly. Before assuming prod overrides work, **`docker exec eris-api env | grep -E 'MEMORY|LONELINESS|OPENAI'`**.
 
-- `MEMORY_RETRIEVE_TOP_K`
-- `MEMORY_RETRIEVE_IN_PROMPT`
-- `LONELINESS_REFRESH_ENABLED`
+Optional post-deploy check for static roadmap (bind-mounted `./docs`):
 
-Current `app/core/config.py` and `.env.example` on `main` do not define those
-fields. Current `app/services/llm_orchestrator.py` also does not reference
-`memory_retriever` or loneliness refresh settings. Treat those RUNBOOK lines as
-planned/forward-looking until Devin/Cursor confirm implementation.
-
-Compose passthrough gap on current `main`:
-
-- `docker-compose.yml` passes core DB/Redis/LLM/Telegram/Silent/Stripe vars.
-- It does not currently pass `MEMORY_WRITE_ENABLED`, `LLM_MEMORY_MODEL`,
-  `MEMORY_IMPORTANCE_THRESHOLD`, `OPENAI_API_KEY`, `EMBEDDING_MODEL`,
-  `EMBEDDING_BATCH_SIZE`, or `EMBEDDING_POLL_SECONDS` into `api.environment`.
-- Because `Settings.Config.env_file='.env'` is inside the container, host
-  `.env` values only matter if compose explicitly forwards them or the file is
-  mounted. Verify container env before expecting memory/embedding overrides to
-  take effect.
+```bash
+curl -fsS -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/ops/eris-roadmap.html
+```
 
 ## Merge And Release Discipline
 
@@ -160,6 +162,6 @@ When Devin publishes the admin/interface gap table, cross-check:
 
 - Which endpoints return private user data without `require_operator`.
 - Which admin reads have no negative auth smoke.
-- Which D4-2 / D4-3 env names are real code fields versus RUNBOOK-only names.
+- Which D4-2 / D4-3 env names are real `Settings` fields (see `app/core/config.py`) versus compose-only gaps.
 - Which PRs need CI once `admin-ci`, `backend-ci`, and `ops-guard` become real
   required checks.

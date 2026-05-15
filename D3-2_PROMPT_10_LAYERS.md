@@ -2,7 +2,7 @@
 
 **Owner**: Cursor AI
 **Branch**: `feature/d3-2-prompt-10-layers`
-**Status**: implementation ready (RUNBOOK 已更，roadmap 待部署后打勾)
+**Status**: implementation ready；公开路线图 HTML 发布见 `RUNBOOK.md`「公开路线图」。
 
 ## Goal
 
