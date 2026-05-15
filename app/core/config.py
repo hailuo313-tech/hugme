@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     # D6-3 调度：crontab 形式（分 时 日 月 周，UTC）。默认每天 UTC 02:00（北京 10:00 / PT 18:00）。
     # 仅在 SILENT_REACTIVATION_ENABLED=True 时才注册定时任务。
     SILENT_REACTIVATION_CRON: str = '0 2 * * *'
+    # D6-4 / V001-P0-4：notification_tasks → Telegram 真发送 worker。
+    # False 时不注册 scheduler；生产打开前须确认 TELEGRAM_BOT_TOKEN 与话术合规。
+    NOTIFICATION_SENDER_ENABLED: bool = False
+    NOTIFICATION_SENDER_POLL_SECONDS: int = 20
+    NOTIFICATION_SENDER_SCHEDULER_MAX_INSTANCES: int = 1
     # D3-3: 记忆写入开关 + LLM 评分模型 + importance 阈值。
     # MEMORY_WRITE_ENABLED=False 时 maybe_write_memory() 直接 noop（用于演示 / 降级）。
     MEMORY_WRITE_ENABLED: bool = True

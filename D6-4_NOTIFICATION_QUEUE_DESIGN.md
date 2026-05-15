@@ -1,12 +1,12 @@
 # D6-4 Notification Queue Design
 
-Status: queue contract and safe API skeleton implemented.
+Status: queue contract + schedule API + **optional Telegram sender worker** (``services.notification_sender_worker``). Enable with ``NOTIFICATION_SENDER_ENABLED=1`` and ``TELEGRAM_BOT_TOKEN``.
 
 ## Goal
 
-Use `notification_tasks` as the single source of truth for proactive Telegram notifications. D6-3 decides eligibility and strategy; D6-4 queues, rate-limits, exposes admin visibility, and defines how the future worker sends.
+Use `notification_tasks` as the single source of truth for proactive Telegram notifications. D6-3 decides eligibility and strategy; D6-4 queues, rate-limits, exposes admin visibility, and defines how the worker sends. Delivery is performed by ``notification_sender_worker`` when enabled.
 
-No automatic sender worker is enabled yet.
+Worker is **opt-in**: set ``NOTIFICATION_SENDER_ENABLED=1`` (and configure ``TELEGRAM_BOT_TOKEN``); default remains off in compose.
 
 ## State Machine
 
