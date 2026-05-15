@@ -20,6 +20,28 @@ Production has all three D8 memory indexes present, valid, and ready:
 | `idx_memories_user_active_importance_created` | true | true | 16 kB | D8-1 fallback ordering index. |
 | `memories_embedding_ivfflat` | true | true | 1608 kB | D8-2 IVFFLAT cosine index, `lists=100`. |
 
+### Release owner: verify migrations ran on **your** production
+
+Codex snapshot below 来自一次只读检查；**新环境/新库**仍须自行执行 migration 文件并核对：
+
+```bash
+# 在可连生产的 psql 会话中（示例）
+\i /opt/eris/scripts/migrations/d8-1_memories_btree_indexes.sql
+\i /opt/eris/scripts/migrations/d8-2_memories_embedding_ivfflat.sql
+```
+
+核对索引存在：
+
+```sql
+SELECT indexrelid::regclass AS index_name, indisvalid, indisready
+FROM pg_index
+WHERE indexrelid::regclass::text IN (
+  'idx_memories_user_active_created_at',
+  'idx_memories_user_active_importance_created',
+  'memories_embedding_ivfflat'
+);
+```
+
 Production memory volume at the same check:
 
 | Metric | Value |
@@ -42,7 +64,14 @@ Current code/config facts:
   process can create a scheduler when enabled.
 - `run_one_tick()` takes PostgreSQL advisory lock `6300410`; only one process
   should process a batch at a time even when multiple API workers schedule it.
-- APScheduler also has `max_instances=1` per process and `coalesce=True`.
+- APScheduler `max_instances` for embedding ticks is **`EMBEDDING_SCHEDULER_MAX_INSTANCES`**
+  (default **1**). Raising it **does not parallelize DB writes** while the advisory
+  lock is held; it mostly risks stacked/overlapping tick attempts and log noise.
+- `profile_score_worker` uses advisory lock **`6300413`** with the same pattern;
+  its scheduler `max_instances` is **`SCORE_WORKER_SCHEDULER_MAX_INSTANCES`** (default **1**).
+- `services.embedder.embed` uses **`EMBEDDING_HTTP_TIMEOUT_SECONDS`** (default **20**)
+  for the OpenAI HTTP client. Larger values extend how long one tick may hold the
+  DB session around the lock window.
 - Default config is `EMBEDDING_BATCH_SIZE=32`, `EMBEDDING_POLL_SECONDS=30`,
   `EMBEDDING_WORKER_ENABLED=True`.
 - Production container did not expose `OPENAI_API_KEY` or `EMBEDDING_*`
@@ -68,10 +97,14 @@ Added script:
 ```powershell
 $env:ERIS_BASE_URL = "https://hugme2.com"
 $env:ERIS_USER_ID = "<safe beta user id with memories>"
+$env:ERIS_OPERATOR_JWT = "<operator JWT from admin login>"
 $env:D8_2_REQUESTS = "30"
 $env:D8_2_CONCURRENCY = "1"
 python scripts/perf/d8_2_retrieval_load.py
 ```
+
+`ERIS_OPERATOR_JWT` is **required** because `POST /api/v1/users/{user_id}/memories/retrieve`
+uses `require_operator` (401 without `Authorization: Bearer ...`).
 
 The probe calls:
 
@@ -112,6 +145,12 @@ Interpretation:
   embeddings and the API container has no embedding API key configured.
 - Do not mark full D8-2 green yet. Honest roadmap wording is:
   `D8-2a indexes applied; fallback P95 smoke <2s; vector P95 pending embedding backfill.`
+
+## Cursor task 7 follow-up (2026-05-14)
+
+- Added **operator JWT** requirement to `scripts/perf/d8_2_retrieval_load.py` so the probe matches production auth.
+- Exposed **`EMBEDDING_HTTP_TIMEOUT_SECONDS`**, **`EMBEDDING_SCHEDULER_MAX_INSTANCES`**, and **`SCORE_WORKER_SCHEDULER_MAX_INSTANCES`** in `app/core/config.py` with defaults matching prior hard-coded behavior.
+- Updated `docs/eris-roadmap.html` and `docs/ROADMAP_RECONCILE_D8.md` so the roadmap does **not** claim full `P95 < 2s` without vector-path evidence.
 
 ## Next Step To Reach Full D8-2
 

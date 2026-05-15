@@ -26,6 +26,7 @@ Public endpoints:
 https://hugme2.com/health
 https://hugme2.com/health/detail
 https://hugme2.com/roadmap
+https://hugme2.com/ops/20260514v001.html   # 仓库 docs/ 下 HTML；勿用 /docs/（Swagger）
 wss://hugme2.com/ws/operators/tasks?operator_id=<operator-id>
 ```
 
@@ -210,6 +211,41 @@ docker exec eris-postgres psql -U eris -d eris -c \
 切回好 key 后自动追平；schema 维度不匹配 → UPDATE 报错（不会出现在正常路径，
 切模型前需 migrate schema）。
 
+## Profile score worker（D4-4：initiation_score + trigger_threshold）
+
+**核心**：`app/services/profile_score_worker.py` 周期性写回 `user_profiles.initiation_score`
+（近 N 天 `sender_type='user'` 消息条数 / cap 饱和到 0–100）与 **min-only**
+`trigger_threshold`（与 `scripts/init.sql` 默认 65、`LONELINESS_BASELINE` pivot 对齐）。
+调度：`app/services/profile_score_scheduler.py`（APScheduler，`main` lifespan 启停）。
+
+**互斥**：`pg_try_advisory_lock(6_300_413)`，与 embedding / silent_reactivation 错开。
+
+**环境变量**（`.env`）：
+
+```bash
+SCORE_WORKER_ENABLED=true                 # 默认 false；生产需显式打开
+SCORE_WORKER_POLL_SECONDS=120
+SCORE_INITIATION_LOOKBACK_DAYS=7
+SCORE_INITIATION_CAP_MESSAGES=40
+SCORE_PROFILE_MIN_UPDATE_DELTA=0.05
+TRIGGER_THRESHOLD_BASE=65
+TRIGGER_THRESHOLD_PIVOT=35
+TRIGGER_THRESHOLD_K=0.15
+TRIGGER_THRESHOLD_FLOOR=50
+TRIGGER_THRESHOLD_CEIL=82
+```
+
+**日志**：`profile_score_worker.tick.done`（`profiles_scanned` / `profiles_updated`）、
+`profile_score_worker.skip_no_lock`、`profile_score.scheduler.*`。
+
+**Smoke**：
+
+```bash
+docker exec eris-api python -m py_compile \
+  services/profile_score_worker.py services/profile_score_scheduler.py && echo OK
+docker logs --tail 200 eris-api | grep -E "profile_score"
+```
+
 ## Memory Retrieval: Hybrid (D4-1)
 
 **核心**：`app/services/memory_retriever.py` 把"当前 query → embed → tag-filter +
@@ -297,6 +333,11 @@ psql "postgresql://eris:...@host:5432/eris" -v ON_ERROR_STOP=1 \
 psql "postgresql://eris:...@host:5432/eris" -v ON_ERROR_STOP=1 \
   -f scripts/migrations/d8-2_memories_embedding_ivfflat.sql
 ```
+
+**D8-2 压测（retrieve）**：`scripts/perf/d8_2_retrieval_load.py` 对 `POST .../memories/retrieve`
+打并发；需 **`ERIS_OPERATOR_JWT`**（该路由走 `require_operator`）。证据与结论写入
+`docs/D8_2_PERFORMANCE_PROOF.md`。可调 worker 相关：`EMBEDDING_HTTP_TIMEOUT_SECONDS`、
+`EMBEDDING_SCHEDULER_MAX_INSTANCES`、`SCORE_WORKER_SCHEDULER_MAX_INSTANCES`（见 `.env.example`）。
 
 ## LLM Orchestrator: 10 层 Prompt 结构 (D3-2)
 
