@@ -46,7 +46,7 @@ LAYER_ORDER: tuple[str, ...] = (
     "L5_USER_PROFILE",
     "L6_MEMORY",
     "L7_CONVERSATION_STATE",
-    # L8_RECENT_CONTEXT 不进 system，单独走 messages[1..-1]
+    "L8_RECENT_CONTEXT",  # 不进 system，单独走 messages[1..-1]
     "L9_FORMAT",
     "L10_ANCHOR",
 )
@@ -100,6 +100,7 @@ class PromptInput:
     profile: dict[str, Any] | None = None
     memories: list[dict[str, Any]] | None = None
     history: list[dict[str, str]] | None = None  # 已规范化的 role/content 列表
+    s5_phase: str | None = None  # RISK-S5：S5Phase.value when user is in crisis recovery
 
 
 @dataclass
@@ -124,12 +125,12 @@ def build_prompt(inp: PromptInput) -> PromptOutput:
         "L1_SAFETY": _L1_SAFETY,
         "L2_IDENTITY": _L2_IDENTITY,
         "L3_CHARACTER": _render_character(inp.character),
-        "L4_RELATIONSHIP": _render_relationship(inp.profile),
+        "L4_RELATIONSHIP": _render_relationship(inp.profile, inp.s5_phase),
         "L5_USER_PROFILE": _render_user_profile(inp.profile),
         "L6_MEMORY": _render_memory(inp.memories),
         "L7_CONVERSATION_STATE": _render_conversation_state(inp.profile),
         "L9_FORMAT": _render_format(inp.character),
-        "L10_ANCHOR": _L10_ANCHOR,
+        "L10_ANCHOR": _render_anchor(inp.profile, inp.s5_phase),
     }
 
     sections: list[str] = []
@@ -191,12 +192,21 @@ def _render_character(char: dict[str, Any] | None) -> str:
     )
 
 
-def _render_relationship(profile: dict[str, Any] | None) -> str:
+def _render_relationship(profile: dict[str, Any] | None, s5_phase: str | None = None) -> str:
     if not profile:
         return "关系阶段：S0 陌生人（未启动 Onboarding 或匿名访问）；VIP=0。"
 
     stage = (profile.get("relationship_stage") or "S0").strip().upper() or "S0"
     vip = profile.get("vip_level", 0) or 0
+
+    if stage == "S5":
+        from services.risk_s5 import S5Phase, render_s5_prompt_supplement
+
+        try:
+            phase = S5Phase(s5_phase) if s5_phase else S5Phase.ACUTE
+        except ValueError:
+            phase = S5Phase.ACUTE
+        return render_s5_prompt_supplement(phase)
 
     desc = {
         "S0": "陌生人：用户刚加入，谨慎、不索取过多个人信息，建立基本信任。",
@@ -204,7 +214,6 @@ def _render_relationship(profile: dict[str, Any] | None) -> str:
         "S2": "朋友：可以分享日常、表达关心；幽默和调侃 OK；不主动越界。",
         "S3": "亲近：可以提及情绪、脆弱、回忆；尊重对方说话节奏。",
         "S4": "依赖中：用户表现出情感依赖，需评估并适度调节，避免过度回应。",
-        "S5": "高粘性：长期用户，回忆与历史可被频繁引用；仍守 L1。",
     }.get(stage, "未知阶段，按 S0 处理。")
 
     vip_note = ""
@@ -212,6 +221,16 @@ def _render_relationship(profile: dict[str, Any] | None) -> str:
         vip_note = f"\nVIP 等级：{vip}（已付费用户，可适度提供深度内容；不改变 L1）。"
 
     return f"关系阶段：{stage} — {desc}{vip_note}"
+
+
+def _render_anchor(profile: dict[str, Any] | None, s5_phase: str | None) -> str:
+    stage = (profile or {}).get("relationship_stage", "")
+    if str(stage).strip().upper() == "S5":
+        return (
+            _L10_ANCHOR.rstrip()
+            + "\nS5 危机恢复：禁止任何 Upsell / 付费 / VIP 引导；先安全与共情。"
+        )
+    return _L10_ANCHOR
 
 
 def _render_user_profile(profile: dict[str, Any] | None) -> str:
