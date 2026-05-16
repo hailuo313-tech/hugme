@@ -1,4 +1,4 @@
-"""
+﻿"""
 D2-2 / D2-2.1 / D3-2: LLM Orchestrator
 
 封装 ``generate_reply()``：从一条用户消息 → LLM 调用 → 返回回复字符串。
@@ -166,6 +166,50 @@ async def generate_reply(
                 "orchestrator.loneliness_refresh.exception"
             )
 
+        # POL-01：七条件 Policy Service（危机已在上方短路；此处 profile_row 已含最新孤独分）
+        if settings.POLICY_SERVICE_ENABLED:
+            try:
+                from services.policy_service import maybe_create_policy_handoff
+
+                policy_task_id = await maybe_create_policy_handoff(
+                    db,
+                    user_id=str(user_id),
+                    conversation_id=str(conversation_id),
+                    user_text=user_text,
+                    profile_row=profile_row,
+                    trace_id=trace_id,
+                )
+                if policy_task_id:
+                    log.bind(handoff_task_id=policy_task_id).info(
+                        "orchestrator.policy.handoff_created"
+                    )
+            except Exception as exc:  # pragma: no cover - 不阻塞主对话
+                log.bind(error_type=type(exc).__name__).warning(
+                    "orchestrator.policy.exception"
+                )
+
+        # REL-01：S0–S4 自动升降级（S5 不改；成功后 profile_row 供当轮 L4 使用）
+        if settings.REL_STAGE_AUTO_ENABLED:
+            try:
+                from services.relationship_stage_service import (
+                    maybe_auto_adjust_relationship_stage,
+                )
+
+                new_stage = await maybe_auto_adjust_relationship_stage(
+                    db,
+                    user_id=str(user_id),
+                    profile_row=profile_row,
+                    trace_id=trace_id,
+                )
+                if new_stage:
+                    log.bind(relationship_stage=new_stage).info(
+                        "orchestrator.relationship_stage.adjusted"
+                    )
+            except Exception as exc:  # pragma: no cover
+                log.bind(error_type=type(exc).__name__).warning(
+                    "orchestrator.relationship_stage.exception"
+                )
+
     memories, memory_consistency_dropped = await _maybe_retrieve_memories_for_prompt(
         db=db,
         user_id=user_id,
@@ -188,6 +232,21 @@ async def generate_reply(
         utags = infer_utterance_emotion_tags(user_text)
         loneliness_utterance_tags = utags if utags else None
 
+    s5_phase_kw: str | None = None
+    if db is not None and profile_row is not None:
+        try:
+            from services.risk_s5 import load_s5_restrictions, relationship_stage_is_s5
+
+            if relationship_stage_is_s5(profile_row):
+                s5 = await load_s5_restrictions(
+                    db, user_id=str(user_id), profile=profile_row
+                )
+                if s5.phase is not None:
+                    s5_phase_kw = s5.phase.value
+                log.bind(s5_phase=s5_phase_kw).info("orchestrator.s5.restrictions_loaded")
+        except Exception as exc:  # pragma: no cover
+            log.bind(error_type=type(exc).__name__).warning("orchestrator.s5.load_failed")
+
     prompt = build_prompt(
         PromptInput(
             user_text=user_text,
@@ -195,6 +254,7 @@ async def generate_reply(
             profile=profile_row,
             memories=memories,
             history=history,
+            s5_phase=s5_phase_kw,
         )
     )
     messages = prompt.messages
@@ -497,3 +557,4 @@ def _short_hash(value: str) -> str:
     if not value:
         return ""
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
+
