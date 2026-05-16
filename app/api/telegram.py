@@ -34,6 +34,7 @@ from api.onboarding import (
 )
 from services.llm_orchestrator import generate_reply, LLMOrchestratorError
 from services.memory_writer import maybe_write_memory
+from services.content_safety import evaluate_inbound_content_safety
 import asyncio
 import re
 
@@ -98,17 +99,43 @@ async def _send_tg(chat_id: int, text_content: str, trace_id: str) -> int | None
     return None
 
 async def _persist_message(
-    db: AsyncSession, conv_id: str, sender_type: str,
-    sender_id: str, content: str
+    db: AsyncSession,
+    conv_id: str,
+    sender_type: str,
+    sender_id: str,
+    content: str,
+    safety_result: dict | None = None,
 ) -> str:
     msg_id = str(uuid.uuid4())
-    await db.execute(
-        text(
-            "INSERT INTO messages (id,conversation_id,sender_type,sender_id,content,content_type)"
-            " VALUES (:id,:cid,:st,:sid,:ct,'text')"
-        ),
-        {"id": msg_id, "cid": conv_id, "st": sender_type, "sid": sender_id, "ct": content},
-    )
+    if safety_result is not None:
+        await db.execute(
+            text(
+                "INSERT INTO messages (id,conversation_id,sender_type,sender_id,content,content_type,safety_result) "
+                "VALUES (:id,:cid,:st,:sid,:ct,'text', CAST(:sr AS jsonb))"
+            ),
+            {
+                "id": msg_id,
+                "cid": conv_id,
+                "st": sender_type,
+                "sid": sender_id,
+                "ct": content,
+                "sr": json.dumps(safety_result, ensure_ascii=False),
+            },
+        )
+    else:
+        await db.execute(
+            text(
+                "INSERT INTO messages (id,conversation_id,sender_type,sender_id,content,content_type) "
+                "VALUES (:id,:cid,:st,:sid,:ct,'text')"
+            ),
+            {
+                "id": msg_id,
+                "cid": conv_id,
+                "st": sender_type,
+                "sid": sender_id,
+                "ct": content,
+            },
+        )
     await db.execute(
         text("UPDATE conversations SET last_message_at=NOW(), updated_at=NOW() WHERE id=:id"),
         {"id": conv_id},
@@ -369,9 +396,54 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
         await db.commit()
         log.bind(conv_id=conv_id).info("tg.conversation.created")
 
+    # ── Onboarding 状态 + 内容安全（仅完成后对用户文本）────────────────
+    prefs = await _get_profile_prefs(db, user_id)
+    onboarding_step = prefs.get("onboarding_step", 0)
+    onboarding_done = onboarding_step >= ONBOARDING_STEPS + 1
+
+    safety_result: dict | None = None
+    safety_blocked = False
+    if (
+        onboarding_done
+        and text_content != "[non-text]"
+        and settings.CONTENT_SAFETY_ENABLED
+    ):
+        safety_result = await evaluate_inbound_content_safety(
+            text_content, trace_id=trace_id
+        )
+        safety_blocked = bool(safety_result.get("blocked"))
+
     # ── 持久化用户消息 ────────────────────────────────
-    msg_id = await _persist_message(db, conv_id, "user", user_id, text_content)
+    msg_id = await _persist_message(
+        db,
+        conv_id,
+        "user",
+        user_id,
+        text_content,
+        safety_result=safety_result,
+    )
     log.bind(msg_id=msg_id).info("tg.message.persisted")
+
+    if safety_blocked:
+        await _send_tg(
+            tg_chat_id,
+            "We couldn't process this message due to our safety guidelines. "
+            "If you meant something else, try rephrasing.",
+            trace_id,
+        )
+        log.bind(
+            block_reason=safety_result.get("block_reason") if safety_result else None
+        ).info("tg.content_safety.blocked")
+        elapsed = (time.time() - start_ts) * 1000
+        log.bind(elapsed_ms=round(elapsed, 1)).info("tg.webhook.complete")
+        return JSONResponse(
+            {
+                "ok": True,
+                "trace_id": trace_id,
+                "message_id": msg_id,
+                "safety_blocked": True,
+            }
+        )
 
     # Redis 上下文：用户消息
     try:
@@ -380,9 +452,7 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
         log.warning(f"tg.context.push_failed err={e}")
 
     # ── 决策：Onboarding 还是普通对话 ─────────────────
-    prefs = await _get_profile_prefs(db, user_id)
-    onboarding_step = prefs.get("onboarding_step", 0)
-    onboarding_done = onboarding_step >= ONBOARDING_STEPS + 1
+    # prefs / onboarding_done 已在上文计算
 
     # ── D3-3: 触发记忆写入（fire-and-forget）──────────
     # 只在 onboarding 完成后写；onboarding 期间的事实由 user_profiles 承接。

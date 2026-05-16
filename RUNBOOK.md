@@ -563,6 +563,16 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/admin/silent-reactivation/run \
 
 **Smoke**：插入一条 `pending` + `scheduled_at <= now` 的 `telegram` 任务后，打开 flag 并重建 `api`；日志应出现 `notification_sender_worker.sent` 或 `send_failed`；DB 中该行 `status` 变为 `sent` / `failed`。
 
+## Content safety (V001-P0-5)
+
+**Flags**（compose 透传）：
+
+- `CONTENT_SAFETY_ENABLED=1` —— 对 **Telegram 完成后入站** 与 **`POST /messages/inbound` 文本** 跑关键词 +（可选）OpenAI moderation；结果写入 ``messages.safety_result``。
+- `CONTENT_SAFETY_MODERATION_ENABLED=1` —— 调用 ``https://api.openai.com/v1/moderations``，需 **`OPENAI_API_KEY`**（与 embedding 同源）。
+- `CONTENT_SAFETY_MODERATION_TIMEOUT_S` —— 默认 `12` 秒。
+
+**拦截语义**：关键词命中或 moderation 命中（**不含**纯 `self-harm` 类目，以便危机协议在 orchestrator 层处理）→ 不入 Redis 上下文 / 不调 LLM（TG）；`/inbound` 返回 **422** + `status=blocked_by_safety`。
+
 ## Restart Procedures
 
 Restart API only:
