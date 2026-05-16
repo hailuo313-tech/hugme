@@ -20,6 +20,7 @@ import uuid, json, time
 import redis.asyncio as aioredis
 
 from services.memory_writer import maybe_write_memory
+from services.content_safety import evaluate_inbound_content_safety
 
 router = APIRouter()
 
@@ -212,17 +213,85 @@ async def inbound_message(
         )
         log.bind(conversation_id=conv_id).info("message.inbound.conversation.created")
 
+    # ── 内容安全（V001-P0-5）：仅文本 ───────────────────────────
+    safety_result: dict | None = None
+    if (
+        settings.CONTENT_SAFETY_ENABLED
+        and data.message_type == "text"
+        and (data.content or "").strip()
+    ):
+        safety_result = await evaluate_inbound_content_safety(
+            data.content, trace_id=trace_id
+        )
+        if safety_result.get("blocked"):
+            msg_id = str(uuid.uuid4())
+            await db.execute(
+                text(
+                    "INSERT INTO messages "
+                    "(id,conversation_id,sender_type,sender_id,content,content_type,safety_result) "
+                    "VALUES (:id,:cid,'user',:sid,:ct,:ctype, CAST(:sr AS jsonb))"
+                ),
+                {
+                    "id": msg_id,
+                    "cid": conv_id,
+                    "sid": user_id,
+                    "ct": data.content,
+                    "ctype": data.message_type,
+                    "sr": json.dumps(safety_result, ensure_ascii=False),
+                },
+            )
+            await db.execute(
+                text(
+                    "UPDATE conversations SET last_message_at=NOW(), updated_at=NOW() WHERE id=:id"
+                ),
+                {"id": conv_id},
+            )
+            await db.commit()
+            log.bind(message_id=msg_id).info("message.inbound.blocked_by_safety")
+            resp_body = {
+                "message_id": msg_id,
+                "conversation_id": conv_id,
+                "status": "blocked_by_safety",
+                "trace_id": trace_id,
+                "block_reason": safety_result.get("block_reason"),
+            }
+            if idem_key:
+                await redis.set(f"idem:{idem_key}", json.dumps(resp_body), ex=86400)
+            return JSONResponse(status_code=422, content=resp_body)
+
     # ── 写入 messages 表 ─────────────────────────────────
     msg_id = str(uuid.uuid4())
-    await db.execute(
-        text(
-            "INSERT INTO messages "
-            "(id,conversation_id,sender_type,sender_id,content,content_type) "
-            "VALUES (:id,:cid,'user',:sid,:ct,:ctype)"
-        ),
-        {"id": msg_id, "cid": conv_id, "sid": user_id,
-         "ct": data.content, "ctype": data.message_type}
-    )
+    if safety_result is not None:
+        await db.execute(
+            text(
+                "INSERT INTO messages "
+                "(id,conversation_id,sender_type,sender_id,content,content_type,safety_result) "
+                "VALUES (:id,:cid,'user',:sid,:ct,:ctype, CAST(:sr AS jsonb))"
+            ),
+            {
+                "id": msg_id,
+                "cid": conv_id,
+                "sid": user_id,
+                "ct": data.content,
+                "ctype": data.message_type,
+                "sr": json.dumps(safety_result, ensure_ascii=False),
+            },
+        )
+    else:
+        await db.execute(
+            text(
+                "INSERT INTO messages "
+                "(id,conversation_id,sender_type,sender_id,content,content_type) "
+                "VALUES (:id,:cid,'user',:sid,:ct,:ctype)"
+            ),
+            {
+                "id": msg_id,
+                "cid": conv_id,
+                "sid": user_id,
+                "ct": data.content,
+                "ctype": data.message_type,
+            },
+        )
     await db.execute(
         text("UPDATE conversations SET last_message_at=NOW(), updated_at=NOW() WHERE id=:id"),
         {"id": conv_id}
