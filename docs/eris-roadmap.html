@@ -686,7 +686,7 @@ const DATA = [
     {id:"D6-1", owner:"devin",  task:"Stripe Checkout：创建 orders 记录 → 跳转测试卡", deliv:"4242 卡能完成测试支付", done:true},
     {id:"D6-2", owner:"cursor", task:"Stripe Webhook：验签 + stripe_webhook_events 幂等 + 5s 返回", deliv:"vip_level 10 秒内更新", done:true},
     {id:"D6-3", owner:"codex",  task:"沉默回流策略审查（D1/D3/D7 + 静默时段 + marketing_opt_in）", deliv:"策略文档 + 回退方案", done:true},
-    {id:"D6-4", owner:"codex",  task:"notification_tasks 队列设计 + Telegram 主动推送 + 频率上限", deliv:"队列方案 + 后台可见", done:true},
+    {id:"D6-4", owner:"codex",  task:"notification_tasks 队列设计 + Telegram 主动推送 + 频率上限", deliv:"队列 + 发件 worker（PR #68，NOTIFICATION_SENDER_ENABLED）+ 后台可见", done:true},
   ]},
   {id:"D7", title:"监控 + 联调 + 内测发布", milestone:"v0.1.0 上线，开始收集真实反馈", blocks:[
     {id:"D7-1", owner:"codex",  task:"Prometheus + Grafana 看板设计（6 个核心指标）", deliv:"P95 latency / AI 成功率 / Webhook / 队列", done:true},

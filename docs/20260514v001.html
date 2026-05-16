@@ -229,9 +229,9 @@
       <tr>
         <td><span class="p0">P0</span></td><td>V001-P0-4</td>
         <td>notification_tasks → Telegram Worker 真发送</td>
-        <td><span class="st st-todo">未做</span></td>
+        <td><span class="st st-done">已上线</span></td>
         <td><span class="ai-pill ai-cursor">Cursor</span> · <span class="ai-pill ai-codex">Codex</span> 开关</td>
-        <td>ops v001 · §7 · D6-4</td>
+        <td>ops v001 · §7 · D6-4 · PR #68 · <code>NOTIFICATION_SENDER_ENABLED</code></td>
       </tr>
       <tr>
         <td><span class="p0">P0</span></td><td>V001-P0-5</td>
@@ -346,7 +346,7 @@
       <tr><td>5 后台看会话</td><td><span class="st st-done">OK</span></td><td></td></tr>
       <tr><td>6 人工接管并回复</td><td><span class="st st-partial">PR/部署</span></td><td>P0-1 + CUR-API-01</td></tr>
       <tr><td>7 用户普通/VIP/风险标记</td><td><span class="st st-partial">部分</span></td><td>risk_level 派生待 PR-B</td></tr>
-      <tr><td>8 低频回流通知</td><td><span class="st st-partial">入库未发</span></td><td>P0-4 Worker</td></tr>
+      <tr><td>8 低频回流通知</td><td><span class="st st-done">OK</span></td><td>PR #68 worker；默认 <code>NOTIFICATION_SENDER_ENABLED=0</code>，开 flag 后真发 Telegram</td></tr>
       <tr><td>9 全链路日志</td><td><span class="st st-done">OK</span></td><td>trace_id</td></tr>
     </tbody>
   </table>
@@ -366,7 +366,6 @@
       <tr><td>D4-4</td><td>profile_score_worker 生产启用</td><td><span class="ai-pill ai-codex">Codex</span></td><td>SCORE_WORKER_ENABLED 默认 false；需 OPS smoke</td></tr>
       <tr><td>D5-2</td><td>用户画像页真数据</td><td><span class="ai-pill ai-devin">Devin</span></td><td>依赖 CUR-API-01 合并+部署（PR #60）</td></tr>
       <tr><td>D5-3</td><td>Handoff 5 分钟分布式锁</td><td><span class="ai-pill ai-cursor">Cursor</span></td><td>与 HO-LOCK / P1 合并实现</td></tr>
-      <tr><td>D6-4</td><td>Telegram 主动推送真发送</td><td><span class="ai-pill ai-cursor">Cursor</span></td><td>= V001-P0-4</td></tr>
       <tr><td>D8-2</td><td>向量 P95 / migration 生产举证</td><td><span class="ai-pill ai-pair">Cursor→Codex</span></td><td>embedding backfill 后复跑</td></tr>
       <tr><td>D8-4</td><td>二测全量看板 / token 成本</td><td><span class="ai-pill ai-codex">Codex</span></td><td>文档已合，指标栏可迭代</td></tr>
     </tbody>
