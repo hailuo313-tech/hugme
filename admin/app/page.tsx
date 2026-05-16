@@ -199,6 +199,23 @@ function DashboardContent({ operator }: { operator: Operator }) {
         <div className="flex items-center gap-3">
           <span className="text-xl font-bold text-violet-400">ERIS</span>
           <span className="text-slate-400 text-sm">运营后台</span>
+          <nav className="flex items-center gap-1 ml-4">
+            <span className="text-sm text-violet-300 bg-slate-700 px-3 py-1 rounded-md font-medium">
+              会话
+            </span>
+            <a
+              href="/admin/memories"
+              className="text-sm text-slate-400 hover:text-white px-3 py-1 rounded-md hover:bg-slate-700 transition"
+            >
+              记忆
+            </a>
+            <a
+              href="/admin/scripts"
+              className="text-sm text-slate-400 hover:text-white px-3 py-1 rounded-md hover:bg-slate-700 transition"
+            >
+              话术库
+            </a>
+          </nav>
         </div>
         <div className="flex items-center gap-4">
           <span className="text-sm text-slate-300">

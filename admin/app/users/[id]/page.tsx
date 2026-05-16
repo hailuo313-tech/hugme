@@ -233,6 +233,12 @@ function UserProfileContent({ operator }: { operator: Operator }) {
             >
               记忆
             </a>
+            <a
+              href="/admin/scripts"
+              className="text-sm text-slate-400 hover:text-white px-3 py-1 rounded-md hover:bg-slate-700 transition"
+            >
+              话术库
+            </a>
             <span className="text-sm text-sky-300 bg-slate-700 px-3 py-1 rounded-md font-medium">
               用户画像
             </span>
