@@ -1,7 +1,8 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env")
     DATABASE_URL: str = 'postgresql+asyncpg://eris:eris_secret_2026@postgres:5432/eris'
     REDIS_URL: str = 'redis://:redis_secret_2026@redis:6379/0'
     SECRET_KEY: str = 'change_this_secret_key_in_production'
@@ -91,8 +92,22 @@ class Settings(BaseSettings):
     STRIPE_SUCCESS_URL: str = 'https://hugme2.com/payment/success?session_id={CHECKOUT_SESSION_ID}'
     STRIPE_CANCEL_URL: str = 'https://hugme2.com/payment/cancel'
     ENV: str = 'production'
-
-    class Config:
-        env_file = '.env'
+    # POL-01：Policy Service（七条件自动建 handoff_task）；默认关，与 CONTENT_SAFETY 一致生产显式打开。
+    POLICY_SERVICE_ENABLED: bool = False
+    POLICY_RISK_SCORE_THRESHOLD: int = 75
+    POLICY_LONELINESS_THRESHOLD: float = 82.0
+    POLICY_VIP_LEVEL_THRESHOLD: int = 1
+    POLICY_HANDOFF_COUNT_THRESHOLD: int = 3
+    # REL-01：S0–S4 自动升降级（S5 仅危机 / return-ai）；默认关。
+    REL_STAGE_AUTO_ENABLED: bool = False
+    REL_STAGE_ALLOW_DOWNGRADE: bool = True
+    REL_STAGE_INITIATION_S1: float = 10.0
+    REL_STAGE_INITIATION_S2: float = 30.0
+    REL_STAGE_INITIATION_S3: float = 55.0
+    REL_STAGE_INITIATION_S4: float = 78.0
+    REL_STAGE_VIP_MIN_FOR_S1: int = 1
+    # HO-LOCK / D5-3：handoff 会话级 Redis 锁（默认 5min TTL）；关则仅 DB 更新（旧行为）。
+    HANDOFF_CONV_REDIS_LOCK_ENABLED: bool = True
+    HANDOFF_CONV_REDIS_LOCK_TTL_SECONDS: int = 300
 
 settings = Settings()
