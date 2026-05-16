@@ -168,6 +168,7 @@ async def retrieve(
 
     # ── Phase 3：rerank ────────────────────────────────────
     hits = [_row_to_hit(r) for r in rows]
+    candidate_order_ids = [h.id for h in hits]
     now = datetime.now(timezone.utc)
     for h in hits:
         h.final_score = _compute_final_score(h, now=now)
@@ -180,7 +181,10 @@ async def retrieve(
     # 触发 sqlalchemy.exc.IllegalStateChangeError。这是 D3-3 memory_writer
     # 早就修过的同一个坑，D4-1 上线时复发，2026-05-13 hotfix。
     if touch_last_used and top:
-        ids = [h.id for h in top]
+        top_ids = {h.id for h in top}
+        ids = [memory_id for memory_id in candidate_order_ids if memory_id in top_ids][
+            : len(top)
+        ]
         try:
             asyncio.create_task(_touch_last_used(ids=ids, trace_id=trace_id))
         except RuntimeError:

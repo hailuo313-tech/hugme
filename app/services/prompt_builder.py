@@ -46,7 +46,7 @@ LAYER_ORDER: tuple[str, ...] = (
     "L5_USER_PROFILE",
     "L6_MEMORY",
     "L7_CONVERSATION_STATE",
-    # L8_RECENT_CONTEXT 不进 system，单独走 messages[1..-1]
+    "L8_RECENT_CONTEXT",
     "L9_FORMAT",
     "L10_ANCHOR",
 )
@@ -100,6 +100,7 @@ class PromptInput:
     profile: dict[str, Any] | None = None
     memories: list[dict[str, Any]] | None = None
     history: list[dict[str, str]] | None = None  # 已规范化的 role/content 列表
+    s5_phase: str | None = None
 
 
 @dataclass
@@ -124,12 +125,12 @@ def build_prompt(inp: PromptInput) -> PromptOutput:
         "L1_SAFETY": _L1_SAFETY,
         "L2_IDENTITY": _L2_IDENTITY,
         "L3_CHARACTER": _render_character(inp.character),
-        "L4_RELATIONSHIP": _render_relationship(inp.profile),
+        "L4_RELATIONSHIP": _render_relationship(inp.profile, inp.s5_phase),
         "L5_USER_PROFILE": _render_user_profile(inp.profile),
         "L6_MEMORY": _render_memory(inp.memories),
         "L7_CONVERSATION_STATE": _render_conversation_state(inp.profile),
         "L9_FORMAT": _render_format(inp.character),
-        "L10_ANCHOR": _L10_ANCHOR,
+        "L10_ANCHOR": _render_anchor(inp.s5_phase),
     }
 
     sections: list[str] = []
@@ -191,12 +192,25 @@ def _render_character(char: dict[str, Any] | None) -> str:
     )
 
 
-def _render_relationship(profile: dict[str, Any] | None) -> str:
+def _render_relationship(profile: dict[str, Any] | None, s5_phase: str | None) -> str:
     if not profile:
         return "关系阶段：S0 陌生人（未启动 Onboarding 或匿名访问）；VIP=0。"
 
     stage = (profile.get("relationship_stage") or "S0").strip().upper() or "S0"
     vip = profile.get("vip_level", 0) or 0
+
+    if stage == "S5":
+        try:
+            from services.risk_s5 import S5Phase, render_s5_prompt_supplement
+
+            phase = S5Phase(s5_phase) if s5_phase else None
+            return render_s5_prompt_supplement(phase)
+        except Exception:
+            return (
+                "【S5 危机恢复限制】\n"
+                "- 禁止：订阅/VIP/付费/打赏/升级/限时优惠/任何商业转化话术。\n"
+                "- 允许：倾听、情绪支持、安全资源、运营已接管说明。"
+            )
 
     desc = {
         "S0": "陌生人：用户刚加入，谨慎、不索取过多个人信息，建立基本信任。",
@@ -212,6 +226,15 @@ def _render_relationship(profile: dict[str, Any] | None) -> str:
         vip_note = f"\nVIP 等级：{vip}（已付费用户，可适度提供深度内容；不改变 L1）。"
 
     return f"关系阶段：{stage} — {desc}{vip_note}"
+
+
+def _render_anchor(s5_phase: str | None) -> str:
+    if s5_phase:
+        return (
+            _L10_ANCHOR
+            + "\nS5 危机恢复期间：禁止 Upsell / VIP / 付费引导，直到运营完成恢复。"
+        )
+    return _L10_ANCHOR
 
 
 def _render_user_profile(profile: dict[str, Any] | None) -> str:

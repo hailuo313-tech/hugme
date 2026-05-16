@@ -76,7 +76,7 @@ from services.llm import chat as llm_chat
 # 常量 / 配置
 # ─────────────────────────────────────────────────────────────
 
-MIN_CONTENT_LEN = 10  # 字符数下限（strip 后）
+MIN_CONTENT_LEN = 8  # 字符数下限（strip 后）
 
 # Acknowledgement / 寒暄 白名单（lowercase, 全/半角混合）
 ACKNOWLEDGEMENTS = {
@@ -279,6 +279,9 @@ def _rule_prefilter(content: str) -> Optional[str]:
     stripped = content.strip()
     if not stripped:
         return "empty"
+
+    if len(stripped) < 2:
+        return "too_short"
 
     # 先识别寒暄 / 纯符号，再判长度：短词如 ok/好的 仍应归为 acknowledgement
     normalized = re.sub(r"[\s\.\!\?\,\，\。\！\？\、]+$", "", stripped).lower()
