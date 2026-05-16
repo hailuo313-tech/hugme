@@ -195,13 +195,15 @@ async def _fetch_candidates(
                     SELECT user_id,
                            (preferences IS NOT NULL AND preferences::text NOT IN ('null', '{}'))
                         OR (interests   IS NOT NULL AND interests::text   NOT IN ('null', '[]'))
-                           AS has_memory_signal
+                           AS has_memory_signal,
+                           relationship_stage
                     FROM user_profiles
                 )
                 SELECT
                     u.id, u.channel, u.status, u.notification_opt_in,
                     u.opt_out_marketing, u.is_minor_suspected, u.risk_level,
                     u.timezone,
+                    COALESCE(ms.relationship_stage, 'S0') AS relationship_stage,
                     lm.last_user_message_at,
                     COALESCE(oh.open_handoff_count, 0)   AS open_handoff_count,
                     COALESCE(ms.has_memory_signal, FALSE) AS has_memory_signal

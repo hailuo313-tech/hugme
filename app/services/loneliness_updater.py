@@ -244,7 +244,9 @@ def compute_next_loneliness(
             if not key:
                 continue
             row_sum += _TAG_WEIGHTS.get(key, 0.0)
-        delta_tags += max(-per_memory_clamp, min(per_memory_clamp, row_sum))
+        if row_sum > 0:
+            row_sum = min(per_memory_clamp, row_sum)
+        delta_tags += row_sum
 
     delta_tags = max(-global_clamp, min(global_clamp, delta_tags))
 
