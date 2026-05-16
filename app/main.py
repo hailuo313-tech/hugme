@@ -19,6 +19,7 @@ from api.characters import router as characters_router
 from api.handoff import router as handoff_router
 from api.notifications import router as notifications_router
 from api.payments import router as payments_router
+from api.scripts import router as scripts_router
 from api.health import router as health_router
 from api.telegram import router as telegram_router
 from api.realtime import router as realtime_router
@@ -155,6 +156,7 @@ app.include_router(characters_router, prefix="/api/v1/characters", tags=["charac
 app.include_router(handoff_router, prefix="/api/v1/handoff", tags=["handoff"])
 app.include_router(notifications_router, prefix="/api/v1/notifications", tags=["notifications"])
 app.include_router(payments_router, prefix="/api/v1", tags=["payments"])
+app.include_router(scripts_router, prefix="/api/v1/scripts", tags=["scripts"])
 app.include_router(telegram_router, tags=["telegram"])
 app.include_router(realtime_router, tags=["realtime"])
 app.include_router(llm_router, prefix="/api/v1", tags=["llm"])

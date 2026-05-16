@@ -267,7 +267,6 @@ async def delete_script(
     await db.commit()
     return {"status": "deleted", "script_id": sid}
 
-
 @router.post("/suggest")
 async def suggest_scripts(
     data: ScriptSuggestRequest,
