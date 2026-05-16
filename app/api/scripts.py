@@ -267,7 +267,6 @@ async def delete_script(
     await db.commit()
     return {"status": "deleted", "script_id": sid}
 
-
 @router.post("/suggest")
 async def suggest_scripts(
     data: ScriptSuggestRequest,
@@ -275,66 +274,75 @@ async def suggest_scripts(
     _operator: dict = Depends(require_operator),
 ):
     cid = _validate_uuid(data.character_id, "character_id")
-    params = data.model_dump()
-    params["character_id"] = cid
+
+    # Build params with only non-None optional values to avoid asyncpg type ambiguity
+    params: dict[str, Any] = {"language": data.language, "limit": data.limit}
 
     clauses = ["review_status = 'approved'", "language = :language"]
     if data.script_type:
         clauses.append("script_type = :script_type")
+        params["script_type"] = data.script_type
     if cid:
         clauses.append(
             "(character_id = CAST(:character_id AS uuid) OR character_id IS NULL)"
         )
+        params["character_id"] = cid
     if data.relationship_stage:
         clauses.append(
             "(relationship_stage = :relationship_stage OR relationship_stage IS NULL)"
         )
+        params["relationship_stage"] = data.relationship_stage
     if data.emotion_state:
         clauses.append("(emotion_state = :emotion_state OR emotion_state IS NULL)")
+        params["emotion_state"] = data.emotion_state
     if data.risk_level:
         clauses.append("(risk_level = :risk_level OR risk_level IS NULL)")
+        params["risk_level"] = data.risk_level
     if data.conversion_goal:
         clauses.append("(conversion_goal = :conversion_goal OR conversion_goal IS NULL)")
+        params["conversion_goal"] = data.conversion_goal
     if data.loneliness_score is not None:
         clauses.append(
             ":loneliness_score BETWEEN COALESCE(loneliness_score_min, 0) "
             "AND COALESCE(loneliness_score_max, 100)"
         )
+        params["loneliness_score"] = data.loneliness_score
+
+    # Build match_score CASE segments only for provided values (avoids NULL type ambiguity)
+    score_parts: list[str] = []
+    if cid:
+        score_parts.append(
+            "CASE WHEN character_id = CAST(:character_id AS uuid) THEN 30 ELSE 0 END"
+        )
+    if data.relationship_stage:
+        score_parts.append(
+            "CASE WHEN relationship_stage = :relationship_stage THEN 20 ELSE 0 END"
+        )
+    if data.emotion_state:
+        score_parts.append(
+            "CASE WHEN emotion_state = :emotion_state THEN 15 ELSE 0 END"
+        )
+    if data.loneliness_score is not None:
+        score_parts.append(
+            "CASE WHEN :loneliness_score BETWEEN COALESCE(loneliness_score_min, 0)"
+            " AND COALESCE(loneliness_score_max, 100) THEN 15 ELSE 0 END"
+        )
+    if data.risk_level:
+        score_parts.append(
+            "CASE WHEN risk_level = :risk_level THEN 10 ELSE 0 END"
+        )
+    if data.conversion_goal:
+        score_parts.append(
+            "CASE WHEN conversion_goal = :conversion_goal THEN 10 ELSE 0 END"
+        )
+
+    score_expr = " + ".join(score_parts) if score_parts else "0"
 
     res = await db.execute(
         text(
             f"""
             SELECT *,
-              (
-                CASE
-                  WHEN :character_id IS NOT NULL
-                   AND character_id = CAST(:character_id AS uuid)
-                  THEN 30 ELSE 0
-                END +
-                CASE
-                  WHEN :relationship_stage IS NOT NULL
-                   AND relationship_stage = :relationship_stage
-                  THEN 20 ELSE 0
-                END +
-                CASE
-                  WHEN :emotion_state IS NOT NULL AND emotion_state = :emotion_state
-                  THEN 15 ELSE 0
-                END +
-                CASE
-                  WHEN :loneliness_score IS NOT NULL
-                   AND :loneliness_score BETWEEN COALESCE(loneliness_score_min, 0)
-                   AND COALESCE(loneliness_score_max, 100)
-                  THEN 15 ELSE 0
-                END +
-                CASE
-                  WHEN :risk_level IS NOT NULL AND risk_level = :risk_level
-                  THEN 10 ELSE 0
-                END +
-                CASE
-                  WHEN :conversion_goal IS NOT NULL AND conversion_goal = :conversion_goal
-                  THEN 10 ELSE 0
-                END
-              ) AS match_score
+              ({score_expr}) AS match_score
             FROM scripts
             WHERE {' AND '.join(clauses)}
             ORDER BY match_score DESC, updated_at DESC, created_at DESC
