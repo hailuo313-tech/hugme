@@ -247,8 +247,8 @@
   <table>
     <thead><tr><th>级</th><th>ID</th><th>任务</th><th>状态</th><th>主责</th><th>架构章节</th></tr></thead>
     <tbody>
-      <tr><td><span class="p1">P1</span></td><td>POL-01</td><td>Policy Service：7 条件自动创建 handoff_task</td><td><span class="st st-todo">未做</span></td><td><span class="ai-pill ai-cursor">Cursor</span></td><td>§2.3</td></tr>
-      <tr><td><span class="p1">P1</span></td><td>REL-01</td><td>关系阶段 S0–S5 自动升降级</td><td><span class="st st-partial">partial</span></td><td><span class="ai-pill ai-cursor">Cursor</span></td><td>§3 · 验收：仓库已合 S0–S4 自动（<code>REL_STAGE_AUTO_ENABLED</code> 默认关、阈值可调）与 <code>return-ai</code> 的 S5 门控/降级；生产须显式开 REL 与 <code>SCORE_WORKER_ENABLED</code>，并按 RUNBOOK 跑 return-ai smoke。</td></tr>
+      <tr><td><span class="p1">P1</span></td><td>POL-01</td><td>Policy Service：7 条件自动创建 handoff_task</td><td><span class="st st-partial">partial</span></td><td><span class="ai-pill ai-cursor">Cursor</span></td><td>§2.3 · 验收：<code>policy_service</code> 七条件 + <code>POLICY_SERVICE_ENABLED</code>（默认关）；生产显式开开关并验证 handoff 创建与重复门控。</td></tr>
+      <tr><td><span class="p1">P1</span></td><td>REL-01</td><td>关系阶段 S0–S5 自动升降级</td><td><span class="st st-done">已做</span></td><td><span class="ai-pill ai-cursor">Cursor</span></td><td>§3 · 验收：S0–S4 自动（<code>REL_STAGE_AUTO_ENABLED</code> 默认关）与 <code>return-ai</code> 的 S5 门控/降级已入库；生产按需开 REL + <code>SCORE_WORKER_ENABLED</code> 并按 RUNBOOK 做 return-ai smoke。</td></tr>
       <tr><td><span class="p1">P1</span></td><td>RISK-S5</td><td>S5 限制执行（禁 Upsell · 48–72h 关怀 · 7 天恢复）</td><td><span class="st st-partial">危机 PR 部分</span></td><td><span class="ai-pill ai-cursor">Cursor</span></td><td>§3.4 · §10</td></tr>
       <tr><td><span class="p1">P1</span></td><td>HO-LOCK</td><td>Handoff Redis 分布式锁 + 5min 超时释放</td><td><span class="st st-partial">D5-3 基础 lock</span></td><td><span class="ai-pill ai-cursor">Cursor</span></td><td>§8.3</td></tr>
       <tr><td><span class="p1">P1</span></td><td>A8-3</td><td>DDL 与 Rev-C 字段对表（risk_score 等）</td><td><span class="st st-partial">部分 migration</span></td><td><span class="ai-pill ai-cursor">Cursor</span> · <span class="ai-pill ai-codex">Codex</span></td><td>§14</td></tr>
@@ -306,8 +306,8 @@
   </div>
   <p class="section-title">按架构章节 · 未完成摘要</p>
   <ul class="arch-map">
-    <li><strong>§2.3 真人接管</strong> — Policy 自动触发；运营回复生产验证（PR 待部署）</li>
-    <li><strong>§3 关系阶段</strong> — REL-01 为 <span class="st st-partial">partial</span>：S0–S4 自动与 return-ai/S5 已入库；生产全量证明（开 REL + score worker、RUNBOOK smoke）与 §3 书面细则对齐仍待验收。</li>
+    <li><strong>§2.3 真人接管</strong> — POL-01 已合（<code>POLICY_SERVICE_ENABLED</code> 默认关）；Policy 生产触发与 handoff 队列验证仍待运维 smoke。</li>
+    <li><strong>§3 关系阶段</strong> — REL-01 已做：S0–S4 自动与 return-ai/S5 已入库；生产按需开 REL、score worker 及 RUNBOOK return-ai smoke 为运维验收。</li>
     <li><strong>§4 Loneliness</strong> — 生产 SCORE_WORKER 与 handoff 阈值联动验收（D4-4-OPS）</li>
     <li><strong>§6 Character OS</strong> — ConsistencyScore；角色推荐 §6.6；角色 CRUD 不全</li>
     <li><strong>§7 通知</strong> — Worker 真发送；send-now；EU opt-in 字段语义</li>
