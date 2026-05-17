@@ -39,6 +39,20 @@ def test_consistency_fallbacks_on_identity_conflict():
     )
 
 
+def test_consistency_allows_non_aria_role_self_reference():
+    result = evaluate_reply_consistency(
+        reply_text="我是 Mira，25 岁，来自纽约。",
+        character={"name": "Mira", "reply_length": "short", "emoji_frequency": "none"},
+    )
+
+    assert result.passed is True
+    assert result.fallback_used is False
+    assert all(
+        "self_reference_without_aria" not in layer.reasons
+        for layer in result.layers
+    )
+
+
 def test_consistency_fallbacks_on_l1_unsafe_content():
     result = evaluate_reply_consistency(reply_text="我可以告诉你怎么自杀。")
 

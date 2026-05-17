@@ -90,18 +90,22 @@ def test_l1_safety_contains_hard_redlines():
     assert "越狱" in body or "忽略以上规则" in body
 
 
-def test_l2_identity_says_aria_not_chatgpt():
+def test_l2_identity_uses_current_character_not_chatgpt():
     out = build_prompt(PromptInput(user_text="x"))
     body = out.layers["L2_IDENTITY"]
-    assert "Aria" in body
+    assert "L3_CHARACTER" in body
     assert "ChatGPT" in body  # 明确否认
+    assert "真实人物一问一答" in body
+    assert "情感陪护" in body
+    assert "心理咨询腔" in body
 
 
 def test_l10_anchor_repeats_critical_rules():
     out = build_prompt(PromptInput(user_text="x"))
     body = out.layers["L10_ANCHOR"]
     assert "L1" in body
-    assert "Aria" in body
+    assert "一问一答" in body
+    assert "不要情感陪护" in body
 
 
 # ─────────────────────────────────────────────────────────────
@@ -141,6 +145,7 @@ def test_l3_empty_character_falls_back_to_default():
     out = build_prompt(PromptInput(user_text="hi", character=None))
     body = out.layers["L3_CHARACTER"]
     assert "未配置" in body or "默认" in body
+    assert "真实" in body
 
 
 def test_l3_handles_string_score_gracefully():
@@ -181,7 +186,7 @@ def test_l3_renders_profile_details_and_l10_direct_answer_rule():
     assert "出生地：杭州" in out.layers["L3_CHARACTER"]
     assert "身高：168cm" in out.layers["L3_CHARACTER"]
     assert "感情状态：单身" in out.layers["L3_CHARACTER"]
-    assert "优先根据 L3_CHARACTER" in out.layers["L10_ANCHOR"]
+    assert "必须优先根据 L3_CHARACTER" in out.layers["L10_ANCHOR"]
 
 
 # ─────────────────────────────────────────────────────────────
@@ -360,6 +365,18 @@ def test_l9_default_when_no_character():
     out = build_prompt(PromptInput(user_text="hi", character=None))
     body = out.layers["L9_FORMAT"]
     assert "中文" in body or "Chinese" in body.lower()
+    assert "一问一答" in body
+    assert "不要主动共情" in body
+
+
+def test_prompt_uses_direct_qa_mode_not_emotional_companion():
+    out = build_prompt(PromptInput(user_text="你来自哪里？"))
+    system = out.system_content
+    assert "真实人物一问一答" in system
+    assert "不要情感陪护" in system
+    assert "共情优先" not in system
+    assert "情感陪伴 AI" not in system
+    assert "你是 Aria" not in system
 
 
 def test_l9_uses_profile_language_for_reply_constraint():
