@@ -35,6 +35,7 @@ from api.onboarding import (
 from services.llm_orchestrator import generate_reply, LLMOrchestratorError
 from services.memory_writer import maybe_write_memory
 from services.content_safety import evaluate_inbound_content_safety
+from services.minor_protection import evaluate_inbound_minor_protection
 from services.reply_consistency import (
     evaluate_reply_consistency,
     load_reply_consistency_context,
@@ -217,7 +218,7 @@ async def _handle_onboarding(
     # ── 有 pending 标记（等待 step1 答案）────────────────
     if prefs.get("onboarding_pending") and current_step == 0:
         submit_step = 1
-    
+
     log.info(f"onboarding.tg.step submit_step={submit_step}")
 
     # 解析答案
@@ -385,9 +386,15 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
     user_id = await _get_or_create_user(db, channel, external_id)
     log = log.bind(user_id=user_id)
     user_status_row = (
-        await db.execute(text("SELECT status FROM users WHERE id=:uid"), {"uid": user_id})
+        await db.execute(
+            text("SELECT status, is_minor_suspected FROM users WHERE id=:uid"),
+            {"uid": user_id},
+        )
     ).fetchone()
     user_status = str(user_status_row[0] or "active") if user_status_row else "active"
+    is_minor_suspected = (
+        bool(user_status_row[1]) if user_status_row and len(user_status_row) > 1 else False
+    )
     if user_status != "active":
         log.bind(user_status=user_status).info("tg.user_status_blocked")
         return JSONResponse(
@@ -421,22 +428,44 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
         await db.commit()
         log.bind(conv_id=conv_id).info("tg.conversation.created")
 
-    # ── Onboarding 状态 + 内容安全（仅完成后对用户文本）────────────────
+    # ── Onboarding 状态 + 未成年人保护 + 内容安全 ────────────────
     prefs = await _get_profile_prefs(db, user_id)
     onboarding_step = prefs.get("onboarding_step", 0)
     onboarding_done = onboarding_step >= ONBOARDING_STEPS + 1
 
     safety_result: dict | None = None
     safety_blocked = False
+    if text_content != "[non-text]":
+        minor_decision = await evaluate_inbound_minor_protection(
+            db,
+            user_id=user_id,
+            text_value=text_content,
+            is_minor_suspected=is_minor_suspected,
+        )
+        if (
+            minor_decision.suspected_minor
+            or minor_decision.adult_content
+            or minor_decision.updated_user
+        ):
+            safety_result = minor_decision.as_safety_layer()
+        safety_blocked = bool(minor_decision.blocked)
+
     if (
         onboarding_done
         and text_content != "[non-text]"
         and settings.CONTENT_SAFETY_ENABLED
     ):
-        safety_result = await evaluate_inbound_content_safety(
+        content_safety_result = await evaluate_inbound_content_safety(
             text_content, trace_id=trace_id
         )
-        safety_blocked = bool(safety_result.get("blocked"))
+        if safety_result is None:
+            safety_result = content_safety_result
+        else:
+            safety_result = {
+                **content_safety_result,
+                "minor_protection": safety_result.get("minor_protection"),
+            }
+        safety_blocked = safety_blocked or bool(content_safety_result.get("blocked"))
 
     # ── 持久化用户消息 ────────────────────────────────
     msg_id = await _persist_message(
