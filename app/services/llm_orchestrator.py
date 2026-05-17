@@ -633,7 +633,7 @@ async def _load_db_context(
 
 
 def _echo_fallback(user_text: str) -> str:
-    return f"echo: {user_text}"
+    return "嗯，我在听，你说吧～"
 
 
 def _handle_failure(log, user_text: str, reason: str) -> str:

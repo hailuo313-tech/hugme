@@ -118,7 +118,7 @@ async def chat(
     if not settings.OPENROUTER_API_KEY:
         logger.error(f"[{trace_id}] OPENROUTER_API_KEY not configured")
         return LLMResult(
-            content="[LLM unavailable: API key not configured]",
+            content="现在有点忙，稍后再聊好吗？",
             model_used="none",
             latency_ms=0,
             error="API_KEY_MISSING",
@@ -140,7 +140,7 @@ async def chat(
         except Exception as e:
             logger.warning(f"[{trace_id}] llm.force_model.fail model={force_model} err={e}")
             return LLMResult(
-                content="[LLM error: forced model failed]",
+                content="现在有点忙，稍后再聊好吗？",
                 model_used=force_model,
                 latency_ms=(time.time() - start_ts) * 1000,
                 error=str(e),
@@ -168,7 +168,7 @@ async def chat(
             # 4xx（如余额不足）不降级，直接返回错误
             logger.error(f"[{trace_id}] llm.primary.4xx model={PRIMARY_MODEL} err={primary_err}")
             return LLMResult(
-                content="[LLM error: request rejected by API]",
+                content="现在有点忙，稍后再聊好吗？",
                 model_used=PRIMARY_MODEL,
                 latency_ms=(time.time() - start_ts) * 1000,
                 error=primary_err,
@@ -195,7 +195,7 @@ async def chat(
             f"primary_err={primary_err} fallback_err={fallback_err}"
         )
         return LLMResult(
-            content="[服务暂时不可用，请稍后再试]",
+            content="现在有点忙，稍后再聊好吗？",
             model_used=FALLBACK_MODEL,
             latency_ms=(time.time() - start_ts) * 1000,
             fallback_used=True,
