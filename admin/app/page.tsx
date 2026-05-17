@@ -84,6 +84,15 @@ interface OpsAiAssistResponse {
   latency_ms?: number | null;
 }
 
+interface TranslationResponse {
+  translations: Array<{
+    id: string;
+    text: string;
+  }>;
+  model_used?: string | null;
+  latency_ms?: number | null;
+}
+
 const STATE_OPTIONS = [
   { value: "", label: "全部状态" },
   { value: "AI_ACTIVE", label: "AI 活跃" },
@@ -160,6 +169,9 @@ function DashboardContent({ operator }: { operator: Operator }) {
   const [assistError, setAssistError] = useState<string | null>(null);
   const [copiedReplyRank, setCopiedReplyRank] = useState<number | null>(null);
   const [draftReply, setDraftReply] = useState("");
+  const [messageTranslations, setMessageTranslations] = useState<Record<string, string>>({});
+  const [translationLoading, setTranslationLoading] = useState(false);
+  const [translationError, setTranslationError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -196,16 +208,60 @@ function DashboardContent({ operator }: { operator: Operator }) {
     setAssist(null);
     setAssistError(null);
     setDraftReply("");
+    setMessageTranslations({});
+    setTranslationError(null);
     setDetailLoading(true);
     try {
       const resp = await apiFetch<DetailResponse>(
         `/admin/conversations/${cid}`
       );
       setDetail(resp);
+      void translateMessages(resp);
     } catch (e) {
       setDetailError(e instanceof Error ? e.message : String(e));
     } finally {
       setDetailLoading(false);
+    }
+  }
+
+  async function translateMessages(resp: DetailResponse) {
+    const items = resp.messages
+      .filter((m) => (m.content || "").trim())
+      .map((m) => ({
+        id: m.id,
+        text: m.content || "",
+        sender_type: m.sender_type,
+      }));
+    if (items.length === 0) {
+      setMessageTranslations({});
+      return;
+    }
+
+    setTranslationLoading(true);
+    setTranslationError(null);
+    try {
+      const preserveTerms = [
+        resp.conversation.nickname,
+        resp.conversation.external_id,
+      ].filter((v): v is string => !!v && v.trim().length > 0);
+      const translated = await apiFetch<TranslationResponse>("/ops-ai/translate", {
+        method: "POST",
+        body: JSON.stringify({
+          target_language: "zh-CN",
+          preserve_terms: preserveTerms,
+          items,
+        }),
+      });
+      setMessageTranslations(
+        Object.fromEntries(
+          translated.translations.map((item) => [item.id, item.text])
+        )
+      );
+    } catch (e) {
+      setTranslationError(e instanceof Error ? e.message : String(e));
+      setMessageTranslations({});
+    } finally {
+      setTranslationLoading(false);
     }
   }
 
@@ -387,7 +443,7 @@ function DashboardContent({ operator }: { operator: Operator }) {
                 <th className="text-left px-4 py-3 font-medium">渠道</th>
                 <th className="text-left px-4 py-3 font-medium">状态</th>
                 <th className="text-left px-4 py-3 font-medium">角色</th>
-                <th className="text-right px-4 py-3 font-medium">Loneliness</th>
+                <th className="text-right px-4 py-3 font-medium">孤独感分</th>
                 <th className="text-left px-4 py-3 font-medium">风险</th>
                 <th className="text-left px-4 py-3 font-medium">最后消息</th>
                 <th className="px-4 py-3"></th>
@@ -513,6 +569,8 @@ function DashboardContent({ operator }: { operator: Operator }) {
             setAssist(null);
             setAssistError(null);
             setDraftReply("");
+            setMessageTranslations({});
+            setTranslationError(null);
           }}
         >
           <div
@@ -528,6 +586,8 @@ function DashboardContent({ operator }: { operator: Operator }) {
                   setAssist(null);
                   setAssistError(null);
                   setDraftReply("");
+                  setMessageTranslations({});
+                  setTranslationError(null);
                 }}
                 className="text-slate-400 hover:text-white"
               >
@@ -550,7 +610,7 @@ function DashboardContent({ operator }: { operator: Operator }) {
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <Meta label="昵称" value={detail.conversation.nickname} />
                     <Meta
-                      label="external_id"
+                      label="外部 ID"
                       value={detail.conversation.external_id}
                       mono
                     />
@@ -565,7 +625,7 @@ function DashboardContent({ operator }: { operator: Operator }) {
                       value={detail.conversation.ai_model_used}
                     />
                     <Meta
-                      label="Loneliness"
+                      label="孤独感分"
                       value={
                         detail.conversation.loneliness_score != null
                           ? detail.conversation.loneliness_score.toFixed(1)
@@ -730,15 +790,29 @@ function DashboardContent({ operator }: { operator: Operator }) {
 
                   {/* 消息流 */}
                   <div>
-                    <h3 className="text-sm font-medium text-slate-300 mb-3">
-                      最近消息 (最多 50 条)
-                    </h3>
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                      <h3 className="text-sm font-medium text-slate-300">
+                        最近消息（中文展示，最多 50 条）
+                      </h3>
+                      {translationLoading && (
+                        <span className="text-xs text-slate-500">正在翻译…</span>
+                      )}
+                    </div>
+                    {translationError && (
+                      <div className="bg-amber-900/20 border border-amber-800 text-amber-200 text-xs rounded-md px-3 py-2 mb-3">
+                        翻译失败，当前显示原文：{translationError}
+                      </div>
+                    )}
                     {detail.messages.length === 0 ? (
                       <p className="text-slate-500 text-sm">暂无消息</p>
                     ) : (
                       <div className="space-y-3">
                         {[...detail.messages].reverse().map((m) => (
-                          <MessageBubble key={m.id} msg={m} />
+                          <MessageBubble
+                            key={m.id}
+                            msg={m}
+                            translatedContent={messageTranslations[m.id]}
+                          />
                         ))}
                       </div>
                     )}
@@ -820,11 +894,21 @@ function AssistList({
   );
 }
 
-function MessageBubble({ msg }: { msg: MessageRow }) {
+function MessageBubble({
+  msg,
+  translatedContent,
+}: {
+  msg: MessageRow;
+  translatedContent?: string;
+}) {
   const isUser = msg.sender_type === "user";
   const isAssistant = msg.sender_type === "assistant" || msg.sender_type === "ai";
   const isOperator =
     msg.is_operator_message || msg.sender_type === "operator";
+  const originalContent = msg.content || "";
+  const displayContent = translatedContent || originalContent;
+  const hasTranslated =
+    !!translatedContent && translatedContent.trim() !== originalContent.trim();
 
   let bg = "bg-slate-800 border-slate-700";
   let label = msg.sender_type || "unknown";
@@ -847,8 +931,18 @@ function MessageBubble({ msg }: { msg: MessageRow }) {
         <span className="text-slate-500">{fmtTime(msg.created_at)}</span>
       </div>
       <div className="text-slate-100 text-sm whitespace-pre-wrap break-words">
-        {msg.content || <span className="text-slate-500 italic">（空）</span>}
+        {displayContent || <span className="text-slate-500 italic">（空）</span>}
       </div>
+      {hasTranslated && (
+        <details className="mt-2 text-xs text-slate-500">
+          <summary className="cursor-pointer hover:text-slate-300">
+            查看原文
+          </summary>
+          <div className="mt-1 whitespace-pre-wrap break-words text-slate-400">
+            {originalContent}
+          </div>
+        </details>
+      )}
     </div>
   );
 }

@@ -193,14 +193,14 @@ function MemoriesContent() {
         className="bg-slate-800 rounded-xl p-4 border border-slate-700 mb-4 flex flex-wrap items-center gap-3"
       >
         <label className="text-sm text-slate-400 whitespace-nowrap">
-          user_id
+          用户 ID
         </label>
         <input
           ref={inputRef}
           type="text"
           value={draftUid}
           onChange={(e) => setDraftUid(e.target.value)}
-          placeholder="输入 user_id 后按 Enter 查询"
+          placeholder="输入用户 ID 后按 Enter 查询"
           className="bg-slate-900 border border-slate-700 text-sm rounded-md px-3 py-2 text-slate-200 placeholder-slate-500 flex-1 min-w-[260px] font-mono"
         />
         <button
@@ -230,7 +230,7 @@ function MemoriesContent() {
       {/* 摘要行 */}
       {userId && !loading && !error && (
         <div className="text-xs text-slate-500 mb-3 font-mono">
-          user_id: <span className="text-slate-300">{userId}</span>
+          用户 ID：<span className="text-slate-300">{userId}</span>
           {" · "}共{" "}
           <span className="text-slate-300">{memories.length}</span> 条记忆
         </div>
@@ -247,7 +247,7 @@ function MemoriesContent() {
       {!userId && !loading && (
         <div className="bg-slate-800 rounded-xl border border-slate-700 border-dashed p-12 text-center">
           <p className="text-slate-500 text-sm mb-2">
-            请在上方输入 user_id 并按 Enter 查询
+            请在上方输入用户 ID 并按 Enter 查询
           </p>
           <p className="text-slate-600 text-xs">
             也可以通过 URL 参数直接访问，例如{" "}

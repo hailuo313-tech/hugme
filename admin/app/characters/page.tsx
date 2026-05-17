@@ -102,6 +102,23 @@ const EMPTY_FORM: CharacterFormData = {
 const STATUS_OPTIONS = ["draft", "active", "archived", "inactive"];
 const REPLY_LENGTH_OPTIONS = ["short", "medium", "long"];
 const EMOJI_OPTIONS = ["none", "low", "medium", "high"];
+const OPTION_LABELS: Record<string, string> = {
+  draft: "草稿",
+  active: "启用",
+  archived: "已归档",
+  inactive: "停用",
+  short: "短",
+  medium: "中",
+  long: "长",
+  none: "不用",
+  low: "低",
+  high: "高",
+};
+
+function optionLabel(value: string | null | undefined): string {
+  if (!value) return "—";
+  return OPTION_LABELS[value] || value;
+}
 
 function normalizeJsonObject(value: unknown): Record<string, unknown> {
   if (!value) return {};
@@ -426,7 +443,7 @@ function CharactersContent({ operator }: { operator: Operator }) {
           <div>
             <h1 className="text-2xl font-semibold mb-1">角色管理</h1>
             <p className="text-slate-400 text-sm">
-              用结构化选项创建角色档案，保存到 characters.profile_details 并进入 Prompt。
+              用结构化选项创建角色档案，保存到 characters.profile_details 并进入提示词。
             </p>
           </div>
           <button
@@ -522,7 +539,7 @@ function CharactersContent({ operator }: { operator: Operator }) {
               onChange={(v) => updateField("reply_length", v)}
             />
             <Select
-              label="Emoji 频率"
+              label="表情符号频率"
               value={form.emoji_frequency}
               options={EMOJI_OPTIONS}
               onChange={(v) => updateField("emoji_frequency", v)}
@@ -561,10 +578,10 @@ function CharactersContent({ operator }: { operator: Operator }) {
           </div>
 
           <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <TextArea label="英文 Prompt 补充" value={form.prompt_en} onChange={(v) => updateField("prompt_en", v)} />
-            <TextArea label="西语 Prompt 补充" value={form.prompt_es} onChange={(v) => updateField("prompt_es", v)} />
-            <TextArea label="法语 Prompt 补充" value={form.prompt_fr} onChange={(v) => updateField("prompt_fr", v)} />
-            <TextArea label="德语 Prompt 补充" value={form.prompt_de} onChange={(v) => updateField("prompt_de", v)} />
+            <TextArea label="提示词补充（英语）" value={form.prompt_en} onChange={(v) => updateField("prompt_en", v)} />
+            <TextArea label="提示词补充（西语）" value={form.prompt_es} onChange={(v) => updateField("prompt_es", v)} />
+            <TextArea label="提示词补充（法语）" value={form.prompt_fr} onChange={(v) => updateField("prompt_fr", v)} />
+            <TextArea label="提示词补充（德语）" value={form.prompt_de} onChange={(v) => updateField("prompt_de", v)} />
           </section>
 
           <div className="flex justify-end gap-3">
@@ -624,7 +641,7 @@ function CharactersContent({ operator }: { operator: Operator }) {
                       </td>
                       <td className="px-4 py-3">
                         <span className={`inline-flex rounded-full border px-2 py-1 text-xs ${statusColor(row.status)}`}>
-                          {row.status ?? "unknown"}
+                          {optionLabel(row.status)}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-slate-300">
@@ -695,7 +712,7 @@ function Select({
       >
         {options.map((option) => (
           <option key={option} value={option}>
-            {option}
+            {optionLabel(option)}
           </option>
         ))}
       </select>

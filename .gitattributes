@@ -1,1 +1,8 @@
 *.sh text eol=lf
+
+admin/**/*.ts text eol=lf
+admin/**/*.tsx text eol=lf
+admin/**/*.js text eol=lf
+admin/**/*.jsx text eol=lf
+admin/**/*.css text eol=lf
+admin/**/*.json text eol=lf

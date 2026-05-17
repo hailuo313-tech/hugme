@@ -390,7 +390,7 @@ function UserProfileContent({ operator }: { operator: Operator }) {
                 <MetaItem label="昵称" value={user?.nickname} />
                 <MetaItem label="渠道" value={user?.channel} />
                 <MetaItem
-                  label="External ID"
+                  label="外部 ID"
                   value={user?.external_id}
                   mono
                 />
@@ -521,37 +521,37 @@ function UserProfileContent({ operator }: { operator: Operator }) {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
                 <div>
                   <div className="text-xs text-slate-500 mb-1.5">
-                    孤独感分 (Loneliness)
+                    孤独感分
                   </div>
                   {scoreBar(profile?.loneliness_score ?? null)}
                 </div>
                 <div>
                   <div className="text-xs text-slate-500 mb-1.5">
-                    风险分 (Risk Score)
+                    风险分
                   </div>
                   {scoreBar(profile?.risk_score ?? null)}
                 </div>
                 <div>
                   <div className="text-xs text-slate-500 mb-1.5">
-                    主动开话 (Initiation)
+                    主动开话
                   </div>
                   {scoreBar(profile?.initiation_score ?? null)}
                 </div>
                 <div>
                   <div className="text-xs text-slate-500 mb-1.5">
-                    情绪分 (Emotion)
+                    情绪分
                   </div>
                   {scoreBar(profile?.emotion_score ?? null)}
                 </div>
                 <div>
                   <div className="text-xs text-slate-500 mb-1.5">
-                    留存分 (Retention)
+                    留存分
                   </div>
                   {scoreBar(profile?.retention_score ?? null)}
                 </div>
                 <div>
                   <div className="text-xs text-slate-500 mb-1.5">
-                    依赖分 (Dependency)
+                    依赖分
                   </div>
                   {scoreBar(profile?.dependency_score ?? null)}
                 </div>
@@ -674,7 +674,7 @@ function UserProfileContent({ operator }: { operator: Operator }) {
         {/* 用户不存在 */}
         {!loading && !error && !data?.user && (
           <div className="bg-slate-800 rounded-xl border border-slate-700 border-dashed p-12 text-center">
-            <p className="text-slate-500 text-sm">找不到该用户（user_id: {userId}）</p>
+            <p className="text-slate-500 text-sm">找不到该用户（用户 ID：{userId}）</p>
             <a
               href="/admin"
               className="mt-3 inline-block text-sm text-violet-400 hover:text-violet-300 transition"
