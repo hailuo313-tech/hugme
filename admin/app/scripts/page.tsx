@@ -47,17 +47,17 @@ interface SuggestResponse {
 
 const REVIEW_STATUS_OPTIONS = [
   { value: "", label: "全部状态" },
-  { value: "draft", label: "Draft" },
-  { value: "approved", label: "Approved" },
-  { value: "archived", label: "Archived" },
+  { value: "draft", label: "草稿" },
+  { value: "approved", label: "已通过" },
+  { value: "archived", label: "已归档" },
 ];
 
 const LANGUAGE_OPTIONS = [
   { value: "", label: "全部语言" },
-  { value: "en", label: "English" },
+  { value: "en", label: "英语" },
   { value: "zh", label: "中文" },
-  { value: "ja", label: "日本語" },
-  { value: "ko", label: "한국어" },
+  { value: "ja", label: "日语" },
+  { value: "ko", label: "韩语" },
 ];
 
 const STAGE_OPTIONS = [
@@ -72,16 +72,16 @@ const STAGE_OPTIONS = [
 
 const SCRIPT_TYPE_OPTIONS = [
   { value: "", label: "全部类型" },
-  { value: "reply", label: "Reply" },
-  { value: "opener", label: "Opener" },
-  { value: "upsell", label: "Upsell" },
-  { value: "callback", label: "Callback" },
+  { value: "reply", label: "回复" },
+  { value: "opener", label: "开场" },
+  { value: "upsell", label: "转化" },
+  { value: "callback", label: "召回" },
 ];
 
 const RISK_LEVEL_OPTIONS = [
-  { value: "low", label: "Low" },
-  { value: "elevated", label: "Elevated" },
-  { value: "high", label: "High" },
+  { value: "low", label: "低" },
+  { value: "elevated", label: "升高" },
+  { value: "high", label: "高" },
 ];
 
 const PAGE_LIMIT = 50;
@@ -98,6 +98,14 @@ function fmtTime(s: string | null): string {
 function truncate(s: string | null, maxLen = 80): string {
   if (!s) return "—";
   return s.length > maxLen ? s.slice(0, maxLen) + "…" : s;
+}
+
+function optionLabel(
+  options: Array<{ value: string; label: string }>,
+  value: string | null,
+): string {
+  if (!value) return "—";
+  return options.find((option) => option.value === value)?.label || value;
 }
 
 function reviewStatusColor(s: string | null): string {
@@ -201,19 +209,19 @@ function formToPayload(f: ScriptFormData): Record<string, unknown> {
 }
 
 function validateForm(f: ScriptFormData): string | null {
-  if (!f.content.trim()) return "content 不能为空";
+  if (!f.content.trim()) return "话术内容不能为空";
   const min = Number(f.loneliness_score_min);
   const max = Number(f.loneliness_score_max);
   if (Number.isNaN(min) || min < 0 || min > 100)
-    return "loneliness_score_min 必须在 0–100";
+    return "孤独感分下限必须在 0–100";
   if (Number.isNaN(max) || max < 0 || max > 100)
-    return "loneliness_score_max 必须在 0–100";
+    return "孤独感分上限必须在 0–100";
   if (min > max)
-    return "loneliness_score_min 不能大于 loneliness_score_max";
+    return "孤独感分下限不能大于上限";
   if (!["draft", "approved", "archived"].includes(f.review_status))
-    return "review_status 只能是 draft / approved / archived";
+    return "审核状态只能是草稿、已通过或已归档";
   if (f.character_id.trim() && !isValidUUID(f.character_id.trim()))
-    return "character_id 格式不正确（请输入有效 UUID）";
+    return "角色 ID 格式不正确（请输入有效 UUID）";
   return null;
 }
 
@@ -262,10 +270,10 @@ function ScriptForm({
         </div>
       )}
 
-      {/* content */}
+      {/* 话术内容 */}
       <div>
         <label className={labelCls}>
-          content <span className="text-rose-400">*</span>
+          话术内容 <span className="text-rose-400">*</span>
         </label>
         <textarea
           value={form.content}
@@ -278,9 +286,9 @@ function ScriptForm({
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        {/* language */}
+        {/* 语言 */}
         <div>
-          <label className={labelCls}>language</label>
+          <label className={labelCls}>语言</label>
           <select
             value={form.language}
             onChange={(e) => setField("language", e.target.value)}
@@ -294,9 +302,9 @@ function ScriptForm({
           </select>
         </div>
 
-        {/* review_status */}
+        {/* 审核状态 */}
         <div>
-          <label className={labelCls}>review_status</label>
+          <label className={labelCls}>审核状态</label>
           <select
             value={form.review_status}
             onChange={(e) => setField("review_status", e.target.value)}
@@ -310,9 +318,9 @@ function ScriptForm({
           </select>
         </div>
 
-        {/* relationship_stage */}
+        {/* 关系阶段 */}
         <div>
-          <label className={labelCls}>relationship_stage</label>
+          <label className={labelCls}>关系阶段</label>
           <select
             value={form.relationship_stage}
             onChange={(e) => setField("relationship_stage", e.target.value)}
@@ -326,9 +334,9 @@ function ScriptForm({
           </select>
         </div>
 
-        {/* script_type */}
+        {/* 话术类型 */}
         <div>
-          <label className={labelCls}>script_type</label>
+          <label className={labelCls}>话术类型</label>
           <select
             value={form.script_type}
             onChange={(e) => setField("script_type", e.target.value)}
@@ -342,21 +350,21 @@ function ScriptForm({
           </select>
         </div>
 
-        {/* emotion_state */}
+        {/* 情绪状态 */}
         <div>
-          <label className={labelCls}>emotion_state</label>
+          <label className={labelCls}>情绪状态</label>
           <input
             type="text"
             value={form.emotion_state}
             onChange={(e) => setField("emotion_state", e.target.value)}
-            placeholder="如 lonely / happy…"
+            placeholder="如 lonely / happy…（可留英文标签）"
             className={inputCls}
           />
         </div>
 
-        {/* risk_level */}
+        {/* 风险等级 */}
         <div>
-          <label className={labelCls}>risk_level</label>
+          <label className={labelCls}>风险等级</label>
           <select
             value={form.risk_level}
             onChange={(e) => setField("risk_level", e.target.value)}
@@ -370,9 +378,9 @@ function ScriptForm({
           </select>
         </div>
 
-        {/* loneliness_score_min */}
+        {/* 孤独感分下限 */}
         <div>
-          <label className={labelCls}>loneliness_score_min (0–100)</label>
+          <label className={labelCls}>孤独感分下限（0–100）</label>
           <input
             type="number"
             min={0}
@@ -383,9 +391,9 @@ function ScriptForm({
           />
         </div>
 
-        {/* loneliness_score_max */}
+        {/* 孤独感分上限 */}
         <div>
-          <label className={labelCls}>loneliness_score_max (0–100)</label>
+          <label className={labelCls}>孤独感分上限（0–100）</label>
           <input
             type="number"
             min={0}
@@ -396,21 +404,21 @@ function ScriptForm({
           />
         </div>
 
-        {/* conversion_goal */}
+        {/* 转化目标 */}
         <div>
-          <label className={labelCls}>conversion_goal</label>
+          <label className={labelCls}>转化目标</label>
           <input
             type="text"
             value={form.conversion_goal}
             onChange={(e) => setField("conversion_goal", e.target.value)}
-            placeholder="如 retain / upsell…"
+            placeholder="如 retain / upsell…（可留英文标签）"
             className={inputCls}
           />
         </div>
 
-        {/* character_id */}
+        {/* 角色 ID */}
         <div>
-          <label className={labelCls}>character_id (UUID，选填)</label>
+          <label className={labelCls}>角色 ID（UUID，选填）</label>
           <input
             type="text"
             value={form.character_id}
@@ -421,16 +429,16 @@ function ScriptForm({
         </div>
       </div>
 
-      {/* forbidden_scenarios */}
+      {/* 禁用场景 */}
       <div>
         <label className={labelCls}>
-          forbidden_scenarios（逗号分隔，选填）
+          禁用场景（逗号分隔，选填）
         </label>
         <input
           type="text"
           value={form.forbidden_scenarios}
           onChange={(e) => setField("forbidden_scenarios", e.target.value)}
-          placeholder="suicide, self-harm, …"
+          placeholder="suicide, self-harm, …（可留英文标签）"
           className={inputCls}
         />
       </div>
@@ -456,7 +464,7 @@ function ScriptForm({
   );
 }
 
-// ── Suggest 预览面板 ───────────────────────────────────────────────
+// ── 推荐预览面板 ───────────────────────────────────────────────────
 
 type SuggestFormData = {
   character_id: string;
@@ -533,7 +541,7 @@ function SuggestPanel() {
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center justify-between px-5 py-4 text-sm font-medium text-slate-200 hover:bg-slate-700/40 transition"
       >
-        <span>Suggest 预览 — 测试匹配逻辑</span>
+        <span>推荐预览 - 测试话术匹配逻辑</span>
         <span className="text-slate-500 text-xs">{open ? "收起 ▲" : "展开 ▼"}</span>
       </button>
 
@@ -548,7 +556,7 @@ function SuggestPanel() {
 
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <label className={labelCls}>language</label>
+                <label className={labelCls}>语言</label>
                 <select
                   value={form.language}
                   onChange={(e) => setField("language", e.target.value)}
@@ -560,7 +568,7 @@ function SuggestPanel() {
                 </select>
               </div>
               <div>
-                <label className={labelCls}>relationship_stage</label>
+                <label className={labelCls}>关系阶段</label>
                 <select
                   value={form.relationship_stage}
                   onChange={(e) => setField("relationship_stage", e.target.value)}
@@ -572,7 +580,7 @@ function SuggestPanel() {
                 </select>
               </div>
               <div>
-                <label className={labelCls}>script_type</label>
+                <label className={labelCls}>话术类型</label>
                 <select
                   value={form.script_type}
                   onChange={(e) => setField("script_type", e.target.value)}
@@ -584,17 +592,17 @@ function SuggestPanel() {
                 </select>
               </div>
               <div>
-                <label className={labelCls}>emotion_state</label>
+                <label className={labelCls}>情绪状态</label>
                 <input
                   type="text"
                   value={form.emotion_state}
                   onChange={(e) => setField("emotion_state", e.target.value)}
-                  placeholder="如 lonely…"
+                  placeholder="如 lonely…（可留英文标签）"
                   className={inputCls}
                 />
               </div>
               <div>
-                <label className={labelCls}>loneliness_score</label>
+                <label className={labelCls}>孤独感分</label>
                 <input
                   type="number"
                   min={0}
@@ -605,7 +613,7 @@ function SuggestPanel() {
                 />
               </div>
               <div>
-                <label className={labelCls}>risk_level</label>
+                <label className={labelCls}>风险等级</label>
                 <select
                   value={form.risk_level}
                   onChange={(e) => setField("risk_level", e.target.value)}
@@ -617,17 +625,17 @@ function SuggestPanel() {
                 </select>
               </div>
               <div>
-                <label className={labelCls}>conversion_goal</label>
+                <label className={labelCls}>转化目标</label>
                 <input
                   type="text"
                   value={form.conversion_goal}
                   onChange={(e) => setField("conversion_goal", e.target.value)}
-                  placeholder="retain / upsell…"
+                  placeholder="retain / upsell…（可留英文标签）"
                   className={inputCls}
                 />
               </div>
               <div>
-                <label className={labelCls}>character_id (选填)</label>
+                <label className={labelCls}>角色 ID（选填）</label>
                 <input
                   type="text"
                   value={form.character_id}
@@ -637,7 +645,7 @@ function SuggestPanel() {
                 />
               </div>
               <div>
-                <label className={labelCls}>limit</label>
+                <label className={labelCls}>返回数量</label>
                 <input
                   type="number"
                   min={1}
@@ -654,7 +662,7 @@ function SuggestPanel() {
               disabled={loading}
               className="bg-sky-700 hover:bg-sky-600 disabled:opacity-50 text-white text-sm font-medium px-5 py-2 rounded-md transition"
             >
-              {loading ? "请求中…" : "Preview suggestions"}
+              {loading ? "请求中…" : "预览推荐话术"}
             </button>
           </form>
 
@@ -682,11 +690,11 @@ function SuggestPanel() {
                             item.review_status
                           )}`}
                         >
-                          {item.review_status}
+                          {optionLabel(REVIEW_STATUS_OPTIONS, item.review_status)}
                         </span>
                         {item.match_score != null && (
                           <span className="text-xs text-sky-400 font-mono">
-                            match_score: {item.match_score.toFixed(3)}
+                            匹配分：{item.match_score.toFixed(3)}
                           </span>
                         )}
                       </div>
@@ -919,7 +927,7 @@ function ScriptsContent({ operator }: { operator: Operator }) {
           <div>
             <h1 className="text-2xl font-semibold mb-1">话术库</h1>
             <p className="text-slate-400 text-sm">
-              管理 operator 话术 — 浏览 / 新建 / 编辑 / 归档
+              管理运营话术：浏览、新建、编辑、归档
             </p>
           </div>
           <button
@@ -930,7 +938,7 @@ function ScriptsContent({ operator }: { operator: Operator }) {
           </button>
         </div>
 
-        {/* Suggest 预览 */}
+        {/* 推荐预览 */}
         <SuggestPanel />
 
         {/* 筛选栏 */}
@@ -984,7 +992,7 @@ function ScriptsContent({ operator }: { operator: Operator }) {
             type="text"
             value={filterCharacterId}
             onChange={(e) => setFilterCharacterId(e.target.value)}
-            placeholder="character_id（UUID）"
+            placeholder="角色 ID（UUID）"
             className="bg-slate-900 border border-slate-700 text-sm rounded-md px-3 py-2 text-slate-200 placeholder-slate-500 font-mono min-w-[220px]"
           />
           <button
@@ -1014,16 +1022,16 @@ function ScriptsContent({ operator }: { operator: Operator }) {
           <table className="w-full text-sm">
             <thead className="bg-slate-900/50 text-slate-400 text-xs uppercase">
               <tr>
-                <th className="text-left px-4 py-3 font-medium">Status</th>
-                <th className="text-left px-4 py-3 font-medium">Type</th>
-                <th className="text-left px-4 py-3 font-medium">Lang</th>
-                <th className="text-left px-4 py-3 font-medium">Stage</th>
-                <th className="text-left px-4 py-3 font-medium">Emotion</th>
-                <th className="text-left px-4 py-3 font-medium">Loneliness</th>
-                <th className="text-left px-4 py-3 font-medium">Risk</th>
-                <th className="text-left px-4 py-3 font-medium">Goal</th>
-                <th className="text-left px-4 py-3 font-medium">Content</th>
-                <th className="text-left px-4 py-3 font-medium whitespace-nowrap">Updated</th>
+                <th className="text-left px-4 py-3 font-medium">审核状态</th>
+                <th className="text-left px-4 py-3 font-medium">类型</th>
+                <th className="text-left px-4 py-3 font-medium">语言</th>
+                <th className="text-left px-4 py-3 font-medium">阶段</th>
+                <th className="text-left px-4 py-3 font-medium">情绪</th>
+                <th className="text-left px-4 py-3 font-medium">孤独感分</th>
+                <th className="text-left px-4 py-3 font-medium">风险</th>
+                <th className="text-left px-4 py-3 font-medium">目标</th>
+                <th className="text-left px-4 py-3 font-medium">内容</th>
+                <th className="text-left px-4 py-3 font-medium whitespace-nowrap">更新时间</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
@@ -1051,18 +1059,22 @@ function ScriptsContent({ operator }: { operator: Operator }) {
                       <span
                         className={`inline-block px-2 py-0.5 text-xs rounded-full border ${reviewStatusColor(row.review_status)}`}
                       >
-                        {row.review_status || "—"}
+                        {optionLabel(REVIEW_STATUS_OPTIONS, row.review_status)}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-slate-300">{row.script_type || "—"}</td>
-                    <td className="px-4 py-3 text-slate-300">{row.language || "—"}</td>
+                    <td className="px-4 py-3 text-slate-300">
+                      {optionLabel(SCRIPT_TYPE_OPTIONS, row.script_type)}
+                    </td>
+                    <td className="px-4 py-3 text-slate-300">
+                      {optionLabel(LANGUAGE_OPTIONS, row.language)}
+                    </td>
                     <td className="px-4 py-3 text-slate-300">{row.relationship_stage || "—"}</td>
                     <td className="px-4 py-3 text-slate-300">{row.emotion_state || "—"}</td>
                     <td className="px-4 py-3 text-slate-400 text-xs tabular-nums whitespace-nowrap">
                       {row.loneliness_score_min ?? "—"} – {row.loneliness_score_max ?? "—"}
                     </td>
                     <td className={`px-4 py-3 ${riskColor(row.risk_level)}`}>
-                      {row.risk_level || "—"}
+                      {optionLabel(RISK_LEVEL_OPTIONS, row.risk_level)}
                     </td>
                     <td className="px-4 py-3 text-slate-300">{row.conversion_goal || "—"}</td>
                     <td className="px-4 py-3 text-slate-200 max-w-[300px]">

@@ -140,6 +140,74 @@ def test_ops_ai_assist_requires_operator_token():
     assert r.status_code == 401
 
 
+def test_ops_ai_translate_requires_operator_token():
+    db = MagicMock()
+    client = TestClient(_app(db, with_auth=False))
+
+    r = client.post(
+        "/api/v1/ops-ai/translate",
+        json={"items": [{"id": "m1", "text": "Hello"}]},
+    )
+
+    assert r.status_code == 401
+
+
+def test_ops_ai_translate_returns_chinese_display_text(monkeypatch):
+    db = MagicMock()
+    mock_chat = _patch_llm(
+        monkeypatch,
+        content=json.dumps(
+            {
+                "translations": [
+                    {"id": "m1", "text": "你好，我来自纽约。"},
+                    {"id": "m2", "text": "你是谁？"},
+                ]
+            },
+            ensure_ascii=False,
+        ),
+    )
+    client = TestClient(_app(db))
+
+    r = client.post(
+        "/api/v1/ops-ai/translate",
+        json={
+            "target_language": "zh-CN",
+            "preserve_terms": ["Mina93"],
+            "items": [
+                {"id": "m1", "sender_type": "assistant", "text": "Hi, I am from New York."},
+                {"id": "m2", "sender_type": "user", "text": "你是谁？"},
+            ],
+        },
+    )
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["translations"] == [
+        {"id": "m1", "text": "你好，我来自纽约。"},
+        {"id": "m2", "text": "你是谁？"},
+    ]
+    llm_messages = mock_chat.await_args.kwargs["messages"]
+    assert "简体中文" in llm_messages[0]["content"]
+    assert "Mina93" in llm_messages[1]["content"]
+
+
+def test_ops_ai_translate_falls_back_to_original_missing_ids(monkeypatch):
+    db = MagicMock()
+    _patch_llm(
+        monkeypatch,
+        content=json.dumps({"translations": [{"id": "other", "text": "忽略"}]}, ensure_ascii=False),
+    )
+    client = TestClient(_app(db))
+
+    r = client.post(
+        "/api/v1/ops-ai/translate",
+        json={"items": [{"id": "m1", "text": "Original text"}]},
+    )
+
+    assert r.status_code == 200, r.text
+    assert r.json()["translations"] == [{"id": "m1", "text": "Original text"}]
+
+
 def test_ops_ai_assist_conversation_not_found():
     db = MagicMock()
     db.execute = AsyncMock(return_value=_result(one=None))

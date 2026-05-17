@@ -36,6 +36,29 @@ class OpsAiAssistRequest(BaseModel):
             raise ValueError("handoff_task_id must be a valid UUID") from exc
 
 
+class OpsAiTranslateItem(BaseModel):
+    id: str = Field(min_length=1, max_length=128)
+    text: str = Field(default="", max_length=4000)
+    sender_type: Optional[str] = Field(default=None, max_length=32)
+
+
+class OpsAiTranslateRequest(BaseModel):
+    items: list[OpsAiTranslateItem] = Field(default_factory=list, max_length=50)
+    target_language: str = Field(default="zh-CN", max_length=16)
+    preserve_terms: list[str] = Field(default_factory=list, max_length=20)
+
+
+class OpsAiTranslatedItem(BaseModel):
+    id: str
+    text: str
+
+
+class OpsAiTranslateResponse(BaseModel):
+    translations: list[OpsAiTranslatedItem]
+    model_used: Optional[str] = None
+    latency_ms: Optional[float] = None
+
+
 def _validate_uuid(value: str, field_name: str) -> str:
     try:
         return str(uuid.UUID(str(value)))
@@ -124,6 +147,60 @@ def _extract_json_object(content: str) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise ValueError("LLM response must be a JSON object")
     return parsed
+
+
+def _normalize_translation_payload(
+    parsed: dict[str, Any],
+    requested_items: list[OpsAiTranslateItem],
+) -> list[dict[str, str]]:
+    raw_translations = parsed.get("translations")
+    if not isinstance(raw_translations, list):
+        raise ValueError("LLM response missing translations")
+
+    requested_by_id = {item.id: item.text for item in requested_items}
+    normalized_by_id: dict[str, str] = {}
+    for item in raw_translations:
+        if not isinstance(item, dict):
+            continue
+        item_id = str(item.get("id") or "").strip()
+        if item_id not in requested_by_id:
+            continue
+        translated_text = str(item.get("text") or "").strip()
+        normalized_by_id[item_id] = translated_text or requested_by_id[item_id]
+
+    return [
+        {"id": item.id, "text": normalized_by_id.get(item.id, item.text)}
+        for item in requested_items
+    ]
+
+
+def _build_translation_messages(body: OpsAiTranslateRequest) -> list[dict[str, str]]:
+    preserve_terms = [term for term in body.preserve_terms if term.strip()]
+    payload = {
+        "target_language": body.target_language,
+        "preserve_terms": preserve_terms,
+        "items": [
+            {
+                "id": item.id,
+                "sender_type": item.sender_type,
+                "text": item.text,
+            }
+            for item in body.items
+        ],
+        "required_json_shape": {
+            "translations": [{"id": "same input id", "text": "Chinese translation"}]
+        },
+    }
+    system = (
+        "你是 ERIS 运营后台的只读翻译助手。"
+        "把后台会话记录翻译成简体中文；已经是中文的内容保持原样。"
+        "必须保留用户名、昵称、ID、URL、代码、金额、时间、表情和专有名词，不要增删事实。"
+        "只返回严格 JSON，不要 Markdown，不要解释。"
+    )
+    return [
+        {"role": "system", "content": system},
+        {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+    ]
 
 
 def _fallback_reply(rank: int, summary: dict[str, Any]) -> dict[str, Any]:
@@ -306,6 +383,78 @@ async def assist_conversation(
         "handoff_task_id": body.handoff_task_id,
         "summary": summary,
         "suggested_replies": suggested_replies,
+        "model_used": result.model_used,
+        "latency_ms": elapsed_ms,
+    }
+
+
+@router.post("/translate", response_model=OpsAiTranslateResponse)
+async def translate_admin_text(
+    body: OpsAiTranslateRequest,
+    request: Request,
+    operator: dict = Depends(require_operator),
+):
+    started = time.time()
+    trace_id = getattr(request.state, "trace_id", str(uuid.uuid4()))
+    operator_id = operator.get("sub")
+    items = [item for item in body.items if item.text.strip()]
+    if not items:
+        return {"translations": [], "model_used": None, "latency_ms": 0}
+
+    normalized_body = body.model_copy(update={"items": items})
+    logger.bind(
+        operator_id=operator_id,
+        item_count=len(items),
+        target_language=body.target_language,
+    ).info("ops_ai.translate.start")
+
+    try:
+        result = await llm_chat(
+            messages=_build_translation_messages(normalized_body),
+            trace_id=trace_id,
+            temperature=0.1,
+            max_tokens=1600,
+        )
+    except Exception as exc:
+        logger.bind(
+            operator_id=operator_id,
+            item_count=len(items),
+            elapsed_ms=round((time.time() - started) * 1000, 1),
+            error=str(exc),
+        ).warning("ops_ai.translate.llm_error")
+        raise HTTPException(status_code=502, detail="翻译生成失败") from exc
+
+    if result.error:
+        logger.bind(
+            operator_id=operator_id,
+            item_count=len(items),
+            elapsed_ms=round((time.time() - started) * 1000, 1),
+            error=result.error,
+        ).warning("ops_ai.translate.llm_error")
+        raise HTTPException(status_code=502, detail="翻译生成失败")
+
+    try:
+        parsed = _extract_json_object(result.content)
+        translations = _normalize_translation_payload(parsed, items)
+    except ValueError as exc:
+        logger.bind(
+            operator_id=operator_id,
+            item_count=len(items),
+            elapsed_ms=round((time.time() - started) * 1000, 1),
+            error=str(exc),
+        ).warning("ops_ai.translate.parse_error")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    elapsed_ms = round((time.time() - started) * 1000, 1)
+    logger.bind(
+        operator_id=operator_id,
+        item_count=len(translations),
+        model_used=result.model_used,
+        elapsed_ms=elapsed_ms,
+    ).info("ops_ai.translate.success")
+
+    return {
+        "translations": translations,
         "model_used": result.model_used,
         "latency_ms": elapsed_ms,
     }
