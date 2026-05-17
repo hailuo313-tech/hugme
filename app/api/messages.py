@@ -159,12 +159,25 @@ async def inbound_message(
 
     # ── 查或建 user ──────────────────────────────────────
     row = (await db.execute(
-        text("SELECT id FROM users WHERE channel=:ch AND external_id=:eid"),
+        text("SELECT id, status FROM users WHERE channel=:ch AND external_id=:eid"),
         {"ch": data.channel, "eid": data.external_user_id}
     )).fetchone()
 
     if row:
         user_id = str(row[0])
+        user_status = str(row[1] or "active")
+        if user_status != "active":
+            resp_body = {
+                "message_id": "",
+                "conversation_id": "",
+                "status": "blocked_by_user_status",
+                "trace_id": trace_id,
+                "block_reason": f"user_status:{user_status}",
+            }
+            log.bind(user_id=user_id, user_status=user_status).info(
+                "message.inbound.user_status_blocked"
+            )
+            return JSONResponse(status_code=423, content=resp_body)
         log.bind(user_id=user_id).info("message.inbound.user.found")
     else:
         user_id = str(uuid.uuid4())

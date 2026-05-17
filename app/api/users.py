@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
+from api.admin import require_operator
 from core.database import get_db
 from pydantic import BaseModel
 from typing import Optional
@@ -25,6 +26,19 @@ class RiskEventCreate(BaseModel):
     severity: Optional[str] = "P1"
     trigger_message_id: Optional[str] = None
     description: Optional[str] = None
+
+
+class UserFreezeRequest(BaseModel):
+    reason: Optional[str] = None
+
+
+def _validate_uuid(value: str, field_name: str) -> str:
+    try:
+        return str(uuid.UUID(str(value)))
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400, detail=f"{field_name} must be a valid UUID"
+        ) from exc
 
 @router.post("/onboarding")
 async def onboarding(data: OnboardingStep, db: AsyncSession = Depends(get_db)):
@@ -62,6 +76,71 @@ async def update_notification_settings(user_id: str, data: NotificationSettings,
         await db.commit()
     return {"status": "ok"}
 
+
+@router.post("/{user_id}/freeze")
+async def freeze_user(
+    user_id: str,
+    data: UserFreezeRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+    _operator: dict = Depends(require_operator),
+):
+    """P2：冻结用户，阻止继续 AI 会话与主动触达。"""
+    uid = _validate_uuid(user_id, "user_id")
+    reason = (data.reason if data else None) or "operator_freeze"
+
+    row = (
+        await db.execute(
+            text(
+                """
+                UPDATE users
+                SET status = 'frozen',
+                    opt_out_marketing = TRUE,
+                    updated_at = NOW()
+                WHERE id = :uid
+                RETURNING id, status
+                """
+            ),
+            {"uid": uid},
+        )
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    conv_res = await db.execute(
+        text(
+            """
+            UPDATE conversations
+            SET state = 'FROZEN',
+                updated_at = NOW()
+            WHERE user_id = :uid
+              AND state NOT IN ('CLOSED', 'ESCALATED', 'FROZEN')
+            RETURNING id
+            """
+        ),
+        {"uid": uid},
+    )
+    notification_res = await db.execute(
+        text(
+            """
+            UPDATE notification_tasks
+            SET status = 'cancelled',
+                failure_reason = :reason
+            WHERE user_id = :uid
+              AND status IN ('pending', 'sending')
+            RETURNING id
+            """
+        ),
+        {"uid": uid, "reason": f"user_frozen:{reason[:100]}"},
+    )
+    await db.commit()
+
+    return {
+        "status": "frozen",
+        "user_id": uid,
+        "conversations_frozen": len(conv_res.fetchall()),
+        "notifications_cancelled": len(notification_res.fetchall()),
+    }
+
 @router.get("/{user_id}/data-export")
 async def data_export(user_id: str, db: AsyncSession = Depends(get_db)):
     user = (await db.execute(text("SELECT * FROM users WHERE id=:uid"), {"uid": user_id})).fetchone()
@@ -80,10 +159,7 @@ async def create_risk_event(
     db: AsyncSession = Depends(get_db),
 ):
     """V001-P0-3：写入 risk_events；按 severity 提升 risk_score 并派生 users.risk_level。"""
-    try:
-        uuid.UUID(user_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="user_id must be a valid UUID")
+    _validate_uuid(user_id, "user_id")
 
     user = (
         await db.execute(text("SELECT id FROM users WHERE id=:uid"), {"uid": user_id})
@@ -92,12 +168,7 @@ async def create_risk_event(
         raise HTTPException(status_code=404, detail="User not found")
 
     if data.trigger_message_id:
-        try:
-            uuid.UUID(data.trigger_message_id)
-        except ValueError:
-            raise HTTPException(
-                status_code=400, detail="trigger_message_id must be a valid UUID"
-            )
+        _validate_uuid(data.trigger_message_id, "trigger_message_id")
 
     from services.risk_events import (
         bump_profile_risk_score,
@@ -137,10 +208,7 @@ async def list_user_risk_events(
     db: AsyncSession = Depends(get_db),
 ):
     """V001-P0-3：查询用户风险事件列表。"""
-    try:
-        uuid.UUID(user_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="user_id must be a valid UUID")
+    _validate_uuid(user_id, "user_id")
 
     user = (
         await db.execute(text("SELECT id FROM users WHERE id=:uid"), {"uid": user_id})
