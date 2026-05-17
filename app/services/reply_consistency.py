@@ -158,9 +158,6 @@ def _check_l2_identity(text: str) -> ConsistencyLayerResult:
     if _IDENTITY_CONFLICT_RE.search(text):
         reasons.append("identity_conflict")
         score -= 0.75
-    if "Aria" not in text and re.search(r"\b(i am|i'm|我是)\b", text, re.IGNORECASE):
-        reasons.append("self_reference_without_aria")
-        score -= 0.2
     score = max(0.0, round(score, 3))
     return ConsistencyLayerResult("L2_IDENTITY", score >= 0.65, score, reasons)
 
