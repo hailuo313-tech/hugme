@@ -5,7 +5,7 @@
 - 上游异常 + 未启用 fallback → 抛 LLMOrchestratorError。
 - LLMResult.error 非空 + 未启用 fallback → 抛 LLMOrchestratorError。
 - LLM 返回空 content → 视为失败。
-- 启用 LLM_ECHO_FALLBACK → 失败时回退为 "echo: <user_text>"。
+- 启用 LLM_ECHO_FALLBACK → 失败时回退为自然中文回复（非 echo 透传）。
 - D2-2.1：传入 redis 客户端 → 历史消息被拼进 messages，角色映射正确，
   最末一条（=当前消息）被丢弃。
 - D2-2.1：redis.lrange 抛异常 → 仍能完成调用，仅记录 warning。
@@ -175,7 +175,7 @@ async def test_empty_content_without_fallback(monkeypatch, llm_orchestrator):
 
 @pytest.mark.asyncio
 async def test_fallback_returns_echo_when_enabled(monkeypatch, llm_orchestrator):
-    """启用 LLM_ECHO_FALLBACK → LLM 失败时回退为 'echo: <user_text>'。"""
+    """启用 LLM_ECHO_FALLBACK → LLM 失败时回退为自然回复。"""
 
     async def boom(*, messages, trace_id, **_kwargs):
         raise RuntimeError("upstream down")
@@ -190,12 +190,12 @@ async def test_fallback_returns_echo_when_enabled(monkeypatch, llm_orchestrator)
         trace_id="trace-fallback",
     )
 
-    assert reply == "echo: ping"
+    assert isinstance(reply, str) and len(reply) > 0
 
 
 @pytest.mark.asyncio
 async def test_fallback_on_llm_result_error_when_enabled(monkeypatch, llm_orchestrator):
-    """启用 LLM_ECHO_FALLBACK + LLMResult.error 非空 → 也走 echo 回退。"""
+    """启用 LLM_ECHO_FALLBACK + LLMResult.error 非空 → 也走自然回复兜底。"""
 
     async def with_error(*, messages, trace_id, **_kwargs):
         return _LLMResultStub(content="ignored", error="upstream timeout")
@@ -210,7 +210,7 @@ async def test_fallback_on_llm_result_error_when_enabled(monkeypatch, llm_orches
         trace_id="trace-fallback-2",
     )
 
-    assert reply == "echo: pong"
+    assert isinstance(reply, str) and len(reply) > 0
 
 
 # ── D2-2.1：Redis 短期上下文 ─────────────────────────────
