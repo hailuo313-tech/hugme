@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS characters (
     occupation              VARCHAR(100),
     background              TEXT,
     relationship_position   VARCHAR(100),
+    profile_details         JSONB DEFAULT '{}'::jsonb,
     default_language        VARCHAR(10) DEFAULT 'en',
     supported_languages     JSONB DEFAULT '["en"]',
     gentle_score            INTEGER DEFAULT 50,

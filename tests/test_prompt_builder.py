@@ -163,6 +163,27 @@ def test_l3_renders_localized_character_prompt():
     assert "Spanish" in out.layers["L3_CHARACTER"]
 
 
+def test_l3_renders_profile_details_and_l10_direct_answer_rule():
+    char = {
+        "name": "Mira",
+        "profile_details": {
+            "age": "26",
+            "birthplace": "杭州",
+            "height": "168cm",
+            "hobby": "看展和夜跑",
+            "relationship_status": "单身",
+        },
+    }
+
+    out = build_prompt(PromptInput(user_text="你多高？", character=char))
+
+    assert "结构化角色事实" in out.layers["L3_CHARACTER"]
+    assert "出生地：杭州" in out.layers["L3_CHARACTER"]
+    assert "身高：168cm" in out.layers["L3_CHARACTER"]
+    assert "感情状态：单身" in out.layers["L3_CHARACTER"]
+    assert "优先根据 L3_CHARACTER" in out.layers["L10_ANCHOR"]
+
+
 # ─────────────────────────────────────────────────────────────
 # L4 RELATIONSHIP
 # ─────────────────────────────────────────────────────────────

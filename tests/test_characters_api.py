@@ -69,7 +69,7 @@ def test_create_character_requires_operator():
     assert r.status_code == 401
 
 
-def test_create_character_inserts_supported_languages_jsonb():
+def test_create_character_inserts_jsonb_fields_and_derives_legacy_fields():
     db = MagicMock()
     db.execute = AsyncMock(
         return_value=_result(
@@ -88,6 +88,15 @@ def test_create_character_inserts_supported_languages_jsonb():
             "gentle_score": 70,
             "reply_length": "medium",
             "emoji_frequency": "low",
+            "profile_details": {
+                "age": "26",
+                "birthplace": "杭州",
+                "current_city": "上海",
+                "occupation": "独立摄影师",
+                "relationship_status": "单身",
+                "family_origin": "普通城市家庭",
+                "childhood_background": "从小喜欢观察人",
+            },
         },
     )
 
@@ -95,6 +104,11 @@ def test_create_character_inserts_supported_languages_jsonb():
     params = db.execute.await_args.args[1]
     assert params["name"] == "Nova"
     assert params["supported_languages"] == '["en", "es"]'
+    assert json_loads(params["profile_details"])["current_city"] == "上海"
+    assert params["age_feel"] == "26"
+    assert params["region"] == "杭州 / 上海"
+    assert params["occupation"] == "独立摄影师"
+    assert params["relationship_position"] == "单身"
     db.commit.assert_awaited_once()
 
 
@@ -118,6 +132,29 @@ def test_patch_character_updates_only_provided_fields():
     assert "status = :status" in sql
     assert "tone = :tone" in sql
     assert "updated_at = NOW()" in sql
+    db.commit.assert_awaited_once()
+
+
+def test_patch_character_casts_profile_details_jsonb():
+    db = MagicMock()
+    db.execute = AsyncMock(
+        return_value=_result(
+            one=_row({"id": CHAR_ID, "name": "Nova", "status": "active"})
+        )
+    )
+    db.commit = AsyncMock()
+    client = TestClient(_app(db))
+
+    r = client.patch(
+        f"/api/v1/characters/{CHAR_ID}",
+        json={"profile_details": {"height": "168cm", "hobby": "看展"}},
+    )
+
+    assert r.status_code == 200, r.text
+    sql = str(db.execute.await_args.args[0])
+    params = db.execute.await_args.args[1]
+    assert "profile_details = CAST(:profile_details AS jsonb)" in sql
+    assert json_loads(params["profile_details"]) == {"height": "168cm", "hobby": "看展"}
     db.commit.assert_awaited_once()
 
 
@@ -171,3 +208,18 @@ def test_character_stats_returns_counts():
     assert data["by_status"] == {"active": 2, "draft": 1}
     assert data["conversation_counts"] == [{"character_id": CHAR_ID, "count": 5}]
     assert data["profile_counts"] == [{"character_id": CHAR_ID, "count": 3}]
+
+
+def test_include_inactive_requires_operator_token():
+    db = MagicMock()
+    client = TestClient(_app(db, with_auth=False))
+
+    r = client.get("/api/v1/characters?include_inactive=true")
+
+    assert r.status_code == 401
+
+
+def json_loads(value: str) -> Any:
+    import json
+
+    return json.loads(value)

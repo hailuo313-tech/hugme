@@ -4,15 +4,18 @@ import json
 import uuid
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.admin import require_operator
+from api.admin import _verify_jwt, require_operator
+from core.config import settings
 from core.database import get_db
 
 router = APIRouter()
+_optional_bearer = HTTPBearer(auto_error=False)
 
 
 CHARACTER_STATUSES = {"draft", "active", "archived", "inactive"}
@@ -27,6 +30,7 @@ class CharacterBase(BaseModel):
     occupation: Optional[str] = Field(default=None, max_length=100)
     background: Optional[str] = None
     relationship_position: Optional[str] = Field(default=None, max_length=100)
+    profile_details: dict[str, Any] = Field(default_factory=dict)
     default_language: str = Field(default="en", min_length=1, max_length=10)
     supported_languages: list[str] = Field(default_factory=lambda: ["en"])
     gentle_score: int = Field(default=50, ge=0, le=100)
@@ -56,6 +60,7 @@ class CharacterUpdate(BaseModel):
     occupation: Optional[str] = Field(default=None, max_length=100)
     background: Optional[str] = None
     relationship_position: Optional[str] = Field(default=None, max_length=100)
+    profile_details: Optional[dict[str, Any]] = None
     default_language: Optional[str] = Field(default=None, min_length=1, max_length=10)
     supported_languages: Optional[list[str]] = None
     gentle_score: Optional[int] = Field(default=None, ge=0, le=100)
@@ -125,13 +130,67 @@ def _validate_character_payload(data: CharacterBase | CharacterUpdate) -> None:
         if any(not isinstance(lang, str) or not lang.strip() for lang in supported):
             raise HTTPException(status_code=422, detail="invalid supported_languages")
 
+    profile_details = getattr(data, "profile_details", None)
+    if profile_details is not None and not isinstance(profile_details, dict):
+        raise HTTPException(status_code=422, detail="profile_details must be an object")
+
+
+def _derive_legacy_fields(values: dict[str, Any]) -> dict[str, Any]:
+    details = values.get("profile_details")
+    if not isinstance(details, dict):
+        return values
+
+    if not values.get("age_feel") and details.get("age"):
+        values["age_feel"] = str(details["age"])
+    if not values.get("region"):
+        region_parts = [
+            str(details[key]).strip()
+            for key in ("birthplace", "current_city")
+            if details.get(key)
+        ]
+        if region_parts:
+            values["region"] = " / ".join(region_parts)
+    if not values.get("occupation") and details.get("occupation"):
+        values["occupation"] = str(details["occupation"])
+    if not values.get("relationship_position") and details.get("relationship_status"):
+        values["relationship_position"] = str(details["relationship_status"])
+    if not values.get("background"):
+        background_parts = [
+            str(details[key]).strip()
+            for key in ("family_origin", "childhood_background", "life_goal")
+            if details.get(key)
+        ]
+        if background_parts:
+            values["background"] = "；".join(background_parts)
+    return values
+
 
 def _row_to_dict(row: Any) -> dict[str, Any]:
     return dict(row._mapping)
 
 
 @router.get("")
-async def list_characters(db: AsyncSession = Depends(get_db)):
+async def list_characters(
+    include_inactive: bool = Query(default=False),
+    db: AsyncSession = Depends(get_db),
+    creds: Optional[HTTPAuthorizationCredentials] = Depends(_optional_bearer),
+):
+    if include_inactive:
+        payload = (
+            _verify_jwt(creds.credentials, settings.SECRET_KEY)
+            if creds and creds.credentials
+            else None
+        )
+        if not payload or payload.get("type") != "operator":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing or invalid operator token",
+            )
+        result = await db.execute(
+            text("SELECT * FROM characters ORDER BY updated_at DESC"),
+        )
+        return [dict(r._mapping) for r in result.fetchall()]
+
     result = await db.execute(
         text("SELECT * FROM characters WHERE status='active' ORDER BY updated_at DESC"),
     )
@@ -197,18 +256,19 @@ async def create_character(
     _operator: dict = Depends(require_operator),
 ):
     _validate_character_payload(data)
+    values = _derive_legacy_fields(data.model_dump())
     res = await db.execute(
         text(
             """
             INSERT INTO characters (
               id, name, age_feel, region, occupation, background,
-              relationship_position, default_language, supported_languages,
+              relationship_position, profile_details, default_language, supported_languages,
               gentle_score, proactive_score, flirt_score, humor_score,
               emotional_depth_score, boundary_score, reply_length, tone,
               emoji_frequency, prompt_en, prompt_es, prompt_fr, prompt_de, status
             ) VALUES (
               :id, :name, :age_feel, :region, :occupation, :background,
-              :relationship_position, :default_language,
+              :relationship_position, CAST(:profile_details AS jsonb), :default_language,
               CAST(:supported_languages AS jsonb),
               :gentle_score, :proactive_score, :flirt_score, :humor_score,
               :emotional_depth_score, :boundary_score, :reply_length,
@@ -219,10 +279,17 @@ async def create_character(
             """
         ),
         {
-            **data.model_dump(exclude={"supported_languages"}),
+            **{
+                k: v
+                for k, v in values.items()
+                if k not in {"supported_languages", "profile_details"}
+            },
             "id": str(uuid.uuid4()),
             "supported_languages": json.dumps(
-                data.supported_languages, ensure_ascii=False
+                values["supported_languages"], ensure_ascii=False
+            ),
+            "profile_details": json.dumps(
+                values.get("profile_details") or {}, ensure_ascii=False
             ),
         },
     )
@@ -252,7 +319,7 @@ async def update_character(
 ):
     cid = _validate_uuid(character_id, "character_id")
     _validate_character_payload(data)
-    values = data.model_dump(exclude_unset=True)
+    values = _derive_legacy_fields(data.model_dump(exclude_unset=True))
     if not values:
         return await get_character(character_id, db)
 
@@ -260,8 +327,15 @@ async def update_character(
         values["supported_languages"] = json.dumps(
             values["supported_languages"], ensure_ascii=False
         )
+    if "profile_details" in values:
+        values["profile_details"] = json.dumps(
+            values["profile_details"] or {}, ensure_ascii=False
+        )
 
-    casts = {"supported_languages": "CAST(:supported_languages AS jsonb)"}
+    casts = {
+        "supported_languages": "CAST(:supported_languages AS jsonb)",
+        "profile_details": "CAST(:profile_details AS jsonb)",
+    }
     assignments = [f"{name} = {casts.get(name, ':' + name)}" for name in values]
     values["id"] = cid
     row = (

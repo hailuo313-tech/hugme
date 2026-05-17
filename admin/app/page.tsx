@@ -275,6 +275,12 @@ function DashboardContent({ operator }: { operator: Operator }) {
             >
               话术库
             </a>
+            <a
+              href="/admin/characters"
+              className="text-sm text-slate-400 hover:text-white px-3 py-1 rounded-md hover:bg-slate-700 transition"
+            >
+              角色
+            </a>
           </nav>
         </div>
         <div className="flex items-center gap-4">
