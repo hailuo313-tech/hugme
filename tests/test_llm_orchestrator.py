@@ -682,6 +682,85 @@ async def test_character_context_falls_back_to_profile_current_character(
 
 
 @pytest.mark.asyncio
+async def test_profile_current_character_overrides_conversation_character(
+    monkeypatch, llm_orchestrator
+):
+    """Admin role switch should make profile assignment the prompt source of truth."""
+    captured: dict[str, Any] = {}
+
+    async def fake_chat(*, messages, trace_id, **_kwargs):
+        captured["messages"] = messages
+        return _LLMResultStub(content="ok")
+
+    async def _pass_refresh(**kwargs):
+        return kwargs["profile_row"]
+
+    monkeypatch.setattr(llm_orchestrator, "llm_chat", fake_chat)
+    monkeypatch.setattr(llm_orchestrator, "refresh_loneliness_score", _pass_refresh)
+    monkeypatch.setattr(llm_orchestrator.settings, "LLM_ECHO_FALLBACK", False)
+    monkeypatch.setattr(llm_orchestrator.settings, "MEMORY_RETRIEVE_IN_PROMPT", False)
+
+    class _FakeRow:
+        def __init__(self, mapping: dict[str, Any]):
+            self._mapping = mapping
+
+    class _FakeExecResult:
+        def __init__(self, row):
+            self._row = row
+
+        def fetchone(self):
+            return self._row
+
+    class _FakeDB:
+        async def execute(self, stmt, params=None):
+            sql = str(getattr(stmt, "text", stmt))
+            if "FROM user_profiles" in sql:
+                return _FakeExecResult(
+                    _FakeRow(
+                        {
+                            "current_character_id": "char-new",
+                            "loneliness_score": 40,
+                        }
+                    )
+                )
+            if "SELECT * FROM characters WHERE id" in sql:
+                return _FakeExecResult(
+                    _FakeRow(
+                        {
+                            "id": "char-new",
+                            "name": "NewRole",
+                            "profile_details": {"height": "169cm"},
+                        }
+                    )
+                )
+            if "LEFT JOIN characters ch ON ch.id = c.character_id" in sql:
+                return _FakeExecResult(
+                    _FakeRow(
+                        {
+                            "id": "char-old",
+                            "name": "OldRole",
+                            "profile_details": {"height": "150cm"},
+                        }
+                    )
+                )
+            return _FakeExecResult(None)
+
+    await llm_orchestrator.generate_reply(
+        user_id="u1",
+        conversation_id="conv-with-old-character",
+        user_text="你多高？",
+        trace_id="t-profile-priority",
+        db=_FakeDB(),
+    )
+
+    system = captured["messages"][0]["content"]
+    assert "NewRole" in system
+    assert "身高：169cm" in system
+    assert "OldRole" not in system
+    assert "150cm" not in system
+
+
+@pytest.mark.asyncio
 async def test_memory_consistency_filters_conflicting_hit_before_l6(
     monkeypatch, llm_orchestrator
 ):

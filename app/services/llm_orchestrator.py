@@ -506,27 +506,6 @@ async def _load_db_context(
         row = (
             await db.execute(
                 _sql_text(
-                    "SELECT ch.* FROM conversations c "
-                    "LEFT JOIN characters ch ON ch.id = c.character_id "
-                    "WHERE c.id = :cid"
-                ),
-                {"cid": conversation_id},
-            )
-        ).fetchone()
-        if row is not None and getattr(row, "_mapping", None) is not None:
-            mapping = dict(row._mapping)
-            # 没匹配到 character 时，左联会得到一行但所有 ch.* 为 None
-            if mapping.get("id") is not None or mapping.get("name") is not None:
-                character_row = mapping
-    except Exception as exc:
-        log.bind(error_type=type(exc).__name__).warning(
-            "orchestrator.db.character_load_failed"
-        )
-
-    try:
-        row = (
-            await db.execute(
-                _sql_text(
                     """
                     SELECT p.*, u.language AS language
                     FROM user_profiles p
@@ -544,7 +523,7 @@ async def _load_db_context(
             "orchestrator.db.profile_load_failed"
         )
 
-    if character_row is None and profile_row is not None and profile_row.get("current_character_id"):
+    if profile_row is not None and profile_row.get("current_character_id"):
         try:
             row = (
                 await db.execute(
@@ -560,6 +539,28 @@ async def _load_db_context(
         except Exception as exc:
             log.bind(error_type=type(exc).__name__).warning(
                 "orchestrator.db.profile_character_load_failed"
+            )
+
+    if character_row is None:
+        try:
+            row = (
+                await db.execute(
+                    _sql_text(
+                        "SELECT ch.* FROM conversations c "
+                        "LEFT JOIN characters ch ON ch.id = c.character_id "
+                        "WHERE c.id = :cid"
+                    ),
+                    {"cid": conversation_id},
+                )
+            ).fetchone()
+            if row is not None and getattr(row, "_mapping", None) is not None:
+                mapping = dict(row._mapping)
+                # 没匹配到 character 时，左联会得到一行但所有 ch.* 为 None
+                if mapping.get("id") is not None or mapping.get("name") is not None:
+                    character_row = mapping
+        except Exception as exc:
+            log.bind(error_type=type(exc).__name__).warning(
+                "orchestrator.db.character_load_failed"
             )
 
     return character_row, profile_row
