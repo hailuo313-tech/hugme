@@ -168,6 +168,31 @@ def _fallback_nickname(language: str) -> str:
     return "you" if language == "en" else "你"
 
 
+def _normalize_onboarding_profile(profile: Any) -> dict[str, Any]:
+    """Accept legacy scalar callers without letting recommendation crash."""
+    if isinstance(profile, dict):
+        return dict(profile)
+    if isinstance(profile, str) and profile.strip():
+        return {"chat_style": profile.strip()}
+    return {}
+
+
+async def _load_onboarding_profile(db: AsyncSession, user_id: str) -> dict[str, Any]:
+    """Read the full onboarding profile shape expected by the recommender."""
+    profile_row = (await db.execute(
+        text("""
+            SELECT p.chat_style, p.interests, p.preferences, u.language AS language
+            FROM user_profiles p
+            JOIN users u ON u.id = p.user_id
+            WHERE p.user_id=:uid
+        """),
+        {"uid": user_id}
+    )).fetchone()
+    if not profile_row or not hasattr(profile_row, "_mapping"):
+        return {}
+    return _normalize_onboarding_profile(dict(profile_row._mapping))
+
+
 
 async def _ensure_aria_exists(db: AsyncSession):
     """确保默认角色 Aria 存在，不存在则插入种子。"""
@@ -197,8 +222,9 @@ async def _ensure_aria_exists(db: AsyncSession):
         await db.commit()
 
 
-async def _assign_character(db: AsyncSession, user_id: str, profile: dict[str, Any]) -> dict:
+async def _assign_character(db: AsyncSession, user_id: str, profile: dict[str, Any] | Any) -> dict:
     """根据 onboarding 画像从 active characters 推荐角色。"""
+    profile = _normalize_onboarding_profile(profile)
     recommendation = await recommend_character_for_onboarding(
         db,
         user_id=user_id,
@@ -412,16 +438,7 @@ async def submit_onboarding_step(
     character_assigned = None
     if data.step == ONBOARDING_STEPS:
         # 读 onboarding 画像用于角色推荐
-        profile_row = (await db.execute(
-            text("""
-                SELECT p.chat_style, p.interests, p.preferences, u.language AS language
-                FROM user_profiles p
-                JOIN users u ON u.id = p.user_id
-                WHERE p.user_id=:uid
-            """),
-            {"uid": user_id}
-        )).fetchone()
-        profile = dict(profile_row._mapping) if profile_row and hasattr(profile_row, "_mapping") else {}
+        profile = await _load_onboarding_profile(db, user_id)
         character_assigned = await _assign_character(db, user_id, profile)
 
         # GDPR: 记录 consent 时间戳（用户完成 onboarding 视为同意服务条款）

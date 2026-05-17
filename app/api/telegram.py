@@ -25,6 +25,7 @@ from api.onboarding import (
     _get_or_create_user,
     _get_profile_prefs,
     _assign_character,
+    _load_onboarding_profile,
     _build_next_question,
     _build_completion_message,
     _detect_onboarding_language,
@@ -286,12 +287,8 @@ async def _handle_onboarding(
         prefs["onboarding_step"] = ONBOARDING_STEPS + 1   # 完成
 
         # 分配角色
-        profile_row = (await db.execute(
-            text("SELECT chat_style FROM user_profiles WHERE user_id=:uid"),
-            {"uid": user_id}
-        )).fetchone()
-        cs = (profile_row[0] if profile_row else None) or "warm"
-        char_info = await _assign_character(db, user_id, cs)
+        profile = await _load_onboarding_profile(db, user_id)
+        char_info = await _assign_character(db, user_id, profile)
 
         # GDPR consent
         await db.execute(

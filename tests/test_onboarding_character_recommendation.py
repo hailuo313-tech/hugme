@@ -96,6 +96,30 @@ async def test_assign_character_uses_recommender_not_default_id(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_assign_character_normalizes_legacy_string_profile(monkeypatch):
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=MagicMock())
+    db.commit = AsyncMock()
+
+    async def fake_recommend(db_arg: Any, *, user_id: str, profile: dict[str, Any]):
+        assert isinstance(profile, dict)
+        assert profile == {"chat_style": "casual"}
+        return CharacterRecommendation(
+            character_id="00000000-0000-0000-0000-000000000503",
+            name="Kai",
+            score=7.0,
+            reason="legacy_profile_normalized",
+        )
+
+    monkeypatch.setattr(onboarding, "recommend_character_for_onboarding", fake_recommend)
+
+    assigned = await onboarding._assign_character(db, "user-1", "casual")
+
+    assert assigned["character_id"] == "00000000-0000-0000-0000-000000000503"
+    assert assigned["reason"] == "legacy_profile_normalized"
+
+
+@pytest.mark.asyncio
 async def test_get_assigned_character_reads_character_name_from_db():
     row = MagicMock()
     row._mapping = {
