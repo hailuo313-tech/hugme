@@ -11,8 +11,6 @@ import json
 import time
 from typing import Any, Optional
 
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.interval import IntervalTrigger
 from loguru import logger
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,44 +18,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.config import settings
 from core.database import AsyncSessionLocal
 from services.minor_protection import should_block_push
+from services.notification_content import build_outbound_text
 from services.telegram_send import send_telegram_text, telegram_chat_id_from_external
+
+try:  # pragma: no cover - exercised only in environments without scheduler deps
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    from apscheduler.triggers.interval import IntervalTrigger
+except ModuleNotFoundError:  # local lightweight test environments may omit apscheduler
+    AsyncIOScheduler = None  # type: ignore[assignment]
+    IntervalTrigger = None  # type: ignore[assignment]
 
 _ADVISORY_LOCK_KEY = 6_300_420
 JOB_ID = "notification_sender_tick"
 
 _scheduler: Optional[AsyncIOScheduler] = None
-
-
-def build_outbound_text(*, notification_type: str, payload: Any) -> str | None:
-    """根据类型与 payload 生成出站文案；未知类型返回 None（由调用方记 failed）。"""
-    p: dict[str, Any] = payload if isinstance(payload, dict) else {}
-    n = (notification_type or "").strip().lower()
-
-    if n == "silent_reactivation":
-        tier = str(p.get("tier") or "D1").upper()
-        lines = {
-            "D1": (
-                "Hi — we've been thinking of you. Whenever you're ready, "
-                "we're here to chat. No rush."
-            ),
-            "D3": (
-                "Hi — we'd love to pick up where you left off. "
-                "If you feel like chatting, just send a message when it suits you."
-            ),
-            "D7": (
-                "Hi — we'll step back for now. If you ever want to return, "
-                "we're only a message away."
-            ),
-        }
-        return lines.get(tier, lines["D1"])
-
-    if n == "s5_care_checkin":
-        return (
-            "Hi — we're checking in. If things feel heavy, we're here to listen; "
-            "message us whenever you feel able."
-        )
-
-    return None
 
 
 async def _claim_one_task(session: AsyncSession) -> dict[str, Any] | None:
@@ -314,6 +288,11 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
 
 def start_scheduler() -> Optional[AsyncIOScheduler]:
     global _scheduler
+    if AsyncIOScheduler is None or IntervalTrigger is None:
+        logger.bind(component="notification_sender_worker").warning(
+            "notification_sender_worker.scheduler.dependency_missing"
+        )
+        return None
     if not settings.NOTIFICATION_SENDER_ENABLED:
         logger.bind(component="notification_sender_worker").info(
             "notification_sender_worker.scheduler.disabled"

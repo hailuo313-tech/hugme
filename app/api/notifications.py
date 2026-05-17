@@ -9,7 +9,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
+from core.config import settings
+from services.notification_content import build_outbound_text
 from services.minor_protection import MINOR_BLOCK_DETAIL, should_block_push
+from services.telegram_send import send_telegram_text, telegram_chat_id_from_external
 
 router = APIRouter()
 
@@ -25,6 +28,13 @@ class NotificationSchedule(BaseModel):
     notification_type: str = Field(..., min_length=1, max_length=50)
     payload: dict = Field(default_factory=dict)
     scheduled_at: Optional[datetime] = None
+
+
+class NotificationSendNow(BaseModel):
+    user_id: str
+    channel: str = "telegram"
+    notification_type: str = Field(..., min_length=1, max_length=50)
+    payload: dict = Field(default_factory=dict)
 
 
 class NotificationCancel(BaseModel):
@@ -141,6 +151,54 @@ async def _assert_dedupe(db: AsyncSession, user_id: str, dedupe_key: str):
         )
 
 
+async def _insert_notification_task(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    channel: str,
+    notification_type: str,
+    payload: dict,
+    scheduled_at: datetime,
+    status: str,
+) -> str:
+    task_id = str(uuid.uuid4())
+    await db.execute(
+        text(
+            """
+            INSERT INTO notification_tasks
+                (id, user_id, channel, notification_type, payload, scheduled_at, status)
+            VALUES
+                (:id, :user_id, :channel, :notification_type, CAST(:payload AS jsonb), :scheduled_at, :status)
+            """
+        ),
+        {
+            "id": task_id,
+            "user_id": user_id,
+            "channel": channel,
+            "notification_type": notification_type,
+            "payload": __import__("json").dumps(payload),
+            "scheduled_at": scheduled_at,
+            "status": status,
+        },
+    )
+    return task_id
+
+
+async def _mark_send_now_failed(db: AsyncSession, task_id: str, reason: str) -> None:
+    await db.execute(
+        text(
+            """
+            UPDATE notification_tasks
+            SET status = 'failed',
+                failure_reason = :reason
+            WHERE id = :id AND status = 'sending'
+            """
+        ),
+        {"id": task_id, "reason": reason},
+    )
+    await db.commit()
+
+
 @router.post("/schedule", status_code=202)
 async def schedule_notification(
     data: NotificationSchedule,
@@ -159,24 +217,14 @@ async def schedule_notification(
         payload["dedupe_key"] = dedupe_key
         await _assert_dedupe(db, user_id, dedupe_key)
 
-    task_id = str(uuid.uuid4())
-    await db.execute(
-        text(
-            """
-            INSERT INTO notification_tasks
-                (id, user_id, channel, notification_type, payload, scheduled_at, status)
-            VALUES
-                (:id, :user_id, :channel, :notification_type, CAST(:payload AS jsonb), :scheduled_at, 'pending')
-            """
-        ),
-        {
-            "id": task_id,
-            "user_id": user_id,
-            "channel": data.channel,
-            "notification_type": data.notification_type,
-            "payload": __import__("json").dumps(payload),
-            "scheduled_at": scheduled_at,
-        },
+    task_id = await _insert_notification_task(
+        db,
+        user_id=user_id,
+        channel=data.channel,
+        notification_type=data.notification_type,
+        payload=payload,
+        scheduled_at=scheduled_at,
+        status="pending",
     )
     await db.commit()
 
@@ -193,6 +241,103 @@ async def schedule_notification(
         "notification_id": task_id,
         "status": "pending",
         "scheduled_at": scheduled_at.isoformat(),
+        "payload": payload,
+    }
+
+
+@router.post("/send-now", status_code=200)
+async def send_notification_now(
+    data: NotificationSendNow,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    user_id = str(_as_uuid(data.user_id, "user_id"))
+    scheduled_at = _utcnow()
+    user = await _get_user(db, user_id)
+    await _assert_eligible(db, user, data.channel)
+
+    payload = dict(data.payload or {})
+    if data.notification_type == "silent_reactivation":
+        await _assert_frequency(db, user_id, scheduled_at)
+        dedupe_key = payload.get("dedupe_key") or _dedupe_key(
+            user_id, data.notification_type, scheduled_at, payload
+        )
+        payload["dedupe_key"] = dedupe_key
+        await _assert_dedupe(db, user_id, dedupe_key)
+
+    body = build_outbound_text(
+        notification_type=data.notification_type,
+        payload=payload,
+    )
+    if body is None:
+        raise HTTPException(status_code=422, detail="Unsupported notification_type")
+
+    task_id = await _insert_notification_task(
+        db,
+        user_id=user_id,
+        channel=data.channel,
+        notification_type=data.notification_type,
+        payload=payload,
+        scheduled_at=scheduled_at,
+        status="sending",
+    )
+    await db.commit()
+
+    trace_id = getattr(request.state, "trace_id", None)
+    chat_id = telegram_chat_id_from_external(user["external_id"])
+    if chat_id is None:
+        await _mark_send_now_failed(db, task_id, "no_telegram_chat_id")
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "No Telegram chat id", "notification_id": task_id},
+        )
+    if not settings.TELEGRAM_BOT_TOKEN:
+        await _mark_send_now_failed(db, task_id, "telegram_bot_token_missing")
+        raise HTTPException(
+            status_code=503,
+            detail={"message": "Telegram bot token missing", "notification_id": task_id},
+        )
+
+    message_id = await send_telegram_text(
+        chat_id=chat_id,
+        text_content=body,
+        trace_id=trace_id,
+        parse_mode=None,
+    )
+    if message_id is None:
+        await _mark_send_now_failed(db, task_id, "telegram_send_rejected")
+        raise HTTPException(
+            status_code=502,
+            detail={"message": "Telegram send rejected", "notification_id": task_id},
+        )
+
+    await db.execute(
+        text(
+            """
+            UPDATE notification_tasks
+            SET status = 'sent',
+                sent_at = NOW(),
+                failure_reason = NULL
+            WHERE id = :id AND status = 'sending'
+            """
+        ),
+        {"id": task_id},
+    )
+    await db.commit()
+
+    logger.bind(
+        trace_id=trace_id,
+        notification_id=task_id,
+        user_id=user_id,
+        notification_type=data.notification_type,
+        telegram_message_id=message_id,
+    ).info("notification.send_now.sent")
+
+    return {
+        "notification_id": task_id,
+        "status": "sent",
+        "sent_at": _utcnow().isoformat(),
+        "telegram_message_id": message_id,
         "payload": payload,
     }
 
