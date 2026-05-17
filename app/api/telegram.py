@@ -384,6 +384,20 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
     # ── 查/建 user ────────────────────────────────────
     user_id = await _get_or_create_user(db, channel, external_id)
     log = log.bind(user_id=user_id)
+    user_status_row = (
+        await db.execute(text("SELECT status FROM users WHERE id=:uid"), {"uid": user_id})
+    ).fetchone()
+    user_status = str(user_status_row[0] or "active") if user_status_row else "active"
+    if user_status != "active":
+        log.bind(user_status=user_status).info("tg.user_status_blocked")
+        return JSONResponse(
+            {
+                "ok": True,
+                "trace_id": trace_id,
+                "blocked": True,
+                "block_reason": f"user_status:{user_status}",
+            }
+        )
 
     # ── 查/建 conversation ────────────────────────────
     conv_row = (await db.execute(
