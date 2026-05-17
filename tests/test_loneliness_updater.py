@@ -135,6 +135,11 @@ def test_infer_utterance_english_anxious():
     assert "anxious" in tags
 
 
+def test_infer_utterance_spanish_sad():
+    tags = lu.infer_utterance_emotion_tags("Estoy muy triste hoy")
+    assert "sad" in tags
+
+
 @pytest.mark.asyncio
 async def test_refresh_utterance_disabled_still_applies_memory_decay(monkeypatch):
     """关掉 D4-4 时 user_text 不参与；无记忆 tag 时仍走基准衰减。"""

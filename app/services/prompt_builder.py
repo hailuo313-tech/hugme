@@ -33,6 +33,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from services.emotion_lexicon import (
+    detect_language_from_text,
+    language_name,
+    normalize_language,
+)
+
 
 # ─────────────────────────────────────────────────────────────
 # 层标签（顺序即注入顺序）
@@ -101,6 +107,7 @@ class PromptInput:
     memories: list[dict[str, Any]] | None = None
     history: list[dict[str, str]] | None = None  # 已规范化的 role/content 列表
     s5_phase: str | None = None
+    reply_language: str | None = None
 
 
 @dataclass
@@ -121,16 +128,17 @@ def build_prompt(inp: PromptInput) -> PromptOutput:
     任意外部输入为 None 时，对应层走"未知/默认"渲染，但层标签依旧存在
     （保证"10 层结构永远在"）。
     '''
+    reply_language = _resolve_reply_language(inp)
     layers: dict[str, str] = {
         "L1_SAFETY": _L1_SAFETY,
         "L2_IDENTITY": _L2_IDENTITY,
-        "L3_CHARACTER": _render_character(inp.character),
+        "L3_CHARACTER": _render_character(inp.character, reply_language),
         "L4_RELATIONSHIP": _render_relationship(inp.profile, inp.s5_phase),
         "L5_USER_PROFILE": _render_user_profile(inp.profile),
         "L6_MEMORY": _render_memory(inp.memories),
         "L7_CONVERSATION_STATE": _render_conversation_state(inp.profile),
-        "L9_FORMAT": _render_format(inp.character),
-        "L10_ANCHOR": _render_anchor(inp.s5_phase),
+        "L9_FORMAT": _render_format(inp.character, reply_language),
+        "L10_ANCHOR": _render_anchor(inp.s5_phase, reply_language),
     }
 
     sections: list[str] = []
@@ -158,7 +166,7 @@ def build_prompt(inp: PromptInput) -> PromptOutput:
 # 各层渲染器（缺数据 → 写"未知"或默认值，不抛异常）
 # ─────────────────────────────────────────────────────────────
 
-def _render_character(char: dict[str, Any] | None) -> str:
+def _render_character(char: dict[str, Any] | None, reply_language: str) -> str:
     if not char:
         return (
             "角色档案未配置；按默认人格执行：温柔、克制、共情、轻幽默、不调情、有边界。"
@@ -177,6 +185,8 @@ def _render_character(char: dict[str, Any] | None) -> str:
     humor = _score_band(char.get("humor_score"))
     depth = _score_band(char.get("emotional_depth_score"))
     boundary = _score_band(char.get("boundary_score"))
+    localized_prompt = _localized_character_prompt(char, reply_language)
+    localized_line = f"\n多语言角色补充（{language_name(reply_language)}）：{localized_prompt}" if localized_prompt else ""
 
     return (
         f"姓名：{name}（体感 {age}，{region}，{occupation}）\n"
@@ -189,6 +199,7 @@ def _render_character(char: dict[str, Any] | None) -> str:
         f"- 幽默 humor={humor}\n"
         f"- 情感深度 emotional_depth={depth}\n"
         f"- 边界感 boundary={boundary}（越高越克制，越严守 L1）"
+        f"{localized_line}"
     )
 
 
@@ -228,13 +239,15 @@ def _render_relationship(profile: dict[str, Any] | None, s5_phase: str | None) -
     return f"关系阶段：{stage} — {desc}{vip_note}"
 
 
-def _render_anchor(s5_phase: str | None) -> str:
+def _render_anchor(s5_phase: str | None, reply_language: str) -> str:
+    language_anchor = f"\n最终输出语言：{language_name(reply_language)}（language_code={reply_language}）。"
     if s5_phase:
         return (
             _L10_ANCHOR
+            + language_anchor
             + "\nS5 危机恢复期间：禁止 Upsell / VIP / 付费引导，直到运营完成恢复。"
         )
-    return _L10_ANCHOR
+    return _L10_ANCHOR + language_anchor
 
 
 def _render_user_profile(profile: dict[str, Any] | None) -> str:
@@ -308,9 +321,13 @@ def _render_conversation_state(profile: dict[str, Any] | None) -> str:
     )
 
 
-def _render_format(char: dict[str, Any] | None) -> str:
+def _render_format(char: dict[str, Any] | None, reply_language: str) -> str:
+    language_rule = (
+        f"- 回复语言：使用 {language_name(reply_language)}（language_code={reply_language}）。"
+        "除非用户明确要求翻译或切换语言，否则不要混用其它语言。"
+    )
     if not char:
-        return _L9_FORMAT_DEFAULT
+        return _L9_FORMAT_DEFAULT + "\n" + language_rule
 
     reply_len = (char.get("reply_length") or "medium").lower()
     tone = (char.get("tone") or "warm").lower()
@@ -333,7 +350,7 @@ def _render_format(char: dict[str, Any] | None) -> str:
         f"- 语气：{tone}\n"
         f"- 长度：{len_map.get(reply_len, len_map['medium'])}\n"
         f"- Emoji：{emoji_map.get(emoji_freq, emoji_map['low'])}\n"
-        "- 默认中文；用户用什么语言就用什么语言。\n"
+        f"{language_rule}\n"
         "- 禁 Markdown 标题、禁编号清单、禁\"作为 AI\"声明。\n"
         "- 共情优先；没被要建议就别给。"
     )
@@ -388,6 +405,38 @@ def _as_str_list(v: Any) -> list[str]:
         v = v.strip()
         return [v] if v else []
     return []
+
+
+def _resolve_reply_language(inp: PromptInput) -> str:
+    if inp.reply_language:
+        return normalize_language(inp.reply_language)
+    profile = inp.profile or {}
+    for key in ("language", "user_language", "default_language"):
+        if isinstance(profile, dict) and profile.get(key):
+            return normalize_language(str(profile.get(key)))
+    detected = "" if inp.user_text == "__placeholder__" else detect_language_from_text(inp.user_text, default="")
+    if detected:
+        return normalize_language(detected)
+    char = inp.character or {}
+    if isinstance(char, dict):
+        supported = char.get("supported_languages")
+        default_lang = normalize_language(str(char.get("default_language") or ""), default="")
+        if default_lang:
+            return default_lang
+        if isinstance(supported, list) and supported:
+            return normalize_language(str(supported[0]))
+    return "zh"
+
+
+def _localized_character_prompt(char: dict[str, Any], reply_language: str) -> str | None:
+    prompt_key = f"prompt_{normalize_language(reply_language, default='en')}"
+    value = char.get(prompt_key)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    fallback = char.get("prompt_en")
+    if isinstance(fallback, str) and fallback.strip():
+        return fallback.strip()
+    return None
 
 
 # ─────────────────────────────────────────────────────────────

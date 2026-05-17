@@ -526,7 +526,14 @@ async def _load_db_context(
     try:
         row = (
             await db.execute(
-                _sql_text("SELECT * FROM user_profiles WHERE user_id = :uid"),
+                _sql_text(
+                    """
+                    SELECT p.*, u.language AS language
+                    FROM user_profiles p
+                    LEFT JOIN users u ON u.id = p.user_id
+                    WHERE p.user_id = :uid
+                    """
+                ),
                 {"uid": user_id},
             )
         ).fetchone()
