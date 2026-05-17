@@ -62,6 +62,7 @@ def test_send_now_sends_and_marks_task_sent():
         side_effect=[
             _result(mappings_one=_active_user()),
             _result(one=None),  # open handoff check
+            _result(mappings_one=None),  # S5 profile gate
             _result(mappings_one={"daily_count": 0, "weekly_count": 0}),
             _result(mappings_one=None),  # dedupe
             _result(),  # insert sending task
@@ -103,6 +104,7 @@ def test_send_now_rejects_unsupported_type_before_insert():
         side_effect=[
             _result(mappings_one=_active_user()),
             _result(one=None),
+            _result(mappings_one=None),
         ]
     )
     db.commit = AsyncMock()
@@ -140,12 +142,74 @@ def test_send_now_blocks_suspected_minor():
     assert r.json()["detail"] == MINOR_BLOCK_DETAIL
 
 
+@patch("services.risk_s5.load_s5_restrictions", new_callable=AsyncMock)
+@patch("services.risk_s5.notification_block_reason")
+def test_schedule_allows_s5_care_checkin_in_care_window(mock_block, mock_load):
+    mock_load.return_value = MagicMock(active=True)
+    mock_block.return_value = None
+    db = MagicMock()
+    db.execute = AsyncMock(
+        side_effect=[
+            _result(mappings_one=_active_user(risk_level="critical")),
+            _result(one=None),  # open handoff check
+            _result(mappings_one={"relationship_stage": "S5", "updated_at": None}),
+            _result(),  # insert pending task
+        ]
+    )
+    db.commit = AsyncMock()
+    client = TestClient(_app(db))
+
+    r = client.post(
+        "/api/v1/notifications/schedule",
+        json={
+            "user_id": USER_ID,
+            "channel": "telegram",
+            "notification_type": "s5_care_checkin",
+        },
+    )
+
+    assert r.status_code == 202, r.text
+    assert r.json()["status"] == "pending"
+    db.commit.assert_awaited_once()
+
+
+@patch("services.risk_s5.load_s5_restrictions", new_callable=AsyncMock)
+@patch("services.risk_s5.notification_block_reason")
+def test_schedule_blocks_silent_reactivation_for_s5(mock_block, mock_load):
+    mock_load.return_value = MagicMock(active=True)
+    mock_block.return_value = "S5: silent_reactivation notifications are blocked"
+    db = MagicMock()
+    db.execute = AsyncMock(
+        side_effect=[
+            _result(mappings_one=_active_user()),
+            _result(one=None),  # open handoff check
+            _result(mappings_one={"relationship_stage": "S5", "updated_at": None}),
+        ]
+    )
+    db.commit = AsyncMock()
+    client = TestClient(_app(db))
+
+    r = client.post(
+        "/api/v1/notifications/schedule",
+        json={
+            "user_id": USER_ID,
+            "channel": "telegram",
+            "notification_type": "silent_reactivation",
+        },
+    )
+
+    assert r.status_code == 409
+    assert "S5" in r.json()["detail"]
+    db.commit.assert_not_awaited()
+
+
 def test_send_now_marks_failed_when_bot_token_missing():
     db = MagicMock()
     db.execute = AsyncMock(
         side_effect=[
             _result(mappings_one=_active_user()),
             _result(one=None),
+            _result(mappings_one=None),
             _result(mappings_one={"daily_count": 0, "weekly_count": 0}),
             _result(mappings_one=None),
             _result(),  # insert sending task
