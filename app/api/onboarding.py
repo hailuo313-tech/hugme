@@ -28,6 +28,7 @@ import uuid, json, time
 import redis.asyncio as aioredis
 
 from services.character_recommender import recommend_character_for_onboarding
+from services.emotion_lexicon import detect_language_from_text, normalize_language
 
 router = APIRouter()
 
@@ -52,12 +53,28 @@ DEFAULT_CHARACTER_ID = "00000000-0000-0000-0000-000000000001"
 
 # Onboarding 问题文本（Telegram bot 用）
 ONBOARDING_QUESTIONS = {
-    1: "你好！我是 Aria 🌸\n\n在我们开始之前，我想多了解你一点 ✨\n你希望我怎么称呼你呢？",
-    2: "太好了！{nickname} 这个名字很好听 😊\n\n你平时喜欢聊什么话题呢？\n（比如：音乐、电影、旅行、游戏、生活……随便说几个就好）",
-    3: "了解啦～ {nickname} 的兴趣好广泛！\n\n那你喜欢哪种聊天风格？\n① 温柔陪伴\n② 轻松随意\n③ 知性交流\n\n回复数字 1、2 或 3 就可以 😊",
-    4: "好的，我记住了 ✨\n\n有没有你不希望被提到的话题？\n（比如工作压力、前任…… 没有的话直接说「没有」就好）",
-    5: "快好啦！最后一个问题 💬\n\n你现在主要是想找个人说说话，还是有什么特别想聊的？",
+    "zh": {
+        1: "请告诉我你的称呼。",
+        2: "{nickname}，请告诉我你想聊的主题。多个主题可以用逗号分隔。",
+        3: "{nickname}，请选择聊天风格：\n1. 稳定清晰\n2. 轻松直接\n3. 分析型\n回复 1、2 或 3。",
+        4: "请告诉我不希望提到的话题。没有请回复：没有。",
+        5: "请告诉我现在想聊的内容或目标。",
+    },
+    "en": {
+        1: "Please tell me what I should call you.",
+        2: "{nickname}, please tell me the topics you want to talk about. Separate multiple topics with commas.",
+        3: "{nickname}, choose a chat style:\n1. Clear and steady\n2. Casual and direct\n3. Analytical\nReply with 1, 2, or 3.",
+        4: "Tell me any topics you do not want mentioned. If none, reply: none.",
+        5: "Tell me what you want to talk about now or your current goal.",
+    },
 }
+
+ONBOARDING_COMPLETION_MESSAGES = {
+    "zh": "设置完成。现在可以开始对话。",
+    "en": "Setup complete. You can start the conversation now.",
+}
+
+SUPPORTED_ONBOARDING_LANGUAGES = {"zh", "en"}
 
 CHAT_STYLE_MAP = {
     "1": "warm",
@@ -123,6 +140,33 @@ async def _get_profile_prefs(db: AsyncSession, user_id: str) -> dict:
     if isinstance(prefs, str):
         prefs = json.loads(prefs)
     return prefs
+
+
+def _normalize_onboarding_language(value: str | None, default: str = "zh") -> str:
+    lang = normalize_language(value, default=default)
+    return lang if lang in SUPPORTED_ONBOARDING_LANGUAGES else default
+
+
+def _detect_onboarding_language(text_value: str, default: str = "zh") -> str:
+    return _normalize_onboarding_language(
+        detect_language_from_text(text_value, default=default),
+        default=default,
+    )
+
+
+def _answer_to_text(answer: dict[str, Any]) -> str:
+    parts: list[str] = []
+    for value in answer.values():
+        if isinstance(value, list):
+            parts.extend(str(item) for item in value)
+        elif value is not None:
+            parts.append(str(value))
+    return " ".join(parts)
+
+
+def _fallback_nickname(language: str) -> str:
+    return "you" if language == "en" else "你"
+
 
 
 async def _ensure_aria_exists(db: AsyncSession):
@@ -209,12 +253,24 @@ async def _get_assigned_character(db: AsyncSession, user_id: str) -> Optional[di
     }
 
 
-def _build_next_question(step: int, nickname: str = "") -> Optional[str]:
+def _build_next_question(
+    step: int,
+    nickname: str = "",
+    language: str = "zh",
+) -> Optional[str]:
     """生成下一步的问题文本（供 Telegram bot 直接发送）。"""
     if step > ONBOARDING_STEPS:
         return None
-    q = ONBOARDING_QUESTIONS.get(step, "")
-    return q.replace("{nickname}", nickname or "你")
+    lang = _normalize_onboarding_language(language)
+    q = ONBOARDING_QUESTIONS[lang].get(step, "")
+    return q.replace("{nickname}", nickname or _fallback_nickname(lang))
+
+
+def _build_completion_message(nickname: str = "", language: str = "zh") -> str:
+    """生成 onboarding 完成提示。"""
+    lang = _normalize_onboarding_language(language)
+    return ONBOARDING_COMPLETION_MESSAGES[lang]
+
 
 
 # ── 主路由 ────────────────────────────────────────────
@@ -271,12 +327,20 @@ async def submit_onboarding_step(
         })
 
     answer = data.answer
+    language = _detect_onboarding_language(
+        _answer_to_text(answer),
+        default=_normalize_onboarding_language(prefs.get("onboarding_language")),
+    )
+    prefs["onboarding_language"] = language
     nickname = ""
 
     # ── 按步骤写入 user_profiles / users ──────────────
     if data.step == 1:
         # Step 1: nickname
-        nickname = str(answer.get("nickname", "")).strip()[:50] or "朋友"
+        nickname = (
+            str(answer.get("nickname", "")).strip()[:50]
+            or _fallback_nickname(language)
+        )
         await db.execute(
             text("UPDATE users SET nickname=:nick, updated_at=NOW() WHERE id=:uid"),
             {"nick": nickname, "uid": user_id}
@@ -374,14 +438,19 @@ async def submit_onboarding_step(
 
     # 读 nickname 用于拼问题（若本步是 step1 直接用，否则从 DB 读）
     if data.step == 1:
-        nickname = str(answer.get("nickname", "")).strip()[:50] or "朋友"
+        nickname = (
+            str(answer.get("nickname", "")).strip()[:50]
+            or _fallback_nickname(language)
+        )
     else:
         nick_row = (await db.execute(
             text("SELECT nickname FROM users WHERE id=:uid"), {"uid": user_id}
         )).fetchone()
-        nickname = (nick_row[0] if nick_row else None) or "朋友"
+        nickname = (nick_row[0] if nick_row else None) or _fallback_nickname(language)
 
-    next_question = _build_next_question(next_step, nickname) if next_step else None
+    next_question = (
+        _build_next_question(next_step, nickname, language) if next_step else None
+    )
 
     resp = {
         "user_id":           user_id,

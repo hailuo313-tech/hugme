@@ -26,9 +26,12 @@ from api.onboarding import (
     _get_profile_prefs,
     _assign_character,
     _build_next_question,
+    _build_completion_message,
+    _detect_onboarding_language,
     _ensure_aria_exists,
+    _fallback_nickname,
+    _normalize_onboarding_language,
     ONBOARDING_STEPS,
-    ONBOARDING_QUESTIONS,
     CHAT_STYLE_MAP,
     DEFAULT_CHARACTER_ID,
 )
@@ -191,6 +194,11 @@ async def _handle_onboarding(
     log = logger.bind(trace_id=trace_id, user_id=user_id)
     prefs = await _get_profile_prefs(db, user_id)
     current_step = prefs.get("onboarding_step", 0)
+    language = _detect_onboarding_language(
+        text_content,
+        default=_normalize_onboarding_language(prefs.get("onboarding_language")),
+    )
+    prefs["onboarding_language"] = language
 
     # 已完成
     if current_step >= ONBOARDING_STEPS + 1:
@@ -210,7 +218,7 @@ async def _handle_onboarding(
             {"v": json.dumps(prefs, ensure_ascii=False), "uid": user_id}
         )
         await db.commit()
-        q1 = ONBOARDING_QUESTIONS[1]
+        q1 = _build_next_question(1, language=language) or ""
         await _send_tg(chat_id, q1, trace_id)
         log.info("onboarding.tg.sent_q1")
         return q1
@@ -228,7 +236,7 @@ async def _handle_onboarding(
     import json as _json
 
     if submit_step == 1:
-        nickname = answer.get("nickname", "朋友")
+        nickname = answer.get("nickname") or _fallback_nickname(language)
         await db.execute(
             text("UPDATE users SET nickname=:nick, updated_at=NOW() WHERE id=:uid"),
             {"nick": nickname, "uid": user_id}
@@ -304,18 +312,14 @@ async def _handle_onboarding(
         nick_row = (await db.execute(
             text("SELECT nickname FROM users WHERE id=:uid"), {"uid": user_id}
         )).fetchone()
-        nickname = (nick_row[0] if nick_row else None) or "你"
-        reply = (
-            f"太棒了，{nickname}！我已经了解你了 🎉\n\n"
-            "我是 Aria，你的专属陪伴 ✨\n"
-            "有什么想聊的，随时告诉我吧～"
-        )
+        nickname = (nick_row[0] if nick_row else None) or _fallback_nickname(language)
+        reply = _build_completion_message(nickname, language)
     else:
         nick_row = (await db.execute(
             text("SELECT nickname FROM users WHERE id=:uid"), {"uid": user_id}
         )).fetchone()
-        nickname = (nick_row[0] if nick_row else None) or "你"
-        reply = _build_next_question(next_step, nickname) or ""
+        nickname = (nick_row[0] if nick_row else None) or _fallback_nickname(language)
+        reply = _build_next_question(next_step, nickname, language) or ""
 
     if reply:
         await _send_tg(chat_id, reply, trace_id)
