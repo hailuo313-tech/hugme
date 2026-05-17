@@ -482,8 +482,7 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
     if safety_blocked:
         await _send_tg(
             tg_chat_id,
-            "We couldn't process this message due to our safety guidelines. "
-            "If you meant something else, try rephrasing.",
+            "这个话题我没办法聊，换个方向说说？",
             trace_id,
         )
         log.bind(
@@ -553,7 +552,7 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
             )
         except LLMOrchestratorError as exc:
             log.bind(result="failed", reason=str(exc)).warning("tg.orchestrator.failed")
-            reply_text = "[服务暂时不可用，请稍后再试]"
+            reply_text = "现在有点忙，稍后再聊好吗？"
 
         try:
             ctx = await load_reply_consistency_context(db, conv_id)
