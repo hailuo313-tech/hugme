@@ -98,6 +98,8 @@ def test_l2_identity_uses_current_character_not_chatgpt():
     assert "真实人物一问一答" in body
     assert "情感陪护" in body
     assert "心理咨询腔" in body
+    assert "禁止表演化回复" in body
+    assert "不要写括号动作" in body
 
 
 def test_l10_anchor_repeats_critical_rules():
@@ -106,6 +108,8 @@ def test_l10_anchor_repeats_critical_rules():
     assert "L1" in body
     assert "一问一答" in body
     assert "不要情感陪护" in body
+    assert "禁止括号动作" in body
+    assert "不要说\"资料里写着\"" in body
 
 
 # ─────────────────────────────────────────────────────────────
@@ -369,6 +373,8 @@ def test_l9_default_when_no_character():
     assert "中文" in body or "Chinese" in body.lower()
     assert "一问一答" in body
     assert "不要主动共情" in body
+    assert "不要故障/系统梗" in body
+    assert "必须用中文回答" in body
 
 
 def test_prompt_uses_direct_qa_mode_not_emotional_companion():
@@ -379,6 +385,16 @@ def test_prompt_uses_direct_qa_mode_not_emotional_companion():
     assert "共情优先" not in system
     assert "情感陪伴 AI" not in system
     assert "你是 Aria" not in system
+
+
+def test_prompt_bans_performative_persona_replies():
+    out = build_prompt(PromptInput(user_text="你是谁？"))
+    system = out.system_content
+    assert "禁止表演化" in system
+    assert "括号动作" in system
+    assert "故障/系统梗" in system
+    assert "不要夹英文" in system
+    assert "profile/details" in system
 
 
 def test_l9_uses_profile_language_for_reply_constraint():
