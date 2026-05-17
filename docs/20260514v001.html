@@ -92,7 +92,7 @@
   <div class="meta-row">
     <span class="badge badge-date">更新 2026-05-17</span>
     <span class="badge badge-src">基准文档 Rev-C · 2026-05-10</span>
-    <span class="badge badge-src">代码快照：main @ 02908d1（#84–#91 已合）；生产待同步确认</span>
+    <span class="badge badge-src">代码快照：main @ f16ad3a（#84–#93 已合）；生产待同步确认</span>
   </div>
 </header>
 
@@ -108,7 +108,7 @@
 <div id="panel-overview" class="page-panel active">
   <div class="overview">
     <div class="overview-card"><div class="num num-green">0</div><div class="label">P0 main 待合</div></div>
-    <div class="overview-card"><div class="num num-orange">1</div><div class="label">P1 仍需推进</div></div>
+    <div class="overview-card"><div class="num num-green">0</div><div class="label">P1 main 待合</div></div>
     <div class="overview-card"><div class="num num-green">0</div><div class="label">P2 main 已合</div></div>
     <div class="overview-card"><div class="num num-green">6</div><div class="label">P3 本轮已合</div></div>
     <div class="overview-card"><div class="num num-legal">5</div><div class="label">合规波次（最后）</div></div>
@@ -117,7 +117,7 @@
 
   <div class="warn">
     <strong>状态更新（2026-05-17）：</strong>
-    本轮 P2/P3 后端能力（#84–#91）已合入 <code>main</code>。
+    本轮 P2/P3 后端能力与 P1 REL-01（#84–#93）已合入 <code>main</code>。
     本页已按 main 状态更新；生产是否完全同步以服务器 <code>git rev-parse --short HEAD</code>、
     <code>/health/detail</code> 与 smoke 结果为准。
   </div>
@@ -135,7 +135,7 @@
       <h3>Cursor · 做好</h3>
       <ul>
         <li><code>app/</code> 服务层、API、pytest、migration 代码</li>
-        <li>P2/P3 后端能力已按 #84–#91 合入 main</li>
+        <li>P2/P3 后端能力与 REL-01 已按 #84–#93 合入 main</li>
         <li>不 SSH 生产、不 merge</li>
       </ul>
     </article>
@@ -160,12 +160,12 @@
   <p class="section-title">合并与部署顺序（你拍板 · Codex 执行）</p>
   <div class="intro">
     <ol style="margin-left:18px">
-      <li><strong>#84–#91 已合 main</strong>：operator quality、OPS-AI、A/B、未成年人保护、多语言、Onboarding 推荐、send-now、Open API</li>
+      <li><strong>#84–#93 已合 main</strong>：operator quality、OPS-AI、A/B、未成年人保护、多语言、Onboarding 推荐、send-now、Open API、REL-01</li>
       <li>生产同步：服务器 <code>git pull origin main</code> 后重建 API/Admin，并用 smoke 验证</li>
       <li>ops 页同步：更新本文件后随 main 部署到 <code>/ops/20260514v001.html</code></li>
       <li>Codex：<code>docker compose up -d --build api</code> + <code>admin npm run build</code></li>
       <li>Devin：必要时复验 Admin 关键页面</li>
-      <li>剩余：REL-01、退款/防沉迷深化、并发工作台/指标、合规波次</li>
+      <li>剩余：退款/防沉迷深化、并发工作台/指标、合规波次</li>
       <li><strong>合规波次</strong>：全部功能 P0–P2 上线稳定后，交合规同事 + Legal</li>
     </ol>
   </div>
@@ -176,7 +176,7 @@
     <tbody>
       <tr><td>Ops</td><td>OPS-02 / A8-2 / 本页部署到 <code>/ops/</code></td><td><span class="ai-pill ai-codex">Codex</span> <span class="ai-pill ai-you">你</span></td></tr>
       <tr><td>Admin</td><td>DEV-D8-01 · PR #57</td><td><span class="ai-pill ai-devin">Devin</span></td></tr>
-      <tr><td>Backend</td><td>P2/P3 后端能力（#84–#91）已合 main，等待生产同步 smoke</td><td><span class="ai-pill ai-cursor">Cursor</span> <span class="ai-pill ai-codex">Codex</span></td></tr>
+      <tr><td>Backend</td><td>P2/P3 后端能力 + REL-01（#84–#93）已合 main，等待生产同步 smoke</td><td><span class="ai-pill ai-cursor">Cursor</span> <span class="ai-pill ai-codex">Codex</span></td></tr>
       <tr><td>Backend</td><td>生产 smoke：health、Open API、send-now、Admin/OPS-AI 关键接口</td><td><span class="ai-pill ai-codex">Codex</span></td></tr>
       <tr><td>验收</td><td>PR 门禁 · 单测 · 合并决策</td><td><span class="ai-pill ai-you">你</span> <span class="ai-pill ai-cursor">Cursor</span></td></tr>
     </tbody>
@@ -247,7 +247,7 @@
     <thead><tr><th>级</th><th>ID</th><th>任务</th><th>状态</th><th>主责</th><th>架构章节</th></tr></thead>
     <tbody>
       <tr><td><span class="p1">P1</span></td><td>POL-01</td><td>Policy Service：7 条件自动创建 handoff_task</td><td><span class="st st-done">已验收</span></td><td><span class="ai-pill ai-cursor">Cursor</span></td><td>§2.3</td></tr>
-      <tr><td><span class="p1">P1</span></td><td>REL-01</td><td>关系阶段 S0–S5 自动升降级</td><td><span class="st st-todo">未做</span></td><td><span class="ai-pill ai-cursor">Cursor</span></td><td>§3</td></tr>
+      <tr><td><span class="p1">P1</span></td><td>REL-01</td><td>关系阶段 S0–S5 自动升降级</td><td><span class="st st-done">main 已合 #93</span></td><td><span class="ai-pill ai-cursor">Cursor</span></td><td>§3</td></tr>
       <tr><td><span class="p1">P1</span></td><td>RISK-S5</td><td>S5 限制执行（禁 Upsell · 48–72h 关怀 · 7 天恢复）</td><td><span class="st st-done">main 已合</span></td><td><span class="ai-pill ai-cursor">Cursor</span></td><td>§3.4 · §10</td></tr>
       <tr><td><span class="p1">P1</span></td><td>HO-LOCK</td><td>Handoff Redis 分布式锁 + 5min 超时释放</td><td><span class="st st-done">已完成</span></td><td><span class="ai-pill ai-cursor">Cursor</span></td><td>§8.3</td></tr>
       <tr><td><span class="p1">P1</span></td><td>A8-3</td><td>DDL 与 Rev-C 字段对表（risk_score 等）</td><td><span class="st st-done">已完成</span></td><td><span class="ai-pill ai-cursor">Cursor</span> · <span class="ai-pill ai-codex">Codex</span></td><td>§14</td></tr>
@@ -296,6 +296,7 @@
     <div class="done-item">D0–D7 roadmap 块（代码层）已标记完成</div>
     <div class="done-item">P2 scripts / characters / consistency / freeze / quality / OPS-AI</div>
     <div class="done-item">P3 A/B · minor protection · multilingual · onboarding recommend · send-now · open API</div>
+    <div class="done-item">P1 REL-01 · 关系阶段 S0-S4 自动升降级 · S5 保持危机恢复锁定</div>
   </div>
 </div>
 
@@ -308,7 +309,7 @@
   <p class="section-title">按架构章节 · 未完成摘要</p>
   <ul class="arch-map">
     <li><strong>§2.3 真人接管</strong> — Policy 自动触发已验收；运营回复能力已合 main，生产同步后复验</li>
-    <li><strong>§3 关系阶段</strong> — 自动升降级；S5 商业限制全量执行</li>
+    <li><strong>§3 关系阶段</strong> — REL-01 自动升降级与 S5 商业限制已合 main，生产同步后复验</li>
     <li><strong>§4 Loneliness</strong> — SCORE_WORKER 与 handoff 阈值联动生产 smoke 已通过</li>
     <li><strong>§6 Character OS</strong> — ConsistencyScore、角色 CRUD、Onboarding 推荐已合 main</li>
     <li><strong>§7 通知</strong> — Worker 真发送与 send-now 已合 main；EU opt-in 字段语义待合规确认</li>
@@ -329,8 +330,8 @@
   <table>
     <thead><tr><th>阶段</th><th>架构目标</th><th>完成度（估）</th><th>缺口主责</th></tr></thead>
     <tbody>
-      <tr><td>第一阶段 MVP</td><td>§18 清单 1–10</td><td>~85%</td><td>P0 Worker/Moderation；handoff/危机部署</td></tr>
-      <tr><td>第二阶段</td><td>关系/转化/话术/AI 辅助运营</td><td>~65%</td><td>REL-01 / 转化深化仍待推进</td></tr>
+      <tr><td>第一阶段 MVP</td><td>§18 清单 1–10</td><td>~90%</td><td>生产同步与 smoke 复验</td></tr>
+      <tr><td>第二阶段</td><td>关系/转化/话术/AI 辅助运营</td><td>~75%</td><td>REL-01 已合；转化深化仍待推进</td></tr>
       <tr><td>第三阶段</td><td>并发工作台/风控/A/B/多语言</td><td>~55%</td><td>A/B、多语言、未成年人保护已合；并发工作台/指标仍待推进</td></tr>
       <tr><td>第四阶段</td><td>App/Web/开放平台</td><td>~25%</td><td>Open API 已合 main；App/Web 客户端仍待实现</td></tr>
     </tbody>
