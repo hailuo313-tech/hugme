@@ -2,7 +2,7 @@
 
 D4-3：滑动窗口内结构化记忆的标签聚合 + 向基准衰减（见模块内「记忆」小节）。
 
-D4-4：对 ``user_text`` 做轻量关键词命中（中英），映射到与 memory_writer 相同的标签集合，
+D4-4：对 ``user_text`` 做轻量关键词命中（多语言），映射到与 memory_writer 相同的标签集合，
 再按 ``LONELINESS_UTTERANCE_MAX_DELTA`` 单独 clamp 后并入总分。**不调用 LLM**，
 与记忆 delta 并列；有任一侧非空信号时 **不** 施 D4-3 的基准衰减。
 
@@ -39,152 +39,15 @@ D4-4：对 ``user_text`` 做轻量关键词命中（中英），映射到与 mem
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
 from core.config import settings
-
-# 与 memory_writer 提示中的示例标签对齐（小写键）
-_TAG_WEIGHTS: dict[str, float] = {
-    "lonely": 10.0,
-    "anxious": 9.0,
-    "sad": 8.0,
-    "angry": 3.0,
-    "happy": -8.0,
-    "calm": -6.0,
-    "excited": -4.0,
-}
-
-# D4-4：关键词 → 标准 tag（子串匹配；ASCII 不区分大小写）
-_UTTERANCE_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    (
-        "lonely",
-        (
-            "孤独",
-            "寂寞",
-            "孤单",
-            "一个人很",
-            "没人陪",
-            "好想有人",
-            "lonely",
-            "so lonely",
-            "feel isolated",
-            "all alone",
-        ),
-    ),
-    (
-        "sad",
-        (
-            "难过",
-            "伤心",
-            "想哭",
-            "好难受",
-            "低落",
-            "崩溃",
-            "i'm sad",
-            "feeling sad",
-            "so sad",
-            "depressed",
-            "heartbroken",
-        ),
-    ),
-    (
-        "anxious",
-        (
-            "焦虑",
-            "担心",
-            "心慌",
-            "睡不着",
-            "紧张",
-            "害怕",
-            "panic",
-            "anxious",
-            "worried",
-            "nervous",
-            "can't sleep",
-        ),
-    ),
-    (
-        "angry",
-        (
-            "生气",
-            "愤怒",
-            "烦死了",
-            "气死",
-            "讨厌",
-            "angry",
-            "furious",
-            "pissed",
-        ),
-    ),
-    (
-        "happy",
-        (
-            "开心",
-            "高兴",
-            "快乐",
-            "太好啦",
-            "太棒了",
-            "happy",
-            "so happy",
-            "glad",
-            "feeling great",
-        ),
-    ),
-    (
-        "calm",
-        (
-            "还好",
-            "平静",
-            "淡定",
-            "放松一下",
-            "calm",
-            "relaxed",
-            "chill",
-        ),
-    ),
-    (
-        "excited",
-        (
-            "兴奋",
-            "激动",
-            "期待",
-            "excited",
-            "can't wait",
-            "pumped",
-        ),
-    ),
-)
-
-
-def _keyword_in_text(text: str, keyword: str) -> bool:
-    k = keyword.strip()
-    if not k:
-        return False
-    if k.isascii():
-        return k.lower() in text.lower()
-    return k in text
+from services.emotion_lexicon import TAG_WEIGHTS, infer_emotion_tags
 
 
 def infer_utterance_emotion_tags(user_text: str) -> list[str]:
     """D4-4：从当前用户句推断最多 3 个情绪标签（无 LLM）。"""
-    if not user_text or not user_text.strip():
-        return []
-    # 去掉多余空白，便于子串匹配
-    t = re.sub(r"\s+", " ", user_text.strip())
-    picked: list[str] = []
-    seen: set[str] = set()
-    for tag, keywords in _UTTERANCE_KEYWORDS:
-        if tag in seen:
-            continue
-        for kw in keywords:
-            if _keyword_in_text(t, kw):
-                picked.append(tag)
-                seen.add(tag)
-                break
-        if len(picked) >= 3:
-            break
-    return picked
+    return infer_emotion_tags(user_text, max_tags=3)
 
 
 def _as_tag_list(raw: Any) -> list[str]:
@@ -243,14 +106,14 @@ def compute_next_loneliness(
             key = str(raw).strip().lower()
             if not key:
                 continue
-            row_sum += _TAG_WEIGHTS.get(key, 0.0)
+            row_sum += TAG_WEIGHTS.get(key, 0.0)
         if row_sum > 0:
             row_sum = min(per_memory_clamp, row_sum)
         delta_tags += row_sum
 
     delta_tags = max(-global_clamp, min(global_clamp, delta_tags))
 
-    utt_sum = sum(_TAG_WEIGHTS.get(t, 0.0) for t in utags)
+    utt_sum = sum(TAG_WEIGHTS.get(t, 0.0) for t in utags)
     if utterance_max_delta > 0:
         delta_utterance = max(-utterance_max_delta, min(utterance_max_delta, utt_sum))
     else:

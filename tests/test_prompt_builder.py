@@ -150,6 +150,19 @@ def test_l3_handles_string_score_gracefully():
     assert "gentle=mid" in out.layers["L3_CHARACTER"]
 
 
+def test_l3_renders_localized_character_prompt():
+    char = {
+        "name": "Aria",
+        "prompt_en": "Speak like a warm studio friend.",
+        "prompt_es": "Habla como una amiga cálida.",
+    }
+    out = build_prompt(
+        PromptInput(user_text="Hola, estoy triste", character=char, reply_language="es")
+    )
+    assert "Habla como una amiga cálida." in out.layers["L3_CHARACTER"]
+    assert "Spanish" in out.layers["L3_CHARACTER"]
+
+
 # ─────────────────────────────────────────────────────────────
 # L4 RELATIONSHIP
 # ─────────────────────────────────────────────────────────────
@@ -326,6 +339,21 @@ def test_l9_default_when_no_character():
     out = build_prompt(PromptInput(user_text="hi", character=None))
     body = out.layers["L9_FORMAT"]
     assert "中文" in body or "Chinese" in body.lower()
+
+
+def test_l9_uses_profile_language_for_reply_constraint():
+    out = build_prompt(
+        PromptInput(user_text="hello", profile={"language": "en-US"})
+    )
+    assert "English" in out.layers["L9_FORMAT"]
+    assert "language_code=en" in out.layers["L9_FORMAT"]
+    assert "language_code=en" in out.layers["L10_ANCHOR"]
+
+
+def test_l9_detects_spanish_when_no_profile_language():
+    out = build_prompt(PromptInput(user_text="Hola, estoy muy triste"))
+    assert "Spanish" in out.layers["L9_FORMAT"]
+    assert "language_code=es" in out.layers["L9_FORMAT"]
 
 
 # ─────────────────────────────────────────────────────────────

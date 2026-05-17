@@ -282,11 +282,11 @@ async def test_redis_lrange_failure_does_not_block(monkeypatch, llm_orchestrator
     )
 
     assert reply == "still ok"
-    # 没有历史，messages 只有 system + 当前 user
-    assert captured["messages"] == [
-        {"role": "system", "content": llm_orchestrator.DEFAULT_SYSTEM_PROMPT},
-        {"role": "user", "content": "hi"},
-    ]
+    # 没有历史，messages 只有 system + 当前 user；英文输入会触发 P3 语言约束。
+    assert len(captured["messages"]) == 2
+    assert captured["messages"][0]["role"] == "system"
+    assert "language_code=en" in captured["messages"][0]["content"]
+    assert captured["messages"][1] == {"role": "user", "content": "hi"}
 
 
 @pytest.mark.asyncio
@@ -315,10 +315,10 @@ async def test_history_limit_zero_skips_redis(monkeypatch, llm_orchestrator):
     )
 
     assert reply == "no-history"
-    assert captured["messages"] == [
-        {"role": "system", "content": llm_orchestrator.DEFAULT_SYSTEM_PROMPT},
-        {"role": "user", "content": "hello"},
-    ]
+    assert len(captured["messages"]) == 2
+    assert captured["messages"][0]["role"] == "system"
+    assert "language_code=en" in captured["messages"][0]["content"]
+    assert captured["messages"][1] == {"role": "user", "content": "hello"}
 
 
 # ── D3-2：10 层 Prompt 结构 ─────────────────────────────────
@@ -420,6 +420,7 @@ async def test_db_loaded_character_and_profile_appear_in_prompt(
                             "forbidden_topics": ["政治"],
                             "preferences": {"nickname": "小海"},
                             "loneliness_score": 65,
+                            "language": "en-US",
                         }
                     )
                 )
@@ -451,6 +452,9 @@ async def test_db_loaded_character_and_profile_appear_in_prompt(
     assert "政治" in system
     # L7: 孤独度 high band
     assert "high" in system
+    # P3: users.language 注入回复语言约束
+    assert "language_code=en" in system
+    assert "English" in system
     # 至少两次 DB 查询（character + profile）
     assert len(db.calls) >= 2
 
