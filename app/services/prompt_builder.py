@@ -190,8 +190,6 @@ def _render_character(char: dict[str, Any] | None, reply_language: str) -> str:
     humor = _score_band(char.get("humor_score"))
     depth = _score_band(char.get("emotional_depth_score"))
     boundary = _score_band(char.get("boundary_score"))
-    localized_prompt = _localized_character_prompt(char, reply_language)
-    localized_line = f"\n多语言角色补充（{language_name(reply_language)}）：{localized_prompt}" if localized_prompt else ""
     profile_details = _render_profile_details(char.get("profile_details"))
     profile_line = f"\n结构化角色事实（用户问年龄、身高、出生地、爱好、感情状态等身份事实时必须优先直接引用）：\n{profile_details}" if profile_details else ""
 
@@ -207,7 +205,6 @@ def _render_character(char: dict[str, Any] | None, reply_language: str) -> str:
         f"- 对话深度 emotional_depth={depth}\n"
         f"- 边界感 boundary={boundary}（越高越克制，越严守 L1）"
         f"{profile_line}"
-        f"{localized_line}"
     )
 
 
@@ -424,6 +421,11 @@ def _as_str_list(v: Any) -> list[str]:
 
 _PROFILE_DETAIL_LABELS: dict[str, str] = {
     "age": "年龄",
+    "birthday": "生日",
+    "zodiac": "星座",
+    "nationality": "国籍/国家",
+    "ethnicity": "民族",
+    "dialect": "方言",
     "birthplace": "出生地",
     "current_city": "现居城市",
     "height": "身高",
@@ -489,17 +491,6 @@ def _resolve_reply_language(inp: PromptInput) -> str:
         if isinstance(supported, list) and supported:
             return normalize_language(str(supported[0]))
     return "zh"
-
-
-def _localized_character_prompt(char: dict[str, Any], reply_language: str) -> str | None:
-    prompt_key = f"prompt_{normalize_language(reply_language, default='en')}"
-    value = char.get(prompt_key)
-    if isinstance(value, str) and value.strip():
-        return value.strip()
-    fallback = char.get("prompt_en")
-    if isinstance(fallback, str) and fallback.strip():
-        return fallback.strip()
-    return None
 
 
 # ─────────────────────────────────────────────────────────────

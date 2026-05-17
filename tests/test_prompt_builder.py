@@ -155,17 +155,17 @@ def test_l3_handles_string_score_gracefully():
     assert "gentle=mid" in out.layers["L3_CHARACTER"]
 
 
-def test_l3_renders_localized_character_prompt():
+def test_l3_ignores_legacy_localized_character_prompt():
     char = {
         "name": "Aria",
-        "prompt_en": "Speak like a warm studio friend.",
+        "prompt_en": "You are a warm empathetic emotional companion.",
         "prompt_es": "Habla como una amiga cálida.",
     }
     out = build_prompt(
         PromptInput(user_text="Hola, estoy triste", character=char, reply_language="es")
     )
-    assert "Habla como una amiga cálida." in out.layers["L3_CHARACTER"]
-    assert "Spanish" in out.layers["L3_CHARACTER"]
+    assert "emotional companion" not in out.layers["L3_CHARACTER"]
+    assert "Habla como una amiga cálida." not in out.layers["L3_CHARACTER"]
 
 
 def test_l3_renders_profile_details_and_l10_direct_answer_rule():
@@ -173,6 +173,7 @@ def test_l3_renders_profile_details_and_l10_direct_answer_rule():
         "name": "Mira",
         "profile_details": {
             "age": "26",
+            "nationality": "美国",
             "birthplace": "杭州",
             "height": "168cm",
             "hobby": "看展和夜跑",
@@ -183,6 +184,7 @@ def test_l3_renders_profile_details_and_l10_direct_answer_rule():
     out = build_prompt(PromptInput(user_text="你多高？", character=char))
 
     assert "结构化角色事实" in out.layers["L3_CHARACTER"]
+    assert "国籍/国家：美国" in out.layers["L3_CHARACTER"]
     assert "出生地：杭州" in out.layers["L3_CHARACTER"]
     assert "身高：168cm" in out.layers["L3_CHARACTER"]
     assert "感情状态：单身" in out.layers["L3_CHARACTER"]
