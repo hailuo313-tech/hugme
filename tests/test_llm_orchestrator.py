@@ -856,3 +856,80 @@ async def test_refresh_loneliness_score_updates_l7_band(monkeypatch, llm_orchest
     )
     system = captured["messages"][0]["content"]
     assert "72.0" in system or "high" in system
+
+
+@pytest.mark.asyncio
+async def test_relationship_stage_auto_adjust_updates_prompt_l4(
+    monkeypatch, llm_orchestrator
+):
+    """REL-01：自动升阶段后，当轮 L4 使用更新后的 relationship_stage。"""
+    captured: dict[str, Any] = {}
+
+    async def fake_chat(*, messages, trace_id, **_kwargs):
+        captured["messages"] = messages
+        return _LLMResultStub(content="ok")
+
+    async def pass_refresh(**kwargs):
+        return kwargs["profile_row"]
+
+    monkeypatch.setattr(llm_orchestrator, "llm_chat", fake_chat)
+    monkeypatch.setattr(llm_orchestrator, "refresh_loneliness_score", pass_refresh)
+    monkeypatch.setattr(llm_orchestrator.settings, "LLM_ECHO_FALLBACK", False)
+    monkeypatch.setattr(llm_orchestrator.settings, "MEMORY_RETRIEVE_IN_PROMPT", False)
+    monkeypatch.setattr(llm_orchestrator.settings, "POLICY_SERVICE_ENABLED", False)
+    monkeypatch.setattr(llm_orchestrator.settings, "REL_STAGE_AUTO_ENABLED", True)
+    monkeypatch.setattr(llm_orchestrator.settings, "REL_STAGE_ALLOW_DOWNGRADE", True)
+    monkeypatch.setattr(llm_orchestrator.settings, "REL_STAGE_INITIATION_S1", 10.0)
+    monkeypatch.setattr(llm_orchestrator.settings, "REL_STAGE_INITIATION_S2", 30.0)
+    monkeypatch.setattr(llm_orchestrator.settings, "REL_STAGE_INITIATION_S3", 55.0)
+    monkeypatch.setattr(llm_orchestrator.settings, "REL_STAGE_INITIATION_S4", 78.0)
+    monkeypatch.setattr(llm_orchestrator.settings, "REL_STAGE_VIP_MIN_FOR_S1", 1)
+
+    class _FakeRow:
+        def __init__(self, mapping: dict[str, Any]):
+            self._mapping = mapping
+
+    class _FakeExecResult:
+        def __init__(self, row):
+            self._row = row
+
+        def fetchone(self):
+            return self._row
+
+    class _FakeDB:
+        def __init__(self):
+            self.commits = 0
+
+        async def execute(self, stmt, params=None):
+            sql = str(getattr(stmt, "text", stmt))
+            if "ch.id = c.character_id" in sql or "characters" in sql:
+                return _FakeExecResult(_FakeRow({"id": "cid", "name": "Aria"}))
+            if sql.lstrip().upper().startswith("SELECT") and "user_profiles" in sql:
+                return _FakeExecResult(
+                    _FakeRow(
+                        {
+                            "relationship_stage": "S1",
+                            "initiation_score": 60.0,
+                            "vip_level": 0,
+                            "loneliness_score": 40.0,
+                        }
+                    )
+                )
+            return _FakeExecResult(None)
+
+        async def commit(self):
+            self.commits += 1
+
+    db = _FakeDB()
+    await llm_orchestrator.generate_reply(
+        user_id="00000000-0000-0000-0000-000000000001",
+        conversation_id="c1",
+        user_text="hello",
+        trace_id="t-rel",
+        db=db,
+    )
+
+    system = captured["messages"][0]["content"]
+    assert "关系阶段：S3" in system
+    assert "亲近" in system
+    assert db.commits == 1
