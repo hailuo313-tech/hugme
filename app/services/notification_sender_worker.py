@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.database import AsyncSessionLocal
+from services.minor_protection import should_block_push
 from services.telegram_send import send_telegram_text, telegram_chat_id_from_external
 
 _ADVISORY_LOCK_KEY = 6_300_420
@@ -197,7 +198,12 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
                 urow = (
                     await session.execute(
                         text(
-                            "SELECT channel, external_id FROM users WHERE id = :uid"
+                            """
+                            SELECT channel, external_id, status, is_minor_suspected,
+                                   notification_opt_in, opt_out_marketing
+                            FROM users
+                            WHERE id = :uid
+                            """
                         ),
                         {"uid": user_id},
                     )
@@ -211,6 +217,27 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
                         failure_reason="user_not_telegram_channel",
                     )
                     stats["failed"] = 1
+                    task_id = None
+                    return stats
+
+                if (
+                    (urow.get("status") or "active") != "active"
+                    or not bool(urow.get("notification_opt_in"))
+                    or bool(urow.get("opt_out_marketing"))
+                    or should_block_push(
+                        is_minor_suspected=bool(urow.get("is_minor_suspected"))
+                    )
+                ):
+                    await _finalize_task(
+                        session,
+                        task_id=task_id,
+                        status="failed",
+                        failure_reason="minor_or_user_notification_restricted",
+                    )
+                    stats["failed"] = 1
+                    log.bind(task_id=task_id, user_id=user_id).warning(
+                        "notification_sender_worker.minor_protection_blocked"
+                    )
                     task_id = None
                     return stats
 

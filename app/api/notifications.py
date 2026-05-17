@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
+from services.minor_protection import MINOR_BLOCK_DETAIL, should_block_push
 
 router = APIRouter()
 
@@ -73,8 +74,8 @@ async def _assert_eligible(db: AsyncSession, user, channel: str):
         raise HTTPException(status_code=409, detail="User notification_opt_in is false")
     if user["opt_out_marketing"]:
         raise HTTPException(status_code=409, detail="User opted out of marketing")
-    if user["is_minor_suspected"]:
-        raise HTTPException(status_code=409, detail="User suspected minor")
+    if should_block_push(is_minor_suspected=bool(user["is_minor_suspected"])):
+        raise HTTPException(status_code=409, detail=MINOR_BLOCK_DETAIL)
     if user["risk_level"] in {"high", "critical"}:
         raise HTTPException(status_code=409, detail="High-risk users require handoff review")
 

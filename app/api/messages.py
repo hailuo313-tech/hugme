@@ -21,6 +21,7 @@ import redis.asyncio as aioredis
 
 from services.memory_writer import maybe_write_memory
 from services.content_safety import evaluate_inbound_content_safety
+from services.minor_protection import evaluate_inbound_minor_protection
 
 router = APIRouter()
 
@@ -159,13 +160,17 @@ async def inbound_message(
 
     # ── 查或建 user ──────────────────────────────────────
     row = (await db.execute(
-        text("SELECT id, status FROM users WHERE channel=:ch AND external_id=:eid"),
+        text(
+            "SELECT id, status, is_minor_suspected "
+            "FROM users WHERE channel=:ch AND external_id=:eid"
+        ),
         {"ch": data.channel, "eid": data.external_user_id}
     )).fetchone()
 
     if row:
         user_id = str(row[0])
         user_status = str(row[1] or "active")
+        is_minor_suspected = bool(row[2]) if len(row) > 2 else False
         if user_status != "active":
             resp_body = {
                 "message_id": "",
@@ -190,6 +195,7 @@ async def inbound_message(
             {"uid": user_id}
         )
         await db.commit()
+        is_minor_suspected = False
         log.bind(user_id=user_id).info("message.inbound.user.created")
 
     # ── 限流（用 user_id，比 external_id 更精确）────────────
@@ -226,17 +232,73 @@ async def inbound_message(
         )
         log.bind(conversation_id=conv_id).info("message.inbound.conversation.created")
 
-    # ── 内容安全（V001-P0-5）：仅文本 ───────────────────────────
+    # ── 未成年人保护 + 内容安全：仅文本 ───────────────────────────
     safety_result: dict | None = None
+    if data.message_type == "text" and (data.content or "").strip():
+        minor_decision = await evaluate_inbound_minor_protection(
+            db,
+            user_id=user_id,
+            text_value=data.content,
+            is_minor_suspected=is_minor_suspected,
+        )
+        if (
+            minor_decision.suspected_minor
+            or minor_decision.adult_content
+            or minor_decision.updated_user
+        ):
+            safety_result = minor_decision.as_safety_layer()
+        if minor_decision.blocked:
+            msg_id = str(uuid.uuid4())
+            await db.execute(
+                text(
+                    "INSERT INTO messages "
+                    "(id,conversation_id,sender_type,sender_id,content,content_type,safety_result) "
+                    "VALUES (:id,:cid,'user',:sid,:ct,:ctype, CAST(:sr AS jsonb))"
+                ),
+                {
+                    "id": msg_id,
+                    "cid": conv_id,
+                    "sid": user_id,
+                    "ct": data.content,
+                    "ctype": data.message_type,
+                    "sr": json.dumps(safety_result, ensure_ascii=False),
+                },
+            )
+            await db.execute(
+                text(
+                    "UPDATE conversations SET last_message_at=NOW(), updated_at=NOW() WHERE id=:id"
+                ),
+                {"id": conv_id},
+            )
+            await db.commit()
+            log.bind(message_id=msg_id).info("message.inbound.blocked_by_minor_protection")
+            resp_body = {
+                "message_id": msg_id,
+                "conversation_id": conv_id,
+                "status": "blocked_by_safety",
+                "trace_id": trace_id,
+                "block_reason": minor_decision.reason,
+            }
+            if idem_key:
+                await redis.set(f"idem:{idem_key}", json.dumps(resp_body), ex=86400)
+            return JSONResponse(status_code=422, content=resp_body)
+
     if (
         settings.CONTENT_SAFETY_ENABLED
         and data.message_type == "text"
         and (data.content or "").strip()
     ):
-        safety_result = await evaluate_inbound_content_safety(
+        content_safety_result = await evaluate_inbound_content_safety(
             data.content, trace_id=trace_id
         )
-        if safety_result.get("blocked"):
+        if safety_result is None:
+            safety_result = content_safety_result
+        else:
+            safety_result = {
+                **content_safety_result,
+                "minor_protection": safety_result.get("minor_protection"),
+            }
+        if content_safety_result.get("blocked"):
             msg_id = str(uuid.uuid4())
             await db.execute(
                 text(

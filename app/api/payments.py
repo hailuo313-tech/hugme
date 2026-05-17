@@ -22,6 +22,11 @@ from services.stripe_webhook import (
     handle_event,
     verify_and_parse_event,
 )
+from services.minor_protection import (
+    AGE_VERIFICATION_REQUIRED_DETAIL,
+    MINOR_BLOCK_DETAIL,
+    should_block_consumption,
+)
 import json
 import stripe
 import uuid
@@ -65,6 +70,33 @@ async def create_order(
         currency=data.currency,
     )
     log.info("payments.order.create.start")
+
+    user_row = (
+        await db.execute(
+            text(
+                """
+                SELECT id, status, age_verified, is_minor_suspected
+                FROM users
+                WHERE id = :uid
+                """
+            ),
+            {"uid": data.user_id},
+        )
+    ).fetchone()
+    if not user_row:
+        raise HTTPException(status_code=404, detail="User not found")
+    if str(user_row[1] or "active") != "active":
+        raise HTTPException(status_code=409, detail="User is not active")
+    block_reason = should_block_consumption(
+        age_verified=bool(user_row[2]),
+        is_minor_suspected=bool(user_row[3]),
+    )
+    if block_reason == "minor_suspected":
+        log.bind(block_reason=block_reason).warning("payments.order.minor_blocked")
+        raise HTTPException(status_code=403, detail=MINOR_BLOCK_DETAIL)
+    if block_reason == "age_not_verified":
+        log.bind(block_reason=block_reason).warning("payments.order.age_verification_required")
+        raise HTTPException(status_code=403, detail=AGE_VERIFICATION_REQUIRED_DETAIL)
 
     # ── 1. 写入 orders 表（status=pending）──────────────
     order_id = str(uuid.uuid4())

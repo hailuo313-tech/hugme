@@ -21,6 +21,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
+from services.minor_protection import should_block_consumption
 
 
 class SignatureError(Exception):
@@ -180,6 +181,43 @@ async def _handle_checkout_completed(db: AsyncSession, event: dict[str, Any]) ->
 
     # 2. users.vip_level += 1（最简策略；后续 D6 可按 product_id 计算等级）
     if user_id is not None:
+        user_row = (
+            await db.execute(
+                text(
+                    """
+                    SELECT age_verified, is_minor_suspected
+                    FROM users
+                    WHERE id = :uid
+                    """
+                ),
+                {"uid": user_id},
+            )
+        ).fetchone()
+        if user_row is not None:
+            block_reason = should_block_consumption(
+                age_verified=bool(user_row[0]),
+                is_minor_suspected=bool(user_row[1]),
+            )
+            if block_reason:
+                await db.execute(
+                    text(
+                        """
+                        UPDATE orders
+                        SET status = 'blocked_minor',
+                            refund_status = 'review_required'
+                        WHERE id = :oid
+                        """
+                    ),
+                    {"oid": order_id},
+                )
+                await db.commit()
+                logger.bind(
+                    component="stripe_webhook",
+                    order_id=order_id,
+                    user_id=str(user_id),
+                    block_reason=block_reason,
+                ).warning("stripe_webhook.minor_protection.vip_blocked")
+                return
         await db.execute(
             text(
                 "UPDATE users SET vip_level = COALESCE(vip_level, 0) + 1 WHERE id = :uid"
