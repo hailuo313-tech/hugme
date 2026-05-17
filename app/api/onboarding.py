@@ -27,6 +27,8 @@ from loguru import logger
 import uuid, json, time
 import redis.asyncio as aioredis
 
+from services.character_recommender import recommend_character_for_onboarding
+
 router = APIRouter()
 
 # ── Redis 单例（幂等缓存复用） ──────────────────────
@@ -151,15 +153,60 @@ async def _ensure_aria_exists(db: AsyncSession):
         await db.commit()
 
 
-async def _assign_character(db: AsyncSession, user_id: str, chat_style: str) -> dict:
-    """根据聊天风格分配角色（MVP 阶段固定 Aria）。"""
-    await _ensure_aria_exists(db)
+async def _assign_character(db: AsyncSession, user_id: str, profile: dict[str, Any]) -> dict:
+    """根据 onboarding 画像从 active characters 推荐角色。"""
+    recommendation = await recommend_character_for_onboarding(
+        db,
+        user_id=user_id,
+        profile=profile,
+    )
+    if recommendation is None:
+        await _ensure_aria_exists(db)
+        recommendation = await recommend_character_for_onboarding(
+            db,
+            user_id=user_id,
+            profile=profile,
+        )
+    if recommendation is None:
+        recommendation = {
+            "character_id": DEFAULT_CHARACTER_ID,
+            "name": "Aria",
+            "match_score": 0.0,
+            "reason": "fallback_default_seed",
+        }
+    else:
+        recommendation = recommendation.to_response()
+
     await db.execute(
         text("UPDATE user_profiles SET current_character_id=:cid, updated_at=NOW() WHERE user_id=:uid"),
-        {"cid": DEFAULT_CHARACTER_ID, "uid": user_id}
+        {"cid": recommendation["character_id"], "uid": user_id}
     )
     await db.commit()
-    return {"character_id": DEFAULT_CHARACTER_ID, "name": "Aria"}
+    return recommendation
+
+
+async def _get_assigned_character(db: AsyncSession, user_id: str) -> Optional[dict[str, Any]]:
+    row = (await db.execute(
+        text("""
+            SELECT c.id::text AS character_id, c.name
+            FROM user_profiles p
+            LEFT JOIN characters c ON c.id = p.current_character_id
+            WHERE p.user_id=:uid
+        """),
+        {"uid": user_id}
+    )).fetchone()
+    if not row:
+        return None
+    mapping = dict(row._mapping) if hasattr(row, "_mapping") else {
+        "character_id": row[0],
+        "name": row[1] if len(row) > 1 else None,
+    }
+    if not mapping.get("character_id"):
+        return None
+    return {
+        "character_id": str(mapping["character_id"]),
+        "name": mapping.get("name") or "Unknown",
+    }
 
 
 def _build_next_question(step: int, nickname: str = "") -> Optional[str]:
@@ -213,16 +260,12 @@ async def submit_onboarding_step(
     # 若已完成（step 6）则幂等返回
     if current_step >= ONBOARDING_STEPS + 1:
         log.info("onboarding.already_completed")
-        char_row = (await db.execute(
-            text("SELECT current_character_id FROM user_profiles WHERE user_id=:uid"),
-            {"uid": user_id}
-        )).fetchone()
-        char_id = str(char_row[0]) if char_row and char_row[0] else None
+        character_assigned = await _get_assigned_character(db, user_id)
         return JSONResponse(status_code=200, content={
             "user_id": user_id,
             "next_step": None,
             "completed": True,
-            "character_assigned": {"character_id": char_id, "name": "Aria"} if char_id else None,
+            "character_assigned": character_assigned,
             "next_question": None,
             "trace_id": trace_id,
         })
@@ -304,13 +347,18 @@ async def submit_onboarding_step(
     # ── 最后步：分配角色 + GDPR 时间戳 ──────────────────
     character_assigned = None
     if data.step == ONBOARDING_STEPS:
-        # 读 chat_style 用于角色分配
+        # 读 onboarding 画像用于角色推荐
         profile_row = (await db.execute(
-            text("SELECT chat_style FROM user_profiles WHERE user_id=:uid"),
+            text("""
+                SELECT p.chat_style, p.interests, p.preferences, u.language AS language
+                FROM user_profiles p
+                JOIN users u ON u.id = p.user_id
+                WHERE p.user_id=:uid
+            """),
             {"uid": user_id}
         )).fetchone()
-        cs = (profile_row[0] if profile_row else None) or "warm"
-        character_assigned = await _assign_character(db, user_id, cs)
+        profile = dict(profile_row._mapping) if profile_row and hasattr(profile_row, "_mapping") else {}
+        character_assigned = await _assign_character(db, user_id, profile)
 
         # GDPR: 记录 consent 时间戳（用户完成 onboarding 视为同意服务条款）
         await db.execute(
