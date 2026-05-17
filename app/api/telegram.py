@@ -35,6 +35,10 @@ from api.onboarding import (
 from services.llm_orchestrator import generate_reply, LLMOrchestratorError
 from services.memory_writer import maybe_write_memory
 from services.content_safety import evaluate_inbound_content_safety
+from services.reply_consistency import (
+    evaluate_reply_consistency,
+    load_reply_consistency_context,
+)
 import asyncio
 import re
 
@@ -105,13 +109,16 @@ async def _persist_message(
     sender_id: str,
     content: str,
     safety_result: dict | None = None,
+    consistency_score: float | None = None,
 ) -> str:
     msg_id = str(uuid.uuid4())
     if safety_result is not None:
         await db.execute(
             text(
-                "INSERT INTO messages (id,conversation_id,sender_type,sender_id,content,content_type,safety_result) "
-                "VALUES (:id,:cid,:st,:sid,:ct,'text', CAST(:sr AS jsonb))"
+                "INSERT INTO messages "
+                "(id,conversation_id,sender_type,sender_id,content,content_type,"
+                " safety_result,consistency_score) "
+                "VALUES (:id,:cid,:st,:sid,:ct,'text', CAST(:sr AS jsonb), :cs)"
             ),
             {
                 "id": msg_id,
@@ -120,13 +127,16 @@ async def _persist_message(
                 "sid": sender_id,
                 "ct": content,
                 "sr": json.dumps(safety_result, ensure_ascii=False),
+                "cs": consistency_score,
             },
         )
     else:
         await db.execute(
             text(
-                "INSERT INTO messages (id,conversation_id,sender_type,sender_id,content,content_type) "
-                "VALUES (:id,:cid,:st,:sid,:ct,'text')"
+                "INSERT INTO messages "
+                "(id,conversation_id,sender_type,sender_id,content,content_type,"
+                " consistency_score) "
+                "VALUES (:id,:cid,:st,:sid,:ct,'text', :cs)"
             ),
             {
                 "id": msg_id,
@@ -134,6 +144,7 @@ async def _persist_message(
                 "st": sender_type,
                 "sid": sender_id,
                 "ct": content,
+                "cs": consistency_score,
             },
         )
     await db.execute(
@@ -475,6 +486,7 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
         )
 
     bot_reply = None
+    bot_consistency_score = None
 
     if not onboarding_done:
         # Onboarding 模式
@@ -499,6 +511,21 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
             log.bind(result="failed", reason=str(exc)).warning("tg.orchestrator.failed")
             reply_text = "[服务暂时不可用，请稍后再试]"
 
+        try:
+            ctx = await load_reply_consistency_context(db, conv_id)
+        except Exception as exc:
+            log.bind(error_type=type(exc).__name__).warning(
+                "tg.consistency.context_failed"
+            )
+            ctx = {}
+        consistency = evaluate_reply_consistency(
+            reply_text=reply_text,
+            character=ctx.get("character"),
+        )
+        reply_text = consistency.output_text
+        bot_consistency_score = consistency.score
+        log.bind(**consistency.as_log_dict()).info("tg.consistency.checked")
+
         sent_id = await _send_tg(tg_chat_id, reply_text, trace_id)
         if sent_id is not None:
             bot_reply = reply_text
@@ -507,7 +534,14 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
     # ── 持久化 bot 回复 ───────────────────────────────
     if bot_reply:
         try:
-            bot_msg_id = await _persist_message(db, conv_id, "assistant", "bot", bot_reply)
+            bot_msg_id = await _persist_message(
+                db,
+                conv_id,
+                "assistant",
+                "bot",
+                bot_reply,
+                consistency_score=bot_consistency_score,
+            )
             await _push_context(redis, conv_id, "assistant", bot_reply, bot_msg_id)
             log.bind(bot_msg_id=bot_msg_id).info("tg.bot_reply.persisted")
         except Exception as e:

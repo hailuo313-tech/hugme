@@ -20,6 +20,10 @@ from services.llm_orchestrator import (
     LLMOrchestratorError,
     generate_reply,
 )
+from services.reply_consistency import (
+    evaluate_reply_consistency,
+    load_reply_consistency_context,
+)
 
 router = APIRouter()
 
@@ -135,14 +139,34 @@ async def ai_reply(
             detail="LLM orchestrator unavailable",
         )
 
+    try:
+        ctx = await load_reply_consistency_context(db, conv_id)
+    except Exception as exc:
+        log.bind(error_type=type(exc).__name__).warning(
+            "conversation.reply.consistency_context_failed"
+        )
+        ctx = {}
+    consistency = evaluate_reply_consistency(
+        reply_text=reply_text,
+        character=ctx.get("character"),
+    )
+    reply_text = consistency.output_text
+    log.bind(**consistency.as_log_dict()).info("conversation.reply.consistency_checked")
+
     bot_msg_id = str(uuid.uuid4())
     await db.execute(
         text(
             "INSERT INTO messages "
-            "(id,conversation_id,sender_type,sender_id,content,content_type) "
-            "VALUES (:id,:cid,'assistant','bot',:ct,'text')"
+            "(id,conversation_id,sender_type,sender_id,content,content_type,"
+            " consistency_score) "
+            "VALUES (:id,:cid,'assistant','bot',:ct,'text', :cs)"
         ),
-        {"id": bot_msg_id, "cid": conv_id, "ct": reply_text},
+        {
+            "id": bot_msg_id,
+            "cid": conv_id,
+            "ct": reply_text,
+            "cs": consistency.score,
+        },
     )
     await db.execute(
         text("UPDATE conversations SET last_message_at=NOW(), updated_at=NOW() WHERE id=:id"),
