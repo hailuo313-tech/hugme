@@ -62,6 +62,28 @@ interface DetailResponse {
   messages: MessageRow[];
 }
 
+interface OpsAiSummary {
+  user_state: string;
+  key_facts: string[];
+  risk_flags: string[];
+  recommended_strategy: string;
+}
+
+interface OpsAiReply {
+  rank: number;
+  text: string;
+  reason: string;
+}
+
+interface OpsAiAssistResponse {
+  conversation_id: string;
+  handoff_task_id: string | null;
+  summary: OpsAiSummary;
+  suggested_replies: OpsAiReply[];
+  model_used?: string | null;
+  latency_ms?: number | null;
+}
+
 const STATE_OPTIONS = [
   { value: "", label: "全部状态" },
   { value: "AI_ACTIVE", label: "AI 活跃" },
@@ -133,6 +155,11 @@ function DashboardContent({ operator }: { operator: Operator }) {
   const [detail, setDetail] = useState<DetailResponse | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [assist, setAssist] = useState<OpsAiAssistResponse | null>(null);
+  const [assistLoading, setAssistLoading] = useState(false);
+  const [assistError, setAssistError] = useState<string | null>(null);
+  const [copiedReplyRank, setCopiedReplyRank] = useState<number | null>(null);
+  const [draftReply, setDraftReply] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -166,6 +193,9 @@ function DashboardContent({ operator }: { operator: Operator }) {
   async function openDetail(cid: string) {
     setDetail(null);
     setDetailError(null);
+    setAssist(null);
+    setAssistError(null);
+    setDraftReply("");
     setDetailLoading(true);
     try {
       const resp = await apiFetch<DetailResponse>(
@@ -177,6 +207,36 @@ function DashboardContent({ operator }: { operator: Operator }) {
     } finally {
       setDetailLoading(false);
     }
+  }
+
+  async function generateAssist() {
+    if (!detail) return;
+    setAssistLoading(true);
+    setAssistError(null);
+    try {
+      const resp = await apiFetch<OpsAiAssistResponse>(
+        `/ops-ai/conversations/${detail.conversation.conversation_id}/assist`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            language: detail.conversation.language || "zh-CN",
+            tone: "warm",
+            max_context_messages: 30,
+          }),
+        }
+      );
+      setAssist(resp);
+    } catch (e) {
+      setAssistError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAssistLoading(false);
+    }
+  }
+
+  async function copyReply(reply: OpsAiReply) {
+    await navigator.clipboard.writeText(reply.text);
+    setCopiedReplyRank(reply.rank);
+    window.setTimeout(() => setCopiedReplyRank(null), 1500);
   }
 
   function handleLogout() {
@@ -444,6 +504,9 @@ function DashboardContent({ operator }: { operator: Operator }) {
           onClick={() => {
             setDetail(null);
             setDetailError(null);
+            setAssist(null);
+            setAssistError(null);
+            setDraftReply("");
           }}
         >
           <div
@@ -456,6 +519,9 @@ function DashboardContent({ operator }: { operator: Operator }) {
                 onClick={() => {
                   setDetail(null);
                   setDetailError(null);
+                  setAssist(null);
+                  setAssistError(null);
+                  setDraftReply("");
                 }}
                 className="text-slate-400 hover:text-white"
               >
@@ -544,6 +610,118 @@ function DashboardContent({ operator }: { operator: Operator }) {
                     </div>
                   )}
 
+                  {/* AI 辅助 */}
+                  <div className="border border-violet-800/70 bg-violet-950/20 rounded-xl p-4 space-y-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <h3 className="text-sm font-medium text-violet-200">
+                          AI 辅助：摘要 + 3 条推荐回复
+                        </h3>
+                        <p className="text-xs text-slate-400 mt-1">
+                          仅供人工参考，不会自动发送消息。
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={generateAssist}
+                        disabled={assistLoading}
+                        className="bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium px-3 py-2 rounded-md transition whitespace-nowrap"
+                      >
+                        {assistLoading ? "生成中…" : assist ? "重新生成" : "生成建议"}
+                      </button>
+                    </div>
+
+                    {assistError && (
+                      <div className="bg-rose-900/30 border border-rose-800 text-rose-200 text-sm rounded-md px-3 py-2 flex items-center justify-between gap-3">
+                        <span>生成失败：{assistError}</span>
+                        <button
+                          type="button"
+                          onClick={generateAssist}
+                          disabled={assistLoading}
+                          className="text-xs text-rose-100 hover:text-white underline"
+                        >
+                          重试
+                        </button>
+                      </div>
+                    )}
+
+                    {assist && (
+                      <>
+                        <div className="grid gap-3 text-sm">
+                          <AssistBlock
+                            label="用户当前状态"
+                            value={assist.summary.user_state}
+                          />
+                          <AssistList
+                            label="关键事实"
+                            items={assist.summary.key_facts}
+                          />
+                          <AssistList
+                            label="风险 flags"
+                            items={assist.summary.risk_flags}
+                            empty="暂无明显风险"
+                          />
+                          <AssistBlock
+                            label="推荐处理策略"
+                            value={assist.summary.recommended_strategy}
+                          />
+                        </div>
+
+                        <div className="space-y-3">
+                          {assist.suggested_replies.map((reply) => (
+                            <div
+                              key={reply.rank}
+                              className="border border-slate-700 bg-slate-900/70 rounded-lg p-3"
+                            >
+                              <div className="flex items-center justify-between gap-3 mb-2">
+                                <span className="text-xs text-violet-300">
+                                  推荐回复 {reply.rank}
+                                </span>
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => copyReply(reply)}
+                                    className="text-xs text-sky-400 hover:text-sky-300"
+                                  >
+                                    {copiedReplyRank === reply.rank ? "已复制" : "复制"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setDraftReply(reply.text)}
+                                    className="text-xs text-violet-400 hover:text-violet-300"
+                                  >
+                                    填入草稿
+                                  </button>
+                                </div>
+                              </div>
+                              <p className="text-sm text-slate-100 whitespace-pre-wrap">
+                                {reply.text}
+                              </p>
+                              {reply.reason && (
+                                <p className="text-xs text-slate-500 mt-2">
+                                  理由：{reply.reason}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+
+                        <div>
+                          <label className="block text-xs text-slate-400 mb-2">
+                            运营回复草稿（需人工确认后再发送）
+                          </label>
+                          <textarea
+                            value={draftReply}
+                            onChange={(e) => setDraftReply(e.target.value)}
+                            rows={4}
+                            placeholder="点击“填入草稿”后可在这里编辑；当前页面不会自动发送。"
+                            className="w-full bg-slate-950 border border-slate-700 text-sm rounded-md px-3 py-2 text-slate-100 placeholder-slate-600"
+                          />
+                        </div>
+                      </>
+                    )}
+                  </div>
+
                   {/* 消息流 */}
                   <div>
                     <h3 className="text-sm font-medium text-slate-300 mb-3">
@@ -598,6 +776,40 @@ function Meta({
       >
         {value || <span className="text-slate-600">—</span>}
       </div>
+    </div>
+  );
+}
+
+function AssistBlock({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-xs text-slate-500 mb-1">{label}</div>
+      <div className="text-slate-200">{value || "—"}</div>
+    </div>
+  );
+}
+
+function AssistList({
+  label,
+  items,
+  empty = "—",
+}: {
+  label: string;
+  items: string[];
+  empty?: string;
+}) {
+  return (
+    <div>
+      <div className="text-xs text-slate-500 mb-1">{label}</div>
+      {items.length === 0 ? (
+        <div className="text-slate-500">{empty}</div>
+      ) : (
+        <ul className="list-disc list-inside text-slate-200 space-y-1">
+          {items.map((item, idx) => (
+            <li key={`${item}-${idx}`}>{item}</li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
