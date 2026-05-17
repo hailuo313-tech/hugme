@@ -513,6 +513,9 @@ async def _load_recent_context(
         content = item.get("content")
         if not role or not isinstance(content, str) or not content:
             continue
+        # 过滤掉历史中包含系统提示泄漏特征的 assistant 消息，避免 LLM 模仿复述
+        if role == "assistant" and _is_system_leaked_content(content):
+            continue
         parsed.append({"role": role, "content": content})
 
     return parsed[-history_limit:]
@@ -649,4 +652,22 @@ def _short_hash(value: str) -> str:
     if not value:
         return ""
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
+
+
+# 系统信息泄漏特征前缀列表（assistant 历史消息含这些前缀时丢弃，避免 LLM 模仿）
+_SYSTEM_LEAK_PREFIXES: tuple[str, ...] = (
+    "（根据角色",
+    "(根据角色",
+    "（根据profile",
+    "（根据系统",
+    "[LLM",
+    "[服务暂时",
+    "echo: ",
+)
+
+
+def _is_system_leaked_content(content: str) -> bool:
+    """检测 assistant 历史消息是否包含系统提示泄漏特征。"""
+    stripped = content.lstrip()
+    return any(stripped.startswith(prefix) for prefix in _SYSTEM_LEAK_PREFIXES)
 
