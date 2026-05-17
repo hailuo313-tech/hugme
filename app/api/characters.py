@@ -79,6 +79,10 @@ class CharacterUpdate(BaseModel):
     status: Optional[str] = Field(default=None, min_length=1, max_length=20)
 
 
+class UserCharacterAssignment(BaseModel):
+    character_id: str
+
+
 def _validate_uuid(value: str, field_name: str) -> str:
     try:
         return str(uuid.UUID(str(value)))
@@ -246,6 +250,70 @@ async def character_stats(
             {"character_id": str(r[0]), "count": int(r[1] or 0)}
             for r in profile_rows
         ],
+    }
+
+
+@router.patch("/users/{user_id}/character")
+async def assign_user_character(
+    user_id: str,
+    data: UserCharacterAssignment,
+    db: AsyncSession = Depends(get_db),
+    _operator: dict = Depends(require_operator),
+):
+    uid = _validate_uuid(user_id, "user_id")
+    cid = _validate_uuid(data.character_id, "character_id")
+
+    user_row = (
+        await db.execute(text("SELECT id FROM users WHERE id=CAST(:uid AS uuid)"), {"uid": uid})
+    ).fetchone()
+    if not user_row:
+        raise HTTPException(status_code=404, detail="user not found")
+
+    character_row = (
+        await db.execute(
+            text(
+                """
+                SELECT id, name, age_feel, region, occupation
+                FROM characters
+                WHERE id = CAST(:cid AS uuid) AND status = 'active'
+                """
+            ),
+            {"cid": cid},
+        )
+    ).fetchone()
+    if not character_row:
+        raise HTTPException(status_code=404, detail="active character not found")
+
+    await db.execute(
+        text(
+            """
+            INSERT INTO user_profiles (user_id, current_character_id, updated_at)
+            VALUES (CAST(:uid AS uuid), CAST(:cid AS uuid), NOW())
+            ON CONFLICT (user_id) DO UPDATE
+            SET current_character_id = EXCLUDED.current_character_id,
+                updated_at = NOW()
+            """
+        ),
+        {"uid": uid, "cid": cid},
+    )
+    conv_result = await db.execute(
+        text(
+            """
+            UPDATE conversations
+            SET character_id = CAST(:cid AS uuid),
+                updated_at = NOW()
+            WHERE user_id = CAST(:uid AS uuid)
+              AND state = 'AI_ACTIVE'
+            """
+        ),
+        {"uid": uid, "cid": cid},
+    )
+    await db.commit()
+
+    return {
+        "user_id": uid,
+        "character": _row_to_dict(character_row),
+        "updated_conversations": getattr(conv_result, "rowcount", None),
     }
 
 
