@@ -90,9 +90,9 @@
     <strong>Codex</strong>：部署/审查/上线 · <strong>合规项</strong>：排在最后，由专业合规同事执行。
   </p>
   <div class="meta-row">
-    <span class="badge badge-date">更新 2026-05-15</span>
+    <span class="badge badge-date">更新 2026-05-17</span>
     <span class="badge badge-src">基准文档 Rev-C · 2026-05-10</span>
-    <span class="badge badge-src">代码快照：PR #60 等未全量合 main / 生产</span>
+    <span class="badge badge-src">代码快照：main @ 02908d1（#84–#91 已合）；生产待同步确认</span>
   </div>
 </header>
 
@@ -107,20 +107,19 @@
 <!-- ══ ① 总览 ══ -->
 <div id="panel-overview" class="page-panel active">
   <div class="overview">
-    <div class="overview-card"><div class="num num-red">5</div><div class="label">P0 待上线/待做</div></div>
-    <div class="overview-card"><div class="num num-orange">6</div><div class="label">P1 重要</div></div>
-    <div class="overview-card"><div class="num num-yellow">6</div><div class="label">P2 待办</div></div>
-    <div class="overview-card"><div class="num num-green">6</div><div class="label">P3 规划</div></div>
+    <div class="overview-card"><div class="num num-green">0</div><div class="label">P0 main 待合</div></div>
+    <div class="overview-card"><div class="num num-orange">1</div><div class="label">P1 仍需推进</div></div>
+    <div class="overview-card"><div class="num num-green">0</div><div class="label">P2 main 已合</div></div>
+    <div class="overview-card"><div class="num num-green">6</div><div class="label">P3 本轮已合</div></div>
     <div class="overview-card"><div class="num num-legal">5</div><div class="label">合规波次（最后）</div></div>
-    <div class="overview-card"><div class="num num-accent">3</div><div class="label">PR 待你合并</div></div>
+    <div class="overview-card"><div class="num num-accent">0</div><div class="label">本轮 PR 待合</div></div>
   </div>
 
   <div class="warn">
-    <strong>与线上旧页差异（2026-05-15）：</strong>
-    本地/PR 已实现 handoff 真回复、危机链路、risk_events、CUR-API-01 等，但
-    <code>main</code> 与生产可能仍显示为「未完成」。
-    合并 <a href="https://github.com/hailuo313-tech/hugme/pull/60">PR #60</a>（及 PR-B）并由 Codex 部署后，请在「主任务表」把状态改为已上线。
-    PR #60 当前仍缺 <code>memories.py</code> JWT 补提交。
+    <strong>状态更新（2026-05-17）：</strong>
+    本轮 P2/P3 后端能力（#84–#91）已合入 <code>main</code>。
+    本页已按 main 状态更新；生产是否完全同步以服务器 <code>git rev-parse --short HEAD</code>、
+    <code>/health/detail</code> 与 smoke 结果为准。
   </div>
 
   <div class="roles">
@@ -136,7 +135,7 @@
       <h3>Cursor · 做好</h3>
       <ul>
         <li><code>app/</code> 服务层、API、pytest、migration 代码</li>
-        <li>补 PR #60 memories JWT；开 PR-B 危机+risk</li>
+        <li>P2/P3 后端能力已按 #84–#91 合入 main</li>
         <li>不 SSH 生产、不 merge</li>
       </ul>
     </article>
@@ -144,14 +143,14 @@
       <h3>Devin · 做出来</h3>
       <ul>
         <li>仅 <code>admin/</code>：AuthGate、画像页、memories 链接</li>
-        <li>M1-2 浏览器验收（等 Codex 部署 CUR-API-01）</li>
-        <li>PR #57 AuthGate 与 #60 配合</li>
+        <li>M1-2 浏览器验收已通过</li>
+        <li>Scripts / Characters / OPS-AI 等 Admin 联调按 main 验收</li>
       </ul>
     </article>
     <article class="role-card codex">
       <h3>Codex · 做对并上线</h3>
       <ul>
-        <li>PR review、合并顺序、<code>git pull</code> + compose</li>
+        <li>PR review、<code>git pull</code> + compose、生产 smoke</li>
         <li>smoke / 告警 / Runbook / ops 页同步</li>
         <li>不写 <code>app/services</code> 新业务</li>
       </ul>
@@ -161,12 +160,12 @@
   <p class="section-title">合并与部署顺序（你拍板 · Codex 执行）</p>
   <div class="intro">
     <ol style="margin-left:18px">
-      <li>合并 <strong>PR #57</strong>（Devin AuthGate）→ <strong>PR #60</strong>（Cursor CUR-API + handoff；含 memories 补 commit）</li>
-      <li>合并 <strong>PR-B</strong>（危机 P0-2 + risk_events P0-3）</li>
-      <li>合并 <strong>PR #58</strong>（ops 文档 + 本页 HTML）若未合</li>
+      <li><strong>#84–#91 已合 main</strong>：operator quality、OPS-AI、A/B、未成年人保护、多语言、Onboarding 推荐、send-now、Open API</li>
+      <li>生产同步：服务器 <code>git pull origin main</code> 后重建 API/Admin，并用 smoke 验证</li>
+      <li>ops 页同步：更新本文件后随 main 部署到 <code>/ops/20260514v001.html</code></li>
       <li>Codex：<code>docker compose up -d --build api</code> + <code>admin npm run build</code></li>
-      <li>Devin：DEVIN-01/02 生产浏览器验收</li>
-      <li>P0 Worker / Moderation 由 Cursor 出 PR → 再走 ①–⑤</li>
+      <li>Devin：必要时复验 Admin 关键页面</li>
+      <li>剩余：REL-01、退款/防沉迷深化、并发工作台/指标、合规波次</li>
       <li><strong>合规波次</strong>：全部功能 P0–P2 上线稳定后，交合规同事 + Legal</li>
     </ol>
   </div>
@@ -177,8 +176,8 @@
     <tbody>
       <tr><td>Ops</td><td>OPS-02 / A8-2 / 本页部署到 <code>/ops/</code></td><td><span class="ai-pill ai-codex">Codex</span> <span class="ai-pill ai-you">你</span></td></tr>
       <tr><td>Admin</td><td>DEV-D8-01 · PR #57</td><td><span class="ai-pill ai-devin">Devin</span></td></tr>
-      <tr><td>Backend</td><td>CUR-API-01 + P0-1 handoff（PR #60 + memories 补交）</td><td><span class="ai-pill ai-cursor">Cursor</span></td></tr>
-      <tr><td>Backend</td><td>P0-3 risk + P0-2 危机（PR-B）</td><td><span class="ai-pill ai-cursor">Cursor</span></td></tr>
+      <tr><td>Backend</td><td>P2/P3 后端能力（#84–#91）已合 main，等待生产同步 smoke</td><td><span class="ai-pill ai-cursor">Cursor</span> <span class="ai-pill ai-codex">Codex</span></td></tr>
+      <tr><td>Backend</td><td>生产 smoke：health、Open API、send-now、Admin/OPS-AI 关键接口</td><td><span class="ai-pill ai-codex">Codex</span></td></tr>
       <tr><td>验收</td><td>PR 门禁 · 单测 · 合并决策</td><td><span class="ai-pill ai-you">你</span> <span class="ai-pill ai-cursor">Cursor</span></td></tr>
     </tbody>
   </table>
@@ -201,28 +200,28 @@
       <tr>
         <td><span class="p0">P0</span></td><td>V001-P0-1</td>
         <td>Handoff reply 写 messages + Telegram 真发送</td>
-        <td><span class="st st-pr">PR #60</span></td>
+        <td><span class="st st-done">main 已合</span></td>
         <td><span class="ai-pill ai-cursor">Cursor</span> · <span class="ai-pill ai-codex">Codex</span> 部署</td>
         <td>ops v001 · §2.3 · §9</td>
       </tr>
       <tr>
         <td><span class="p0">P0</span></td><td>V001-P0-2</td>
         <td>危机干预（高危词→安全话术→P0 handoff→S5）</td>
-        <td><span class="st st-pr">PR-B 待合</span></td>
+        <td><span class="st st-done">main 已合</span></td>
         <td><span class="ai-pill ai-cursor">Cursor</span></td>
         <td>ops v001 · §10</td>
       </tr>
       <tr>
         <td><span class="p0">P0</span></td><td>V001-P0-3</td>
         <td>risk_events POST/GET 真实写库 + risk_level 派生</td>
-        <td><span class="st st-pr">PR-B 待合</span></td>
+        <td><span class="st st-done">main 已合</span></td>
         <td><span class="ai-pill ai-cursor">Cursor</span></td>
         <td>ops v001 · §14</td>
       </tr>
       <tr>
         <td><span class="p0">P0</span></td><td>CUR-API-01</td>
         <td><code>GET /admin/users/{id}</code> + memories operator JWT</td>
-        <td><span class="st st-partial">PR #60 缺 memories</span></td>
+        <td><span class="st st-done">main 已合</span></td>
         <td><span class="ai-pill ai-cursor">Cursor</span></td>
         <td>roadmap M1-2 · §15</td>
       </tr>
@@ -247,12 +246,12 @@
   <table>
     <thead><tr><th>级</th><th>ID</th><th>任务</th><th>状态</th><th>主责</th><th>架构章节</th></tr></thead>
     <tbody>
-      <tr><td><span class="p1">P1</span></td><td>POL-01</td><td>Policy Service：7 条件自动创建 handoff_task</td><td><span class="st st-todo">未做</span></td><td><span class="ai-pill ai-cursor">Cursor</span></td><td>§2.3</td></tr>
+      <tr><td><span class="p1">P1</span></td><td>POL-01</td><td>Policy Service：7 条件自动创建 handoff_task</td><td><span class="st st-done">已验收</span></td><td><span class="ai-pill ai-cursor">Cursor</span></td><td>§2.3</td></tr>
       <tr><td><span class="p1">P1</span></td><td>REL-01</td><td>关系阶段 S0–S5 自动升降级</td><td><span class="st st-todo">未做</span></td><td><span class="ai-pill ai-cursor">Cursor</span></td><td>§3</td></tr>
-      <tr><td><span class="p1">P1</span></td><td>RISK-S5</td><td>S5 限制执行（禁 Upsell · 48–72h 关怀 · 7 天恢复）</td><td><span class="st st-partial">危机 PR 部分</span></td><td><span class="ai-pill ai-cursor">Cursor</span></td><td>§3.4 · §10</td></tr>
-      <tr><td><span class="p1">P1</span></td><td>HO-LOCK</td><td>Handoff Redis 分布式锁 + 5min 超时释放</td><td><span class="st st-partial">D5-3 基础 lock</span></td><td><span class="ai-pill ai-cursor">Cursor</span></td><td>§8.3</td></tr>
-      <tr><td><span class="p1">P1</span></td><td>A8-3</td><td>DDL 与 Rev-C 字段对表（risk_score 等）</td><td><span class="st st-partial">部分 migration</span></td><td><span class="ai-pill ai-cursor">Cursor</span> · <span class="ai-pill ai-codex">Codex</span></td><td>§14</td></tr>
-      <tr><td><span class="p1">P1</span></td><td>D4-4-OPS</td><td>生产启用 SCORE_WORKER + handoff 阈值 smoke</td><td><span class="st st-todo">运维验收</span></td><td><span class="ai-pill ai-codex">Codex</span></td><td>§4 · roadmap D4-4</td></tr>
+      <tr><td><span class="p1">P1</span></td><td>RISK-S5</td><td>S5 限制执行（禁 Upsell · 48–72h 关怀 · 7 天恢复）</td><td><span class="st st-done">main 已合</span></td><td><span class="ai-pill ai-cursor">Cursor</span></td><td>§3.4 · §10</td></tr>
+      <tr><td><span class="p1">P1</span></td><td>HO-LOCK</td><td>Handoff Redis 分布式锁 + 5min 超时释放</td><td><span class="st st-done">已完成</span></td><td><span class="ai-pill ai-cursor">Cursor</span></td><td>§8.3</td></tr>
+      <tr><td><span class="p1">P1</span></td><td>A8-3</td><td>DDL 与 Rev-C 字段对表（risk_score 等）</td><td><span class="st st-done">已完成</span></td><td><span class="ai-pill ai-cursor">Cursor</span> · <span class="ai-pill ai-codex">Codex</span></td><td>§14</td></tr>
+      <tr><td><span class="p1">P1</span></td><td>D4-4-OPS</td><td>生产启用 SCORE_WORKER + handoff 阈值 smoke</td><td><span class="st st-done">生产验收通过</span></td><td><span class="ai-pill ai-codex">Codex</span></td><td>§4 · roadmap D4-4</td></tr>
     </tbody>
   </table>
 
@@ -260,27 +259,27 @@
   <table>
     <thead><tr><th>级</th><th>任务</th><th>状态</th><th>主责</th></tr></thead>
     <tbody>
-      <tr><td><span class="p2">P2</span></td><td>话术库 scripts 表 + CRUD + suggest</td><td><span class="st st-todo">未做</span></td><td><span class="ai-pill ai-cursor">Cursor</span> · <span class="ai-pill ai-devin">Devin</span> UI</td></tr>
-      <tr><td><span class="p2">P2</span></td><td>角色 POST/PATCH/stats</td><td><span class="st st-todo">未做</span></td><td><span class="ai-pill ai-cursor">Cursor</span></td></tr>
-      <tr><td><span class="p2">P2</span></td><td>ConsistencyScore 发送前三层校验</td><td><span class="st st-todo">未做</span></td><td><span class="ai-pill ai-cursor">Cursor</span></td></tr>
-      <tr><td><span class="p2">P2</span></td><td>订单退款 + 防沉迷限额</td><td><span class="st st-todo">未做</span></td><td><span class="ai-pill ai-cursor">Cursor</span></td></tr>
-      <tr><td><span class="p2">P2</span></td><td>POST /users/{id}/freeze</td><td><span class="st st-todo">未做</span></td><td><span class="ai-pill ai-cursor">Cursor</span></td></tr>
-      <tr><td><span class="p2">P2</span></td><td>operator_quality_scores 质检</td><td><span class="st st-todo">未做</span></td><td><span class="ai-pill ai-cursor">Cursor</span> · <span class="ai-pill ai-codex">Codex</span> 指标</td></tr>
-      <tr><td><span class="p2">P2</span></td><td>OPS-AI-01 摘要 + 3 条推荐回复 API/UI</td><td><span class="st st-todo">未做</span></td><td><span class="ai-pill ai-pair">Cursor→Devin</span></td></tr>
-      <tr><td><span class="p2">P2</span></td><td>M1-2 Admin 画像真数据（Devin 验收）</td><td><span class="st st-partial">等 #60 部署</span></td><td><span class="ai-pill ai-devin">Devin</span></td></tr>
+      <tr><td><span class="p2">P2</span></td><td>话术库 scripts 表 + CRUD + suggest</td><td><span class="st st-done">main 已合</span></td><td><span class="ai-pill ai-cursor">Cursor</span> · <span class="ai-pill ai-devin">Devin</span> UI</td></tr>
+      <tr><td><span class="p2">P2</span></td><td>角色 POST/PATCH/stats</td><td><span class="st st-done">main 已合</span></td><td><span class="ai-pill ai-cursor">Cursor</span></td></tr>
+      <tr><td><span class="p2">P2</span></td><td>ConsistencyScore 发送前三层校验</td><td><span class="st st-done">main 已合</span></td><td><span class="ai-pill ai-cursor">Cursor</span></td></tr>
+      <tr><td><span class="p2">P2</span></td><td>订单退款 + 防沉迷限额</td><td><span class="st st-partial">未成年人消费保护已合</span></td><td><span class="ai-pill ai-cursor">Cursor</span></td></tr>
+      <tr><td><span class="p2">P2</span></td><td>POST /users/{id}/freeze</td><td><span class="st st-done">main 已合</span></td><td><span class="ai-pill ai-cursor">Cursor</span></td></tr>
+      <tr><td><span class="p2">P2</span></td><td>operator_quality_scores 质检</td><td><span class="st st-done">main 已合</span></td><td><span class="ai-pill ai-cursor">Cursor</span> · <span class="ai-pill ai-codex">Codex</span> 指标</td></tr>
+      <tr><td><span class="p2">P2</span></td><td>OPS-AI-01 摘要 + 3 条推荐回复 API/UI</td><td><span class="st st-done">main 已合</span></td><td><span class="ai-pill ai-pair">Cursor→Devin</span></td></tr>
+      <tr><td><span class="p2">P2</span></td><td>M1-2 Admin 画像真数据（Devin 验收）</td><td><span class="st st-done">验收通过</span></td><td><span class="ai-pill ai-devin">Devin</span></td></tr>
     </tbody>
   </table>
 
   <p class="section-title">P3 — 规划（§18 第三/四阶段）</p>
   <table>
-    <thead><tr><th>级</th><th>任务</th><th>主责</th></tr></thead>
+    <thead><tr><th>级</th><th>任务</th><th>状态</th><th>主责</th></tr></thead>
     <tbody>
-      <tr><td><span class="p3">P3</span></td><td>A/B 四表 + 实验 API</td><td><span class="ai-pill ai-cursor">Cursor</span></td></tr>
-      <tr><td><span class="p3">P3</span></td><td>未成年人保护逻辑（消费/推送/内容）</td><td><span class="ai-pill ai-cursor">Cursor</span> · <span class="ai-pill ai-legal">合规</span></td></tr>
-      <tr><td><span class="p3">P3</span></td><td>多语言 Prompt + 情绪词库</td><td><span class="ai-pill ai-cursor">Cursor</span></td></tr>
-      <tr><td><span class="p3">P3</span></td><td>Onboarding 角色推荐（非 hardcode）</td><td><span class="ai-pill ai-cursor">Cursor</span></td></tr>
-      <tr><td><span class="p3">P3</span></td><td>POST /notifications/send-now</td><td><span class="ai-pill ai-cursor">Cursor</span></td></tr>
-      <tr><td><span class="p3">P3</span></td><td>App / Web / 开放 API</td><td><span class="ai-pill ai-codex">Codex</span> 拆卡</td></tr>
+      <tr><td><span class="p3">P3</span></td><td>A/B 四表 + 实验 API</td><td><span class="st st-done">main 已合 #86</span></td><td><span class="ai-pill ai-cursor">Cursor</span></td></tr>
+      <tr><td><span class="p3">P3</span></td><td>未成年人保护逻辑（消费/推送/内容）</td><td><span class="st st-done">main 已合 #87</span></td><td><span class="ai-pill ai-cursor">Cursor</span> · <span class="ai-pill ai-legal">合规</span></td></tr>
+      <tr><td><span class="p3">P3</span></td><td>多语言 Prompt + 情绪词库</td><td><span class="st st-done">main 已合 #88</span></td><td><span class="ai-pill ai-cursor">Cursor</span></td></tr>
+      <tr><td><span class="p3">P3</span></td><td>Onboarding 角色推荐（非 hardcode）</td><td><span class="st st-done">main 已合 #89</span></td><td><span class="ai-pill ai-cursor">Cursor</span></td></tr>
+      <tr><td><span class="p3">P3</span></td><td>POST /notifications/send-now</td><td><span class="st st-done">main 已合 #90</span></td><td><span class="ai-pill ai-cursor">Cursor</span></td></tr>
+      <tr><td><span class="p3">P3</span></td><td>App / Web / 开放 API</td><td><span class="st st-done">main 已合 #91</span></td><td><span class="ai-pill ai-codex">Codex</span></td></tr>
     </tbody>
   </table>
 
@@ -295,6 +294,8 @@
     <div class="done-item">silent_reactivation 入库 · Prometheus/Grafana</div>
     <div class="done-item">trace_id 日志 · GDPR 数据导出</div>
     <div class="done-item">D0–D7 roadmap 块（代码层）已标记完成</div>
+    <div class="done-item">P2 scripts / characters / consistency / freeze / quality / OPS-AI</div>
+    <div class="done-item">P3 A/B · minor protection · multilingual · onboarding recommend · send-now · open API</div>
   </div>
 </div>
 
@@ -306,19 +307,19 @@
   </div>
   <p class="section-title">按架构章节 · 未完成摘要</p>
   <ul class="arch-map">
-    <li><strong>§2.3 真人接管</strong> — Policy 自动触发；运营回复生产验证（PR 待部署）</li>
+    <li><strong>§2.3 真人接管</strong> — Policy 自动触发已验收；运营回复能力已合 main，生产同步后复验</li>
     <li><strong>§3 关系阶段</strong> — 自动升降级；S5 商业限制全量执行</li>
-    <li><strong>§4 Loneliness</strong> — 生产 SCORE_WORKER 与 handoff 阈值联动验收（D4-4-OPS）</li>
-    <li><strong>§6 Character OS</strong> — ConsistencyScore；角色推荐 §6.6；角色 CRUD 不全</li>
-    <li><strong>§7 通知</strong> — Worker 真发送；send-now；EU opt-in 字段语义</li>
-    <li><strong>§8 运营工作台</strong> — 分布式锁；OPS-AI-01 辅助内容；质检表</li>
-    <li><strong>§9 AI/真人协同</strong> — handoff 真回复（PR）；危机全链路（PR-B）</li>
-    <li><strong>§10 风控</strong> — Moderation 双层；risk_events（PR-B）；未成年人执行</li>
+    <li><strong>§4 Loneliness</strong> — SCORE_WORKER 与 handoff 阈值联动生产 smoke 已通过</li>
+    <li><strong>§6 Character OS</strong> — ConsistencyScore、角色 CRUD、Onboarding 推荐已合 main</li>
+    <li><strong>§7 通知</strong> — Worker 真发送与 send-now 已合 main；EU opt-in 字段语义待合规确认</li>
+    <li><strong>§8 运营工作台</strong> — 分布式锁、OPS-AI-01、质检表已合 main</li>
+    <li><strong>§9 AI/真人协同</strong> — handoff 真回复与危机链路已合 main，生产同步后复验</li>
+    <li><strong>§10 风控</strong> — Moderation 双层、risk_events、未成年人保护已合 main</li>
     <li><strong>§11 支付</strong> — 退款；防沉迷限额</li>
-    <li><strong>§12 多语言</strong> — langdetect + Prompt 切换</li>
+    <li><strong>§12 多语言</strong> — 多语言 Prompt + 情绪词库已合 main</li>
     <li><strong>§13 A/B</strong> — 全套表与 API</li>
     <li><strong>§14 DB</strong> — scripts / operator_quality_scores / experiments 等表；Rev-C 字段 rename</li>
-    <li><strong>§15 API</strong> — freeze / delete-request / scripts / send-now 等路由</li>
+    <li><strong>§15 API</strong> — freeze / scripts / send-now / open API 等路由已合 main</li>
     <li><strong>§16–17</strong> — K8s 规模化；部分告警与业务指标未接线</li>
     <li><strong>§18 第二阶段+</strong> — VIP 体系深化、漏斗、多角色商城等</li>
     <li><strong>附录 A.8</strong> — OpenAPI 三方签字；法务 review 营销 opt-in（→ 合规波次）</li>
@@ -329,9 +330,9 @@
     <thead><tr><th>阶段</th><th>架构目标</th><th>完成度（估）</th><th>缺口主责</th></tr></thead>
     <tbody>
       <tr><td>第一阶段 MVP</td><td>§18 清单 1–10</td><td>~85%</td><td>P0 Worker/Moderation；handoff/危机部署</td></tr>
-      <tr><td>第二阶段</td><td>关系/转化/话术/AI 辅助运营</td><td>~15%</td><td><span class="ai-pill ai-cursor">Cursor</span> + <span class="ai-pill ai-devin">Devin</span></td></tr>
-      <tr><td>第三阶段</td><td>并发工作台/风控/A/B/多语言</td><td>~5%</td><td><span class="ai-pill ai-cursor">Cursor</span></td></tr>
-      <tr><td>第四阶段</td><td>App/Web/开放平台</td><td>0%</td><td><span class="ai-pill ai-codex">Codex</span> 规划</td></tr>
+      <tr><td>第二阶段</td><td>关系/转化/话术/AI 辅助运营</td><td>~65%</td><td>REL-01 / 转化深化仍待推进</td></tr>
+      <tr><td>第三阶段</td><td>并发工作台/风控/A/B/多语言</td><td>~55%</td><td>A/B、多语言、未成年人保护已合；并发工作台/指标仍待推进</td></tr>
+      <tr><td>第四阶段</td><td>App/Web/开放平台</td><td>~25%</td><td>Open API 已合 main；App/Web 客户端仍待实现</td></tr>
     </tbody>
   </table>
 
@@ -344,8 +345,8 @@
       <tr><td>3 Onboarding 基础</td><td><span class="st st-done">OK</span></td><td></td></tr>
       <tr><td>4 AI 上下文回复 &lt;3s</td><td><span class="st st-done">OK</span></td><td>P95 生产需 D8-2 举证</td></tr>
       <tr><td>5 后台看会话</td><td><span class="st st-done">OK</span></td><td></td></tr>
-      <tr><td>6 人工接管并回复</td><td><span class="st st-partial">PR/部署</span></td><td>P0-1 + CUR-API-01</td></tr>
-      <tr><td>7 用户普通/VIP/风险标记</td><td><span class="st st-partial">部分</span></td><td>risk_level 派生待 PR-B</td></tr>
+      <tr><td>6 人工接管并回复</td><td><span class="st st-done">main 已合</span></td><td>生产同步后复验</td></tr>
+      <tr><td>7 用户普通/VIP/风险标记</td><td><span class="st st-done">main 已合</span></td><td>risk_level 派生与用户冻结能力已合</td></tr>
       <tr><td>8 低频回流通知</td><td><span class="st st-done">OK</span></td><td>PR #68 worker；默认 <code>NOTIFICATION_SENDER_ENABLED=0</code>，开 flag 后真发 Telegram</td></tr>
       <tr><td>9 全链路日志</td><td><span class="st st-done">OK</span></td><td>trace_id</td></tr>
     </tbody>
@@ -363,9 +364,9 @@
   <table>
     <thead><tr><th>ID</th><th>任务</th><th>主责</th><th>未闭环原因</th></tr></thead>
     <tbody>
-      <tr><td>D4-4</td><td>profile_score_worker 生产启用</td><td><span class="ai-pill ai-codex">Codex</span></td><td>SCORE_WORKER_ENABLED 默认 false；需 OPS smoke</td></tr>
-      <tr><td>D5-2</td><td>用户画像页真数据</td><td><span class="ai-pill ai-devin">Devin</span></td><td>依赖 CUR-API-01 合并+部署（PR #60）</td></tr>
-      <tr><td>D5-3</td><td>Handoff 5 分钟分布式锁</td><td><span class="ai-pill ai-cursor">Cursor</span></td><td>与 HO-LOCK / P1 合并实现</td></tr>
+      <tr><td>D4-4</td><td>profile_score_worker 生产启用</td><td><span class="ai-pill ai-codex">Codex</span></td><td><span class="st st-done">生产 smoke 已通过</span></td></tr>
+      <tr><td>D5-2</td><td>用户画像页真数据</td><td><span class="ai-pill ai-devin">Devin</span></td><td><span class="st st-done">联调验收通过</span></td></tr>
+      <tr><td>D5-3</td><td>Handoff 5 分钟分布式锁</td><td><span class="ai-pill ai-cursor">Cursor</span></td><td><span class="st st-done">已完成</span></td></tr>
       <tr><td>D8-2</td><td>向量 P95 / migration 生产举证</td><td><span class="ai-pill ai-pair">Cursor→Codex</span></td><td>embedding backfill 后复跑</td></tr>
       <tr><td>D8-4</td><td>二测全量看板 / token 成本</td><td><span class="ai-pill ai-codex">Codex</span></td><td>文档已合，指标栏可迭代</td></tr>
     </tbody>
@@ -379,8 +380,8 @@
       <tr><td>D1 Telegram 闭环</td><td><span class="st st-done">OK</span></td></tr>
       <tr><td>D2 AI + Onboarding</td><td><span class="st st-done">OK</span></td></tr>
       <tr><td>D4 真的「记得你」</td><td><span class="st st-done">代码 OK</span></td></tr>
-      <tr><td>D5 真人接管发消息</td><td><span class="st st-partial">PR #60</span></td></tr>
-      <tr><td>D6 赚钱+召回</td><td><span class="st st-partial">支付 OK · 推送未发</span></td></tr>
+      <tr><td>D5 真人接管发消息</td><td><span class="st st-done">main 已合</span></td></tr>
+      <tr><td>D6 赚钱+召回</td><td><span class="st st-done">支付/推送 main 已合</span></td></tr>
       <tr><td>D7 v0.1.0 内测</td><td><span class="st st-partial">tag 有 · 二轮验收中</span></td></tr>
     </tbody>
   </table>
@@ -391,7 +392,7 @@
     <tbody>
       <tr><td>D</td><td>Admin 链接 / 画像入口 / loading</td><td><span class="ai-pill ai-devin">Devin</span></td><td>进行中 · 配合 #57</td></tr>
       <tr><td>C</td><td>CI 只读 + RUNBOOK smoke + env 清单</td><td><span class="ai-pill ai-codex">Codex</span></td><td>文档 PR #58</td></tr>
-      <tr><td>R</td><td>admin/users API + memories JWT</td><td><span class="ai-pill ai-cursor">Cursor</span></td><td>PR #60</td></tr>
+      <tr><td>R</td><td>admin/users API + memories JWT</td><td><span class="ai-pill ai-cursor">Cursor</span></td><td><span class="st st-done">main 已合</span></td></tr>
     </tbody>
   </table>
 </div>
