@@ -544,6 +544,24 @@ async def _load_db_context(
             "orchestrator.db.profile_load_failed"
         )
 
+    if character_row is None and profile_row is not None and profile_row.get("current_character_id"):
+        try:
+            row = (
+                await db.execute(
+                    _sql_text("SELECT * FROM characters WHERE id = :cid"),
+                    {"cid": profile_row.get("current_character_id")},
+                )
+            ).fetchone()
+            if row is not None and getattr(row, "_mapping", None) is not None:
+                mapping = dict(row._mapping)
+                if mapping.get("id") is not None or mapping.get("name") is not None:
+                    character_row = mapping
+                    log.info("orchestrator.db.character_loaded_from_profile")
+        except Exception as exc:
+            log.bind(error_type=type(exc).__name__).warning(
+                "orchestrator.db.profile_character_load_failed"
+            )
+
     return character_row, profile_row
 
 

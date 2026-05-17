@@ -608,6 +608,80 @@ async def test_memory_retrieve_injected_into_prompt_when_enabled(
 
 
 @pytest.mark.asyncio
+async def test_character_context_falls_back_to_profile_current_character(
+    monkeypatch, llm_orchestrator
+):
+    """Telegram conversations may not carry character_id; use user profile assignment."""
+    captured: dict[str, Any] = {}
+
+    async def fake_chat(*, messages, trace_id, **_kwargs):
+        captured["messages"] = messages
+        return _LLMResultStub(content="ok")
+
+    async def _pass_refresh(**kwargs):
+        return kwargs["profile_row"]
+
+    monkeypatch.setattr(llm_orchestrator, "llm_chat", fake_chat)
+    monkeypatch.setattr(llm_orchestrator, "refresh_loneliness_score", _pass_refresh)
+    monkeypatch.setattr(llm_orchestrator.settings, "LLM_ECHO_FALLBACK", False)
+    monkeypatch.setattr(llm_orchestrator.settings, "MEMORY_RETRIEVE_IN_PROMPT", False)
+
+    class _FakeRow:
+        def __init__(self, mapping: dict[str, Any]):
+            self._mapping = mapping
+
+    class _FakeExecResult:
+        def __init__(self, row):
+            self._row = row
+
+        def fetchone(self):
+            return self._row
+
+    class _FakeDB:
+        async def execute(self, stmt, params=None):
+            sql = str(getattr(stmt, "text", stmt))
+            if "LEFT JOIN characters ch ON ch.id = c.character_id" in sql:
+                return _FakeExecResult(None)
+            if "FROM user_profiles" in sql:
+                return _FakeExecResult(
+                    _FakeRow(
+                        {
+                            "current_character_id": "char-profile",
+                            "loneliness_score": 40,
+                        }
+                    )
+                )
+            if "SELECT * FROM characters WHERE id" in sql:
+                return _FakeExecResult(
+                    _FakeRow(
+                        {
+                            "id": "char-profile",
+                            "name": "Mira",
+                            "profile_details": {
+                                "height": "169cm",
+                                "relationship_status": "没有男朋友",
+                            },
+                        }
+                    )
+                )
+            return _FakeExecResult(None)
+
+    reply = await llm_orchestrator.generate_reply(
+        user_id="u1",
+        conversation_id="conv-without-character",
+        user_text="你多高？",
+        trace_id="t-profile-character",
+        db=_FakeDB(),
+    )
+
+    assert reply == "ok"
+    system = captured["messages"][0]["content"]
+    assert "Mira" in system
+    assert "身高：169cm" in system
+    assert "感情状态：没有男朋友" in system
+
+
+@pytest.mark.asyncio
 async def test_memory_consistency_filters_conflicting_hit_before_l6(
     monkeypatch, llm_orchestrator
 ):

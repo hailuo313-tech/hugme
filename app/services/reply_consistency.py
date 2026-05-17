@@ -105,10 +105,22 @@ async def load_reply_consistency_context(db: Any, conversation_id: str) -> dict[
         await db.execute(
             text(
                 """
-                SELECT ch.*, up.relationship_stage, up.loneliness_score
+                SELECT COALESCE(ch.id, profile_ch.id) AS id,
+                       COALESCE(ch.name, profile_ch.name) AS name,
+                       COALESCE(ch.reply_length, profile_ch.reply_length) AS reply_length,
+                       COALESCE(ch.tone, profile_ch.tone) AS tone,
+                       COALESCE(ch.emoji_frequency, profile_ch.emoji_frequency) AS emoji_frequency,
+                       COALESCE(ch.gentle_score, profile_ch.gentle_score) AS gentle_score,
+                       COALESCE(ch.proactive_score, profile_ch.proactive_score) AS proactive_score,
+                       COALESCE(ch.flirt_score, profile_ch.flirt_score) AS flirt_score,
+                       COALESCE(ch.humor_score, profile_ch.humor_score) AS humor_score,
+                       COALESCE(ch.emotional_depth_score, profile_ch.emotional_depth_score) AS emotional_depth_score,
+                       COALESCE(ch.boundary_score, profile_ch.boundary_score) AS boundary_score,
+                       up.relationship_stage, up.loneliness_score
                 FROM conversations c
                 LEFT JOIN characters ch ON ch.id = c.character_id
                 LEFT JOIN user_profiles up ON up.user_id = c.user_id
+                LEFT JOIN characters profile_ch ON profile_ch.id = up.current_character_id
                 WHERE c.id = :cid
                 """
             ),
