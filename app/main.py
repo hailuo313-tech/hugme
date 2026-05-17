@@ -27,6 +27,7 @@ from api.llm import router as llm_router
 from api.onboarding import router as onboarding_router
 from api.admin import router as admin_router
 from api.operator_quality import router as operator_quality_router
+from api.ops_ai import router as ops_ai_router
 from core.database import init_db
 from services.silent_reactivation_scheduler import (
     start_scheduler as start_silent_reactivation_scheduler,
@@ -168,5 +169,6 @@ app.include_router(
     prefix="/api/v1/operator-quality",
     tags=["operator-quality"],
 )
+app.include_router(ops_ai_router, prefix="/api/v1/ops-ai", tags=["ops-ai"])
 
 Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
