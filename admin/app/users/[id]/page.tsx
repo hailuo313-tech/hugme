@@ -38,6 +38,7 @@ interface UserRow {
 
 interface ProfileRow {
   user_id: string;
+  current_character_id: string | null;
   interests: unknown;
   chat_style: string | null;
   forbidden_topics: unknown;
@@ -68,6 +69,21 @@ interface AdminUserResponse {
   user: UserRow | null;
   profile: ProfileRow | null;
   memories: MemoryRow[];
+}
+
+interface CharacterOption {
+  id: string;
+  name: string;
+  age_feel?: string | null;
+  region?: string | null;
+  occupation?: string | null;
+  status?: string | null;
+}
+
+interface CharacterUpdateResponse {
+  user_id: string;
+  character: CharacterOption;
+  updated_conversations: number | null;
 }
 
 // ── 工具函数 ──────────────────────────────────────────────────────
@@ -186,21 +202,58 @@ function UserProfileContent({ operator }: { operator: Operator }) {
   const userId = params.id;
 
   const [data, setData] = useState<AdminUserResponse | null>(null);
+  const [characters, setCharacters] = useState<CharacterOption[]>([]);
+  const [selectedCharacterId, setSelectedCharacterId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [characterSaving, setCharacterSaving] = useState(false);
+  const [characterMessage, setCharacterMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!userId) return;
     setLoading(true);
     setError(null);
 
-    apiFetch<AdminUserResponse>(
-      `/admin/users/${encodeURIComponent(userId)}`
-    )
-      .then((d) => setData(d))
+    Promise.all([
+      apiFetch<AdminUserResponse>(`/admin/users/${encodeURIComponent(userId)}`),
+      apiFetch<CharacterOption[]>("/characters"),
+    ])
+      .then(([d, chars]) => {
+        setData(d);
+        setCharacters(chars);
+        setSelectedCharacterId(d.profile?.current_character_id || "");
+      })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
   }, [userId]);
+
+  async function handleCharacterSave() {
+    if (!userId || !selectedCharacterId) return;
+    setCharacterSaving(true);
+    setCharacterMessage(null);
+    setError(null);
+    try {
+      const res = await apiFetch<CharacterUpdateResponse>(
+        `/characters/users/${encodeURIComponent(userId)}/character`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ character_id: selectedCharacterId }),
+        }
+      );
+      const refreshed = await apiFetch<AdminUserResponse>(
+        `/admin/users/${encodeURIComponent(userId)}`
+      );
+      setData(refreshed);
+      setSelectedCharacterId(refreshed.profile?.current_character_id || res.character.id);
+      setCharacterMessage(
+        `已切换为 ${res.character.name}，已同步 ${res.updated_conversations ?? 0} 个 AI_ACTIVE 会话。`
+      );
+    } catch (e) {
+      setCharacterMessage(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCharacterSaving(false);
+    }
+  }
 
   function handleLogout() {
     clearAuth();
@@ -212,6 +265,10 @@ function UserProfileContent({ operator }: { operator: Operator }) {
   const user = data?.user ?? null;
   const profile = data?.profile ?? null;
   const memories = data?.memories ?? [];
+  const currentCharacter = characters.find(
+    (c) => c.id === profile?.current_character_id
+  );
+  const selectedCharacter = characters.find((c) => c.id === selectedCharacterId);
 
   return (
     <div className="min-h-screen bg-slate-900 text-white">
@@ -385,6 +442,78 @@ function UserProfileContent({ operator }: { operator: Operator }) {
                   value={fmtTime(user?.updated_at)}
                 />
               </MetaGrid>
+            </Section>
+
+            {/* 角色切换 */}
+            <Section title="角色切换">
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-4">
+                  <MetaItem
+                    label="当前角色"
+                    value={
+                      currentCharacter
+                        ? `${currentCharacter.name}${currentCharacter.region ? ` · ${currentCharacter.region}` : ""}`
+                        : profile?.current_character_id || "未绑定"
+                    }
+                    mono={!currentCharacter && !!profile?.current_character_id}
+                  />
+                  <MetaItem
+                    label="切换后生效范围"
+                    value="该账号画像 + 当前 AI_ACTIVE 会话"
+                    className="sm:col-span-2"
+                  />
+                </div>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <select
+                    value={selectedCharacterId}
+                    onChange={(e) => {
+                      setSelectedCharacterId(e.target.value);
+                      setCharacterMessage(null);
+                    }}
+                    className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                  >
+                    <option value="">选择角色</option>
+                    {characters.map((char) => (
+                      <option key={char.id} value={char.id}>
+                        {char.name}
+                        {char.region ? ` · ${char.region}` : ""}
+                        {char.occupation ? ` · ${char.occupation}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleCharacterSave}
+                    disabled={
+                      characterSaving ||
+                      !selectedCharacterId ||
+                      selectedCharacterId === profile?.current_character_id
+                    }
+                    className="px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium transition"
+                  >
+                    {characterSaving ? "保存中…" : "保存切换"}
+                  </button>
+                </div>
+                {selectedCharacter && (
+                  <p className="text-xs text-slate-500">
+                    将切换为：{selectedCharacter.name}
+                    {selectedCharacter.age_feel ? ` · ${selectedCharacter.age_feel}` : ""}
+                    {selectedCharacter.region ? ` · ${selectedCharacter.region}` : ""}
+                    {selectedCharacter.occupation ? ` · ${selectedCharacter.occupation}` : ""}
+                  </p>
+                )}
+                {characterMessage && (
+                  <p
+                    className={`text-sm ${
+                      characterMessage.startsWith("已切换")
+                        ? "text-emerald-400"
+                        : "text-rose-300"
+                    }`}
+                  >
+                    {characterMessage}
+                  </p>
+                )}
+              </div>
             </Section>
 
             {/* 画像评分 */}

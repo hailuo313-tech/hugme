@@ -210,6 +210,71 @@ def test_character_stats_returns_counts():
     assert data["profile_counts"] == [{"character_id": CHAR_ID, "count": 3}]
 
 
+def test_assign_user_character_updates_profile_and_active_conversations():
+    user_id = "00000000-0000-0000-0000-000000000901"
+    user = _row({"id": user_id})
+    character = _row(
+        {
+            "id": CHAR_ID,
+            "name": "Mira",
+            "age_feel": "25",
+            "region": "US",
+            "occupation": "designer",
+        }
+    )
+    update_conversations = MagicMock()
+    update_conversations.rowcount = 2
+    db = MagicMock()
+    db.execute = AsyncMock(
+        side_effect=[
+            _result(one=user),
+            _result(one=character),
+            _result(),
+            update_conversations,
+        ]
+    )
+    db.commit = AsyncMock()
+    client = TestClient(_app(db))
+
+    r = client.patch(
+        f"/api/v1/characters/users/{user_id}/character",
+        json={"character_id": CHAR_ID},
+    )
+
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["character"]["id"] == CHAR_ID
+    assert data["character"]["name"] == "Mira"
+    assert data["updated_conversations"] == 2
+    profile_sql = str(db.execute.await_args_list[2].args[0])
+    conv_sql = str(db.execute.await_args_list[3].args[0])
+    assert "INSERT INTO user_profiles" in profile_sql
+    assert "current_character_id" in profile_sql
+    assert "UPDATE conversations" in conv_sql
+    assert "AI_ACTIVE" in conv_sql
+    db.commit.assert_awaited_once()
+
+
+def test_assign_user_character_requires_active_character():
+    user_id = "00000000-0000-0000-0000-000000000901"
+    db = MagicMock()
+    db.execute = AsyncMock(
+        side_effect=[
+            _result(one=_row({"id": user_id})),
+            _result(one=None),
+        ]
+    )
+    client = TestClient(_app(db))
+
+    r = client.patch(
+        f"/api/v1/characters/users/{user_id}/character",
+        json={"character_id": CHAR_ID},
+    )
+
+    assert r.status_code == 404, r.text
+    assert r.json()["detail"] == "active character not found"
+
+
 def test_include_inactive_requires_operator_token():
     db = MagicMock()
     client = TestClient(_app(db, with_auth=False))
