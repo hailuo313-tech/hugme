@@ -187,6 +187,8 @@ def _render_character(char: dict[str, Any] | None, reply_language: str) -> str:
     boundary = _score_band(char.get("boundary_score"))
     localized_prompt = _localized_character_prompt(char, reply_language)
     localized_line = f"\n多语言角色补充（{language_name(reply_language)}）：{localized_prompt}" if localized_prompt else ""
+    profile_details = _render_profile_details(char.get("profile_details"))
+    profile_line = f"\n结构化角色事实（用户问年龄、身高、出生地、爱好、感情状态等身份事实时优先直接引用）：\n{profile_details}" if profile_details else ""
 
     return (
         f"姓名：{name}（体感 {age}，{region}，{occupation}）\n"
@@ -199,6 +201,7 @@ def _render_character(char: dict[str, Any] | None, reply_language: str) -> str:
         f"- 幽默 humor={humor}\n"
         f"- 情感深度 emotional_depth={depth}\n"
         f"- 边界感 boundary={boundary}（越高越克制，越严守 L1）"
+        f"{profile_line}"
         f"{localized_line}"
     )
 
@@ -241,13 +244,18 @@ def _render_relationship(profile: dict[str, Any] | None, s5_phase: str | None) -
 
 def _render_anchor(s5_phase: str | None, reply_language: str) -> str:
     language_anchor = f"\n最终输出语言：{language_name(reply_language)}（language_code={reply_language}）。"
+    persona_anchor = (
+        "\n如果用户询问角色自己的出生地、年龄、身高、职业、家庭、爱好、感情状态、日常习惯或价值观，"
+        "优先根据 L3_CHARACTER 的结构化角色事实直接回答；没有配置的事实才自然说明还没告诉过你。"
+    )
     if s5_phase:
         return (
             _L10_ANCHOR
             + language_anchor
+            + persona_anchor
             + "\nS5 危机恢复期间：禁止 Upsell / VIP / 付费引导，直到运营完成恢复。"
         )
-    return _L10_ANCHOR + language_anchor
+    return _L10_ANCHOR + language_anchor + persona_anchor
 
 
 def _render_user_profile(profile: dict[str, Any] | None) -> str:
@@ -405,6 +413,54 @@ def _as_str_list(v: Any) -> list[str]:
         v = v.strip()
         return [v] if v else []
     return []
+
+
+_PROFILE_DETAIL_LABELS: dict[str, str] = {
+    "age": "年龄",
+    "birthplace": "出生地",
+    "current_city": "现居城市",
+    "height": "身高",
+    "body_type": "体型",
+    "face_style": "面部气质",
+    "clothing_style": "穿衣风格",
+    "distinctive_feature": "辨识特征",
+    "occupation": "职业",
+    "education": "教育背景",
+    "daily_rhythm": "作息节奏",
+    "living_situation": "居住状态",
+    "hobby": "爱好",
+    "family_origin": "家庭出身",
+    "sibling_position": "手足位置",
+    "family_relationship": "家庭关系",
+    "childhood_background": "童年背景",
+    "relationship_status": "感情状态",
+    "attachment_style": "依恋风格",
+    "temperament": "性格底色",
+    "emotional_expression": "情绪表达",
+    "humor_style": "幽默风格",
+    "core_value": "核心价值观",
+    "worldview": "世界观",
+    "money_attitude": "金钱观",
+    "life_goal": "人生目标",
+    "social_style": "社交风格",
+    "weekend_activity": "周末习惯",
+    "favorite_topic": "常聊话题",
+    "stress_response": "压力反应",
+}
+
+
+def _render_profile_details(details: Any) -> str:
+    if not isinstance(details, dict):
+        return ""
+    lines = []
+    for key, label in _PROFILE_DETAIL_LABELS.items():
+        value = details.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            lines.append(f"- {label}：{text}")
+    return "\n".join(lines)
 
 
 def _resolve_reply_language(inp: PromptInput) -> str:

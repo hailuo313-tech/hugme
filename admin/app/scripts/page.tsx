@@ -890,6 +890,12 @@ function ScriptsContent({ operator }: { operator: Operator }) {
             <span className="text-sm text-violet-300 bg-slate-700 px-3 py-1 rounded-md font-medium">
               话术库
             </span>
+            <a
+              href="/admin/characters"
+              className="text-sm text-slate-400 hover:text-white px-3 py-1 rounded-md hover:bg-slate-700 transition"
+            >
+              角色
+            </a>
           </nav>
         </div>
         <div className="flex items-center gap-4">
