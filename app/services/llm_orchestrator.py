@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import time
 from typing import Any
 
@@ -654,7 +655,7 @@ def _short_hash(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
 
 
-# 系统信息泄漏特征前缀列表（assistant 历史消息含这些前缀时丢弃，避免 LLM 模仿）
+# 系统信息泄漏特征前缀列表（assistant 历史消息以这些前缀开头时丢弃）
 _SYSTEM_LEAK_PREFIXES: tuple[str, ...] = (
     "（根据角色",
     "(根据角色",
@@ -665,9 +666,26 @@ _SYSTEM_LEAK_PREFIXES: tuple[str, ...] = (
     "echo: ",
 )
 
+# 系统信息泄漏特征正则（括号注释出现在回复任意位置均视为污染）
+_SYSTEM_LEAK_PATTERN = re.compile(
+    r"[（(]"                           # 中文或英文左括号
+    r"(?:"
+    r"根据角色|根据profile|根据系统"    # "根据XX" 系列
+    r"|符合角色|遵守.*角色设定"         # "符合/遵守角色设定"
+    r"|回答.*角色|角色设定"             # 含"角色设定"
+    r"|L\d+.*角色|L3|L4|L5"            # prompt layer 标签
+    r"|避免.*承诺|回答简洁|回答保持"    # 指令性说明
+    r")",
+    re.DOTALL,
+)
+
 
 def _is_system_leaked_content(content: str) -> bool:
-    """检测 assistant 历史消息是否包含系统提示泄漏特征。"""
+    """检测 assistant 历史消息是否包含系统提示泄漏特征（前缀或正文注释）。"""
     stripped = content.lstrip()
-    return any(stripped.startswith(prefix) for prefix in _SYSTEM_LEAK_PREFIXES)
+    if any(stripped.startswith(prefix) for prefix in _SYSTEM_LEAK_PREFIXES):
+        return True
+    if _SYSTEM_LEAK_PATTERN.search(content):
+        return True
+    return False
 
