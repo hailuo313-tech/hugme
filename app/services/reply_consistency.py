@@ -12,6 +12,7 @@ from typing import Any
 
 
 DEFAULT_FALLBACK_REPLY = "我先稳一下表达：我在，会认真听你说。"
+SYSTEM_LEAK_FALLBACK_REPLY = "不能说这个。你想问我什么？"
 
 _IDENTITY_CONFLICT_RE = re.compile(
     r"(chatgpt|claude|openai|anthropic|gpt-?[0-9]|large language model|"
@@ -22,6 +23,32 @@ _SAFETY_BLOCK_RE = re.compile(
     r"(自杀方法|怎么自杀|如何自杀|suicide method|how to kill myself|"
     r"未成年人.*性|儿童.*性|child sexual|minors?.*sex|制造炸弹|bomb making)",
     re.IGNORECASE,
+)
+_SYSTEM_LAYER_TAG_RE = re.compile(
+    r"(##\s*=+\s*L\d+_[A-Z_]+\s*=+|\bL(?:[1-9]|10)_[A-Z_]+\b)"
+)
+_SYSTEM_PROMPT_LEAK_RE = re.compile(
+    r"(system\s*prompt|developer\s*(message|instruction|prompt)|prompt\s*layer|"
+    r"hidden\s*(instruction|prompt)|internal\s*rules?|"
+    r"系统提示|系统\s*prompt|开发者(消息|指令|规则)?|内部规则|隐藏(提示|指令)|提示词|"
+    r"prompt\s*layers?)",
+    re.IGNORECASE,
+)
+_PROFILE_DETAILS_LEAK_RE = re.compile(
+    r"(根据(角色)?资料|资料里写着|根据用户画像|用户画像显示|profile/details|"
+    r"profile_details|user_profiles|loneliness_score|relationship_stage|"
+    r"内部处理|结构化角色事实)",
+    re.IGNORECASE,
+)
+_REFUSAL_META_RE = re.compile(
+    r"(不能|无法|不会|不可以).{0,12}(透露|展示|提供|复述|引用).{0,16}"
+    r"(系统|提示|prompt|开发者|内部|规则)",
+    re.IGNORECASE,
+)
+_JSON_OR_LAYER_DUMP_RE = re.compile(
+    r"(```\s*json|^\s*[\{\[]|\"role\"\s*:\s*\"system\"|\"content\"\s*:|"
+    r"\"profile_details\"\s*:|\"L(?:[1-9]|10)_[A-Z_]+\"\s*:)",
+    re.IGNORECASE | re.MULTILINE,
 )
 _MARKDOWN_STRUCTURE_RE = re.compile(r"(^|\n)\s*(#{1,6}\s+|\d+[\.\)]\s+|[-*]\s+)")
 _EMOJI_RE = re.compile(
@@ -69,10 +96,12 @@ def evaluate_reply_consistency(
     character: dict[str, Any] | None = None,
     threshold: float = 0.65,
     fallback_reply: str = DEFAULT_FALLBACK_REPLY,
+    system_leak_fallback_reply: str = SYSTEM_LEAK_FALLBACK_REPLY,
 ) -> ReplyConsistencyResult:
     """Return a 0..1 ConsistencyScore and fallback text when hard checks fail."""
     text = (reply_text or "").strip()
     layers = [
+        _check_system_info_leak(text),
         _check_l1_safety(text),
         _check_l2_identity(text),
         _check_l3_character(text, character),
@@ -82,7 +111,16 @@ def evaluate_reply_consistency(
     if not all_layers_passed:
         score = round(min(score, max(0.0, threshold - 0.001)), 3)
     passed = all_layers_passed and score >= threshold
-    output = text if passed else fallback_reply
+    system_leak_blocked = any(
+        layer.layer == "SYSTEM_INFO_LEAK" and not layer.passed for layer in layers
+    )
+    output = (
+        text
+        if passed
+        else system_leak_fallback_reply
+        if system_leak_blocked
+        else fallback_reply
+    )
     return ReplyConsistencyResult(
         score=score,
         passed=passed,
@@ -150,6 +188,40 @@ async def load_reply_consistency_context(db: Any, conversation_id: str) -> dict[
         and v is not None
     }
     return {"character": character or None}
+
+
+def _check_system_info_leak(text: str) -> ConsistencyLayerResult:
+    reasons: list[str] = []
+    score = 1.0
+    if not text:
+        return ConsistencyLayerResult("SYSTEM_INFO_LEAK", True, score, reasons)
+
+    if _SYSTEM_LAYER_TAG_RE.search(text):
+        reasons.append("system_layer_tag")
+    if _SYSTEM_PROMPT_LEAK_RE.search(text):
+        reasons.append("system_prompt_reference")
+    if _PROFILE_DETAILS_LEAK_RE.search(text):
+        reasons.append("profile_details_reference")
+    if _REFUSAL_META_RE.search(text):
+        reasons.append("system_refusal_meta")
+
+    # A JSON-ish response is only considered a dump when it also carries
+    # system/prompt/profile markers; ordinary JSON answers should not trip this.
+    if _JSON_OR_LAYER_DUMP_RE.search(text) and (
+        _SYSTEM_LAYER_TAG_RE.search(text)
+        or _PROFILE_DETAILS_LEAK_RE.search(text)
+        or re.search(r"\"role\"\s*:\s*\"system\"", text, re.IGNORECASE)
+    ):
+        reasons.append("json_or_layer_dump")
+
+    if reasons:
+        score = 0.0
+    return ConsistencyLayerResult(
+        "SYSTEM_INFO_LEAK",
+        score >= 0.8,
+        score,
+        reasons,
+    )
 
 
 def _check_l1_safety(text: str) -> ConsistencyLayerResult:

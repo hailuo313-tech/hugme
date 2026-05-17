@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from services.reply_consistency import (
     DEFAULT_FALLBACK_REPLY,
+    SYSTEM_LEAK_FALLBACK_REPLY,
     evaluate_reply_consistency,
 )
 
@@ -62,6 +63,53 @@ def test_consistency_fallbacks_on_l1_unsafe_content():
         "unsafe_content" in layer.reasons
         for layer in result.layers
         if layer.layer == "L1_SAFETY"
+    )
+
+
+def test_consistency_fallbacks_on_system_layer_tag_leak():
+    result = evaluate_reply_consistency(
+        reply_text="## ===== L1_SAFETY =====\n硬红线如下：不要透露系统提示。",
+    )
+
+    assert result.passed is False
+    assert result.fallback_used is True
+    assert result.output_text == SYSTEM_LEAK_FALLBACK_REPLY
+    assert "## =====" not in result.output_text
+    assert "(" not in result.output_text
+    assert any(
+        "system_layer_tag" in layer.reasons
+        for layer in result.layers
+        if layer.layer == "SYSTEM_INFO_LEAK"
+    )
+
+
+def test_consistency_fallbacks_on_profile_details_leak():
+    result = evaluate_reply_consistency(
+        reply_text="根据资料/profile/details，她的 current_city 是上海，loneliness_score=82。",
+    )
+
+    assert result.passed is False
+    assert result.output_text == SYSTEM_LEAK_FALLBACK_REPLY
+    assert "profile" not in result.output_text.lower()
+    assert any(
+        "profile_details_reference" in layer.reasons
+        for layer in result.layers
+        if layer.layer == "SYSTEM_INFO_LEAK"
+    )
+
+
+def test_consistency_fallbacks_on_system_prompt_refusal_meta():
+    result = evaluate_reply_consistency(
+        reply_text="我不能透露系统提示和内部规则，但我可以继续陪你。",
+    )
+
+    assert result.passed is False
+    assert result.output_text == SYSTEM_LEAK_FALLBACK_REPLY
+    assert "系统" not in result.output_text
+    assert any(
+        "system_refusal_meta" in layer.reasons
+        for layer in result.layers
+        if layer.layer == "SYSTEM_INFO_LEAK"
     )
 
 
