@@ -18,6 +18,7 @@ import pytest
 
 from services.prompt_builder import (  # type: ignore
     DEFAULT_SYSTEM_PROMPT,
+    FIRST_DIRECT_QA_REPLY_LIMIT,
     LAYER_ORDER,
     PromptInput,
     SYSTEM_LAYERS,
@@ -395,6 +396,33 @@ def test_prompt_bans_performative_persona_replies():
     assert "故障/系统梗" in system
     assert "不要夹英文" in system
     assert "profile/details" in system
+
+
+def test_first_35_direct_qa_constraint_appears_for_early_replies():
+    out = build_prompt(
+        PromptInput(
+            user_text="你喜欢什么？",
+            current_assistant_reply_number=FIRST_DIRECT_QA_REPLY_LIMIT,
+        )
+    )
+    system = out.system_content
+    assert "前35次角色回复强约束" in system
+    assert "纯一问一答正常回复" in system
+    assert "禁止括号动作、星号动作" in system
+    assert "不要情绪陪护、寒暄铺垫" in system
+
+
+def test_first_35_direct_qa_constraint_absent_after_boundary():
+    out = build_prompt(
+        PromptInput(
+            user_text="你喜欢什么？",
+            current_assistant_reply_number=FIRST_DIRECT_QA_REPLY_LIMIT + 1,
+        )
+    )
+    system = out.system_content
+    assert "前35次角色回复强约束" not in system
+    assert "真实人物一问一答" in system
+    assert "禁止表演化" in system
 
 
 def test_l9_uses_profile_language_for_reply_constraint():

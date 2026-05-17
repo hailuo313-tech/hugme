@@ -218,6 +218,16 @@ async def generate_reply(
         trace_id=trace_id,
         log=log,
     )
+    existing_assistant_reply_count = await _load_existing_assistant_reply_count(
+        db=db,
+        conversation_id=conversation_id,
+        log=log,
+    )
+    current_assistant_reply_number = (
+        existing_assistant_reply_count + 1
+        if existing_assistant_reply_count is not None
+        else None
+    )
 
     loneliness_score_log: float | None = None
     if profile_row is not None:
@@ -255,6 +265,7 @@ async def generate_reply(
             memories=memories,
             history=history,
             s5_phase=s5_phase_kw,
+            current_assistant_reply_number=current_assistant_reply_number,
         )
     )
     messages = prompt.messages
@@ -269,6 +280,8 @@ async def generate_reply(
         has_profile=profile_row is not None,
         memory_hits=len(memories) if memories else 0,
         memory_consistency_dropped=memory_consistency_dropped,
+        assistant_reply_count=existing_assistant_reply_count,
+        current_assistant_reply_number=current_assistant_reply_number,
         loneliness_score=loneliness_score_log,
         loneliness_utterance_tags=loneliness_utterance_tags,
     ).info("orchestrator.prompt.assembled")
@@ -398,6 +411,59 @@ async def _maybe_retrieve_memories_for_prompt(
         return None, dropped
 
     return _memory_hits_to_prompt_dicts(hits), dropped
+
+
+async def _load_existing_assistant_reply_count(
+    *,
+    db: Any,
+    conversation_id: str,
+    log,
+) -> int | None:
+    """Count persisted AI replies so the prompt can identify the current reply ordinal."""
+    if db is None:
+        return None
+
+    try:
+        from sqlalchemy import text as _sql_text  # type: ignore
+    except Exception as exc:  # pragma: no cover - 防御
+        log.bind(error_type=type(exc).__name__).warning(
+            "orchestrator.db.import_failed"
+        )
+        return None
+
+    try:
+        row = (
+            await db.execute(
+                _sql_text(
+                    """
+                    SELECT COUNT(*) AS assistant_reply_count
+                    FROM messages
+                    WHERE conversation_id = :cid
+                      AND sender_type IN ('assistant', 'bot', 'ai')
+                      AND COALESCE(is_operator_message, FALSE) = FALSE
+                    """
+                ),
+                {"cid": conversation_id},
+            )
+        ).fetchone()
+    except Exception as exc:
+        log.bind(error_type=type(exc).__name__).warning(
+            "orchestrator.db.assistant_reply_count_failed"
+        )
+        return None
+
+    if row is None:
+        return None
+    try:
+        return max(0, int(row[0]))
+    except (TypeError, ValueError, IndexError):
+        mapping = getattr(row, "_mapping", None)
+        if mapping is not None:
+            try:
+                return max(0, int(mapping.get("assistant_reply_count") or 0))
+            except (TypeError, ValueError):
+                return None
+    return None
 
 
 async def _load_recent_context(

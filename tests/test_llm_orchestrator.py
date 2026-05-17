@@ -361,6 +361,55 @@ async def test_system_message_contains_all_layer_markers(monkeypatch, llm_orches
 
 
 @pytest.mark.asyncio
+async def test_db_assistant_reply_count_controls_first_35_boundary(
+    monkeypatch, llm_orchestrator
+):
+    """Persisted 35 prior assistant replies means this is reply 36, so no first-35 block."""
+    captured: dict[str, Any] = {}
+
+    async def fake_chat(*, messages, trace_id, **_kwargs):
+        captured["messages"] = messages
+        return _LLMResultStub(content="ok")
+
+    monkeypatch.setattr(llm_orchestrator, "llm_chat", fake_chat)
+    monkeypatch.setattr(llm_orchestrator.settings, "LLM_ECHO_FALLBACK", False)
+    monkeypatch.setattr(llm_orchestrator.settings, "MEMORY_RETRIEVE_IN_PROMPT", False)
+
+    class _CountRow:
+        def __getitem__(self, index):
+            if index == 0:
+                return 35
+            raise IndexError(index)
+
+    class _FakeExecResult:
+        def __init__(self, row):
+            self._row = row
+
+        def fetchone(self):
+            return self._row
+
+    class _FakeDB:
+        async def execute(self, stmt, params=None):
+            sql = str(getattr(stmt, "text", stmt))
+            if "FROM messages" in sql and "COUNT" in sql:
+                return _FakeExecResult(_CountRow())
+            return _FakeExecResult(None)
+
+    reply = await llm_orchestrator.generate_reply(
+        user_id="u",
+        conversation_id="c",
+        user_text="你喜欢什么？",
+        trace_id="trace-count",
+        db=_FakeDB(),
+    )
+
+    assert reply == "ok"
+    system = captured["messages"][0]["content"]
+    assert "前35次角色回复强约束" not in system
+    assert "禁止表演化" in system
+
+
+@pytest.mark.asyncio
 async def test_db_loaded_character_and_profile_appear_in_prompt(
     monkeypatch, llm_orchestrator
 ):

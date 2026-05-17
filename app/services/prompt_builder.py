@@ -40,6 +40,9 @@ from services.emotion_lexicon import (
 )
 
 
+FIRST_DIRECT_QA_REPLY_LIMIT = 35
+
+
 # ─────────────────────────────────────────────────────────────
 # 层标签（顺序即注入顺序）
 # ─────────────────────────────────────────────────────────────
@@ -119,6 +122,7 @@ class PromptInput:
     history: list[dict[str, str]] | None = None  # 已规范化的 role/content 列表
     s5_phase: str | None = None
     reply_language: str | None = None
+    current_assistant_reply_number: int | None = None
 
 
 @dataclass
@@ -140,6 +144,7 @@ def build_prompt(inp: PromptInput) -> PromptOutput:
     （保证"10 层结构永远在"）。
     '''
     reply_language = _resolve_reply_language(inp)
+    current_reply_number = _resolve_current_assistant_reply_number(inp)
     layers: dict[str, str] = {
         "L1_SAFETY": _L1_SAFETY,
         "L2_IDENTITY": _L2_IDENTITY,
@@ -148,8 +153,16 @@ def build_prompt(inp: PromptInput) -> PromptOutput:
         "L5_USER_PROFILE": _render_user_profile(inp.profile),
         "L6_MEMORY": _render_memory(inp.memories),
         "L7_CONVERSATION_STATE": _render_conversation_state(inp.profile),
-        "L9_FORMAT": _render_format(inp.character, reply_language),
-        "L10_ANCHOR": _render_anchor(inp.s5_phase, reply_language),
+        "L9_FORMAT": _render_format(
+            inp.character,
+            reply_language,
+            current_reply_number,
+        ),
+        "L10_ANCHOR": _render_anchor(
+            inp.s5_phase,
+            reply_language,
+            current_reply_number,
+        ),
     }
 
     sections: list[str] = []
@@ -250,20 +263,26 @@ def _render_relationship(profile: dict[str, Any] | None, s5_phase: str | None) -
     return f"关系阶段：{stage} — {desc}{vip_note}"
 
 
-def _render_anchor(s5_phase: str | None, reply_language: str) -> str:
+def _render_anchor(
+    s5_phase: str | None,
+    reply_language: str,
+    current_reply_number: int,
+) -> str:
     language_anchor = f"\n最终输出语言：{language_name(reply_language)}（language_code={reply_language}）。"
     persona_anchor = (
         "\n如果用户询问角色自己的出生地、年龄、身高、职业、家庭、爱好、感情状态、日常习惯或价值观，"
         "必须优先根据 L3_CHARACTER 的结构化角色事实直接短答；没有配置的事实才自然说明\"这个还没设定\"。"
     )
+    first_35_anchor = _render_first_35_direct_qa_constraint(current_reply_number)
     if s5_phase:
         return (
             _L10_ANCHOR
             + language_anchor
             + persona_anchor
+            + first_35_anchor
             + "\nS5 危机恢复期间：禁止 Upsell / VIP / 付费引导，直到运营完成恢复。"
         )
-    return _L10_ANCHOR + language_anchor + persona_anchor
+    return _L10_ANCHOR + language_anchor + persona_anchor + first_35_anchor
 
 
 def _render_user_profile(profile: dict[str, Any] | None) -> str:
@@ -337,13 +356,18 @@ def _render_conversation_state(profile: dict[str, Any] | None) -> str:
     )
 
 
-def _render_format(char: dict[str, Any] | None, reply_language: str) -> str:
+def _render_format(
+    char: dict[str, Any] | None,
+    reply_language: str,
+    current_reply_number: int,
+) -> str:
     language_rule = (
         f"- 回复语言：使用 {language_name(reply_language)}（language_code={reply_language}）。"
         "除非用户明确要求翻译或切换语言，否则不要混用其它语言。"
     )
+    first_35_rule = _render_first_35_direct_qa_constraint(current_reply_number)
     if not char:
-        return _L9_FORMAT_DEFAULT + "\n" + language_rule
+        return _L9_FORMAT_DEFAULT + "\n" + language_rule + first_35_rule
 
     reply_len = (char.get("reply_length") or "medium").lower()
     tone = (char.get("tone") or "warm").lower()
@@ -374,6 +398,7 @@ def _render_format(char: dict[str, Any] | None, reply_language: str) -> str:
         "- 用户用中文提问时，必须用中文回答；不要夹英文，除非用户明确要求英文。\n"
         "- 个人资料问题只回答事实，不要解释\"根据角色资料/profile/details\"。\n"
         "- 只有用户明确表达自伤/危险时，才按 L1 安全规则处理。"
+        f"{first_35_rule}"
     )
 
 
@@ -426,6 +451,36 @@ def _as_str_list(v: Any) -> list[str]:
         v = v.strip()
         return [v] if v else []
     return []
+
+
+def _resolve_current_assistant_reply_number(inp: PromptInput) -> int:
+    if inp.current_assistant_reply_number is not None:
+        try:
+            value = int(inp.current_assistant_reply_number)
+        except (TypeError, ValueError):
+            value = 1
+        return max(1, value)
+
+    assistant_history_count = 0
+    for item in inp.history or []:
+        role = (item.get("role") or "").strip().lower()
+        if role in ("assistant", "bot", "ai"):
+            assistant_history_count += 1
+    return assistant_history_count + 1
+
+
+def _render_first_35_direct_qa_constraint(current_reply_number: int) -> str:
+    if current_reply_number > FIRST_DIRECT_QA_REPLY_LIMIT:
+        return ""
+
+    return (
+        f"\n【前35次角色回复强约束】当前是第 {current_reply_number} 次角色回复"
+        "（口径：已发 assistant 回复数 + 本次回复）。\n"
+        "- 只回答用户问题本身，纯一问一答正常回复。\n"
+        "- 禁止括号动作、星号动作、舞台说明、旁白、内心独白、故障梗、系统提示梗、emoji。\n"
+        "- 不要加入任何情感、动作、舞台说明、emoji，不要情绪陪护、寒暄铺垫、解释自己为什么这么回答。\n"
+        "- 用户用什么语言提问，就用什么语言回复。"
+    )
 
 
 _PROFILE_DETAIL_LABELS: dict[str, str] = {
