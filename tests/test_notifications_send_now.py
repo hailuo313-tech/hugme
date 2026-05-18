@@ -151,7 +151,7 @@ def test_schedule_allows_s5_care_checkin_in_care_window(mock_block, mock_load):
     db.execute = AsyncMock(
         side_effect=[
             _result(mappings_one=_active_user(risk_level="critical")),
-            _result(one=None),  # open handoff check
+            _result(one=1),  # open handoff check; S5 care check-in is still allowed
             _result(mappings_one={"relationship_stage": "S5", "updated_at": None}),
             _result(),  # insert pending task
         ]

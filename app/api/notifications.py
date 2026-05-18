@@ -112,7 +112,8 @@ async def _assert_eligible(
         {"uid": user["id"]},
     )).fetchone()
     if open_handoff:
-        raise HTTPException(status_code=409, detail="User has open handoff task")
+        if (notification_type or "").strip().lower() != S5_CARE_NOTIFICATION_TYPE:
+            raise HTTPException(status_code=409, detail="User has open handoff task")
 
 
 async def _assert_risk_s5_notification_allowed(
