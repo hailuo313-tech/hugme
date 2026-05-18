@@ -13,6 +13,7 @@ from core.config import settings
 from services.notification_content import build_outbound_text
 from services.minor_protection import MINOR_BLOCK_DETAIL, should_block_push
 from services.telegram_send import send_telegram_text, telegram_chat_id_from_external
+from services.risk_s5 import S5_CARE_NOTIFICATION_TYPE
 
 router = APIRouter()
 
@@ -75,7 +76,12 @@ async def _get_user(db: AsyncSession, user_id: str):
     return row
 
 
-async def _assert_eligible(db: AsyncSession, user, channel: str):
+async def _assert_eligible(
+    db: AsyncSession,
+    user,
+    channel: str,
+    notification_type: str,
+):
     if channel not in ALLOWED_CHANNELS:
         raise HTTPException(status_code=422, detail="Unsupported notification channel")
     if user["status"] != "active":
@@ -86,7 +92,10 @@ async def _assert_eligible(db: AsyncSession, user, channel: str):
         raise HTTPException(status_code=409, detail="User opted out of marketing")
     if should_block_push(is_minor_suspected=bool(user["is_minor_suspected"])):
         raise HTTPException(status_code=409, detail=MINOR_BLOCK_DETAIL)
-    if user["risk_level"] in {"high", "critical"}:
+    if (
+        user["risk_level"] in {"high", "critical"}
+        and (notification_type or "").strip().lower() != S5_CARE_NOTIFICATION_TYPE
+    ):
         raise HTTPException(status_code=409, detail="High-risk users require handoff review")
 
     open_handoff = (await db.execute(
@@ -103,7 +112,35 @@ async def _assert_eligible(db: AsyncSession, user, channel: str):
         {"uid": user["id"]},
     )).fetchone()
     if open_handoff:
-        raise HTTPException(status_code=409, detail="User has open handoff task")
+        if (notification_type or "").strip().lower() != S5_CARE_NOTIFICATION_TYPE:
+            raise HTTPException(status_code=409, detail="User has open handoff task")
+
+
+async def _assert_risk_s5_notification_allowed(
+    db: AsyncSession,
+    user_id: str,
+    notification_type: str,
+) -> None:
+    from services.risk_s5 import load_s5_restrictions, notification_block_reason
+
+    profile_row = (
+        await db.execute(
+            text(
+                "SELECT relationship_stage, updated_at FROM user_profiles WHERE user_id=:uid"
+            ),
+            {"uid": user_id},
+        )
+    ).mappings().fetchone()
+    if not profile_row:
+        return
+    restrictions = await load_s5_restrictions(
+        db,
+        user_id=user_id,
+        profile=dict(profile_row),
+    )
+    reason = notification_block_reason(restrictions, notification_type)
+    if reason:
+        raise HTTPException(status_code=409, detail=reason)
 
 
 async def _assert_frequency(db: AsyncSession, user_id: str, scheduled_at: datetime):
@@ -208,7 +245,8 @@ async def schedule_notification(
     user_id = str(_as_uuid(data.user_id, "user_id"))
     scheduled_at = (data.scheduled_at or _utcnow()).replace(tzinfo=None)
     user = await _get_user(db, user_id)
-    await _assert_eligible(db, user, data.channel)
+    await _assert_eligible(db, user, data.channel, data.notification_type)
+    await _assert_risk_s5_notification_allowed(db, user_id, data.notification_type)
 
     payload = dict(data.payload or {})
     if data.notification_type == "silent_reactivation":
@@ -254,7 +292,8 @@ async def send_notification_now(
     user_id = str(_as_uuid(data.user_id, "user_id"))
     scheduled_at = _utcnow()
     user = await _get_user(db, user_id)
-    await _assert_eligible(db, user, data.channel)
+    await _assert_eligible(db, user, data.channel, data.notification_type)
+    await _assert_risk_s5_notification_allowed(db, user_id, data.notification_type)
 
     payload = dict(data.payload or {})
     if data.notification_type == "silent_reactivation":

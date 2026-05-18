@@ -1,6 +1,7 @@
 """V001-P0-1：handoff operator reply 写库 + Telegram 发送。"""
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any, AsyncGenerator
 from unittest.mock import AsyncMock, MagicMock, patch
 import uuid
@@ -153,3 +154,69 @@ def test_handoff_reply_400_non_telegram_channel():
             headers={"Authorization": "Bearer x"},
         )
     assert r.status_code == 400, r.text
+
+
+@patch("services.risk_s5.load_s5_restrictions", new_callable=AsyncMock)
+@patch("services.risk_s5.handoff_return_ai_block_reason")
+def test_handoff_return_ai_s5_recovery_updates_stage(mock_block, mock_load):
+    mock_load.return_value = SimpleNamespace(active=True)
+    mock_block.return_value = None
+    db = MagicMock()
+    db.execute = AsyncMock(
+        side_effect=[
+            MagicMock(fetchone=lambda: _row({"user_id": USER_ID})),
+            MagicMock(
+                fetchone=lambda: _row(
+                    {"relationship_stage": "S5", "updated_at": None}
+                )
+            ),
+            MagicMock(),
+            MagicMock(),
+        ]
+    )
+    db.commit = AsyncMock()
+
+    app = _mini_app(db)
+    with TestClient(app) as client:
+        r = client.post(
+            f"/api/v1/handoff/{TASK_ID}/return-ai",
+            json={"notes": "ok", "allow_upsell": False},
+            headers={"Authorization": "Bearer x"},
+        )
+
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "returned_to_ai"
+    sql_text = "\n".join(str(call.args[0]) for call in db.execute.await_args_list)
+    assert "relationship_stage = :stage" in sql_text
+    db.commit.assert_awaited_once()
+
+
+@patch("services.risk_s5.load_s5_restrictions", new_callable=AsyncMock)
+@patch("services.risk_s5.handoff_return_ai_block_reason")
+def test_handoff_return_ai_s5_blocks_until_recovery(mock_block, mock_load):
+    mock_load.return_value = SimpleNamespace(active=True)
+    mock_block.return_value = "S5: return-to-ai blocked until 7 days after crisis"
+    db = MagicMock()
+    db.execute = AsyncMock(
+        side_effect=[
+            MagicMock(fetchone=lambda: _row({"user_id": USER_ID})),
+            MagicMock(
+                fetchone=lambda: _row(
+                    {"relationship_stage": "S5", "updated_at": None}
+                )
+            ),
+        ]
+    )
+    db.commit = AsyncMock()
+
+    app = _mini_app(db)
+    with TestClient(app) as client:
+        r = client.post(
+            f"/api/v1/handoff/{TASK_ID}/return-ai",
+            json={"notes": "too early", "allow_upsell": False},
+            headers={"Authorization": "Bearer x"},
+        )
+
+    assert r.status_code == 409, r.text
+    assert "S5" in r.json()["detail"]
+    db.commit.assert_not_awaited()
