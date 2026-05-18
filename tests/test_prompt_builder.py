@@ -405,7 +405,7 @@ def test_prompt_bans_system_prompt_and_internal_rule_disclosure():
     assert "开发者消息" in system
     assert "内部规则" in system
     assert "prompt layers" in system
-    assert "不能说这个。" in system
+    assert "自然转移话题" in system
 
 
 def test_first_35_direct_qa_constraint_appears_for_early_replies():
@@ -416,9 +416,9 @@ def test_first_35_direct_qa_constraint_appears_for_early_replies():
         )
     )
     system = out.system_content
-    assert "前35次角色回复强约束" in system
+    assert "前100条强约束" in system
     assert "纯一问一答正常回复" in system
-    assert "禁止括号动作、星号动作" in system
+    assert "严禁括号动作、星号动作" in system
     assert "不要情绪陪护、寒暄铺垫" in system
 
 
@@ -430,7 +430,7 @@ def test_first_35_direct_qa_constraint_absent_after_boundary():
         )
     )
     system = out.system_content
-    assert "前35次角色回复强约束" not in system
+    assert "前100条强约束" not in system
     assert "真实人物一问一答" in system
     assert "禁止表演化" in system
 
