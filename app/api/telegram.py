@@ -86,12 +86,37 @@ async def _push_context(redis, conv_id: str, role: str, content: str, msg_id: st
     pipe.expire(key, CONTEXT_TTL_SECONDS)
     await pipe.execute()
 
-async def _send_tg(chat_id: int, text_content: str, trace_id: str) -> int | None:
+def _human_typing_delay(text_content: str) -> float:
+    """根据回复字数返回模拟真人打字延迟（秒）。
+    ≤10字 → 4s，11-30字 → 7s，31-50字 → 11s，51-100字 → 18s，>100字 → 18s
+    """
+    n = len(text_content)
+    if n <= 10:
+        return 4.0
+    if n <= 30:
+        return 7.0
+    if n <= 50:
+        return 11.0
+    return 18.0
+
+
+async def _send_tg(chat_id: int, text_content: str, trace_id: str, typing_delay: bool = False) -> int | None:
     token = settings.TELEGRAM_BOT_TOKEN
     if not token:
         return None
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            if typing_delay:
+                delay = _human_typing_delay(text_content)
+                # 发送"正在输入…"状态
+                try:
+                    await client.post(
+                        f"https://api.telegram.org/bot{token}/sendChatAction",
+                        json={"chat_id": chat_id, "action": "typing"},
+                    )
+                except Exception:
+                    pass
+                await asyncio.sleep(delay)
             resp = await client.post(
                 f"https://api.telegram.org/bot{token}/sendMessage",
                 json={"chat_id": chat_id, "text": text_content, "parse_mode": "HTML"},
@@ -220,7 +245,7 @@ async def _handle_onboarding(
         )
         await db.commit()
         q1 = _build_next_question(1, language=language) or ""
-        await _send_tg(chat_id, q1, trace_id)
+        await _send_tg(chat_id, q1, trace_id, typing_delay=True)
         log.info("onboarding.tg.sent_q1")
         return q1
 
@@ -319,7 +344,7 @@ async def _handle_onboarding(
         reply = _build_next_question(next_step, nickname, language) or ""
 
     if reply:
-        await _send_tg(chat_id, reply, trace_id)
+        await _send_tg(chat_id, reply, trace_id, typing_delay=True)
         log.bind(next_step=next_step).info("onboarding.tg.sent_next_q")
 
     return reply
@@ -569,7 +594,7 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
         bot_consistency_score = consistency.score
         log.bind(**consistency.as_log_dict()).info("tg.consistency.checked")
 
-        sent_id = await _send_tg(tg_chat_id, reply_text, trace_id)
+        sent_id = await _send_tg(tg_chat_id, reply_text, trace_id, typing_delay=True)
         if sent_id is not None:
             bot_reply = reply_text
             log.bind(result="success").info("tg.bot_reply.sent")
