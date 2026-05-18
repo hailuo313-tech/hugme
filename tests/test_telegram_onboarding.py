@@ -50,7 +50,7 @@ async def test_telegram_onboarding_step5_assigns_character_with_profile_dict(mon
 
     sent_messages: list[str] = []
 
-    async def fake_send_tg(chat_id: int, text_content: str, trace_id: str) -> int:
+    async def fake_send_tg(chat_id: int, text_content: str, trace_id: str, typing_delay: bool = False) -> int:
         sent_messages.append(text_content)
         return 123
 
