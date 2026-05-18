@@ -102,6 +102,7 @@
   <button type="button" class="page-tab" data-panel="panel-arch">③ 架构 Rev-C 缺口</button>
   <button type="button" class="page-tab" data-panel="panel-roadmap">④ Roadmap 未闭环</button>
   <button type="button" class="page-tab" data-panel="panel-compliance">⑤ 合规（最后）</button>
+  <button type="button" class="page-tab" data-panel="panel-delta">⑥ 新增/未完成</button>
 </nav>
 
 <!-- ══ ① 总览 ══ -->
@@ -447,6 +448,80 @@
   <div class="intro">
     原 ops 页将「账号删除接口」标为 P0。按你的要求，<strong>不在研发 P0 波次与 Devin/Cursor 并行抢跑</strong>，
     统一放入合规波次；危机干预与 Moderation 仍属产品 P0（安全运营），与法务隐私删除分开。
+  </div>
+</div>
+
+<!-- ══ ⑥ 新增/未完成总表 ══ -->
+<div id="panel-delta" class="page-panel">
+  <div class="intro">
+    <strong>更新口径（2026-05-17）：</strong>
+    本页新增一份“Rev-C 架构目标 vs 当前 main / 生产验收”的差异表。
+    “新增/已合入”表示已进入代码或 main 状态；“未完成/未闭环”表示仍需生产同步、smoke、业务验收或后续波次实现。
+  </div>
+
+  <p class="section-title">新增 / 已合入能力</p>
+  <table>
+    <thead><tr><th>级别</th><th>新增 / 已合入能力</th><th>当前状态</th><th>对应章节</th></tr></thead>
+    <tbody>
+      <tr><td><span class="p0">P0</span></td><td>Handoff reply 写入 <code>messages</code> 并触发 Telegram 真发送</td><td><span class="st st-done">main 已合，生产同步后复验</span></td><td>§2.3 / §9</td></tr>
+      <tr><td><span class="p0">P0</span></td><td>危机干预链路：高危词 → 安全话术 → P0 handoff → S5</td><td><span class="st st-done">main 已合</span></td><td>§10</td></tr>
+      <tr><td><span class="p0">P0</span></td><td><code>risk_events</code> POST/GET 真实写库 + <code>risk_level</code> 派生</td><td><span class="st st-done">main 已合</span></td><td>§10 / §14</td></tr>
+      <tr><td><span class="p0">P0</span></td><td>Admin 用户详情接口 + memories operator JWT</td><td><span class="st st-done">main 已合</span></td><td>§15</td></tr>
+      <tr><td><span class="p0">P0</span></td><td><code>notification_tasks</code> → Telegram Worker 真发送</td><td><span class="st st-done">已上线；受开关控制</span></td><td>§7</td></tr>
+      <tr><td><span class="p0">P0</span></td><td>内容安全双层过滤（Moderation + 关键词，写入 <code>safety_result</code>）</td><td><span class="st st-done">已上线</span></td><td>§10</td></tr>
+      <tr><td><span class="p1">P1</span></td><td>Policy Service 7 条件自动创建 <code>handoff_task</code></td><td><span class="st st-done">已验收</span></td><td>§2.3</td></tr>
+      <tr><td><span class="p1">P1</span></td><td>关系阶段 S0–S5 自动升降级（REL-01）</td><td><span class="st st-done">main 已合 #93</span></td><td>§3</td></tr>
+      <tr><td><span class="p1">P1</span></td><td>S5 商业限制：禁 Upsell、48–72h 安全关怀、7 天恢复</td><td><span class="st st-done">main 已合</span></td><td>§3.4 / §10</td></tr>
+      <tr><td><span class="p1">P1</span></td><td>Handoff Redis 分布式锁 + 5 分钟超时释放</td><td><span class="st st-done">已完成</span></td><td>§8.3</td></tr>
+      <tr><td><span class="p1">P1</span></td><td>Rev-C DDL 字段对齐：<code>risk_score</code>、通知合规字段等</td><td><span class="st st-done">已完成</span></td><td>§14</td></tr>
+      <tr><td><span class="p1">P1</span></td><td><code>SCORE_WORKER</code> 与 handoff 阈值联动生产 smoke</td><td><span class="st st-done">生产验收通过</span></td><td>§4</td></tr>
+      <tr><td><span class="p2">P2</span></td><td>话术库 scripts 表 + CRUD + suggest</td><td><span class="st st-done">main 已合</span></td><td>§8.7 / §15</td></tr>
+      <tr><td><span class="p2">P2</span></td><td>角色 POST/PATCH/stats</td><td><span class="st st-done">main 已合</span></td><td>§6 / §15</td></tr>
+      <tr><td><span class="p2">P2</span></td><td>ConsistencyScore 发送前三层校验</td><td><span class="st st-done">main 已合</span></td><td>§6.5 / §8.8</td></tr>
+      <tr><td><span class="p2">P2</span></td><td><code>POST /users/{id}/freeze</code> 用户商业冻结</td><td><span class="st st-done">main 已合</span></td><td>§10 / §15</td></tr>
+      <tr><td><span class="p2">P2</span></td><td><code>operator_quality_scores</code> 质检与指标表</td><td><span class="st st-done">main 已合</span></td><td>§8.9 / §14</td></tr>
+      <tr><td><span class="p2">P2</span></td><td>OPS-AI-01：摘要 + 3 条推荐回复 API/UI</td><td><span class="st st-done">main 已合</span></td><td>§8 / §9</td></tr>
+      <tr><td><span class="p3">P3</span></td><td>A/B 四表 + 实验 API</td><td><span class="st st-done">main 已合 #86</span></td><td>§13</td></tr>
+      <tr><td><span class="p3">P3</span></td><td>未成年人保护逻辑（消费 / 推送 / 内容）</td><td><span class="st st-done">main 已合 #87</span></td><td>§10.3</td></tr>
+      <tr><td><span class="p3">P3</span></td><td>多语言 Prompt + 情绪词库</td><td><span class="st st-done">main 已合 #88</span></td><td>§12</td></tr>
+      <tr><td><span class="p3">P3</span></td><td>Onboarding 角色推荐（非 hardcode）</td><td><span class="st st-done">main 已合 #89</span></td><td>§2.1 / §6.6</td></tr>
+      <tr><td><span class="p3">P3</span></td><td><code>POST /notifications/send-now</code></td><td><span class="st st-done">main 已合 #90</span></td><td>§7 / §15</td></tr>
+      <tr><td><span class="p3">P3</span></td><td>Open API 基础能力</td><td><span class="st st-done">main 已合 #91</span></td><td>§15 / §18</td></tr>
+    </tbody>
+  </table>
+
+  <p class="section-title">尚未完成 / 未闭环项</p>
+  <table>
+    <thead><tr><th>优先级</th><th>未完成 / 未闭环项</th><th>当前判断</th><th>下一步</th></tr></thead>
+    <tbody>
+      <tr><td><span class="p1">P0/P1</span></td><td>#84–#93 合入后的生产同步</td><td>main 已合，但生产是否完全同步需复验</td><td>服务器 <code>git pull origin main</code>、重建 API/Admin、跑 <code>/health/detail</code> 与 smoke</td></tr>
+      <tr><td><span class="p1">P0/P1</span></td><td>handoff 真回复、危机链路、REL-01 生产复验</td><td>代码已合</td><td>Codex smoke 后签字</td></tr>
+      <tr><td><span class="p2">P2</span></td><td>订单退款</td><td>尚未完整落地</td><td>补退款 API、订单状态机、Stripe refund 幂等与测试</td></tr>
+      <tr><td><span class="p2">P2</span></td><td>防沉迷限额深化</td><td>未成年人消费保护已合；普通用户日/月限额与异常消费提醒仍待补齐</td><td>对齐 §11.4，补账务与拦截策略</td></tr>
+      <tr><td><span class="p2">P2</span></td><td>VIP 体系深化</td><td>基础 VIP 标记存在，但权益体系、运营策略、转化链路仍待推进</td><td>补权益表、权益发放、后台展示与漏斗</td></tr>
+      <tr><td><span class="p2">P2</span></td><td>转化漏斗分析</td><td>未完整闭环</td><td>定义事件埋点、漏斗报表与告警</td></tr>
+      <tr><td><span class="p3">P3</span></td><td>并发工作台完整能力</td><td>分布式锁已完成，但工作台指标、抢占、转交、主管组等仍待深化</td><td>补 Admin 交互与 operator 指标</td></tr>
+      <tr><td><span class="p3">P3</span></td><td>D8-2 向量 P95 / migration 生产举证</td><td>未闭环</td><td>embedding backfill 后复跑并记录 P95</td></tr>
+      <tr><td><span class="p3">P3</span></td><td>D8-4 二测全量看板 / token 成本</td><td>可迭代</td><td>补成本指标、看板与告警</td></tr>
+      <tr><td><span class="p3">P3/P4</span></td><td>App / Web 客户端</td><td>Open API 已合，客户端未实现</td><td>React Native / Web Chat 后续波次</td></tr>
+      <tr><td><span class="p3">P4</span></td><td>多角色商城</td><td>未实现</td><td>放入平台化阶段</td></tr>
+      <tr><td><span class="p3">P4</span></td><td>K8s / 多区域 / Kafka / Qdrant 集群</td><td>未实现</td><td>规模化阶段再做</td></tr>
+      <tr><td><span class="plast">合规</span></td><td>GDPR 删除 / 匿名化</td><td>从研发 P0 调整到合规波次</td><td>合规 + 法务确认后实现</td></tr>
+      <tr><td><span class="plast">合规</span></td><td>EU 强制 opt-in UI/API</td><td>字段语义待确认</td><td>合规签字后 Devin UI + Cursor API</td></tr>
+      <tr><td><span class="plast">合规</span></td><td>营销 / 交易通知审计日志与保留策略</td><td>待补</td><td>定义审计表、保留期限与导出规则</td></tr>
+      <tr><td><span class="plast">合规</span></td><td>A.8 Go/No-Go 签字</td><td>待签</td><td>OpenAPI、Auth、DB、Stripe、GDPR、监控逐项签字</td></tr>
+    </tbody>
+  </table>
+
+  <p class="section-title">执行顺序建议</p>
+  <div class="intro">
+    <ol style="margin-left:18px">
+      <li>先完成生产同步与 smoke，确认 <code>main</code> 与线上一致。</li>
+      <li>再闭环 P0/P1 的生产验收：handoff 真回复、危机链路、REL-01、send-now、OPS-AI 关键接口。</li>
+      <li>之后推进 P2 商业完整性：退款、防沉迷深化、VIP 权益、漏斗。</li>
+      <li>再推进 P3 运营效率：并发工作台指标、向量 P95、成本看板。</li>
+      <li>最后启动合规波次：GDPR 删除、EU opt-in、审计日志、A.8 签字。</li>
+    </ol>
   </div>
 </div>
 
