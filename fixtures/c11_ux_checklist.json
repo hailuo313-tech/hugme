@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "description": "C-11 operator dashboard UX walkthrough checklist",
+  "items": [
+    {"id": "C11-01", "area": "priority", "check": "VIP/S/A/B/C 等级徽章可见", "file": "admin/lib/priorityDisplay.ts"},
+    {"id": "C11-02", "area": "priority", "check": "WAITING_OPERATOR 行高亮 + 待接管快捷筛选", "file": "admin/app/page.tsx"},
+    {"id": "C11-03", "area": "disconnect", "check": "WebSocket 连接/断开/重连状态条", "file": "admin/components/OperatorWsStatus.tsx"},
+    {"id": "C11-04", "area": "disconnect", "check": "P0/P1 推送横幅可关闭", "file": "admin/hooks/useOperatorTaskWs.ts"},
+    {"id": "C11-05", "area": "modal", "check": "关闭详情抽屉时草稿确认弹窗", "file": "admin/app/page.tsx"},
+    {"id": "C11-06", "area": "error", "check": "列表加载失败可重试", "file": "admin/app/page.tsx"},
+    {"id": "C11-07", "area": "assist", "check": "AI 辅助失败带重试（已有）", "file": "admin/app/page.tsx"},
+    {"id": "C11-08", "area": "drawer", "check": "详情抽屉点击遮罩关闭（含确认）", "file": "admin/app/page.tsx"}
+  ]
+}

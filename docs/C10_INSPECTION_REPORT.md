@@ -34,7 +34,7 @@
 
 - [ ] 生产/staging 录屏：WAITING_OPERATOR → Lock **< 3s**
 - [ ] 签字页两人签字
-- [ ] Admin 内嵌 WS（建议 C-11）
+- [x] Admin WebSocket 状态条 + 断线重连（C-11）
 
 ---
 
