@@ -1,0 +1,111 @@
+{
+  "version": 1,
+  "task_id": "H-07",
+  "status": "approved",
+  "approved_on": "2026-05-20",
+  "approved_by": "release_owner_pending_final_review",
+  "scope": "Week9 canary approval for C/D level traffic only",
+  "source_refs": [
+    "docs/C08_INSPECTION_REPORT.md",
+    "docs/BETA_CHECKLIST.md",
+    "docs/D8_4_BETA_DASHBOARD.md",
+    "docs/reports/J01_LEVEL_SMOKE_REPORT.md",
+    "docs/product/business-flow.html"
+  ],
+  "canary_window": {
+    "name": "Week9 C/D only canary",
+    "week": "Week9",
+    "start_condition": "Release owner confirms health checks, backup, and C-08 smoke evidence before enabling traffic.",
+    "max_duration_days": 7,
+    "review_cadence": [
+      "before_enable",
+      "plus_1_hour",
+      "plus_4_hours",
+      "plus_24_hours",
+      "daily_until_end"
+    ]
+  },
+  "traffic_policy": {
+    "included_levels": [
+      "C",
+      "D"
+    ],
+    "excluded_levels": [
+      "S",
+      "A",
+      "B"
+    ],
+    "included_chat_routes": [
+      "ai_auto"
+    ],
+    "excluded_chat_routes": [
+      "manual_premium",
+      "ai_assisted"
+    ],
+    "eligible_traffic_percent": 100,
+    "operator_override_required_for_excluded_levels": true,
+    "notes": [
+      "Only users currently classified as C or D may enter the Week9 canary.",
+      "S/A users remain manual_premium and must not be auto-cut over.",
+      "B users remain ai_assisted and are reserved for H-08 Week10-11 observation."
+    ]
+  },
+  "entry_gates": [
+    "C-08 J-02 AI end-to-end smoke is passed.",
+    "J-01 level smoke proves C and D produce ai_auto routing.",
+    "/health/detail returns api, db, and redis as ok.",
+    "A backup newer than 24 hours exists before enabling canary.",
+    "Admin conversation list loads for operator review.",
+    "No active P0/P1 incident is open for Telegram ingress, AI reply, payment, or database health."
+  ],
+  "monitoring": {
+    "required_checks": [
+      "/health/detail",
+      "docker compose ps",
+      "messages by sender_type in the last 24 hours",
+      "conversations by state",
+      "handoff_tasks by status",
+      "orders by status",
+      "scripts/beta/day1_metrics.sh or scripts/beta/d8_4_report.sh"
+    ],
+    "success_indicators": [
+      "Assistant replies continue after user messages.",
+      "WAITING_OPERATOR and HUMAN_LOCKED queues do not grow unexpectedly.",
+      "No C/D canary user is incorrectly routed to manual_premium.",
+      "No S/A/B user is included in the canary cohort.",
+      "Stripe orders may remain pending unless a test payment is intentionally completed."
+    ]
+  },
+  "pause_conditions": [
+    "/health/detail is not all ok.",
+    "Assistant replies fail for more than 10 minutes.",
+    "Two users fail onboarding during the canary window.",
+    "Any S, A, or B level user enters the canary cohort.",
+    "Any data-loss or privacy exposure symptom appears.",
+    "D8 beta report cannot be generated when requested."
+  ],
+  "rollback_plan": {
+    "primary_action": "Disable the Week9 C/D canary feature flag or set eligible traffic percent to 0.",
+    "secondary_action": "If code rollback is required, preserve evidence and return production to the previous stable commit.",
+    "evidence_to_preserve": [
+      "api logs",
+      "health detail output",
+      "conversation and message counts",
+      "handoff status counts",
+      "orders status counts",
+      "incident note with timestamps"
+    ],
+    "resume_conditions": [
+      "/health/detail is all ok.",
+      "One internal /start onboarding run succeeds.",
+      "Admin conversation list loads.",
+      "Incident note or release note records the pause and fix."
+    ]
+  },
+  "product_acceptance": [
+    "Week9 canary is approved for C/D levels only.",
+    "S/A/B levels are explicitly excluded from Week9 auto cutover.",
+    "Entry gates, monitoring cadence, pause conditions, and rollback plan are documented.",
+    "Approval is ready to unblock P5-09 feature flag implementation."
+  ]
+}
