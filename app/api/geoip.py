@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from loguru import logger
 
-from app.services.geoip_service import get_geoip_service
+from services.geoip_service import get_geoip_service
 
 router = APIRouter()
 
