@@ -8,6 +8,9 @@ import {
   Operator,
 } from "@/lib/auth";
 import AuthGate from "@/components/AuthGate";
+import OperatorWsStatus from "@/components/OperatorWsStatus";
+import { useOperatorTaskWs } from "@/hooks/useOperatorTaskWs";
+import { levelBadgeClass, rowPriorityClass, vipToLevelTier } from "@/lib/priorityDisplay";
 
 // ── 类型 ──────────────────────────────────────────────────────────
 
@@ -202,6 +205,30 @@ function DashboardContent({ operator }: { operator: Operator }) {
     load();
   }, [load]);
 
+  const { connState, lastAlert, dismissAlert, reconnect } = useOperatorTaskWs({
+    operatorId: operator.operator_id,
+    onTaskUpsert: (task) => {
+      if (task.priority === "P0" || task.priority === "P1") {
+        setState("WAITING_OPERATOR");
+        setPage(1);
+      }
+    },
+  });
+
+  function closeDetail() {
+    if (draftReply.trim()) {
+      const ok = window.confirm("有未发送的回复草稿，确定关闭详情？");
+      if (!ok) return;
+    }
+    setDetail(null);
+    setDetailError(null);
+    setAssist(null);
+    setAssistError(null);
+    setDraftReply("");
+    setMessageTranslations({});
+    setTranslationError(null);
+  }
+
   async function openDetail(cid: string) {
     setDetail(null);
     setDetailError(null);
@@ -339,7 +366,13 @@ function DashboardContent({ operator }: { operator: Operator }) {
             </a>
           </nav>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 flex-wrap justify-end">
+          <OperatorWsStatus
+            connState={connState}
+            lastAlert={lastAlert}
+            onDismissAlert={dismissAlert}
+            onReconnect={reconnect}
+          />
           <span className="text-sm text-slate-300">
             {operator.display_name || operator.username}
             <span className="ml-2 text-xs text-slate-500 bg-slate-700 px-2 py-0.5 rounded-full">
@@ -425,12 +458,29 @@ function DashboardContent({ operator }: { operator: Operator }) {
           >
             重置
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              setPage(1);
+              setState("WAITING_OPERATOR");
+            }}
+            className="text-amber-300 hover:text-amber-100 text-sm border border-amber-800 px-3 py-2 rounded-md"
+          >
+            待接管
+          </button>
         </form>
 
         {/* Error */}
         {error && (
-          <div className="bg-rose-900/30 border border-rose-800 text-rose-200 text-sm rounded-md px-4 py-3 mb-4">
-            加载失败：{error}
+          <div className="bg-rose-900/30 border border-rose-800 text-rose-200 text-sm rounded-md px-4 py-3 mb-4 flex items-center justify-between gap-3">
+            <span>加载失败：{error}</span>
+            <button
+              type="button"
+              onClick={() => load()}
+              className="text-xs underline whitespace-nowrap"
+            >
+              重试
+            </button>
           </div>
         )}
 
@@ -440,6 +490,7 @@ function DashboardContent({ operator }: { operator: Operator }) {
             <thead className="bg-slate-900/50 text-slate-400 text-xs uppercase">
               <tr>
                 <th className="text-left px-4 py-3 font-medium">用户</th>
+                <th className="text-left px-4 py-3 font-medium">等级</th>
                 <th className="text-left px-4 py-3 font-medium">渠道</th>
                 <th className="text-left px-4 py-3 font-medium">状态</th>
                 <th className="text-left px-4 py-3 font-medium">角色</th>
@@ -453,7 +504,7 @@ function DashboardContent({ operator }: { operator: Operator }) {
               {loading && (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9}
                     className="px-4 py-8 text-center text-slate-500"
                   >
                     加载中…
@@ -463,7 +514,7 @@ function DashboardContent({ operator }: { operator: Operator }) {
               {!loading && items.length === 0 && (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9}
                     className="px-4 py-12 text-center text-slate-500"
                   >
                     暂无会话
@@ -471,10 +522,12 @@ function DashboardContent({ operator }: { operator: Operator }) {
                 </tr>
               )}
               {!loading &&
-                items.map((row) => (
+                items.map((row) => {
+                  const tier = vipToLevelTier(row.vip_level);
+                  return (
                   <tr
                     key={row.conversation_id}
-                    className="hover:bg-slate-700/30 transition"
+                    className={`hover:bg-slate-700/30 transition ${rowPriorityClass(row.state, row.vip_level)}`}
                   >
                     <td className="px-4 py-3">
                       <div className="text-slate-100">
@@ -485,6 +538,13 @@ function DashboardContent({ operator }: { operator: Operator }) {
                       <div className="text-xs text-slate-500 font-mono">
                         {row.external_id || "—"}
                       </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-block px-2 py-0.5 text-xs rounded-full border ${levelBadgeClass(tier)}`}
+                      >
+                        {tier}
+                      </span>
                     </td>
                     <td className="px-4 py-3 text-slate-300">
                       {row.channel || "—"}
@@ -530,7 +590,8 @@ function DashboardContent({ operator }: { operator: Operator }) {
                       </button>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
             </tbody>
           </table>
         </div>
@@ -563,15 +624,7 @@ function DashboardContent({ operator }: { operator: Operator }) {
       {(detail || detailLoading || detailError) && (
         <div
           className="fixed inset-0 bg-black/60 z-50 flex justify-end"
-          onClick={() => {
-            setDetail(null);
-            setDetailError(null);
-            setAssist(null);
-            setAssistError(null);
-            setDraftReply("");
-            setMessageTranslations({});
-            setTranslationError(null);
-          }}
+          onClick={closeDetail}
         >
           <div
             className="w-full max-w-2xl bg-slate-900 h-full border-l border-slate-700 overflow-y-auto"
@@ -580,16 +633,9 @@ function DashboardContent({ operator }: { operator: Operator }) {
             <div className="sticky top-0 bg-slate-900 border-b border-slate-700 px-6 py-4 flex items-center justify-between">
               <h2 className="text-lg font-semibold">会话详情</h2>
               <button
-                onClick={() => {
-                  setDetail(null);
-                  setDetailError(null);
-                  setAssist(null);
-                  setAssistError(null);
-                  setDraftReply("");
-                  setMessageTranslations({});
-                  setTranslationError(null);
-                }}
+                onClick={closeDetail}
                 className="text-slate-400 hover:text-white"
+                title="关闭（有草稿时会确认）"
               >
                 ✕
               </button>
