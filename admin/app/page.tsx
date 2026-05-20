@@ -8,6 +8,7 @@ import {
   Operator,
 } from "@/lib/auth";
 import AuthGate from "@/components/AuthGate";
+import FeedbackForm from "@/components/FeedbackForm";
 import OperatorWsStatus from "@/components/OperatorWsStatus";
 import { useOperatorTaskWs } from "@/hooks/useOperatorTaskWs";
 import { levelBadgeClass, rowPriorityClass, vipToLevelTier } from "@/lib/priorityDisplay";
