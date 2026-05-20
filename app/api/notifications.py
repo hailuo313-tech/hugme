@@ -13,10 +13,11 @@ from core.config import settings
 from services.notification_content import build_outbound_text
 from services.minor_protection import MINOR_BLOCK_DETAIL, should_block_push
 from services.telegram_send import send_telegram_text, telegram_chat_id_from_external
+from services.mobile_push_service import get_mobile_push_service
 
 router = APIRouter()
 
-ALLOWED_CHANNELS = {"telegram"}
+ALLOWED_CHANNELS = {"telegram", "android", "ios"}
 ALLOWED_STATUSES = {"pending", "sending", "sent", "failed", "cancelled"}
 DAILY_LIMIT = 1
 WEEKLY_LIMIT = 3
@@ -35,6 +36,9 @@ class NotificationSendNow(BaseModel):
     channel: str = "telegram"
     notification_type: str = Field(..., min_length=1, max_length=50)
     payload: dict = Field(default_factory=dict)
+    # 移动端推送专用字段
+    device_token: Optional[str] = None  # 设备令牌（移动端推送必需）
+    platform: Optional[str] = None  # 平台类型（"android" 或 "ios"，移动端推送必需）
 
 
 class NotificationCancel(BaseModel):
@@ -284,62 +288,141 @@ async def send_notification_now(
     await db.commit()
 
     trace_id = getattr(request.state, "trace_id", None)
-    chat_id = telegram_chat_id_from_external(user["external_id"])
-    if chat_id is None:
-        await _mark_send_now_failed(db, task_id, "no_telegram_chat_id")
-        raise HTTPException(
-            status_code=409,
-            detail={"message": "No Telegram chat id", "notification_id": task_id},
+    
+    # 根据不同的 channel 处理发送逻辑
+    if data.channel == "telegram":
+        chat_id = telegram_chat_id_from_external(user["external_id"])
+        if chat_id is None:
+            await _mark_send_now_failed(db, task_id, "no_telegram_chat_id")
+            raise HTTPException(
+                status_code=409,
+                detail={"message": "No Telegram chat id", "notification_id": task_id},
+            )
+        if not settings.TELEGRAM_BOT_TOKEN:
+            await _mark_send_now_failed(db, task_id, "telegram_bot_token_missing")
+            raise HTTPException(
+                status_code=503,
+                detail={"message": "Telegram bot token missing", "notification_id": task_id},
+            )
+
+        message_id = await send_telegram_text(
+            chat_id=chat_id,
+            text_content=body,
+            trace_id=trace_id,
+            parse_mode=None,
         )
-    if not settings.TELEGRAM_BOT_TOKEN:
-        await _mark_send_now_failed(db, task_id, "telegram_bot_token_missing")
-        raise HTTPException(
-            status_code=503,
-            detail={"message": "Telegram bot token missing", "notification_id": task_id},
+        if message_id is None:
+            await _mark_send_now_failed(db, task_id, "telegram_send_rejected")
+            raise HTTPException(
+                status_code=502,
+                detail={"message": "Telegram send rejected", "notification_id": task_id},
+            )
+
+        await db.execute(
+            text(
+                """
+                UPDATE notification_tasks
+                SET status = 'sent',
+                    sent_at = NOW(),
+                    failure_reason = NULL
+                WHERE id = :id AND status = 'sending'
+                """
+            ),
+            {"id": task_id},
         )
+        await db.commit()
 
-    message_id = await send_telegram_text(
-        chat_id=chat_id,
-        text_content=body,
-        trace_id=trace_id,
-        parse_mode=None,
-    )
-    if message_id is None:
-        await _mark_send_now_failed(db, task_id, "telegram_send_rejected")
-        raise HTTPException(
-            status_code=502,
-            detail={"message": "Telegram send rejected", "notification_id": task_id},
+        logger.bind(
+            trace_id=trace_id,
+            notification_id=task_id,
+            user_id=user_id,
+            notification_type=data.notification_type,
+            telegram_message_id=message_id,
+        ).info("notification.send_now.sent")
+
+        return {
+            "notification_id": task_id,
+            "status": "sent",
+            "sent_at": _utcnow().isoformat(),
+            "telegram_message_id": message_id,
+            "payload": payload,
+        }
+    
+    elif data.channel in {"android", "ios"}:
+        # 移动端推送
+        if not data.device_token:
+            await _mark_send_now_failed(db, task_id, "device_token_missing")
+            raise HTTPException(
+                status_code=422,
+                detail={"message": "device_token is required for mobile push", "notification_id": task_id},
+            )
+        
+        if not data.platform:
+            await _mark_send_now_failed(db, task_id, "platform_missing")
+            raise HTTPException(
+                status_code=422,
+                detail={"message": "platform is required for mobile push", "notification_id": task_id},
+            )
+        
+        # 解析通知标题和内容
+        title = payload.get("title", "ERIS")
+        message_body = payload.get("body", body)
+        
+        push_service = get_mobile_push_service()
+        result = await push_service.send_notification(
+            device_token=data.device_token,
+            platform=data.platform,
+            title=title,
+            body=message_body,
+            data=payload,
+            notification_id=task_id,
         )
-
-    await db.execute(
-        text(
-            """
-            UPDATE notification_tasks
-            SET status = 'sent',
-                sent_at = NOW(),
-                failure_reason = NULL
-            WHERE id = :id AND status = 'sending'
-            """
-        ),
-        {"id": task_id},
-    )
-    await db.commit()
-
-    logger.bind(
-        trace_id=trace_id,
-        notification_id=task_id,
-        user_id=user_id,
-        notification_type=data.notification_type,
-        telegram_message_id=message_id,
-    ).info("notification.send_now.sent")
-
-    return {
-        "notification_id": task_id,
-        "status": "sent",
-        "sent_at": _utcnow().isoformat(),
-        "telegram_message_id": message_id,
-        "payload": payload,
-    }
+        
+        if result.success:
+            await db.execute(
+                text(
+                    """
+                    UPDATE notification_tasks
+                    SET status = 'sent',
+                        sent_at = NOW(),
+                        failure_reason = NULL
+                    WHERE id = :id AND status = 'sending'
+                    """
+                ),
+                {"id": task_id},
+            )
+            await db.commit()
+            
+            logger.bind(
+                trace_id=trace_id,
+                notification_id=task_id,
+                user_id=user_id,
+                notification_type=data.notification_type,
+                provider=result.provider,
+                message_id=result.message_id,
+            ).info("notification.send_now.sent")
+            
+            return {
+                "notification_id": task_id,
+                "status": "sent",
+                "sent_at": _utcnow().isoformat(),
+                "provider": result.provider,
+                "message_id": result.message_id,
+                "payload": payload,
+            }
+        else:
+            await _mark_send_now_failed(db, task_id, result.error_message or "push_failed")
+            raise HTTPException(
+                status_code=502,
+                detail={"message": result.error_message, "notification_id": task_id},
+            )
+    
+    else:
+        await _mark_send_now_failed(db, task_id, "unsupported_channel")
+        raise HTTPException(
+            status_code=422,
+            detail={"message": "Unsupported channel", "notification_id": task_id},
+        )
 
 
 @router.get("/tasks")
