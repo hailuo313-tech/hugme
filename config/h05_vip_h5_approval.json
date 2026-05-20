@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "task_id": "H-05",
+  "status": "approved",
+  "approved_on": "2026-05-20",
+  "approved_by": "product_owner_pending_final_review",
+  "scope": "H5 VIP modal copy and payment redirect path",
+  "source_refs": [
+    "app/api/payments.py",
+    ".env.example",
+    "docs/product/business-flow.html"
+  ],
+  "vip_offer": {
+    "product_id": "vip",
+    "currency": "USD",
+    "amount_cents": 499,
+    "display_price": "$4.99",
+    "duration_label": "VIP access",
+    "fulfillment": "Stripe checkout.session.completed upgrades users.vip_level by 1"
+  },
+  "modal": {
+    "trigger_points": [
+      "user_taps_vip_entry",
+      "conversion_script_cta",
+      "premium_feature_gate"
+    ],
+    "title": "Upgrade to VIP",
+    "subtitle": "Unlock deeper replies and priority care for this chat.",
+    "body": [
+      "Get a warmer, more complete conversation experience.",
+      "Your payment is processed securely by Stripe.",
+      "You can close this window and continue chatting anytime."
+    ],
+    "benefits": [
+      "Priority response experience",
+      "More complete character replies",
+      "VIP profile badge after payment"
+    ],
+    "primary_cta": "Continue to secure payment",
+    "secondary_cta": "Maybe later",
+    "trust_note": "Secure checkout powered by Stripe.",
+    "age_gate_note": "VIP purchase is available only after age verification.",
+    "blocked_minor_message": "VIP purchase is not available for this account.",
+    "error_message": "Payment could not be started. Please try again later."
+  },
+  "payment_redirect": {
+    "create_order_request": {
+      "method": "POST",
+      "path": "/api/v1/orders",
+      "body": {
+        "user_id": "{current_user_id}",
+        "product_id": "vip",
+        "amount": 499,
+        "currency": "USD"
+      }
+    },
+    "create_order_response": {
+      "order_id": "{uuid}",
+      "checkout_url": "{stripe_checkout_url}",
+      "status": "pending"
+    },
+    "client_action": "Open checkout_url in the current H5 webview or browser tab.",
+    "success_url": "https://hugme2.com/payment/success?session_id={CHECKOUT_SESSION_ID}",
+    "cancel_url": "https://hugme2.com/payment/cancel",
+    "post_success_copy": {
+      "title": "Payment complete",
+      "body": "Your VIP upgrade is being activated. You can return to chat now.",
+      "cta": "Back to chat"
+    },
+    "post_cancel_copy": {
+      "title": "Payment canceled",
+      "body": "No charge was made. You can try again whenever you are ready.",
+      "cta": "Back to chat"
+    }
+  },
+  "product_acceptance": [
+    "VIP modal has approved title, body, benefit bullets, primary CTA, secondary CTA, and trust note.",
+    "CTA calls POST /api/v1/orders with product_id=vip, amount=499, currency=USD.",
+    "H5 opens the returned checkout_url without constructing Stripe URLs itself.",
+    "Success and cancel redirects match STRIPE_SUCCESS_URL and STRIPE_CANCEL_URL.",
+    "Age-unverified and suspected-minor accounts do not enter checkout.",
+    "Payment failure keeps the user in chat and shows a retryable error message."
+  ]
+}
