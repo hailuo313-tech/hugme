@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -473,7 +473,7 @@ const TASKS = [
   { id:"P1-10", phase:"01", owner:"codex", w:1.5, week:"W2", dep:"P1-09", desc:"NewMessage 监听 → inbound_queue（platform=telegram_real_user）", acc:"text/photo/voice 入队单测通过" },
   { id:"P1-11", phase:"01", owner:"codex", w:1, week:"W2", dep:"P1-10", desc:"send_typing + send_human_like_message 拟人延迟出站", acc:"用户侧可见打字与延迟发送" },
   { id:"P1-12", phase:"01", owner:"codex", w:0.5, week:"W2", dep:"P1-10", desc:"Redis 去重 telegram_msg:{user_id}:{message_id} TTL 1h", acc:"重复消息不重复处理" },
-  { id:"P1-13", phase:"01", owner:"codex", w:0.5, week:"W2", dep:"—", desc:"定义 schema_spec.json（含 account_id/sender_phone）", acc:"JSON Schema 校验通过" },
+  { id:"P1-13", phase:"01", owner:"codex", w:0.5, week:"W2", dep:"—", desc:"定义 schema_spec.json（含 account_id/sender_phone）", acc:"JSON Schema 校验通过", baseline:true },
   { id:"P1-14", phase:"01", owner:"codex", w:1, week:"W2", dep:"P1-13,P1-10", desc:"MTProto 渠道适配器 → 标准入站格式", acc:"MTProto 消息成功入队" },
   { id:"P1-15", phase:"01", owner:"devin", w:0.5, week:"W2", dep:"P1-13", desc:"H5/APP 适配器 Mock 桩", acc:"Mock 可本地联调" },
   { id:"P1-16", phase:"01", owner:"devin", w:1, week:"W2", dep:"P1-06,P1-14,P1-19", desc:"写入 inbound_queue + audit_logs（预留 script_hit_id）", acc:"审计可查最近 100 条" },
@@ -484,7 +484,7 @@ const TASKS = [
 
   // ── 阶段 02（13 项）──
   { id:"P2-01", phase:"02", owner:"codex", w:0.5, week:"W3", dep:"H-02", desc:"t1_countries.json 热加载模块", acc:"改配置可生效" },
-  { id:"P2-02", phase:"02", owner:"devin", w:1, week:"W3", dep:"—", desc:"GeoIP 服务封装（MaxMind/ip-api）", acc:"抽样准确率 ≥95%" },
+  { id:"P2-02", phase:"02", owner:"devin", w:1, week:"W3", dep:"—", desc:"GeoIP 服务封装（MaxMind/ip-api）", acc:"抽样准确率 ≥95%", baseline:true },
   { id:"P2-03", phase:"02", owner:"codex", w:1, week:"W3", dep:"H-03", desc:"D 级探测触发器（预留③探测话术匹配接口）", acc:"3 轮内触发补全" },
   { id:"P2-04", phase:"02", owner:"codex", w:1.5, week:"W4", dep:"P3-12", desc:"AI 提取年龄 + 置信度写入", acc:"低置信不写入" },
   { id:"P2-05", phase:"02", owner:"codex", w:1, week:"W3", dep:"P2-01,H-02", desc:"calcUserLevel() 纯函数", acc:"正确返回 S/A/B/C/D" },
