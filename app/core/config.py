@@ -1,13 +1,32 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     DATABASE_URL: str = 'postgresql+asyncpg://eris:eris_secret_2026@postgres:5432/eris'
     REDIS_URL: str = 'redis://:redis_secret_2026@redis:6379/0'
     SECRET_KEY: str = 'change_this_secret_key_in_production'
     OPENROUTER_API_KEY: Optional[str] = None
     TELEGRAM_BOT_TOKEN: Optional[str] = None
+    # C-03 / W2 MTProto（Telethon Userbot）；W2 前可不启用运行时，但须在 .env 配齐占位
+    TELEGRAM_API_ID: Optional[int] = None
+    TELEGRAM_API_HASH: Optional[str] = None
+    TELEGRAM_SESSION_FERNET_KEY: Optional[str] = None
+    TELEGRAM_SESSION_STRINGS: Optional[str] = None
+    TELEGRAM_SESSION_DIR: str = "./data/telegram_sessions"
+    MTProto_ENABLED: bool = False
+    TELEGRAM_DEVICE_MODEL: str = "ERIS"
+    TELEGRAM_SYSTEM_VERSION: str = "1.0"
+
+    @field_validator("TELEGRAM_API_ID", mode="before")
+    @classmethod
+    def _empty_api_id_to_none(cls, v: object) -> object:
+        if v is None or v == "":
+            return None
+        return v
     # D2-2: 上游 LLM 失败时是否回退为 "echo: <user_text>"。
     # 默认 False（失败抛 LLMOrchestratorError，调用方决定如何兜底）；
     # 设为 True 用于演示 / 降级 / 离线开发。
