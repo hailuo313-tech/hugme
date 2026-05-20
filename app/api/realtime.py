@@ -346,3 +346,75 @@ async def test_user_upgrade(data: UserUpgradeTest):
         "previous_level": data.previous_level,
         "new_level": data.new_level,
     }
+
+
+# ── P1-07: 通用 WebSocket 端点 (ping/pong) ─────────────────────
+
+@router.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """
+    P1-07: 通用 WebSocket 端点，支持 ping/pong 功能
+    
+    浏览器可连接 /ws 端点并发送 ping 消息，服务器将回复 pong
+    """
+    client_id = websocket.query_params.get("client_id") or "anonymous"
+    trace_id = websocket.query_params.get("trace_id") or f"ws-{client_id}"
+    
+    log = logger.bind(
+        trace_id=trace_id,
+        component="ws",
+        client_id=client_id,
+        path="/ws",
+    )
+    
+    await manager.connect(websocket)
+    log.info("ws.client.connected")
+    
+    # 发送连接就绪消息
+    await websocket.send_json({
+        "type": "connection.ready",
+        "trace_id": trace_id,
+        "client_id": client_id,
+        "server_time": datetime.now().isoformat(),
+    })
+    
+    try:
+        while True:
+            # 非阻塞接收客户端消息
+            try:
+                client_msg = await asyncio.wait_for(
+                    websocket.receive_json(),
+                    timeout=CLIENT_RECV_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                client_msg = None
+            
+            if client_msg is not None:
+                msg_type = client_msg.get("type")
+                
+                if msg_type == "ping":
+                    # P1-07: ping/pong 功能
+                    await websocket.send_json({
+                        "type": "pong",
+                        "trace_id": trace_id,
+                        "client_id": client_id,
+                        "server_time": datetime.now().isoformat(),
+                    })
+                    log.info("ws.client.ping_pong")
+                elif msg_type == "echo":
+                    # 回显功能用于测试
+                    await websocket.send_json({
+                        "type": "echo.response",
+                        "trace_id": trace_id,
+                        "original_message": client_msg,
+                    })
+                    log.bind(original_message=client_msg).info("ws.client.echo")
+                else:
+                    log.bind(msg_type=msg_type).warning("ws.client.unknown_message_type")
+    
+    except WebSocketDisconnect:
+        log.info("ws.client.disconnected")
+    except Exception as e:
+        log.bind(error=str(e)).error("ws.client.error")
+    finally:
+        manager.disconnect(websocket)

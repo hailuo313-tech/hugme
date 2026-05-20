@@ -62,6 +62,76 @@ jobs:
       - name: pytest
         run: pytest -q
 
+  # P1-03：CI 自动迁移 — 验证 uuid-ossp 扩展和 Flyway 迁移流水线
+  migration-ci:
+    name: 迁移-ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start PostgreSQL
+        run: |
+          docker run -d --name postgres-test \
+            -e POSTGRES_DB=eris \
+            -e POSTGRES_USER=eris \
+            -e POSTGRES_PASSWORD=eris_secret_2026 \
+            -p 5432:5432 \
+            pgvector/pgvector:pg16
+          # Wait for PostgreSQL to be ready
+          for i in $(seq 1 30); do
+            if docker exec postgres-test pg_isready -U eris -d eris; then
+              echo "PostgreSQL is ready"
+              break
+            fi
+            echo "Waiting for PostgreSQL... ($i/30)"
+            sleep 2
+          done
+
+      - name: Install Flyway
+        run: |
+          wget -qO- https://repo1.maven.org/maven2/org/flywaydb/flyway-commandline/10.0.0/flyway-commandline-10.0.0-linux-x64.tar.gz | tar xz
+          export PATH="$PATH:$(pwd)/flyway-10.0.0"
+          echo "Flyway installed successfully"
+
+      - name: Run Flyway migrations
+        run: |
+          export PATH="$PATH:$(pwd)/flyway-10.0.0"
+          flyway -configFiles=<(cat <<FLYWAY_CONF
+          flyway.url=jdbc:postgresql://localhost:5432/eris
+          flyway.user=eris
+          flyway.password=eris_secret_2026
+          flyway.locations=filesystem:./db/migration
+          flyway.baselineOnMigrate=true
+          FLYWAY_CONF
+          ) migrate
+
+      - name: Verify uuid-ossp extension
+        run: |
+          docker exec postgres-test psql -U eris -d eris -c "SELECT extname FROM pg_extension WHERE extname = 'uuid-ossp';" | grep -q uuid-ossp
+          echo "✅ uuid-ossp extension verified"
+
+      - name: Verify vector extension
+        run: |
+          docker exec postgres-test psql -U eris -d eris -c "SELECT extname FROM pg_extension WHERE extname = 'vector';" | grep -q vector
+          echo "✅ vector extension verified"
+
+      - name: Verify pg_trgm extension
+        run: |
+          docker exec postgres-test psql -U eris -d eris -c "SELECT extname FROM pg_extension WHERE extname = 'pg_trgm';" | grep -q pg_trgm
+          echo "✅ pg_trgm extension verified"
+
+      - name: Verify core tables exist
+        run: |
+          docker exec postgres-test psql -U eris -d eris -c "SELECT table_name FROM information_schema.tables WHERE table_schema='public';" | grep -q users
+          docker exec postgres-test psql -U eris -d eris -c "SELECT table_name FROM information_schema.tables WHERE table_schema='public';" | grep -q conversations
+          docker exec postgres-test psql -U eris -d eris -c "SELECT table_name FROM information_schema.tables WHERE table_schema='public';" | grep -q memories
+          echo "✅ Core tables verified"
+
+      - name: Cleanup
+        if: always()
+        run: docker stop postgres-test && docker rm postgres-test
+
   # CUR-D8-01：轻量运维护栏 — 关键文件 + 勿提交 admin 构建产物 + shell 语法
   ops-guard:
     name: 操作守卫
@@ -79,6 +149,8 @@ jobs:
           test -f requirements-dev.txt
           test -d scripts
           test -f scripts/init.sql
+          test -d db/migration
+          test -f db/migration/V1__init.sql
           grep -q '^services:' docker-compose.yml
           grep -qE '^\s{2}api:' docker-compose.yml
           grep -qE '^\s{2}postgres:' docker-compose.yml
@@ -99,3 +171,9 @@ jobs:
           set -euo pipefail
           find scripts -type f -name '*.sh' -exec bash -n {} \;
           echo "bash -n OK for all *.sh under scripts/"
+
+      - name: Verify Flyway migration setup
+        run: |
+          set -euo pipefail
+          test -f db/migration/V1__init.sql
+          echo "✅ Flyway migration setup verified"

@@ -9,3 +9,6 @@ from services.mtproto.security_policy import (
     assert_safe_log_message, check_production_session_policy,
     production_session_strings_forbidden, redact_sensitive,
 )
+from services.mtproto.newmessage_inbound import (
+    INBOUND_QUEUE_STREAM, MtprotoNewMessageAdapter, enqueue_new_message,
+)

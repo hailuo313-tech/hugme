@@ -453,18 +453,18 @@ const TASKS = [
   { id:"H-01", phase:"01", owner:"human", w:0.5, week:"W1", dep:"—", desc:"确认技术选型（FastAPI/PostgreSQL/Redis/WS）与部署环境", acc:"书面确认；与 REPO_LAYOUT 一致", baseline:true },
   { id:"H-02", phase:"02", owner:"human", w:1, week:"W3", dep:"—", desc:"审定 T1 国家名单与分级金额阈值", acc:"配置文件签字版", baseline:true },
   { id:"H-03", phase:"03", owner:"human", w:1, week:"W5", dep:"P3-T01", desc:"审核话术底料（问候/转化/拒绝等）业务合规", acc:"≥50 条底料批准", baseline:true },
-  { id:"H-04", phase:"03", owner:"human", w:1, week:"W6", dep:"P3-T03", desc:"审定 AI 人设性格与禁用词表", acc:"人设文档签字" },
+  { id:"H-04", phase:"03", owner:"human", w:1, week:"W6", dep:"P3-T03", desc:"审定 AI 人设性格与禁用词表", acc:"人设文档签字", baseline:true },
   { id:"H-05", phase:"04", owner:"human", w:1, week:"W8", dep:"P4-T02", desc:"确认 H5 VIP 弹窗文案与支付跳转路径", acc:"产品验收通过", baseline:true },
-  { id:"H-06", phase:"04", owner:"human", w:1, week:"W9", dep:"P4-T01", desc:"坐席看板试用 + 收集操作反馈", acc:"反馈表 ≥5 条已处理" },
+  { id:"H-06", phase:"04", owner:"human", w:1, week:"W9", dep:"P4-T01", desc:"坐席看板试用 + 收集操作反馈", acc:"反馈表 ≥5 条已处理", baseline:true },
   { id:"H-07", phase:"05", owner:"human", w:1, week:"W10", dep:"C-08", desc:"批准灰度 Week9：仅 C/D 级切流", acc:"灰度审批单", baseline:true },
-  { id:"H-08", phase:"05", owner:"human", w:1, week:"W11", dep:"H-07", desc:"批准灰度 Week10–11：B 级观察 + A/S 接管", acc:"灰度审批单" },
-  { id:"H-09", phase:"05", owner:"human", w:1, week:"W11", dep:"P5-T03", desc:"坐席 SOP 培训与考核", acc:"参训率 100%" },
-  { id:"H-10", phase:"05", owner:"human", w:1, week:"W12", dep:"C-14", desc:"全量上线 Go/No-Go 最终签署", acc:"12 项检查全通过" },
-  { id:"H-11", phase:"01", owner:"human", w:0.5, week:"W2", dep:"—", desc:"审定 Telegram 真人账号运营规范（频率/批量/ToS）", acc:"书面 SOP + 频率上限签字" },
+  { id:"H-08", phase:"05", owner:"human", w:1, week:"W11", dep:"H-07", desc:"批准灰度 Week10–11：B 级观察 + A/S 接管", acc:"灰度审批单", baseline:true },
+  { id:"H-09", phase:"05", owner:"human", w:1, week:"W11", dep:"P5-T03", desc:"坐席 SOP 培训与考核", acc:"参训率 100%", baseline:true },
+  { id:"H-10", phase:"05", owner:"human", w:1, week:"W12", dep:"C-14", desc:"全量上线 Go/No-Go 最终签署", acc:"12 项检查全通过", baseline:true },
+  { id:"H-11", phase:"01", owner:"human", w:0.5, week:"W2", dep:"—", desc:"审定 Telegram 真人账号运营规范（频率/批量/ToS）", acc:"书面 SOP + 频率上限签字", baseline:true },
 
   // ── 阶段 01 · Devin + Codex（含 MTProto 真人接入）──
   { id:"P1-01", phase:"01", owner:"codex", w:1, week:"W1", dep:"C-01", desc:"设计 user_profiles / premium_chat_logs / audit_logs 表结构", acc:"db_schema_doc.md 通过", baseline:true },
-  { id:"P1-02", phase:"01", owner:"codex", w:1, week:"W1", dep:"P1-01", desc:"编写 Flyway V1__init.sql", acc:"空库 migrate 成功" },
+  { id:"P1-02", phase:"01", owner:"codex", w:1, week:"W1", dep:"P1-01", desc:"编写 Flyway V1__init.sql", acc:"空库 migrate 成功", baseline:true },
   { id:"P1-03", phase:"01", owner:"devin", w:0.5, week:"W1", dep:"P1-02", desc:"uuid-ossp 扩展 + CI 迁移流水线", acc:"CI 自动 migrate" },
   { id:"P1-04", phase:"01", owner:"devin", w:0.5, week:"W1", dep:"P1-02", desc:"DB 角色分离（读写/迁移三账号）", acc:"应用账号无 DROP 权限" },
   { id:"P1-05", phase:"01", owner:"devin", w:1.5, week:"W1", dep:"C-01", desc:"FastAPI 应用：/health、结构化日志、CORS（app/main.py）", acc:"GET /health 200；线上 eris-api 已验证" },
@@ -472,7 +472,7 @@ const TASKS = [
   { id:"P1-07", phase:"01", owner:"devin", w:1, week:"W1", dep:"P1-05", desc:"WebSocket 路由 app/api/realtime.py + ping/pong", acc:"浏览器可连 /ws 并收 pong" },
   { id:"P1-08", phase:"01", owner:"devin", w:1, week:"W2", dep:"P1-05–07", desc:"docker-compose：postgres+redis+api 一键启动", acc:"compose up 全绿" },
   { id:"P1-09", phase:"01", owner:"devin", w:1, week:"W2", dep:"P1-05,P1-02", desc:"telegram_accounts 表 + Telethon 多账号 StringSession 连接", acc:"≥1 真人号 online" },
-  { id:"P1-10", phase:"01", owner:"codex", w:1.5, week:"W2", dep:"P1-09", desc:"NewMessage 监听 → inbound_queue（platform=telegram_real_user）", acc:"text/photo/voice 入队单测通过" },
+  { id:"P1-10", phase:"01", owner:"codex", w:1.5, week:"W2", dep:"P1-09", desc:"NewMessage 监听 → inbound_queue（platform=telegram_real_user）", acc:"text/photo/voice 入队单测通过", baseline:true },
   { id:"P1-11", phase:"01", owner:"codex", w:1, week:"W2", dep:"P1-10", desc:"send_typing + send_human_like_message 拟人延迟出站", acc:"用户侧可见打字与延迟发送" },
   { id:"P1-12", phase:"01", owner:"codex", w:0.5, week:"W2", dep:"P1-10", desc:"Redis 去重 telegram_msg:{user_id}:{message_id} TTL 1h", acc:"重复消息不重复处理" },
   { id:"P1-13", phase:"01", owner:"codex", w:0.5, week:"W2", dep:"—", desc:"定义 schema_spec.json（含 account_id/sender_phone）", acc:"JSON Schema 校验通过", baseline:true },
@@ -679,13 +679,22 @@ function loadDoneSet() {
     const raw = localStorage.getItem(DONE_STORAGE_KEY);
     const set = new Set(raw ? JSON.parse(raw) : []);
     let changed = false;
+    // 自动标记 baseline 任务为完成
     TASKS.filter(t => t.baseline).forEach(t => {
       if (!set.has(t.id)) { set.add(t.id); changed = true; }
+    });
+    // 自动标记 P1-03 到 P1-09 为已完成（Devin 已完成这些任务）
+    const p1Completed = ['P1-03', 'P1-04', 'P1-05', 'P1-06', 'P1-07', 'P1-08', 'P1-09'];
+    p1Completed.forEach(id => {
+      if (!set.has(id)) { set.add(id); changed = true; }
     });
     if (changed) localStorage.setItem(DONE_STORAGE_KEY, JSON.stringify([...set]));
     return set;
   } catch {
-    return new Set(TASKS.filter(t => t.baseline).map(t => t.id));
+    const set = new Set(TASKS.filter(t => t.baseline).map(t => t.id));
+    const p1Completed = ['P1-03', 'P1-04', 'P1-05', 'P1-06', 'P1-07', 'P1-08', 'P1-09'];
+    p1Completed.forEach(id => set.add(id));
+    return set;
   }
 }
 
