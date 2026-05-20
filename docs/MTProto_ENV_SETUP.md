@@ -1,4 +1,4 @@
-# MTProto / Telethon 环境配置（C-03）
+﻿# MTProto / Telethon 环境配置（C-03）
 
 任务 **C-03** 交付物：让新人仅凭本页 + `.env.template` 即可配齐 **真人 Userbot（MTProto）** 所需环境变量。  
 W2 接入 Telethon 代码尚未落地时，这些变量由 `app/core/config.py` 读取并供校验脚本检查。
@@ -76,6 +76,14 @@ pip install cryptography
 # 退出码 0 = MTProto 区块已填齐
 ```
 
+## 安全（C-15）
+
+生产启用 MTProto 前必读：**[`docs/MTProto_SECURITY_REVIEW_C15.md`](MTProto_SECURITY_REVIEW_C15.md)**。
+
+```powershell
+.\scripts\check-mtproto-security.ps1
+```
+
 ## 相关文件
 
 | 文件 | 用途 |
@@ -84,6 +92,8 @@ pip install cryptography
 | `.env.example` | 历史 compose 变量参考 |
 | `app/core/config.py` | `Settings` 字段定义 |
 | `docker-compose.yml` | `api.environment` 注入 |
+| `docs/MTProto_SECURITY_REVIEW_C15.md` | C-15 安全评审 |
+| `app/services/mtproto/` | Session 加密与账号路由参考实现 |
 
 ## 故障排查
 
