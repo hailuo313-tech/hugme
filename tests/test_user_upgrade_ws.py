@@ -41,7 +41,9 @@ class TestConnectionManager:
         
         # 创建模拟 WebSocket
         mock_ws = Mock(spec=WebSocket)
-        mock_ws.accept = asyncio.coroutine(lambda: None)
+        async def mock_accept():
+            pass
+        mock_ws.accept = mock_accept
         
         # 测试连接
         await manager.connect(mock_ws)
