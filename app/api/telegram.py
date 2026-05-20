@@ -185,6 +185,48 @@ async def _persist_message(
     return msg_id
 
 
+# Bot command handling. Commands are handled before onboarding/LLM and do not
+# mutate user state.
+HELP_TEXT = (
+    "🫂 <b>ERIS 命令列表</b>\n\n"
+    "/start   — 开始 Onboarding，认识 Aria\n"
+    "/help    — 查看所有命令\n"
+    "/reset   — 删除我的全部数据\n"
+    "/privacy — 隐私说明\n\n"
+    "也可以直接打字和 Aria 聊天 ✨"
+)
+
+PRIVACY_TEXT = (
+    "🔒 <b>隐私说明</b>\n\n"
+    "• 你的对话内容加密存储，仅用于为你提供陪伴服务。\n"
+    "• 我们不会将你的数据用于广告、营销或出售给第三方。\n"
+    "• 你可以随时通过 /reset 请求删除全部个人数据。\n"
+    "• 匿名化后的统计数据可能用于改进服务质量。\n\n"
+    "如有疑问，请联系：hello@hugme2.com"
+)
+
+RESET_PROMPT_TEXT = (
+    "⚠️ <b>确认删除</b>\n\n"
+    "此操作将永久删除你的全部数据，包括对话记录、记忆和个人偏好。\n\n"
+    "如需继续，请回复：<code>CONFIRM-DELETE</code>\n\n"
+    "（此功能尚在开发中，回复后暂不会执行实际删除。）"
+)
+
+
+async def _handle_command(command: str) -> str | None:
+    """Return a bot command response, or None to fall through to chat flow."""
+    cmd = (command or "").split()[0].lower().split("@")[0]
+    if cmd == "/help":
+        return HELP_TEXT
+    if cmd == "/privacy":
+        return PRIVACY_TEXT
+    if cmd == "/reset":
+        return RESET_PROMPT_TEXT
+    if cmd == "/start":
+        return None
+    return None
+
+
 # ── Onboarding 消息处理 ───────────────────────────────
 
 async def _parse_onboarding_answer(step: int, text_content: str) -> dict:
@@ -397,6 +439,21 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
 
     if not tg_user_id:
         return JSONResponse({"ok": True, "trace_id": trace_id})
+
+    if text_content.startswith("/"):
+        command_reply = await _handle_command(text_content)
+        if command_reply is not None:
+            await _send_tg(tg_chat_id, command_reply, trace_id)
+            logger.info(
+                f"[{trace_id}] tg.command.handled command={text_content.split()[0]}"
+            )
+            return JSONResponse(
+                {
+                    "ok": True,
+                    "trace_id": trace_id,
+                    "command_handled": True,
+                }
+            )
 
     external_id = f"tg_{tg_user_id}"
     channel     = "telegram"
