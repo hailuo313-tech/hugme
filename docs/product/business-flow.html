@@ -120,11 +120,13 @@
   .para-group { background: rgba(59,130,246,0.12); color: #93c5fd; border: 1px solid rgba(59,130,246,0.35); }
   .para-wait { background: rgba(251,146,60,0.1); color: #fdba74; border: 1px solid rgba(251,146,60,0.3); }
   .para-gate { background: rgba(239,68,68,0.1); color: #fca5a5; border: 1px solid rgba(239,68,68,0.35); }
+  .para-done { background: rgba(148,163,184,0.12); color: #cbd5e1; border: 1px solid rgba(148,163,184,0.35); }
   .para-note { display: block; font-size: 10px; color: var(--muted2, #4a5a78); margin-top: 4px; line-height: 1.45; max-width: 200px; }
   tr.row-now { box-shadow: inset 3px 0 0 #22c55e; }
   tr.row-group { box-shadow: inset 3px 0 0 #3b82f6; }
   tr.row-wait { box-shadow: inset 3px 0 0 #f97316; }
   tr.row-gate { box-shadow: inset 3px 0 0 #ef4444; }
+  tr.row-done { box-shadow: inset 3px 0 0 #94a3b8; }
 
   .task-progress {
     display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px;
@@ -489,7 +491,7 @@ const TASKS = [
   { id:"P2-04", phase:"02", owner:"codex", w:1.5, week:"W4", dep:"P3-12", desc:"AI 提取年龄 + 置信度写入", acc:"低置信不写入" },
   { id:"P2-05", phase:"02", owner:"codex", w:1, week:"W3", dep:"P2-01,H-02", desc:"calcUserLevel() 纯函数", acc:"正确返回 S/A/B/C/D" },
   { id:"P2-06", phase:"02", owner:"codex", w:0.5, week:"W3", dep:"P2-05", desc:"分级阈值外部化配置", acc:".env 改阈值即生效" },
-  { id:"P2-07", phase:"02", owner:"codex", w:0.5, week:"W3", dep:"P1-02", desc:"level_change_logs 审计", acc:"每次变更有记录" },
+  { id:"P2-07", phase:"02", owner:"codex", w:0.5, week:"W3", dep:"P1-02", desc:"level_change_logs 审计", acc:"每次变更有记录", baseline:true },
   { id:"P2-08", phase:"02", owner:"codex", w:2, week:"W4", dep:"P2-05,06", desc:"level_engine.test.ts ≥20 case", acc:"CI 全绿" },
   { id:"P2-09", phase:"02", owner:"codex", w:0.5, week:"W4", dep:"P2-05", desc:"chat_route 路由映射", acc:"路由与 level 一致" },
   { id:"P2-10", phase:"02", owner:"codex", w:1, week:"W4", dep:"P2-09", desc:"付费 Webhook 分级重算（付费话术匹配由 P3-20 接入）", acc:"模拟付费升 S" },
@@ -662,6 +664,7 @@ const PARA_UI = {
   group:{ label: '同批并行组', cls: 'para-group', row: 'row-group' },
   wait: { label: '须等依赖',   cls: 'para-wait',  row: 'row-wait'  },
   gate: { label: '阶段关口',   cls: 'para-gate',  row: 'row-gate'  },
+  done: { label: '已交付',     cls: 'para-done',  row: 'row-done'  },
 };
 
 function getParallel(id) {
@@ -733,7 +736,7 @@ function renderTasks(filter) {
   tbody.innerHTML = rows.map(t => {
     const [label, ocls] = OWNER_LABEL[t.owner];
     const p = getParallel(t.id);
-    const ui = PARA_UI[p.t];
+    const ui = PARA_UI[p.t] || PARA_UI.wait;
     const groupTxt = p.g && p.g !== '—' ? ` · ${p.g}` : '';
     const checked = isTaskDone(t.id);
     const doneCls = checked ? ' task-done' : '';
