@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
-from starlette.routing import WebSocketRoute
+from starlette.routing import Mount, WebSocketRoute
 
 from main import app as main_app
 from services.dashboard_integration import (
@@ -58,10 +58,20 @@ def test_docs_exist():
 
 def _route_paths(application: FastAPI) -> set[str]:
     paths: set[str] = set()
-    for route in application.routes:
-        if isinstance(route, APIRoute):
-            methods = ",".join(sorted(route.methods or []))
-            paths.add(f"{methods} {route.path}")
+
+    def visit(routes, prefix: str = "") -> None:
+        for route in routes:
+            if isinstance(route, Mount):
+                visit(route.routes, prefix + route.path)
+                continue
+            path = (prefix + getattr(route, "path", "")).replace("//", "/")
+            if isinstance(route, APIRoute):
+                methods = ",".join(sorted(route.methods or []))
+                paths.add(f"{methods} {path}")
+            elif isinstance(route, WebSocketRoute):
+                paths.add(f"WS {path}")
+
+    visit(application.routes)
     return paths
 
 
