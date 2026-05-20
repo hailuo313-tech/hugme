@@ -8,6 +8,7 @@ import {
   Operator,
 } from "@/lib/auth";
 import AuthGate from "@/components/AuthGate";
+import FeedbackForm from "@/components/FeedbackForm";
 import OperatorWsStatus from "@/components/OperatorWsStatus";
 import { useOperatorTaskWs } from "@/hooks/useOperatorTaskWs";
 import { levelBadgeClass, rowPriorityClass, vipToLevelTier } from "@/lib/priorityDisplay";
@@ -176,6 +177,9 @@ function DashboardContent({ operator }: { operator: Operator }) {
   const [translationLoading, setTranslationLoading] = useState(false);
   const [translationError, setTranslationError] = useState<string | null>(null);
 
+  // 反馈表单
+  const [showFeedback, setShowFeedback] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -228,6 +232,29 @@ function DashboardContent({ operator }: { operator: Operator }) {
     setMessageTranslations({});
     setTranslationError(null);
   }
+
+  const handleFeedbackSubmit = async (feedback: {
+  overall_satisfaction: number;
+  usability_rating: number;
+  ai_assist_rating: number;
+  translation_quality: number;
+  features_used: string[];
+  issues: string;
+  suggestions: string;
+  operator_id?: string;
+}) => {
+    try {
+      await apiFetch("/admin/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(feedback),
+      });
+      setShowFeedback(false);
+      alert("反馈提交成功！感谢您的意见。");
+    } catch (e) {
+      throw new Error(e instanceof Error ? e.message : "提交失败");
+    }
+  };
 
   async function openDetail(cid: string) {
     setDetail(null);
@@ -397,6 +424,13 @@ function DashboardContent({ operator }: { operator: Operator }) {
               共 {total} 条会话 · 第 {page} / {totalPages} 页
             </p>
           </div>
+          <button
+            type="button"
+            onClick={() => setShowFeedback(true)}
+            className="text-sm text-violet-400 hover:text-violet-300 border border-violet-800 px-3 py-1.5 rounded-md transition"
+          >
+            📝 使用反馈
+          </button>
         </div>
 
         {/* Filters */}
@@ -868,6 +902,15 @@ function DashboardContent({ operator }: { operator: Operator }) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* 反馈表单 */}
+      {showFeedback && (
+        <FeedbackForm
+          operatorId={operator.operator_id}
+          onSubmit={handleFeedbackSubmit}
+          onCancel={() => setShowFeedback(false)}
+        />
       )}
     </div>
   );
