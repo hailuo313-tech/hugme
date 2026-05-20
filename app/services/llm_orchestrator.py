@@ -55,6 +55,7 @@ from services.loneliness_updater import (
 from services.llm import chat as llm_chat
 from services.memory_consistency import filter_memory_hits_for_current_utterance
 from services.memory_retriever import retrieve as memory_retrieve
+from services.conversation_context import load_conversation_context
 from services.prompt_builder import (
     DEFAULT_SYSTEM_PROMPT,
     LAYER_ORDER,
@@ -145,6 +146,7 @@ async def generate_reply(
     if redis is not None and history_limit > 0:
         history = await _load_recent_context(
             redis=redis,
+            user_id=user_id,
             conversation_id=conversation_id,
             history_limit=history_limit,
             log=log,
@@ -469,13 +471,15 @@ async def _load_existing_assistant_reply_count(
 
 async def _load_recent_context(
     redis: Any,
+    user_id: str,
     conversation_id: str,
     history_limit: int,
     log,
 ) -> list[dict[str, str]]:
-    """读 Redis ``ctx:{conversation_id}`` 最近的历史消息。
+    """读 Redis 最近历史消息，优先使用 P1-19 ``conv:{user_id}``。
 
-    约定：``ctx:{conv_id}`` 用 ``RPUSH`` 写入，最新一条在末尾。每项是 JSON 字符串
+    新路径：``conv:{user_id}`` 用 ``RPUSH`` 写入，保留最近 50 轮（100 条）。
+    兼容路径：``ctx:{conv_id}`` 用 ``RPUSH`` 写入，最新一条在末尾。每项是 JSON 字符串
     形如 ``{"role": "...", "content": "...", "msg_id": "...", "ts": 123}``。
 
     实现：取最后 ``history_limit + 1`` 条，丢掉最末一条（视为"当前消息"，
@@ -484,6 +488,20 @@ async def _load_recent_context(
 
     任何读取/解析失败都被吞掉，仅 warning，返回空列表。
     """
+    try:
+        history = await load_conversation_context(
+            redis,
+            user_id=user_id,
+            limit=history_limit,
+            drop_latest=True,
+        )
+        if history:
+            return history
+    except Exception as exc:
+        log.bind(error_type=type(exc).__name__).warning(
+            "orchestrator.conv_context.load_failed"
+        )
+
     key = f"ctx:{conversation_id}"
     try:
         raw_items = await redis.lrange(key, -(history_limit + 1), -1)
@@ -688,4 +706,3 @@ def _is_system_leaked_content(content: str) -> bool:
     if _SYSTEM_LEAK_PATTERN.search(content):
         return True
     return False
-
