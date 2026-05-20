@@ -11,6 +11,7 @@ from services.inbound.envelope import InboundMetadata, StandardInboundEnvelope
 
 INBOUND_QUEUE_STREAM = "inbound_queue"
 PLATFORM = "telegram_real_user"
+TELEGRAM_MESSAGE_DEDUPE_TTL_SECONDS = 3600
 
 
 def _as_str(value: Any) -> Optional[str]:
@@ -80,6 +81,28 @@ def _trace_id(message_id: Optional[str]) -> str:
     return f"tg-real-{suffix}-{uuid4().hex[:12]}"
 
 
+def telegram_message_dedupe_key(user_id: str, message_id: str) -> str:
+    """Redis idempotency key for Telegram real-user inbound messages."""
+    if not user_id:
+        raise ValueError("user_id is required")
+    if not message_id:
+        raise ValueError("message_id is required")
+    return f"telegram_msg:{user_id}:{message_id}"
+
+
+async def claim_telegram_message_once(
+    redis: Any,
+    *,
+    user_id: str,
+    message_id: str,
+    ttl_seconds: int = TELEGRAM_MESSAGE_DEDUPE_TTL_SECONDS,
+) -> bool:
+    """Return True only for the first sighting within the TTL window."""
+    key = telegram_message_dedupe_key(user_id, message_id)
+    claimed = await redis.set(key, "1", ex=ttl_seconds, nx=True)
+    return bool(claimed)
+
+
 class MtprotoNewMessageAdapter(ChannelAdapter):
     """Normalize Telethon NewMessage events to the standard inbound envelope."""
 
@@ -138,9 +161,19 @@ async def enqueue_new_message(
     account_id: str,
     stream: str = INBOUND_QUEUE_STREAM,
     maxlen: int = 100_000,
-) -> tuple[str, StandardInboundEnvelope]:
+) -> tuple[str | None, StandardInboundEnvelope]:
     """Normalize a Telethon NewMessage event and enqueue it to Redis Stream."""
     adapter = MtprotoNewMessageAdapter(account_id=account_id)
     envelope = await adapter.normalize(raw_event)
+    message_id = envelope.metadata.telegram_message_id
+    if not message_id:
+        raise ValueError("telegram_message_id is required for inbound dedupe")
+    claimed = await claim_telegram_message_once(
+        redis,
+        user_id=envelope.external_user_id,
+        message_id=message_id,
+    )
+    if not claimed:
+        return None, envelope
     queue_id = await enqueue_standard_inbound(redis, stream, envelope, maxlen=maxlen)
     return queue_id, envelope
