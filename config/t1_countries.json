@@ -1,5 +1,13 @@
 {
   "version": 1,
-  "description": "P2-01 / H-02: T1 country ISO-3166 alpha-2 codes (draft for level_engine).",
-  "countries": ["US", "CA", "GB", "AU", "DE", "FR", "JP", "KR", "SG", "HK"]
+  "status": "approved",
+  "description": "H-02 / P2-01: signed T1 country ISO-3166 alpha-2 codes for level_engine.",
+  "countries": ["US", "CA", "GB", "AU", "DE", "FR", "JP", "KR", "SG", "HK"],
+  "approval": {
+    "task_id": "H-02",
+    "approved_on": "2026-05-20",
+    "approved_by": "human_owner",
+    "scope": "T1 country list for phase 02 level grading",
+    "notes": "T1 means high-priority monetization markets for initial grading. Changes require a new signed config revision."
+  }
 }
