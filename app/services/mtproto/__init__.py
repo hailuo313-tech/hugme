@@ -10,7 +10,12 @@ from services.mtproto.security_policy import (
     production_session_strings_forbidden, redact_sensitive,
 )
 from services.mtproto.newmessage_inbound import (
-    INBOUND_QUEUE_STREAM, MtprotoNewMessageAdapter, enqueue_new_message,
+    INBOUND_QUEUE_STREAM,
+    TELEGRAM_MESSAGE_DEDUPE_TTL_SECONDS,
+    MtprotoNewMessageAdapter,
+    claim_telegram_message_once,
+    enqueue_new_message,
+    telegram_message_dedupe_key,
 )
 from services.mtproto.human_like_send import (
     DEFAULT_HUMAN_LIKE_SEND_POLICY,
