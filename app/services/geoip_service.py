@@ -231,7 +231,11 @@ class GeoIPService:
     def _get_from_cache(self, ip_address: str) -> Optional[GeoIPResult]:
         """从缓存获取结果"""
         # 简单实现，生产环境可以使用 redis 等
-        return self._cache.get(ip_address)
+        result = self._cache.get(ip_address)
+        if result:
+            # 标记为缓存结果
+            result.is_cached = True
+        return result
 
     def _put_to_cache(self, ip_address: str, result: GeoIPResult) -> None:
         """将结果放入缓存"""
