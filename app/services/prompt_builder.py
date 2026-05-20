@@ -38,6 +38,7 @@ from services.emotion_lexicon import (
     language_name,
     normalize_language,
 )
+from services.persona_prompts import render_persona_prompt_block
 
 
 FIRST_DIRECT_QA_REPLY_LIMIT = 100
@@ -217,6 +218,8 @@ def _render_character(char: dict[str, Any] | None, reply_language: str) -> str:
     boundary = _score_band(char.get("boundary_score"))
     profile_details = _render_profile_details(char.get("profile_details"))
     profile_line = f"\n结构化角色事实（用户问年龄、身高、出生地、爱好、感情状态等身份事实时必须优先直接引用）：\n{profile_details}" if profile_details else ""
+    persona_prompt = render_persona_prompt_block(char)
+    persona_line = f"\n多人设 Prompt 覆盖规则：\n{persona_prompt}" if persona_prompt else ""
 
     return (
         f"姓名：{name}（体感 {age}，{region}，{occupation}）\n"
@@ -229,7 +232,8 @@ def _render_character(char: dict[str, Any] | None, reply_language: str) -> str:
         f"- 幽默 humor={humor}\n"
         f"- 对话深度 emotional_depth={depth}\n"
         f"- 边界感 boundary={boundary}（越高越克制，越严守 L1）"
-        f"{profile_line}\n"
+        f"{profile_line}"
+        f"{persona_line}\n"
         "【角色表达硬规则】无论 emotional_depth 多高，回复中一律禁止括号动作（如（微笑）（整理背包）（停下脚步））、"
         "星号动作（*微笑*）、舞台说明、旁白、内心独白。情感只通过说话内容本身体现，不用动作描写外化。"
     )

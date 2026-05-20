@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "description": "C-09 WebSocket protocol conformance fixtures",
+  "valid_server_events": [
+    {
+      "id": "C09-S-01",
+      "type": "connection.ready",
+      "payload": {
+        "type": "connection.ready",
+        "trace_id": "ws-op-1",
+        "operator_id": "op-1",
+        "poll_interval_ms": 1000
+      }
+    },
+    {
+      "id": "C09-S-02",
+      "type": "task.snapshot",
+      "payload": {
+        "type": "task.snapshot",
+        "trace_id": "ws-op-1",
+        "tasks": []
+      }
+    },
+    {
+      "id": "C09-S-03",
+      "type": "task.upsert",
+      "payload": {
+        "type": "task.upsert",
+        "trace_id": "ws-op-1",
+        "task": {
+          "task_id": "00000000-0000-0000-0000-000000000001",
+          "user_id": "00000000-0000-0000-0000-000000000002",
+          "conversation_id": "00000000-0000-0000-0000-000000000003",
+          "priority": "P1",
+          "trigger_reason": "keyword_risk",
+          "status": "pending",
+          "assigned_operator_id": null,
+          "locked_at": null,
+          "closed_at": null,
+          "created_at": "2026-05-12T04:00:00",
+          "last_message_at": "2026-05-12T04:00:00",
+          "channel": "telegram",
+          "external_id": "tg_123",
+          "risk_level": "normal"
+        }
+      }
+    },
+    {
+      "id": "C09-S-04",
+      "type": "task.removed",
+      "payload": {
+        "type": "task.removed",
+        "trace_id": "ws-op-1",
+        "task_id": "00000000-0000-0000-0000-000000000001"
+      }
+    },
+    {
+      "id": "C09-S-05",
+      "type": "pong",
+      "payload": {
+        "type": "pong",
+        "trace_id": "ws-op-1"
+      }
+    },
+    {
+      "id": "C09-S-06",
+      "type": "user.upgraded",
+      "payload": {
+        "type": "user.upgraded",
+        "trace_id": "ws-op-1",
+        "user_id": "00000000-0000-0000-0000-000000000002",
+        "previous_level": "B",
+        "new_level": "A",
+        "reason": "payment_completed",
+        "upgraded_at": "2026-05-19T19:00:00"
+      }
+    }
+  ],
+  "valid_client_events": [
+    {"id": "C09-C-01", "payload": {"type": "ping"}},
+    {
+      "id": "C09-C-02",
+      "payload": {
+        "type": "task.ack",
+        "task_id": "00000000-0000-0000-0000-000000000001"
+      }
+    }
+  ],
+  "invalid_server_events": [
+    {
+      "id": "C09-BAD-01",
+      "reason": "missing trace_id",
+      "payload": {"type": "pong"}
+    },
+    {
+      "id": "C09-BAD-02",
+      "reason": "task missing fields",
+      "payload": {
+        "type": "task.upsert",
+        "trace_id": "x",
+        "task": {"task_id": "t1"}
+      }
+    }
+  ]
+}

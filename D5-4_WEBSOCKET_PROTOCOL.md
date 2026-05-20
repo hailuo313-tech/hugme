@@ -1,5 +1,7 @@
 # D5-4 WebSocket Task Push Protocol
 
+> **Canonical copy for C-09 / P4-01:** [`docs/ws_protocol.md`](docs/ws_protocol.md)
+
 Status: backend implementation hardened in 2026-05 PR (delta semantics + tests).
 
 ## Goal
