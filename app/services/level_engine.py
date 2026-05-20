@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from services.t1_country_config import load_t1_countries_hot
+
 Level = Literal["S", "A", "B", "C", "D"]
 ChatRoute = Literal["manual_premium", "ai_assisted", "ai_auto"]
 CountryTier = Literal["T1", "T2", "T3", "unknown"]
@@ -54,9 +56,7 @@ def load_json_config(path: Path) -> dict:
 
 
 def load_t1_countries(path: Path = DEFAULT_T1_PATH) -> frozenset[str]:
-    data = load_json_config(path)
-    codes = {str(c).upper() for c in data.get("countries", [])}
-    return frozenset(codes)
+    return load_t1_countries_hot(path)
 
 
 def load_thresholds(path: Path = DEFAULT_THRESHOLDS_PATH) -> LevelThresholds:
