@@ -24,7 +24,7 @@ def eval_redline(handler: str, text: str) -> dict[str, Any]:
         blocked = minor and adult
         return {"blocked": blocked, "minor": minor, "adult": adult}
     if handler == "prompt_l1_present":
-        out = build_prompt(PromptInput())
+        out = build_prompt(PromptInput(user_text=""))
         has_l1 = "L1_SAFETY" in out.system_content and "硬红线" in out.system_content
         has_jailbreak_rule = "越狱" in _L1_SAFETY
         return {"blocked": has_l1 and has_jailbreak_rule, "layers": len(LAYER_ORDER)}

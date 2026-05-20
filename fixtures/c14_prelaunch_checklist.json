@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "description": "C-14 pre-launch code review and architecture final inspection",
+  "items": [
+    { "id": "C14-01", "title": "REPO_LAYOUT canonical paths exist", "gate": "prelaunch_integration.CANONICAL_PATHS" },
+    { "id": "C14-02", "title": "No legacy gateway/ws/worker/dashboard dirs", "gate": "audit script" },
+    { "id": "C14-03", "title": "PR required gates (admin + backend + ops-guard)", "gate": "pr-required-gates.yml" },
+    { "id": "C14-04", "title": "C-12 nightly stability_met", "gate": "fixtures/c12_nightly_stability.json" },
+    { "id": "C14-05", "title": "C-01..C-13 inspection deliverables", "gate": "CURSOR_DELIVERABLES" },
+    { "id": "C14-06", "title": "docker-compose api/postgres/redis", "gate": "audit script" },
+    { "id": "C14-07", "title": "admin basePath /admin", "gate": "admin/next.config.js" },
+    { "id": "C14-08", "title": "business-flow baseline for completed gates", "gate": "business-flow.html" },
+    { "id": "C14-09", "title": "Grafana MVP + 14 alerts (C-13)", "gate": "grafana_integration" },
+    { "id": "C14-10", "title": "Pre-launch issues doc (no P0 open)", "gate": "C14_PRELAUNCH_ISSUES.md" }
+  ]
+}
