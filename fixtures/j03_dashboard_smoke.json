@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "description": "J-03 dashboard integration smoke (C-10): sort + API contract",
+  "takeover_sla_ms": 3000,
+  "sort_cases": [
+    {
+      "id": "J03-SORT-01",
+      "title": "WAITING_OPERATOR 优先于 AI_ACTIVE",
+      "input": [
+        {"conversation_id": "a", "state": "AI_ACTIVE", "vip_level": 3, "last_message_at": "2026-05-20T10:00:00"},
+        {"conversation_id": "b", "state": "WAITING_OPERATOR", "vip_level": 0, "last_message_at": "2026-05-20T09:00:00"}
+      ],
+      "expect_first": "b"
+    },
+    {
+      "id": "J03-SORT-02",
+      "title": "同状态 VIP 高优先（S/A 代理）",
+      "input": [
+        {"conversation_id": "c", "state": "WAITING_OPERATOR", "vip_level": 0, "last_message_at": "2026-05-20T10:00:00"},
+        {"conversation_id": "d", "state": "WAITING_OPERATOR", "vip_level": 3, "last_message_at": "2026-05-20T09:00:00"}
+      ],
+      "expect_first": "d"
+    },
+    {
+      "id": "J03-SORT-03",
+      "title": "显式 user_level S 置顶",
+      "input": [
+        {"conversation_id": "e", "state": "AI_ACTIVE", "user_level": "B", "last_message_at": "2026-05-20T11:00:00"},
+        {"conversation_id": "f", "state": "AI_ACTIVE", "user_level": "S", "last_message_at": "2026-05-20T08:00:00"}
+      ],
+      "expect_first": "f"
+    }
+  ]
+}

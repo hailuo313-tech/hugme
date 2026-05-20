@@ -37,7 +37,7 @@
 
 - [ ] WebSocket `token=<jwt>` 鉴权（D5-1/D5-3）
 - [ ] 轮询改 Redis / LISTEN/NOTIFY（规模化）
-- [ ] Admin 前端 E2E 联调录屏（C-10 关口）
+- [x] Admin 看板联调清单（C-10）— 见 `docs/C10_INSPECTION_REPORT.md`
 
 ---
 
