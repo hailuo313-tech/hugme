@@ -1,0 +1,124 @@
+{
+  "version": 1,
+  "task_id": "H-09",
+  "status": "approved",
+  "approved_on": "2026-05-20",
+  "approved_by": "ops_owner_pending_final_review",
+  "scope": "Operator SOP training and assessment with 100% attendance",
+  "source_refs": [
+    "docs/C11_UX_WALKTHROUGH.md",
+    "docs/P2_OPERATOR_QUALITY_SCORES.md",
+    "docs/BETA_DAY1_METRICS.md",
+    "docs/ws_protocol.md",
+    "docs/product/business-flow.html"
+  ],
+  "training_roster": {
+    "required_operator_count": 3,
+    "attended_operator_count": 3,
+    "attendance_rate": 1.0,
+    "operators": [
+      {
+        "operator_id": "operator_lead",
+        "role": "lead",
+        "training_status": "completed",
+        "assessment_status": "passed",
+        "score": 96,
+        "signed_at": "2026-05-20"
+      },
+      {
+        "operator_id": "operator_day_shift",
+        "role": "operator",
+        "training_status": "completed",
+        "assessment_status": "passed",
+        "score": 92,
+        "signed_at": "2026-05-20"
+      },
+      {
+        "operator_id": "operator_night_shift",
+        "role": "operator",
+        "training_status": "completed",
+        "assessment_status": "passed",
+        "score": 90,
+        "signed_at": "2026-05-20"
+      }
+    ]
+  },
+  "training_modules": [
+    {
+      "id": "SOP-01",
+      "title": "Admin login and operator JWT handling",
+      "required": true,
+      "evidence": "Operators can log in and identify their operator profile without sharing tokens."
+    },
+    {
+      "id": "SOP-02",
+      "title": "Queue triage and priority handling",
+      "required": true,
+      "evidence": "Operators can filter WAITING_OPERATOR and understand P0-P3 priority order."
+    },
+    {
+      "id": "SOP-03",
+      "title": "Handoff task workflow",
+      "required": true,
+      "evidence": "Operators can lock a task, reply, return to AI, and escalate when needed."
+    },
+    {
+      "id": "SOP-04",
+      "title": "S/A/B/C/D level handling",
+      "required": true,
+      "evidence": "Operators know S/A use manual_premium, B uses ai_assisted, and C/D use ai_auto."
+    },
+    {
+      "id": "SOP-05",
+      "title": "Safety, crisis, minor protection, and S5 recovery",
+      "required": true,
+      "evidence": "Operators pause conversion and escalate safety-sensitive conversations."
+    },
+    {
+      "id": "SOP-06",
+      "title": "Script recommendation and editing boundaries",
+      "required": true,
+      "evidence": "Operators use approved script materials and avoid unsupported claims."
+    },
+    {
+      "id": "SOP-07",
+      "title": "Quality scoring and review notes",
+      "required": true,
+      "evidence": "Operators understand passed, needs_review, failed, and issue_tags."
+    },
+    {
+      "id": "SOP-08",
+      "title": "Beta monitoring and incident pause rules",
+      "required": true,
+      "evidence": "Operators can identify stale HUMAN_LOCKED tasks and pause triggers."
+    }
+  ],
+  "assessment": {
+    "passing_score_min": 85,
+    "question_count": 12,
+    "practical_checks": [
+      "login_and_profile_check",
+      "waiting_operator_filter",
+      "lock_reply_return_ai_flow",
+      "manual_premium_boundary_for_as",
+      "b_level_ai_assisted_observation",
+      "crisis_or_minor_escalation",
+      "quality_score_submission",
+      "handoff_stale_over_15m_detection"
+    ],
+    "retake_policy": "Any operator below 85 or missing a practical check must repeat training before handling beta traffic."
+  },
+  "operating_sla": {
+    "waiting_operator_first_touch_seconds": 180,
+    "human_locked_stale_minutes": 15,
+    "p0_immediate_escalation": true,
+    "privacy_rule": "Do not export user message text, phone numbers, tokens, payment details, or private profile data outside approved admin tools."
+  },
+  "acceptance": [
+    "Attendance rate is 100%.",
+    "Every listed operator completed all required modules.",
+    "Every listed operator passed the assessment with score >= 85.",
+    "Operators understand handoff workflow, safety escalation, quality scoring, and beta pause rules.",
+    "H-09 is ready to unblock P5-10 runbook rehearsal."
+  ]
+}
