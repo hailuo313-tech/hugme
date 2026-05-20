@@ -96,6 +96,7 @@ def from_legacy_http_inbound(
     metadata: Optional[dict[str, Any]] = None,
     account_id: Optional[str] = None,
     sender_phone: Optional[str] = None,
+    received_at: Optional[str] = None,
 ) -> StandardInboundEnvelope:
     """Map D1-2 InboundMessageRequest (channel) to standard envelope (platform)."""
     allowed = {"telegram", "web", "app"}
@@ -111,4 +112,5 @@ def from_legacy_http_inbound(
         account_id=account_id,
         sender_phone=sender_phone,
         metadata=InboundMetadata.model_validate(metadata or {}),
+        received_at=received_at,
     )

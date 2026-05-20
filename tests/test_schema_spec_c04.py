@@ -33,7 +33,13 @@ def test_mtproto_envelope_validates():
         message_type="text",
         content="hello",
         trace_id="abcd1234efgh5678",
-        metadata={"telegram_message_id": "42"},
+        metadata={
+            "telegram_message_id": "42",
+            "telegram_chat_id": "chat_123",
+            "idempotency_key": "key_456",
+            "raw_update_id": "update_789"
+        },
+        received_at="2024-01-01T00:00:00Z",
     )
     issues = validate_against_schema_spec(env.model_dump(mode="json"))
     assert issues == []
@@ -59,7 +65,15 @@ def test_legacy_http_mapping():
         message_type="text",
         content="hi",
         trace_id="trace0001trace",
-        metadata={"tg_message_id": "9"},
+        account_id="acc_1",
+        sender_phone="+15551234567",
+        metadata={
+            "tg_message_id": "9",
+            "telegram_chat_id": "chat_123",
+            "idempotency_key": "key_456",
+            "raw_update_id": "update_789"
+        },
+        received_at="2024-01-01T00:00:00Z",
     )
     assert env.platform == "telegram"
     issues = validate_against_schema_spec(env.model_dump(mode="json"))
