@@ -68,7 +68,7 @@
 |------|------|
 | C-07 话术/红线 | baseline ✅ |
 | C-08 J-02 AI 冒烟 | **本报告** |
-| C-09 ws_protocol | 待 W7 |
+| C-09 ws_protocol | 见 `docs/C09_INSPECTION_REPORT.md` |
 | P5-01 MTProto→AI→投递 E2E | 待 C-08 后 |
 
 ---
