@@ -45,9 +45,12 @@ def test_mtproto_env_status_ok_with_valid_fernet(monkeypatch):
     monkeypatch.setenv("TELEGRAM_API_HASH", "abc123realhash")
     monkeypatch.setenv("TELEGRAM_SESSION_FERNET_KEY", key)
     monkeypatch.setenv("TELEGRAM_SESSION_STRINGS", "1BVtsOHwBu5Xexample")
+    
+    # 重新导入 config 以获取新的环境变量
+    import importlib
     from core import config
-
-    monkeypatch.setattr(config, "settings", Settings())
+    importlib.reload(config)
+    
     ok, issues = mtproto_env_status()
     assert ok is True
     assert issues == []
