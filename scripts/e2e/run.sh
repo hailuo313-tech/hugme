@@ -229,14 +229,15 @@ main() {
   assert_eq "onboarding DB nickname" "$nickname" "小七"
   verify_message_count_at_least "onboarding" 11
 
-  for i in $(seq 1 50); do
+  CHAT_ROUNDS="${E2E_CHAT_ROUNDS:-50}"
+  for i in $(seq 1 "$CHAT_ROUNDS"); do
     send_tg_update "chat${i}" "$((10#$E2E_RUN_ID % 100000000 + 100 + i))" "$((100 + i))" "第 ${i} 轮：今天我想继续聊聊生活。" >/dev/null
-    if (( i % 10 == 0 )); then
-      verify_message_count_at_least "50-round checkpoint $i" "$((11 + i))"
+    if (( CHAT_ROUNDS >= 10 && i % 10 == 0 )); then
+      verify_message_count_at_least "${CHAT_ROUNDS}-round checkpoint $i" "$((11 + i))"
       check_health_detail "after chat $i"
     fi
   done
-  verify_message_count_at_least "50-round final" 61
+  verify_message_count_at_least "${CHAT_ROUNDS}-round final" "$((11 + CHAT_ROUNDS))"
 
   send_tg_update "trigger" "$((10#$E2E_RUN_ID % 100000000 + 1000))" 1000 "我现在很孤独，需要真人帮我看一下。" >/dev/null
   create_handoff_task
@@ -256,19 +257,24 @@ main() {
   TRACE_IDS+=("d7-3-${E2E_RUN_ID}-handoff-lock" "d7-3-${E2E_RUN_ID}-handoff-reply" "d7-3-${E2E_RUN_ID}-handoff-return")
   check_health_detail "after handoff"
 
-  local order_body checkout_url order_status
-  order_body="$(curl_json POST /api/v1/orders "{\"user_id\":\"$USER_ID\",\"product_id\":\"$PRODUCT_ID\",\"amount\":$ORDER_AMOUNT,\"currency\":\"$ORDER_CURRENCY\"}" "d7-3-${E2E_RUN_ID}-stripe-order")"
-  ORDER_ID="$(printf '%s' "$order_body" | json_get order_id "")"
-  checkout_url="$(printf '%s' "$order_body" | json_get checkout_url "")"
-  assert_nonempty "stripe checkout order_id" "$ORDER_ID"
-  assert_nonempty "stripe checkout url" "$checkout_url"
-  order_status="$(db_query "SELECT status FROM orders WHERE id='$ORDER_ID';")"
-  assert_eq "stripe order DB pending" "$order_status" "pending"
-  TRACE_IDS+=("d7-3-${E2E_RUN_ID}-stripe-order")
-  if [[ "$STRIPE_TEST_MODE" == "manual_4242" ]]; then
-    log "Open checkout_url and pay with Stripe test card 4242 4242 4242 4242: $checkout_url"
+  if [[ "${E2E_SKIP_STRIPE:-0}" == "1" ]]; then
+    log "stripe skipped (E2E_SKIP_STRIPE=1)"
+    record_pass "stripe skipped smoke profile"
+  else
+    local order_body checkout_url order_status
+    order_body="$(curl_json POST /api/v1/orders "{\"user_id\":\"$USER_ID\",\"product_id\":\"$PRODUCT_ID\",\"amount\":$ORDER_AMOUNT,\"currency\":\"$ORDER_CURRENCY\"}" "d7-3-${E2E_RUN_ID}-stripe-order")"
+    ORDER_ID="$(printf '%s' "$order_body" | json_get order_id "")"
+    checkout_url="$(printf '%s' "$order_body" | json_get checkout_url "")"
+    assert_nonempty "stripe checkout order_id" "$ORDER_ID"
+    assert_nonempty "stripe checkout url" "$checkout_url"
+    order_status="$(db_query "SELECT status FROM orders WHERE id='$ORDER_ID';")"
+    assert_eq "stripe order DB pending" "$order_status" "pending"
+    TRACE_IDS+=("d7-3-${E2E_RUN_ID}-stripe-order")
+    if [[ "$STRIPE_TEST_MODE" == "manual_4242" ]]; then
+      log "Open checkout_url and pay with Stripe test card 4242 4242 4242 4242: $checkout_url"
+    fi
+    check_health_detail "after stripe"
   fi
-  check_health_detail "after stripe"
 
   echo
   echo "========== D7-3 E2E SUMMARY =========="

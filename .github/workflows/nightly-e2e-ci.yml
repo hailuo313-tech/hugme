@@ -1,0 +1,82 @@
+name: Nightly E2E CI
+
+on:
+  schedule:
+    # C-12: 06:00 UTC daily — track 3 consecutive greens in fixtures/c12_nightly_stability.json
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-e2e-ci-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  c12-audit:
+    name: c12-audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            app/requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r app/requirements.txt -r requirements-dev.txt
+
+      - name: C-12 audit + pytest
+        env:
+          PYTHONPATH: app
+        run: |
+          python scripts/c12_e2e_ci_audit.py
+          pytest tests/test_c12_e2e_ci_smoke.py -q
+
+  e2e-smoke:
+    name: e2e-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: c12-audit
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start stack (postgres, redis, api)
+        env:
+          LLM_ECHO_FALLBACK: "1"
+          CONTENT_SAFETY_ENABLED: "0"
+          SCORE_WORKER_ENABLED: "0"
+          POLICY_HANDOFF_ENABLED: "0"
+        run: |
+          docker compose up -d postgres redis
+          docker compose up -d --build api
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8000/health/detail | grep -q '"api":"ok"'; then
+              echo "API ready"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "API not healthy in time" >&2
+          docker compose logs api --tail 80
+          exit 1
+
+      - name: E2E smoke (3 chat rounds, no Stripe)
+        env:
+          API_BASE: http://127.0.0.1:8000
+          DB_CONTAINER: eris-postgres
+          E2E_CHAT_ROUNDS: "3"
+          E2E_SKIP_STRIPE: "1"
+        run: bash scripts/e2e/smoke.sh
+
+      - name: Upload API logs on failure
+        if: failure()
+        run: docker compose logs api --tail 200
