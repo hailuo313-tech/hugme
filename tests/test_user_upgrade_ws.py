@@ -5,7 +5,7 @@ P2-11: USER_UPGRADED WebSocket 推送测试
 """
 import asyncio
 import json
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, AsyncMock, patch
 import pytest
 from fastapi.testclient import TestClient
 from fastapi import WebSocket
@@ -64,10 +64,8 @@ class TestConnectionManager:
         # 创建多个模拟 WebSocket
         mock_ws1 = Mock(spec=WebSocket)
         mock_ws2 = Mock(spec=WebSocket)
-        async def mock_send_json(data):
-            pass
-        mock_ws1.send_json = mock_send_json
-        mock_ws2.send_json = mock_send_json
+        mock_ws1.send_json = AsyncMock()
+        mock_ws2.send_json = AsyncMock()
         
         # 连接多个客户端
         await manager.connect(mock_ws1)
@@ -105,14 +103,8 @@ class TestConnectionManager:
         mock_ws_ok = Mock(spec=WebSocket)
         mock_ws_fail = Mock(spec=WebSocket)
         
-        async def mock_send_json_ok(data):
-            pass
-        
-        async def mock_send_json_fail(data):
-            raise Exception("Connection lost")
-        
-        mock_ws_ok.send_json = mock_send_json_ok
-        mock_ws_fail.send_json = mock_send_json_fail
+        mock_ws_ok.send_json = AsyncMock()
+        mock_ws_fail.send_json = AsyncMock(side_effect=Exception("Connection lost"))
         
         # 连接客户端
         await manager.connect(mock_ws_ok)
@@ -155,9 +147,7 @@ class TestNotifyUserUpgrade:
         
         # 创建模拟 WebSocket
         mock_ws = Mock(spec=WebSocket)
-        async def mock_send_json(data):
-            pass
-        mock_ws.send_json = mock_send_json
+        mock_ws.send_json = AsyncMock()
         await manager.connect(mock_ws)
         
         # 调用通知函数
