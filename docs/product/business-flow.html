@@ -472,7 +472,7 @@ const TASKS = [
   { id:"P1-07", phase:"01", owner:"devin", w:1, week:"W1", dep:"P1-05", desc:"WebSocket 路由 app/api/realtime.py + ping/pong", acc:"浏览器可连 /ws 并收 pong" },
   { id:"P1-08", phase:"01", owner:"devin", w:1, week:"W2", dep:"P1-05–07", desc:"docker-compose：postgres+redis+api 一键启动", acc:"compose up 全绿" },
   { id:"P1-09", phase:"01", owner:"devin", w:1, week:"W2", dep:"P1-05,P1-02", desc:"telegram_accounts 表 + Telethon 多账号 StringSession 连接", acc:"≥1 真人号 online" },
-  { id:"P1-10", phase:"01", owner:"codex", w:1.5, week:"W2", dep:"P1-09", desc:"NewMessage 监听 → inbound_queue（platform=telegram_real_user）", acc:"text/photo/voice 入队单测通过" },
+  { id:"P1-10", phase:"01", owner:"codex", w:1.5, week:"W2", dep:"P1-09", desc:"NewMessage 监听 → inbound_queue（platform=telegram_real_user）", acc:"text/photo/voice 入队单测通过", baseline:true },
   { id:"P1-11", phase:"01", owner:"codex", w:1, week:"W2", dep:"P1-10", desc:"send_typing + send_human_like_message 拟人延迟出站", acc:"用户侧可见打字与延迟发送" },
   { id:"P1-12", phase:"01", owner:"codex", w:0.5, week:"W2", dep:"P1-10", desc:"Redis 去重 telegram_msg:{user_id}:{message_id} TTL 1h", acc:"重复消息不重复处理" },
   { id:"P1-13", phase:"01", owner:"codex", w:0.5, week:"W2", dep:"—", desc:"定义 schema_spec.json（含 account_id/sender_phone）", acc:"JSON Schema 校验通过", baseline:true },
