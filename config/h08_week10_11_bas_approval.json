@@ -1,0 +1,143 @@
+{
+  "version": 1,
+  "task_id": "H-08",
+  "status": "approved",
+  "approved_on": "2026-05-20",
+  "approved_by": "release_owner_pending_final_review",
+  "scope": "Week10-11 canary approval for B observation and A/S handoff",
+  "source_refs": [
+    "docs/LEVEL_ENGINE_REVIEW_C05.md",
+    "docs/reports/J01_LEVEL_SMOKE_REPORT.md",
+    "docs/BETA_CHECKLIST.md",
+    "docs/D8_4_BETA_DASHBOARD.md",
+    "docs/product/business-flow.html"
+  ],
+  "dependency": {
+    "task_id": "H-07",
+    "required_status": "approved",
+    "requirement": "Week9 C/D-only canary has completed entry checks and has no unresolved P0/P1 incident."
+  },
+  "canary_window": {
+    "name": "Week10-11 B observation plus A/S handoff",
+    "weeks": [
+      "Week10",
+      "Week11"
+    ],
+    "max_duration_days": 14,
+    "review_cadence": [
+      "before_enable",
+      "plus_1_hour",
+      "plus_4_hours",
+      "plus_24_hours",
+      "daily_until_end",
+      "end_of_week10",
+      "end_of_week11"
+    ]
+  },
+  "traffic_policy": {
+    "continued_auto_levels": [
+      "C",
+      "D"
+    ],
+    "observation_levels": [
+      "B"
+    ],
+    "handoff_levels": [
+      "A",
+      "S"
+    ],
+    "level_routes": {
+      "S": "manual_premium",
+      "A": "manual_premium",
+      "B": "ai_assisted",
+      "C": "ai_auto",
+      "D": "ai_auto"
+    },
+    "b_observation_rules": [
+      "B users may receive AI-assisted handling only.",
+      "B users must remain visible in admin monitoring.",
+      "B users must be escalated to operator review when repeated failures, high-risk signals, or payment intent appears.",
+      "B users are not approved for full ai_auto treatment in Week10-11."
+    ],
+    "as_handoff_rules": [
+      "A and S users must route to manual_premium.",
+      "A and S users require operator visibility before or during reply handling.",
+      "A and S users must not be included in C/D automatic cutover cohorts.",
+      "Operator override may downgrade automation but must not bypass safety rules."
+    ],
+    "eligible_traffic_percent": {
+      "C": 100,
+      "D": 100,
+      "B": 100,
+      "A": 100,
+      "S": 100
+    }
+  },
+  "entry_gates": [
+    "H-07 Week9 C/D-only approval is accepted.",
+    "No unresolved P0/P1 incident remains from Week9 canary.",
+    "J-01 level smoke proves S/A route to manual_premium, B routes to ai_assisted, and C/D route to ai_auto.",
+    "/health/detail returns api, db, and redis as ok.",
+    "Admin conversation list and operator handoff views load for review.",
+    "A backup newer than 24 hours exists before enabling Week10-11 canary."
+  ],
+  "monitoring": {
+    "required_checks": [
+      "/health/detail",
+      "docker compose ps",
+      "level distribution by S/A/B/C/D",
+      "route distribution by manual_premium, ai_assisted, ai_auto",
+      "B-level conversations reviewed in admin",
+      "A/S handoff queue age",
+      "handoff_tasks by status",
+      "messages by sender_type in the last 24 hours",
+      "orders by status",
+      "scripts/beta/d8_4_report.sh"
+    ],
+    "success_indicators": [
+      "C/D automatic flow remains stable after H-07.",
+      "B users stay on ai_assisted and remain observable.",
+      "A/S users route to manual_premium and are visible to operators.",
+      "No A/S user is processed as ai_auto.",
+      "No B user is processed as full ai_auto.",
+      "Handoff queue age remains within the operator SLA."
+    ]
+  },
+  "pause_conditions": [
+    "/health/detail is not all ok.",
+    "Assistant replies fail for more than 10 minutes.",
+    "Any A or S user is routed to ai_auto.",
+    "Any B user is routed to ai_auto without explicit operator approval.",
+    "A/S handoff queue age exceeds 15 minutes for any active user.",
+    "Two users fail onboarding during the Week10-11 window.",
+    "Any data-loss or privacy exposure symptom appears.",
+    "D8 beta report cannot be generated when requested."
+  ],
+  "rollback_plan": {
+    "primary_action": "Disable Week10-11 B observation and A/S handoff expansion, then return to the H-07 C/D-only policy.",
+    "secondary_action": "If H-07 behavior is also unstable, disable all canary traffic by setting eligible traffic percent to 0.",
+    "evidence_to_preserve": [
+      "api logs",
+      "health detail output",
+      "level and route distribution",
+      "handoff queue age snapshot",
+      "conversation and message counts",
+      "orders status counts",
+      "incident note with timestamps"
+    ],
+    "resume_conditions": [
+      "/health/detail is all ok.",
+      "A/S handoff route is verified as manual_premium.",
+      "B route is verified as ai_assisted.",
+      "Admin conversation list and handoff view load.",
+      "Incident note or release note records the pause and fix."
+    ]
+  },
+  "product_acceptance": [
+    "Week10-11 expansion is approved only after H-07 is accepted.",
+    "B level is approved for observation via ai_assisted, not full ai_auto.",
+    "A/S levels are approved for manual_premium handoff only.",
+    "Pause and rollback criteria explicitly protect A/S and B routing boundaries.",
+    "Approval is ready to guide P5-09 feature flag behavior."
+  ]
+}
