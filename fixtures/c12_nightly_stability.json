@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "task": "C-12",
+  "requirement": "nightly-e2e-ci workflow green for 3 consecutive scheduled runs",
+  "workflow": ".github/workflows/nightly-e2e-ci.yml",
+  "stability_days": 3,
+  "runs": [],
+  "notes": "After merge, append each green nightly run: {\"date\":\"YYYY-MM-DD\",\"run_id\":123,\"conclusion\":\"success\",\"jobs\":[\"c12-audit\",\"e2e-smoke\"]}"
+}
