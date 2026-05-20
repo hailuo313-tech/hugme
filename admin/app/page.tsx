@@ -337,6 +337,12 @@ function DashboardContent({ operator }: { operator: Operator }) {
             >
               角色
             </a>
+            <a
+              href="/admin/push"
+              className="text-sm text-slate-400 hover:text-white px-3 py-1 rounded-md hover:bg-slate-700 transition"
+            >
+              推送
+            </a>
           </nav>
         </div>
         <div className="flex items-center gap-4">
