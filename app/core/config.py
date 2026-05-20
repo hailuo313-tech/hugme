@@ -109,5 +109,11 @@ class Settings(BaseSettings):
     # HO-LOCK / D5-3：handoff 会话级 Redis 锁（默认 5min TTL）；关则仅 DB 更新（旧行为）。
     HANDOFF_CONV_REDIS_LOCK_ENABLED: bool = True
     HANDOFF_CONV_REDIS_LOCK_TTL_SECONDS: int = 300
+    # P2-02：GeoIP 服务配置（MaxMind/ip-api）
+    MAXMIND_ENABLED: bool = False  # 是否启用 MaxMind GeoIP2
+    MAXMIND_DB_PATH: Optional[str] = None  # MaxMind 数据库文件路径
+    IPAPI_ENABLED: bool = True  # 是否启用 ip-api.com（备用方案）
+    IPAPI_API_KEY: Optional[str] = None  # ip-api.com API 密钥（免费版不需要）
+    GEOIP_CACHE_TTL: int = 3600  # GeoIP 结果缓存时间（秒）
 
 settings = Settings()
