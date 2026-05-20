@@ -485,7 +485,7 @@ const TASKS = [
   { id:"P1-20", phase:"01", owner:"devin", w:1, week:"W3", dep:"P1-17,P1-18", desc:"账号在线率/发送成功率监控 + 封号预警埋点", acc:"指标可 scrape + 告警规则" },
 
   // ── 阶段 02（13 项）──
-  { id:"P2-01", phase:"02", owner:"codex", w:0.5, week:"W3", dep:"H-02", desc:"t1_countries.json 热加载模块", acc:"改配置可生效" },
+  { id:"P2-01", phase:"02", owner:"codex", w:0.5, week:"W3", dep:"H-02", desc:"t1_countries.json 热加载模块", acc:"改配置可生效", baseline:true },
   { id:"P2-02", phase:"02", owner:"devin", w:1, week:"W3", dep:"—", desc:"GeoIP 服务封装（MaxMind/ip-api）", acc:"抽样准确率 ≥95%", baseline:true },
   { id:"P2-03", phase:"02", owner:"codex", w:1, week:"W3", dep:"H-03", desc:"D 级探测触发器（预留③探测话术匹配接口）", acc:"3 轮内触发补全" },
   { id:"P2-04", phase:"02", owner:"codex", w:1.5, week:"W4", dep:"P3-12", desc:"AI 提取年龄 + 置信度写入", acc:"低置信不写入" },
