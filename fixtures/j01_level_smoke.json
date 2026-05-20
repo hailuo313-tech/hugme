@@ -1,0 +1,176 @@
+{
+  "version": 1,
+  "description": "J-01 level_engine smoke fixtures (C-06): 10 end-to-end grading scenarios.",
+  "fixtures": [
+    {
+      "id": "J01-01",
+      "title": "画像不完整 — 探测 D 级",
+      "input": {
+        "profile_complete": false,
+        "country_code": "US",
+        "lifetime_spend_usd": 10000,
+        "vip_level": 0,
+        "operator_assigned_s": false
+      },
+      "expect": {
+        "level": "D",
+        "chat_route": "ai_auto",
+        "reason": "profile_incomplete_probe",
+        "country_tier": "T1"
+      }
+    },
+    {
+      "id": "J01-02",
+      "title": "T1 高消费 — S 级",
+      "input": {
+        "profile_complete": true,
+        "country_code": "US",
+        "lifetime_spend_usd": 500,
+        "vip_level": 0,
+        "operator_assigned_s": false
+      },
+      "expect": {
+        "level": "S",
+        "chat_route": "manual_premium",
+        "reason": "t1_high_spend",
+        "country_tier": "T1"
+      }
+    },
+    {
+      "id": "J01-03",
+      "title": "T1 达 A 门槛消费",
+      "input": {
+        "profile_complete": true,
+        "country_code": "SG",
+        "lifetime_spend_usd": 99,
+        "vip_level": 0,
+        "operator_assigned_s": false
+      },
+      "expect": {
+        "level": "A",
+        "chat_route": "manual_premium",
+        "reason": "spend_or_vip_a",
+        "country_tier": "T1"
+      }
+    },
+    {
+      "id": "J01-04",
+      "title": "T1 零消费完整画像 — B 级",
+      "input": {
+        "profile_complete": true,
+        "country_code": "US",
+        "lifetime_spend_usd": 0,
+        "vip_level": 0,
+        "operator_assigned_s": false
+      },
+      "expect": {
+        "level": "B",
+        "chat_route": "ai_assisted",
+        "reason": "t1_default_b",
+        "country_tier": "T1"
+      }
+    },
+    {
+      "id": "J01-05",
+      "title": "T2 国家默认 — C 级",
+      "input": {
+        "profile_complete": true,
+        "country_code": "BR",
+        "lifetime_spend_usd": 0,
+        "vip_level": 0,
+        "operator_assigned_s": false
+      },
+      "expect": {
+        "level": "C",
+        "chat_route": "ai_auto",
+        "reason": "tier_default_t2",
+        "country_tier": "T2"
+      }
+    },
+    {
+      "id": "J01-06",
+      "title": "T3 国家默认 — C 级",
+      "input": {
+        "profile_complete": true,
+        "country_code": "ZZ",
+        "lifetime_spend_usd": 0,
+        "vip_level": 0,
+        "operator_assigned_s": false
+      },
+      "expect": {
+        "level": "C",
+        "chat_route": "ai_auto",
+        "reason": "tier_default_t3",
+        "country_tier": "T3"
+      }
+    },
+    {
+      "id": "J01-07",
+      "title": "VIP 达标 — A 级",
+      "input": {
+        "profile_complete": true,
+        "country_code": "IN",
+        "lifetime_spend_usd": 0,
+        "vip_level": 1,
+        "operator_assigned_s": false
+      },
+      "expect": {
+        "level": "A",
+        "chat_route": "manual_premium",
+        "reason": "spend_or_vip_a",
+        "country_tier": "T2"
+      }
+    },
+    {
+      "id": "J01-08",
+      "title": "坐席指定 — S 级",
+      "input": {
+        "profile_complete": true,
+        "country_code": "US",
+        "lifetime_spend_usd": 0,
+        "vip_level": 0,
+        "operator_assigned_s": true
+      },
+      "expect": {
+        "level": "S",
+        "chat_route": "manual_premium",
+        "reason": "operator_assigned_s",
+        "country_tier": "T1"
+      }
+    },
+    {
+      "id": "J01-09",
+      "title": "未知国家 — C 级",
+      "input": {
+        "profile_complete": true,
+        "country_code": null,
+        "lifetime_spend_usd": 0,
+        "vip_level": 0,
+        "operator_assigned_s": false
+      },
+      "expect": {
+        "level": "C",
+        "chat_route": "ai_auto",
+        "reason": "tier_default_unknown",
+        "country_tier": "unknown"
+      }
+    },
+    {
+      "id": "J01-10",
+      "title": "T2 高消费不升 S — A 级",
+      "input": {
+        "profile_complete": true,
+        "country_code": "BR",
+        "lifetime_spend_usd": 1000,
+        "vip_level": 0,
+        "operator_assigned_s": false
+      },
+      "expect": {
+        "level": "A",
+        "chat_route": "manual_premium",
+        "reason": "spend_or_vip_a",
+        "country_tier": "T2"
+      }
+    }
+  ]
+}
