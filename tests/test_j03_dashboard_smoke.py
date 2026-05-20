@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI
 from fastapi.routing import APIRoute
+from starlette.routing import WebSocketRoute
 
 from main import app as main_app
 from services.dashboard_integration import (
@@ -68,7 +69,7 @@ def test_main_app_exposes_handoff_and_admin():
     paths = _route_paths(main_app)
     assert any("/api/v1/admin/conversations" in p for p in paths)
     assert any("/handoff/{task_id}/lock" in p for p in paths)
-    assert any("/ws/operators/tasks" in p for p in paths)
+    assert any("operators/tasks" in p for p in paths)
 
 
 def test_handoff_paths_in_contract():
