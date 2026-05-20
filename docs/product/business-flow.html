@@ -508,7 +508,7 @@ const TASKS = [
   { id:"P3-07", phase:"03", owner:"codex", w:2.5, week:"W6", dep:"P3-03", desc:"intent_classifier 双路召回", acc:"输出 intent/confidence" },
   { id:"P3-08", phase:"03", owner:"codex", w:0.5, week:"W6", dep:"P3-07", desc:"低置信降级闲聊策略", acc:"<0.6 不胡答" },
   { id:"P3-09", phase:"03", owner:"codex", w:1, week:"W6", dep:"P3-07", desc:"意图模块 50 条标注回归", acc:"准确率 ≥85%" },
-  { id:"P3-10", phase:"03", owner:"codex", w:1.5, week:"W5", dep:"H-04", desc:"persona_prompts 多人设 Prompt", acc:"≥3 人设" },
+  { id:"P3-10", phase:"03", owner:"codex", w:1.5, week:"W5", dep:"H-04", desc:"persona_prompts 多人设 Prompt", acc:"≥3 人设", baseline:true },
   { id:"P3-11", phase:"03", owner:"codex", w:2, week:"W6", dep:"P3-10,P3-07,P3-20", desc:"LLM 调用层（仅包装已命中话术底料）", acc:"无命中话术则降级/拒答" },
   { id:"P3-12", phase:"03", owner:"codex", w:1, week:"W6", dep:"P3-11,H-04", desc:"safety_filter 安全过滤", acc:"红线 100% 拦截" },
   { id:"P3-13", phase:"03", owner:"devin", w:1, week:"W6", dep:"P1-06", desc:"Redis 待发队列 + send_at", acc:"可按时间扫描" },
