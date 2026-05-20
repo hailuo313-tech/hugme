@@ -69,12 +69,20 @@ jobs:
           docker compose logs api --tail 80
           exit 1
 
+      - name: Seed E2E operator (handoff JWT)
+        env:
+          E2E_OPERATOR_USER: e2e_ci
+          E2E_OPERATOR_PASSWORD: e2e_ci_secret
+        run: bash scripts/e2e/seed_operator.sh
+
       - name: E2E smoke (3 chat rounds, no Stripe)
         env:
           API_BASE: http://127.0.0.1:8000
           DB_CONTAINER: eris-postgres
           E2E_CHAT_ROUNDS: "3"
           E2E_SKIP_STRIPE: "1"
+          E2E_OPERATOR_USER: e2e_ci
+          E2E_OPERATOR_PASSWORD: e2e_ci_secret
         run: bash scripts/e2e/smoke.sh
 
       - name: Upload API logs on failure

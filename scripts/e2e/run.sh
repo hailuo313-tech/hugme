@@ -88,9 +88,40 @@ assert_nonempty() {
   fi
 }
 
+obtain_operator_token() {
+  if [[ -n "${OPERATOR_TOKEN:-}" ]]; then
+    return 0
+  fi
+  local user="${E2E_OPERATOR_USER:-}"
+  local pass="${E2E_OPERATOR_PASSWORD:-}"
+  if [[ -z "$user" || -z "$pass" ]]; then
+    record_fail "operator login" "set E2E_OPERATOR_USER/E2E_OPERATOR_PASSWORD or OPERATOR_TOKEN"
+    return 1
+  fi
+  local body token
+  body="$(curl -sS -X POST -H "Content-Type: application/json" \
+    --data-binary "{\"username\":\"$user\",\"password\":\"$pass\"}" \
+    "$API_BASE/api/v1/admin/login")"
+  token="$(printf '%s' "$body" | json_get token "")"
+  if [[ -z "$token" ]]; then
+    record_fail "operator login" "$body"
+    return 1
+  fi
+  OPERATOR_TOKEN="$token"
+  export OPERATOR_TOKEN
+  record_pass "operator login JWT"
+}
+
 curl_json() {
   local method="$1" path="$2" body="${3:-}" trace_id="${4:-}"
   local headers=(-H "Content-Type: application/json")
+  case "$path" in
+    /api/v1/handoff/*)
+      if [[ -n "${OPERATOR_TOKEN:-}" ]]; then
+        headers+=(-H "Authorization: Bearer ${OPERATOR_TOKEN}")
+      fi
+      ;;
+  esac
   if [[ -n "$trace_id" ]]; then
     headers+=(-H "X-Trace-Id: $trace_id")
   fi
@@ -242,6 +273,12 @@ main() {
   send_tg_update "trigger" "$((10#$E2E_RUN_ID % 100000000 + 1000))" 1000 "我现在很孤独，需要真人帮我看一下。" >/dev/null
   create_handoff_task
   check_health_detail "after trigger"
+
+  obtain_operator_token || true
+  if [[ -z "${OPERATOR_TOKEN:-}" ]]; then
+    echo "RESULT=FAIL"
+    exit 1
+  fi
 
   local lock_status reply_status return_status task_status
   lock_status="$(curl_json POST "/api/v1/handoff/${HANDOFF_TASK_ID}/lock" "{}" "d7-3-${E2E_RUN_ID}-handoff-lock" | json_get status "")"
