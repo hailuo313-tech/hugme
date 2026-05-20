@@ -1,0 +1,268 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hugme2.com/schemas/inbound-message.schema.json",
+  "title": "ERIS Standard Inbound Message",
+  "description": "P1-13 contract for channel adapters writing to inbound_queue. It normalizes Telegram bot, MTProto real-user, H5, and app inbound messages without storing secrets.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "platform",
+    "channel",
+    "account",
+    "sender",
+    "message",
+    "received_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "p1-13.v1"
+    },
+    "trace_id": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9._:-]+$"
+    },
+    "platform": {
+      "type": "string",
+      "enum": ["telegram_bot", "telegram_real_user", "h5", "app", "test"]
+    },
+    "channel": {
+      "type": "string",
+      "enum": ["telegram", "web", "app", "test"]
+    },
+    "account": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["account_id"],
+      "properties": {
+        "account_id": {
+          "description": "Internal sending/receiving account identifier. For MTProto this is the AccountPool account key, not a raw session string.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "pattern": "^[A-Za-z0-9._:-]+$"
+        },
+        "account_phone": {
+          "description": "Optional E.164 phone number for the owned Telegram account. Never store auth codes or session strings here.",
+          "type": "string",
+          "pattern": "^\\+[1-9][0-9]{5,14}$"
+        },
+        "account_username": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      }
+    },
+    "sender": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["external_user_id"],
+      "properties": {
+        "external_user_id": {
+          "description": "Stable external user key used by users.external_id, for example tg_123456789.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "sender_id": {
+          "description": "Raw platform sender ID when available.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "sender_phone": {
+          "description": "Optional sender phone in E.164 format. Omit when the platform does not expose it or consent is unclear.",
+          "type": "string",
+          "pattern": "^\\+[1-9][0-9]{5,14}$"
+        },
+        "sender_username": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "display_name": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "language_code": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 10,
+          "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})?$"
+        }
+      }
+    },
+    "conversation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "external_chat_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "conversation_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "thread_id": {
+          "type": "string",
+          "maxLength": 120
+        }
+      }
+    },
+    "message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["message_id", "message_type", "content"],
+      "properties": {
+        "message_id": {
+          "description": "Platform message ID or adapter-generated deterministic ID.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "message_type": {
+          "type": "string",
+          "enum": ["text", "image", "photo", "audio", "voice", "video", "document", "sticker", "unknown"]
+        },
+        "content": {
+          "description": "Text content, caption, or a safe placeholder such as [non-text]. Do not put binary media here.",
+          "type": "string",
+          "maxLength": 8000
+        },
+        "content_type": {
+          "type": "string",
+          "enum": ["text", "markdown", "html", "media_ref", "unknown"],
+          "default": "text"
+        },
+        "media": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "file_id": {
+              "type": "string",
+              "maxLength": 300
+            },
+            "mime_type": {
+              "type": "string",
+              "maxLength": 120
+            },
+            "file_size": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "duration_seconds": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "idempotency": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 180
+        },
+        "source": {
+          "type": "string",
+          "enum": ["platform_update_id", "platform_message_id", "adapter_generated"]
+        }
+      }
+    },
+    "script": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "script_hit_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "match_stage": {
+          "type": "string",
+          "enum": ["ingress", "consumption", "probe", "leveling", "reply", "operator", "egress", "archive"]
+        }
+      }
+    },
+    "metadata": {
+      "description": "Adapter-safe metadata. Do not store tokens, session strings, auth codes, cookies, or raw user secrets.",
+      "type": "object",
+      "additionalProperties": true
+    },
+    "raw_event_ref": {
+      "description": "Pointer to raw event storage if needed. This schema intentionally avoids embedding full raw provider payloads.",
+      "type": "string",
+      "maxLength": 300
+    },
+    "received_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "platform": {
+            "const": "telegram_real_user"
+          }
+        },
+        "required": ["platform"]
+      },
+      "then": {
+        "properties": {
+          "channel": {
+            "const": "telegram"
+          }
+        },
+        "required": ["account"]
+      }
+    }
+  ],
+  "examples": [
+    {
+      "schema_version": "p1-13.v1",
+      "trace_id": "p113-example-1",
+      "platform": "telegram_real_user",
+      "channel": "telegram",
+      "account": {
+        "account_id": "tg-account-01",
+        "account_phone": "+15551234567"
+      },
+      "sender": {
+        "external_user_id": "tg_123456789",
+        "sender_id": "123456789",
+        "sender_phone": "+15557654321",
+        "sender_username": "sample_user",
+        "display_name": "Sample User",
+        "language_code": "en"
+      },
+      "conversation": {
+        "external_chat_id": "123456789"
+      },
+      "message": {
+        "message_id": "9876",
+        "message_type": "text",
+        "content": "hello",
+        "content_type": "text"
+      },
+      "idempotency": {
+        "key": "tg-real-user:tg-account-01:9876",
+        "source": "platform_message_id"
+      },
+      "metadata": {
+        "adapter": "mtproto"
+      },
+      "received_at": "2026-05-20T00:00:00Z"
+    }
+  ]
+}
