@@ -12,3 +12,11 @@ from services.mtproto.security_policy import (
 from services.mtproto.newmessage_inbound import (
     INBOUND_QUEUE_STREAM, MtprotoNewMessageAdapter, enqueue_new_message,
 )
+from services.mtproto.human_like_send import (
+    DEFAULT_HUMAN_LIKE_SEND_POLICY,
+    HumanLikeSendPolicy,
+    human_typing_delay_seconds,
+    send_human_like_message,
+    send_typing,
+    wait_for_inter_message_gap,
+)
