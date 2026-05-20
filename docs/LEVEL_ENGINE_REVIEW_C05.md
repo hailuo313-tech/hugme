@@ -66,7 +66,7 @@ T2/T3/unknown 默认 → C（可配置）
 - [ ] 入站流水线挂载 `calc_user_level`
 - [ ] `user_profiles.user_level` DDL 迁移
 - [ ] H-02 签字版替换 `config/t1_countries.json`
-- [ ] J-01 冒烟脚本（C-06）
+- [x] J-01 冒烟脚本（C-06）— 见 `scripts/j01_level_smoke.py`、`docs/C06_INSPECTION_REPORT.md`
 
 ---
 
