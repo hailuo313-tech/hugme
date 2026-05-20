@@ -43,6 +43,7 @@ from loguru import logger
 from core.config import settings
 from services.llm import chat as llm_chat
 from services.prompt_builder import (
+    DEFAULT_SYSTEM_PROMPT as DEFAULT_SYSTEM_PROMPT,
     LAYER_ORDER,
     PromptInput,
     build_prompt,

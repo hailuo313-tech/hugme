@@ -172,3 +172,10 @@ def _extract_vectors(data: dict, expected_len: int) -> Optional[list[list[float]
 
     indexed.sort(key=lambda p: p[0])
     return [v for _, v in indexed]
+
+
+def _vector_literal(vec: list[float]) -> str:
+    """pgvector 字面量；实现与 embedding_worker 共用（单测从此模块导入）。"""
+    from services.embedding_worker import _vector_literal as _impl
+
+    return _impl(vec)

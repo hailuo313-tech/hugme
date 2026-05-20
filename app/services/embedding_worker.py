@@ -19,6 +19,7 @@
   且 embedding 失败不影响 memories 行本身已经入库的事实。
 - 留出未来切换 provider / 重算 embedding 的灵活度（行还在，重置 NULL 即可）。
 """
+
 from __future__ import annotations
 
 import time
@@ -45,6 +46,7 @@ _scheduler: Optional[AsyncIOScheduler] = None
 # ─────────────────────────────────────────────────────────────
 # 单次 tick：拉一批 + embed + 写回
 # ─────────────────────────────────────────────────────────────
+
 
 async def run_one_tick(trace_id: Optional[str] = None) -> dict:
     """执行一次 backfill。返回统计 dict（便于测试 / 监控）。
@@ -104,9 +106,7 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict:
                 result = await embed(texts, trace_id=trace_id)
                 if result.error or not result.vectors:
                     stats["error"] = result.error or "no_vectors"
-                    log.bind(error=stats["error"]).warning(
-                        "embedding_worker.tick.embed_failed"
-                    )
+                    log.bind(error=stats["error"]).warning("embedding_worker.tick.embed_failed")
                     return stats
 
                 stats["embedded"] = len(result.vectors)
@@ -146,9 +146,7 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict:
                 await session.commit()
 
     except Exception as exc:
-        log.bind(error_type=type(exc).__name__).exception(
-            "embedding_worker.tick.error"
-        )
+        log.bind(error_type=type(exc).__name__).exception("embedding_worker.tick.error")
         stats["error"] = f"{type(exc).__name__}:{exc}"
 
     return stats
@@ -157,6 +155,7 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict:
 # ─────────────────────────────────────────────────────────────
 # Scheduler 控制
 # ─────────────────────────────────────────────────────────────
+
 
 def start_scheduler() -> Optional[AsyncIOScheduler]:
     """启动 backfill scheduler 单例。可重入：已启动则返回现有实例。
@@ -167,14 +166,10 @@ def start_scheduler() -> Optional[AsyncIOScheduler]:
     """
     global _scheduler
     if not settings.EMBEDDING_WORKER_ENABLED:
-        logger.bind(component="embedding_worker").info(
-            "embedding_worker.scheduler.disabled"
-        )
+        logger.bind(component="embedding_worker").info("embedding_worker.scheduler.disabled")
         return None
     if not settings.OPENAI_API_KEY:
-        logger.bind(component="embedding_worker").warning(
-            "embedding_worker.scheduler.no_api_key"
-        )
+        logger.bind(component="embedding_worker").warning("embedding_worker.scheduler.no_api_key")
         return None
     if _scheduler is not None:
         return _scheduler
@@ -206,19 +201,16 @@ def shutdown_scheduler() -> None:
     try:
         _scheduler.shutdown(wait=False)
     except Exception:
-        logger.bind(component="embedding_worker").exception(
-            "embedding_worker.scheduler.shutdown_error"
-        )
+        logger.bind(component="embedding_worker").exception("embedding_worker.scheduler.shutdown_error")
     finally:
         _scheduler = None
-        logger.bind(component="embedding_worker").info(
-            "embedding_worker.scheduler.stopped"
-        )
+        logger.bind(component="embedding_worker").info("embedding_worker.scheduler.stopped")
 
 
 # ─────────────────────────────────────────────────────────────
 # 工具
 # ─────────────────────────────────────────────────────────────
+
 
 def _vector_literal(vec: list[float]) -> str:
     """pgvector 字符串字面量：``[1.0, 2.0, ...]``。

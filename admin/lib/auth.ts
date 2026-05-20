@@ -2,6 +2,8 @@
 
 export const TOKEN_KEY = "eris_admin_token";
 export const OPERATOR_KEY = "eris_admin_operator";
+/** 完整路径（含 basePath），用于 window.location.href */
+export const LOGIN_PATH = "/admin/login";
 
 export interface Operator {
   operator_id: string;
@@ -55,7 +57,7 @@ export async function apiFetch<T>(
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
   if (res.status === 401) {
     clearAuth();
-    window.location.href = "/login";
+    window.location.href = LOGIN_PATH;
     throw new Error("Unauthorized");
   }
   if (!res.ok) {

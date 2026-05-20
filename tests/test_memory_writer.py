@@ -124,7 +124,7 @@ class TestPrefilter:
         [
             ("", "empty"),
             ("   ", "empty"),
-            ("嗯", "too_short"),
+            ("啊", "too_short"),
             ("ok", "acknowledgement"),
             ("好的", "acknowledgement"),
             ("Thanks!", "acknowledgement"),
@@ -416,7 +416,7 @@ async def test_redis_failure_does_not_block(mw, monkeypatch):
         user_id="u",
         conversation_id="c",
         message_id="m",
-        content="我从小在上海长大",
+        content="我从小在上海长大，家里有一只叫橘子的猫",
         trace_id="t",
         redis=redis,
         db=db,
@@ -440,7 +440,7 @@ async def test_db_failure_returns_none_not_raise(mw, monkeypatch):
         user_id="u",
         conversation_id="c",
         message_id="m",
-        content="我从小在上海长大",
+        content="我从小在上海长大，家里有一只叫橘子的猫",
         trace_id="t",
         db=db,
     )

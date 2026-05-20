@@ -32,8 +32,8 @@ from services.prompt_builder import (  # type: ignore
 
 
 def test_layer_order_has_exactly_10_layers():
-    """LAYER_ORDER 必须正好 10 个：L1..L10。"""
-    assert len(LAYER_ORDER) == 10
+    """LAYER_ORDER 为 system 层（9）；L8 历史单独走 messages，不在此 tuple。"""
+    assert len(LAYER_ORDER) == 9
     expected = (
         "L1_SAFETY",
         "L2_IDENTITY",
@@ -42,11 +42,11 @@ def test_layer_order_has_exactly_10_layers():
         "L5_USER_PROFILE",
         "L6_MEMORY",
         "L7_CONVERSATION_STATE",
-        "L8_RECENT_CONTEXT",
         "L9_FORMAT",
         "L10_ANCHOR",
     )
     assert LAYER_ORDER == expected
+    assert "L8_RECENT_CONTEXT" not in LAYER_ORDER
 
 
 def test_system_content_contains_all_9_system_layer_markers():

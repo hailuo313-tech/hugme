@@ -12,6 +12,18 @@ Current state (**C-02 / CUR-D8-01** — workflow is real):
 
 PR 上三项 job 任一失败即不可合并（须在 GitHub 仓库 Settings → Branches 将 `管理员-ci`、`后端-ci`、`操作守卫` 设为 required checks）。
 
+### 本地自检
+
+| 环境 | 命令 |
+|------|------|
+| **Windows（PowerShell）** | `cd E:\eris` 然后 `.\scripts\ci-check.ps1`（仅前端 `-AdminOnly` / 仅后端 `-BackendOnly`） |
+
+本机若报 `Unable to create process` 或 `No module named encodings`，说明系统 Python 损坏。可先运行 `.\scripts\bootstrap-python.ps1`（在 `.tools/python312` 安装便携 3.12），或重装官方 3.12。前端仍可 `-AdminOnly`。
+
+| Linux / Git Bash | `bash scripts/ci-check.sh` |
+
+需已安装：Node 20+、`npm`、Python 3.12、`pip`、`ruff`、`mypy`（后两者：`pip install -r requirements-dev.txt`）。
+
 This document remains the **reviewer contract**; CI is the **automated minimum**.
 
 ## Current Check Name Mapping

@@ -48,17 +48,23 @@ def _dedupe_key(user_id: str, notification_type: str, scheduled_at: datetime, pa
 
 
 async def _get_user(db: AsyncSession, user_id: str):
-    row = (await db.execute(
-        text(
-            """
+    row = (
+        (
+            await db.execute(
+                text(
+                    """
             SELECT id, channel, external_id, status, notification_opt_in,
                    opt_out_marketing, is_minor_suspected, risk_level, timezone
             FROM users
             WHERE id = :uid
             """
-        ),
-        {"uid": user_id},
-    )).mappings().fetchone()
+                ),
+                {"uid": user_id},
+            )
+        )
+        .mappings()
+        .fetchone()
+    )
     if not row:
         raise HTTPException(status_code=404, detail="User not found")
     return row
@@ -78,9 +84,10 @@ async def _assert_eligible(db: AsyncSession, user, channel: str):
     if user["risk_level"] in {"high", "critical"}:
         raise HTTPException(status_code=409, detail="High-risk users require handoff review")
 
-    open_handoff = (await db.execute(
-        text(
-            """
+    open_handoff = (
+        await db.execute(
+            text(
+                """
             SELECT 1
             FROM handoff_tasks
             WHERE user_id = :uid
@@ -88,9 +95,10 @@ async def _assert_eligible(db: AsyncSession, user, channel: str):
               AND status IN ('pending', 'PENDING', 'ESCALATED', 'HUMAN_LOCKED')
             LIMIT 1
             """
-        ),
-        {"uid": user["id"]},
-    )).fetchone()
+            ),
+            {"uid": user["id"]},
+        )
+    ).fetchone()
     if open_handoff:
         raise HTTPException(status_code=409, detail="User has open handoff task")
 
@@ -98,9 +106,11 @@ async def _assert_eligible(db: AsyncSession, user, channel: str):
 async def _assert_frequency(db: AsyncSession, user_id: str, scheduled_at: datetime):
     day_start = scheduled_at - timedelta(hours=24)
     week_start = scheduled_at - timedelta(days=7)
-    counts = (await db.execute(
-        text(
-            """
+    counts = (
+        (
+            await db.execute(
+                text(
+                    """
             SELECT
                 COUNT(*) FILTER (WHERE scheduled_at >= :day_start) AS daily_count,
                 COUNT(*) FILTER (WHERE scheduled_at >= :week_start) AS weekly_count
@@ -109,9 +119,13 @@ async def _assert_frequency(db: AsyncSession, user_id: str, scheduled_at: dateti
               AND notification_type = 'silent_reactivation'
               AND status IN ('pending', 'sending', 'sent')
             """
-        ),
-        {"uid": user_id, "day_start": day_start, "week_start": week_start},
-    )).mappings().one()
+                ),
+                {"uid": user_id, "day_start": day_start, "week_start": week_start},
+            )
+        )
+        .mappings()
+        .one()
+    )
     if counts["daily_count"] >= DAILY_LIMIT:
         raise HTTPException(status_code=429, detail="Daily notification limit reached")
     if counts["weekly_count"] >= WEEKLY_LIMIT:
@@ -119,9 +133,11 @@ async def _assert_frequency(db: AsyncSession, user_id: str, scheduled_at: dateti
 
 
 async def _assert_dedupe(db: AsyncSession, user_id: str, dedupe_key: str):
-    existing = (await db.execute(
-        text(
-            """
+    existing = (
+        (
+            await db.execute(
+                text(
+                    """
             SELECT id, status
             FROM notification_tasks
             WHERE user_id = :uid
@@ -130,9 +146,13 @@ async def _assert_dedupe(db: AsyncSession, user_id: str, dedupe_key: str):
               AND status IN ('pending', 'sending', 'sent')
             LIMIT 1
             """
-        ),
-        {"uid": user_id, "dedupe_key": dedupe_key},
-    )).mappings().fetchone()
+                ),
+                {"uid": user_id, "dedupe_key": dedupe_key},
+            )
+        )
+        .mappings()
+        .fetchone()
+    )
     if existing:
         raise HTTPException(
             status_code=409,
@@ -214,9 +234,11 @@ async def list_notification_tasks(
         filters.append("nt.user_id = :user_id")
         params["user_id"] = str(_as_uuid(user_id, "user_id"))
     where = "WHERE " + " AND ".join(filters) if filters else ""
-    rows = (await db.execute(
-        text(
-            f"""
+    rows = (
+        (
+            await db.execute(
+                text(
+                    f"""
             SELECT nt.*, u.external_id, u.timezone, u.notification_opt_in, u.opt_out_marketing
             FROM notification_tasks nt
             LEFT JOIN users u ON u.id = nt.user_id
@@ -224,9 +246,13 @@ async def list_notification_tasks(
             ORDER BY nt.created_at DESC
             LIMIT :limit
             """
-        ),
-        params,
-    )).mappings().all()
+                ),
+                params,
+            )
+        )
+        .mappings()
+        .all()
+    )
     return [dict(row) for row in rows]
 
 
@@ -259,15 +285,21 @@ async def cancel_notification_task(
 
 @router.get("/logs")
 async def notification_logs(db: AsyncSession = Depends(get_db)):
-    rows = (await db.execute(
-        text(
-            """
+    rows = (
+        (
+            await db.execute(
+                text(
+                    """
             SELECT id, user_id, channel, notification_type, status, scheduled_at,
                    sent_at, failure_reason, created_at
             FROM notification_tasks
             ORDER BY created_at DESC
             LIMIT 100
             """
+                )
+            )
         )
-    )).mappings().all()
+        .mappings()
+        .all()
+    )
     return [dict(row) for row in rows]

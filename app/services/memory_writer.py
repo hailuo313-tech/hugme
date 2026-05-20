@@ -335,14 +335,12 @@ async def maybe_write_memory(
 
 def _rule_prefilter(content: str) -> Optional[str]:
     """返回跳过原因（str）或 None（=通过）。"""
-    if not content:
+    if not content or not content.strip():
         return "empty"
 
     stripped = content.strip()
-    if len(stripped) < MIN_CONTENT_LEN:
-        return "too_short"
 
-    # acknowledgement 全匹配（去掉末尾标点）
+    # acknowledgement 全匹配（去掉末尾标点）— 先于 too_short，避免 "ok" 等被长度挡掉
     normalized = re.sub(r"[\s\.\!\?\,\，\。\！\？\、]+$", "", stripped).lower()
     if normalized in ACKNOWLEDGEMENTS:
         return "acknowledgement"
@@ -350,6 +348,9 @@ def _rule_prefilter(content: str) -> Optional[str]:
     # 全 emoji / 全标点
     if _EMOJI_OR_PUNCT_RE.match(stripped):
         return "emoji_or_punct_only"
+
+    if len(stripped) < MIN_CONTENT_LEN:
+        return "too_short"
 
     return None
 
