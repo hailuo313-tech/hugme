@@ -1,0 +1,123 @@
+# C-02：PR 合并门禁 — Lint + 类型检查 + 单元测试（admin + backend + ops-guard）
+name: PR required gates
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-gates-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  admin-ci:
+    name: 管理员-ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: admin
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: admin/package-lock.json
+
+      - name: npm ci
+        run: npm ci
+
+      - name: ESLint (next lint)
+        run: npm run lint
+
+      - name: TypeScript typecheck
+        run: npm run typecheck
+
+      - name: Production build
+        run: npm run build
+
+  backend-ci:
+    name: 后端-ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SECRET_KEY: ci-test-secret-key
+      DATABASE_URL: postgresql+asyncpg://eris:eris@localhost:5432/eris
+      REDIS_URL: redis://:redis@localhost:6379/0
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            app/requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r app/requirements.txt -r requirements-dev.txt
+
+      - name: Ruff lint
+        run: ruff check app tests
+
+      - name: Ruff format check
+        run: ruff format --check app tests
+
+      - name: Mypy typecheck
+        run: mypy
+
+      - name: Byte-compile app and tests
+        run: python -m compileall -q app tests
+
+      - name: pytest
+        run: pytest -q
+
+  ops-guard:
+    name: 操作守卫
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Required paths and compose layout
+        run: |
+          set -euo pipefail
+          test -f RUNBOOK.md
+          test -f docker-compose.yml
+          test -f docs/REPO_LAYOUT.md
+          test -f pyproject.toml
+          test -f app/requirements.txt
+          test -f requirements-dev.txt
+          test -d scripts
+          test -f scripts/init.sql
+          grep -q '^services:' docker-compose.yml
+          grep -qE '^\s{2}api:' docker-compose.yml
+          grep -qE '^\s{2}postgres:' docker-compose.yml
+
+      - name: No tracked admin/node_modules or admin/.next
+        run: |
+          set -euo pipefail
+          for path in admin/node_modules admin/.next; do
+            if git ls-files "$path" | grep -q .; then
+              echo "ERROR: tracked files under $path (must not be committed)" >&2
+              git ls-files "$path" | head -50
+              exit 1
+            fi
+          done
+
+      - name: Bash syntax check for shell scripts under scripts/
+        run: |
+          set -euo pipefail
+          find scripts -type f -name '*.sh' -exec bash -n {} \;
+          echo "bash -n OK for all *.sh under scripts/"

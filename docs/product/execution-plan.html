@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>1V1 智能流控系统 — 可执行方案 v2.0（Devin × Codex）</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,400;0,500;1,400&family=Noto+Serif+SC:wght@400;600&family=Sora:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:       #090c12;
+    --bg2:      #0e1520;
+    --bg3:      #141d2e;
+    --border:   #1e2d45;
+    --border2:  #2a3f5f;
+    --text:     #e2eaf6;
+    --muted:    #6b7fa3;
+    --muted2:   #4a5a78;
+
+    --blue:     #3b82f6;
+    --blue-dim: #1e3a5f;
+    --blue-glow:#3b82f620;
+
+    --p1: #3b82f6; --p1d: #1e3a5f; --p1t: #93c5fd;
+    --p2: #10b981; --p2d: #064e3b; --p2t: #6ee7b7;
+    --p3: #f59e0b; --p3d: #78350f; --p3t: #fcd34d;
+    --p4: #8b5cf6; --p4d: #3b1f6e; --p4t: #c4b5fd;
+    --p5: #ef4444; --p5d: #7f1d1d; --p5t: #fca5a5;
+
+    --lvl-s: #ef4444; --lvl-a: #f97316; --lvl-b: #3b82f6;
+    --lvl-c: #10b981; --lvl-d: #6b7fa3;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Sora', 'Noto Serif SC', sans-serif;
+    font-size: 14px;
+    line-height: 1.7;
+    min-height: 100vh;
+  }
+
+  /* ─── GRID BACKGROUND ─── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(59,130,246,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(59,130,246,0.03) 1px, transparent 1px);
+    background-size: 48px 48px;
+    pointer-events: none; z-index: 0;
+  }
+
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 0 32px 80px; position: relative; z-index: 1; }
+
+  /* ─── HEADER ─── */
+  .site-header {
+    padding: 60px 0 48px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 56px;
+    position: relative;
+  }
+  .site-header::after {
+    content: '';
+    position: absolute; bottom: -1px; left: 0;
+    width: 120px; height: 1px;
+    background: linear-gradient(90deg, var(--blue), transparent);
+  }
+  .header-eyebrow {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px; letter-spacing: 0.18em;
+    color: var(--blue); text-transform: uppercase;
+    margin-bottom: 16px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .header-eyebrow::before {
+    content: ''; display: block;
+    width: 24px; height: 1px; background: var(--blue);
+  }
+  h1 {
+    font-family: 'Sora', sans-serif;
+    font-size: clamp(24px, 3vw, 38px);
+    font-weight: 600; line-height: 1.2;
+    letter-spacing: -0.02em;
+    color: #fff;
+    margin-bottom: 14px;
+  }
+  h1 span { color: var(--blue); }
+  .header-sub {
+    color: var(--muted); font-size: 14px; max-width: 620px;
+    line-height: 1.8;
+  }
+  .header-meta {
+    display: flex; gap: 10px; flex-wrap: wrap;
+    margin-top: 28px;
+  }
+  .meta-chip {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px; padding: 5px 12px;
+    border-radius: 4px;
+    border: 1px solid var(--border2);
+    color: var(--muted);
+    background: var(--bg2);
+  }
+  .meta-chip.hi { border-color: var(--blue-dim); color: var(--blue); background: var(--blue-glow); }
+
+  /* ─── SUMMARY STRIP ─── */
+  .summary-strip {
+    display: grid; grid-template-columns: repeat(5, 1fr);
+    gap: 1px; background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 10px; overflow: hidden;
+    margin-bottom: 60px;
+  }
+  .sum-cell {
+    background: var(--bg2);
+    padding: 20px 16px; text-align: center;
+    transition: background .2s;
+  }
+  .sum-cell:hover { background: var(--bg3); }
+  .sum-num {
+    font-family: 'DM Mono', monospace;
+    font-size: 28px; font-weight: 500;
+    line-height: 1; margin-bottom: 6px;
+  }
+  .sum-lbl { font-size: 11px; color: var(--muted); letter-spacing: 0.05em; }
+
+  /* ─── SECTION HEADING ─── */
+  .section-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px; letter-spacing: 0.2em;
+    color: var(--muted2); text-transform: uppercase;
+    margin-bottom: 24px;
+  }
+
+  /* ─── PHASE BLOCK ─── */
+  .phase { margin-bottom: 48px; }
+
+  .phase-header {
+    display: grid;
+    grid-template-columns: 56px 1fr auto auto;
+    align-items: center; gap: 0;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 16px;
+    cursor: pointer;
+    transition: border-color .2s;
+  }
+  .phase-header:hover { border-color: var(--border2); }
+
+  .ph-num {
+    display: flex; align-items: center; justify-content: center;
+    width: 56px; height: 100%;
+    min-height: 68px;
+    font-family: 'DM Mono', monospace;
+    font-size: 22px; font-weight: 500;
+    border-right: 1px solid var(--border);
+  }
+
+  .ph-info { padding: 16px 20px; }
+  .ph-info h2 {
+    font-size: 16px; font-weight: 500;
+    color: #fff; margin-bottom: 3px;
+    letter-spacing: -0.01em;
+  }
+  .ph-info p { font-size: 12px; color: var(--muted); }
+
+  .ph-week {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px; padding: 0 20px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .ph-toggle {
+    padding: 0 20px;
+    font-size: 18px; color: var(--muted2);
+    transition: transform .25s;
+    user-select: none;
+  }
+  .phase.open .ph-toggle { transform: rotate(180deg); }
+
+  /* Phase color accents */
+  .p1 .ph-num { color: var(--p1t); background: color-mix(in srgb, var(--p1) 8%, var(--bg2)); }
+  .p2 .ph-num { color: var(--p2t); background: color-mix(in srgb, var(--p2) 8%, var(--bg2)); }
+  .p3 .ph-num { color: var(--p3t); background: color-mix(in srgb, var(--p3) 8%, var(--bg2)); }
+  .p4 .ph-num { color: var(--p4t); background: color-mix(in srgb, var(--p4) 8%, var(--bg2)); }
+  .p5 .ph-num { color: var(--p5t); background: color-mix(in srgb, var(--p5) 8%, var(--bg2)); }
+
+  .p1 .phase-header { border-left: 3px solid var(--p1); }
+  .p2 .phase-header { border-left: 3px solid var(--p2); }
+  .p3 .phase-header { border-left: 3px solid var(--p3); }
+  .p4 .phase-header { border-left: 3px solid var(--p4); }
+  .p5 .phase-header { border-left: 3px solid var(--p5); }
+
+  /* ─── TASKS BODY ─── */
+  .tasks-body {
+    display: none;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    animation: fadeIn .2s ease;
+  }
+  .phase.open .tasks-body { display: grid; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+
+  .task-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px 20px;
+    transition: border-color .2s;
+  }
+  .task-card:hover { border-color: var(--border2); }
+  .task-card.full { grid-column: 1 / -1; }
+
+  .task-card h3 {
+    font-size: 13px; font-weight: 500;
+    color: #ddeeff; margin-bottom: 14px;
+    display: flex; align-items: center; gap: 8px;
+    letter-spacing: -0.01em;
+  }
+  .t-icon {
+    width: 22px; height: 22px; border-radius: 5px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; flex-shrink: 0;
+    border: 1px solid var(--border2);
+    color: var(--muted);
+  }
+
+  /* checklist */
+  .checklist { list-style: none; }
+  .checklist li {
+    display: flex; gap: 9px; align-items: flex-start;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 12.5px; color: var(--muted);
+    line-height: 1.6;
+  }
+  .checklist li:last-child { border-bottom: none; padding-bottom: 0; }
+  .dot {
+    width: 14px; height: 14px; border-radius: 50%;
+    border: 1.5px solid var(--border2);
+    flex-shrink: 0; margin-top: 3px;
+  }
+  .checklist li code {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px; color: #7dd3fc;
+    background: rgba(59,130,246,0.08);
+    padding: 1px 5px; border-radius: 3px;
+  }
+
+  /* deliverables */
+  .deliverables { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .tag {
+    font-family: 'DM Mono', monospace;
+    font-size: 10.5px; padding: 3px 10px;
+    border-radius: 4px;
+    border: 1px solid var(--border2);
+    color: var(--muted);
+  }
+  .p1 .tag { border-color: var(--p1d); color: var(--p1t); background: rgba(59,130,246,0.06); }
+  .p2 .tag { border-color: var(--p2d); color: var(--p2t); background: rgba(16,185,129,0.06); }
+  .p3 .tag { border-color: var(--p3d); color: var(--p3t); background: rgba(245,158,11,0.06); }
+  .p4 .tag { border-color: var(--p4d); color: var(--p4t); background: rgba(139,92,246,0.06); }
+  .p5 .tag { border-color: var(--p5d); color: var(--p5t); background: rgba(239,68,68,0.06); }
+
+  /* ─── USER LEVEL TABLE ─── */
+  .level-grid {
+    display: grid; grid-template-columns: repeat(5, 1fr);
+    gap: 10px; margin-bottom: 60px;
+  }
+  .lv-card {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px 14px 12px;
+  }
+  .lv-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 18px; font-weight: 500;
+    margin-bottom: 6px;
+  }
+  .lv-route {
+    font-size: 10px; color: var(--muted);
+    border: 1px solid var(--border2);
+    border-radius: 3px; padding: 2px 6px;
+    display: inline-block; margin-bottom: 8px;
+    font-family: 'DM Mono', monospace;
+  }
+  .lv-desc { font-size: 11.5px; color: var(--muted); line-height: 1.6; }
+  .lv-s .lv-label { color: var(--lvl-s); }
+  .lv-a .lv-label { color: var(--lvl-a); }
+  .lv-b .lv-label { color: var(--lvl-b); }
+  .lv-c .lv-label { color: var(--lvl-c); }
+  .lv-d .lv-label { color: var(--lvl-d); }
+  .lv-s { border-top: 2px solid var(--lvl-s); }
+  .lv-a { border-top: 2px solid var(--lvl-a); }
+  .lv-b { border-top: 2px solid var(--lvl-b); }
+  .lv-c { border-top: 2px solid var(--lvl-c); }
+  .lv-d { border-top: 2px solid var(--lvl-d); }
+
+  /* ─── TIMELINE STRIP ─── */
+  .timeline {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 28px 28px 24px;
+    margin-bottom: 60px;
+  }
+  .tl-title {
+    font-size: 12px; color: var(--muted); margin-bottom: 20px;
+    font-family: 'DM Mono', monospace; letter-spacing: 0.1em;
+  }
+  .tl-track {
+    display: grid; grid-template-columns: repeat(12, 1fr);
+    gap: 4px; margin-bottom: 10px;
+  }
+  .tl-bar {
+    height: 28px; border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-family: 'DM Mono', monospace;
+    font-weight: 500; white-space: nowrap;
+    overflow: hidden;
+  }
+  .tl-weeks {
+    display: grid; grid-template-columns: repeat(12, 1fr);
+    gap: 4px;
+  }
+  .tl-w {
+    text-align: center; font-size: 10px; font-family: 'DM Mono', monospace;
+    color: var(--muted2);
+  }
+  .tb1 { background: rgba(59,130,246,0.2); color: var(--p1t); }
+  .tb2 { background: rgba(16,185,129,0.18); color: var(--p2t); }
+  .tb3 { background: rgba(245,158,11,0.18); color: var(--p3t); }
+  .tb4 { background: rgba(139,92,246,0.18); color: var(--p4t); }
+  .tb5 { background: rgba(239,68,68,0.18); color: var(--p5t); }
+
+  /* ─── FOOTER ─── */
+  footer {
+    border-top: 1px solid var(--border);
+    padding-top: 28px; margin-top: 48px;
+    display: flex; justify-content: space-between; align-items: center;
+    color: var(--muted2); font-size: 11px; font-family: 'DM Mono', monospace;
+  }
+
+  /* ─── AI ASSIGNMENT ─── */
+  .agent-strip {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 12px; margin-bottom: 48px;
+  }
+  .agent-card {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 20px 22px;
+  }
+  .agent-card h3 {
+    font-size: 14px; font-weight: 600; color: #fff;
+    margin-bottom: 8px; display: flex; align-items: center; gap: 10px;
+  }
+  .agent-card p { font-size: 12px; color: var(--muted); line-height: 1.75; margin-bottom: 12px; }
+  .agent-card ul { list-style: none; font-size: 12px; color: var(--muted); }
+  .agent-card li { padding: 4px 0; border-bottom: 1px solid var(--border); }
+  .agent-card li:last-child { border: none; }
+  .agent-devin { border-top: 2px solid #06b6d4; }
+  .agent-codex { border-top: 2px solid #a78bfa; }
+  .badge {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px; font-weight: 500;
+    padding: 2px 8px; border-radius: 4px;
+    letter-spacing: 0.04em; flex-shrink: 0;
+  }
+  .badge-devin { background: rgba(6,182,212,0.15); color: #67e8f9; border: 1px solid rgba(6,182,212,0.35); }
+  .badge-codex { background: rgba(167,139,250,0.15); color: #c4b5fd; border: 1px solid rgba(167,139,250,0.35); }
+  .badge-joint { background: rgba(245,158,11,0.12); color: #fcd34d; border: 1px solid rgba(245,158,11,0.35); }
+  .task-card h3 .badge { margin-left: auto; }
+  .task-meta {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    margin: -6px 0 12px; font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted2);
+  }
+  .task-meta span { padding: 2px 8px; border: 1px solid var(--border); border-radius: 3px; }
+  .subtasks { margin-top: 4px; }
+  .subtasks li { font-size: 12px; }
+  .subtasks li .owner {
+    font-family: 'DM Mono', monospace; font-size: 9px;
+    padding: 1px 5px; border-radius: 3px; margin-right: 6px;
+    vertical-align: middle;
+  }
+  .owner-d { background: rgba(6,182,212,0.12); color: #67e8f9; }
+  .owner-c { background: rgba(167,139,250,0.12); color: #c4b5fd; }
+  .owner-j { background: rgba(245,158,11,0.1); color: #fcd34d; }
+  .detail-section { margin-bottom: 56px; }
+  .detail-table-wrap {
+    overflow-x: auto; margin-bottom: 20px;
+    border: 1px solid var(--border); border-radius: 8px;
+  }
+  table.detail-table {
+    width: 100%; border-collapse: collapse;
+    font-size: 11.5px;
+  }
+  .detail-table th {
+    text-align: left; padding: 10px 12px;
+    background: var(--bg3); color: var(--muted);
+    font-family: 'DM Mono', monospace; font-size: 10px;
+    letter-spacing: 0.06em; border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .detail-table td {
+    padding: 9px 12px; border-bottom: 1px solid var(--border);
+    color: var(--muted); vertical-align: top;
+  }
+  .detail-table tr:last-child td { border-bottom: none; }
+  .detail-table tr:hover td { background: rgba(255,255,255,0.02); }
+  .detail-table .tid {
+    font-family: 'DM Mono', monospace; font-size: 10px; color: var(--blue);
+    white-space: nowrap;
+  }
+  .detail-table .dep { color: var(--muted2); font-size: 10px; }
+  .handoff-box {
+    background: var(--bg2); border: 1px solid var(--border2);
+    border-radius: 8px; padding: 16px 20px; margin-bottom: 48px;
+    font-size: 12px; color: var(--muted); line-height: 1.8;
+  }
+  .handoff-box strong { color: #fff; font-weight: 500; }
+
+  @media (max-width: 720px) {
+    .tasks-body { grid-template-columns: 1fr; }
+    .task-card.full { grid-column: 1; }
+    .summary-strip { grid-template-columns: repeat(3, 1fr); }
+    .level-grid { grid-template-columns: 1fr 1fr; }
+    .agent-strip { grid-template-columns: 1fr; }
+    h1 { font-size: 22px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- HEADER -->
+  <header class="site-header">
+    <div class="header-eyebrow">执行方案 v2.0 · Devin × Codex 分工版</div>
+    <h1>1V1 多端全渠道<span>智能流控</span><br>与高价值用户转化系统</h1>
+    <p class="header-sub">在 v1.0 路线图基础上拆分为 <strong style="color:#93c5fd">71 项原子子任务</strong>，明确 Devin（全栈脚手架/联调/运维）与 Codex（核心逻辑/单测/协议）分工、依赖与验收标准，预计 12 周交付。</p>
+    <div class="header-meta">
+      <span class="meta-chip hi">引擎版本 v3.2 Enterprise</span>
+      <span class="meta-chip" style="border-color:rgba(6,182,212,0.4);color:#67e8f9">Devin · 31 子任务</span>
+      <span class="meta-chip" style="border-color:rgba(167,139,250,0.4);color:#c4b5fd">Codex · 34 子任务</span>
+      <span class="meta-chip">联合验收 · 6 项</span>
+      <span class="meta-chip">用户分级 S/A/B/C/D</span>
+      <span class="meta-chip">PostgreSQL + Redis + WebSocket</span>
+    </div>
+  </header>
+
+  <!-- SUMMARY -->
+  <div class="summary-strip">
+    <div class="sum-cell">
+      <div class="sum-num" style="color:var(--p1)">5</div>
+      <div class="sum-lbl">执行阶段</div>
+    </div>
+    <div class="sum-cell">
+      <div class="sum-num" style="color:var(--p2)">71</div>
+      <div class="sum-lbl">原子子任务</div>
+    </div>
+    <div class="sum-cell">
+      <div class="sum-num" style="color:var(--p3)">~12w</div>
+      <div class="sum-lbl">预计周期</div>
+    </div>
+    <div class="sum-cell">
+      <div class="sum-num" style="color:var(--p4)">4</div>
+      <div class="sum-lbl">接入渠道</div>
+    </div>
+    <div class="sum-cell">
+      <div class="sum-num" style="color:var(--p5)">5</div>
+      <div class="sum-lbl">用户级别</div>
+    </div>
+  </div>
+
+  <!-- AI ASSIGNMENT -->
+  <p class="section-label">// AI 分工总览</p>
+  <div class="agent-strip">
+    <div class="agent-card agent-devin">
+      <h3><span class="badge badge-devin">DEVIN</span> 全栈脚手架 · 联调 · 运维</h3>
+      <p>负责可独立运行的工程骨架、容器化环境、渠道接入壳层、看板前端、监控灰度与 E2E/压测。产出须可 <code>docker-compose up</code> 一键验证。</p>
+      <ul>
+        <li>仓库初始化、CI、docker-compose、环境变量模板</li>
+        <li>API 网关 / WebSocket 服务进程与部署</li>
+        <li>Telegram Webhook 注册与消息收发联调</li>
+        <li>坐席看板 React 壳 + H5/App 集成联调</li>
+        <li>Grafana、灰度 runbook、E2E & k6 压测</li>
+      </ul>
+    </div>
+    <div class="agent-card agent-codex">
+      <h3><span class="badge badge-codex">CODEX</span> 核心逻辑 · 单测 · 协议</h3>
+      <p>负责业务规则、算法模块、DDL/迁移细节、类型安全实现与单元测试。所有规则类代码须附带 ≥99% 分支覆盖的单测。</p>
+      <ul>
+        <li>PostgreSQL DDL、migrations、seed 数据</li>
+        <li>level_engine / intent_classifier / delivery_queue</li>
+        <li>AI 拟人化 Prompt、安全过滤、话术检索</li>
+        <li>schema_spec.json、ws_protocol.md 规范文档</li>
+        <li>分级/意图/投递相关单元测试与边界 case</li>
+      </ul>
+    </div>
+  </div>
+  <div class="handoff-box">
+    <strong>协作交接规则：</strong>
+    Codex 先交付「可测试的纯函数/模块 + 协议文档」→ Devin 集成进网关与 WS 服务并跑通联调。
+    联合验收项（J-01～J-04）须双方 PR 均合并后由 Devin 执行冒烟脚本。
+    <strong>阻塞处理：</strong>下游任务依赖未就绪时，Devin 用 Mock 适配器继续开发，Codex 完成后替换 Mock 并回归。
+  </div>
+
+  <!-- TIMELINE -->
+  <p class="section-label">// 项目时间轴</p>
+  <div class="timeline">
+    <div class="tl-title">WEEK 01 ─────────────────────────────────────── WEEK 12</div>
+    <div class="tl-track">
+      <div class="tl-bar tb1" style="grid-column:1/3">① 基础设施</div>
+      <div class="tl-bar tb2" style="grid-column:2/5">② 分级引擎</div>
+      <div class="tl-bar tb3" style="grid-column:3/8">③ AI 核心链路</div>
+      <div class="tl-bar tb4" style="grid-column:5/10">④ 看板 & 前端</div>
+      <div class="tl-bar tb5" style="grid-column:9/13">⑤ 测试上线</div>
+    </div>
+    <div class="tl-weeks">
+      <div class="tl-w">W1</div><div class="tl-w">W2</div>
+      <div class="tl-w">W3</div><div class="tl-w">W4</div>
+      <div class="tl-w">W5</div><div class="tl-w">W6</div>
+      <div class="tl-w">W7</div><div class="tl-w">W8</div>
+      <div class="tl-w">W9</div><div class="tl-w">W10</div>
+      <div class="tl-w">W11</div><div class="tl-w">W12</div>
+    </div>
+  </div>
+
+  <!-- USER LEVELS -->
+  <p class="section-label">// 用户分级体系概览</p>
+  <div class="level-grid" style="margin-bottom:56px">
+    <div class="lv-card lv-s">
+      <div class="lv-label">S 级</div>
+      <div class="lv-route">专家坐席精聊</div>
+      <p class="lv-desc">T1 国家 + 年龄 ≥ 25 + 高额付费记录。最高优先级，坐席实时接管。</p>
+    </div>
+    <div class="lv-card lv-a">
+      <div class="lv-label">A 级</div>
+      <div class="lv-route">专家坐席精聊</div>
+      <p class="lv-desc">T1 国家 + 年龄 ≥ 25 + 暂未付费。重点转化目标，价值引导策略。</p>
+    </div>
+    <div class="lv-card lv-b">
+      <div class="lv-label">B 级</div>
+      <div class="lv-route">AI + 人工辅助</div>
+      <p class="lv-desc">T2 国家或低客单付费记录。AI 主导，坐席辅助观察。</p>
+    </div>
+    <div class="lv-card lv-c">
+      <div class="lv-label">C 级</div>
+      <div class="lv-route">100% AI 托管</div>
+      <p class="lv-desc">T2 国家 + 无付费记录。全自动运行，零坐席成本。</p>
+    </div>
+    <div class="lv-card lv-d">
+      <div class="lv-label">D 级</div>
+      <div class="lv-route">画像探测阶段</div>
+      <p class="lv-desc">画像字段残缺，触发专属话术自动补全信息，待升级。</p>
+    </div>
+  </div>
+
+  <!-- PHASES -->
+  <p class="section-label">// 五阶段执行任务清单</p>
+
+  <!-- PHASE 1 -->
+  <div class="phase p1 open" id="ph1">
+    <div class="phase-header" onclick="togglePhase('ph1')">
+      <div class="ph-num">01</div>
+      <div class="ph-info">
+        <h2>基础设施 & 数据库搭建</h2>
+        <p>环境准备 · 数据库建表 · 服务注册 · 消息标准化</p>
+      </div>
+      <div class="ph-week">第 1–2 周</div>
+      <div class="ph-toggle">▾</div>
+    </div>
+    <div class="tasks-body">
+      <div class="task-card">
+        <h3><span class="t-icon">🗄</span>PostgreSQL DDL 执行</h3>
+        <ul class="checklist">
+          <li><span class="dot"></span>创建 <code>user_profiles</code> 主表，含 user_level / chat_route / country_tier 字段</li>
+          <li><span class="dot"></span>创建 <code>premium_chat_logs</code> 精聊归档表，关联外键 + 索引</li>
+          <li><span class="dot"></span>初始化 <code>uuid-ossp</code> 扩展，验证 <code>uuid_generate_v4()</code> 正常</li>
+          <li><span class="dot"></span>编写数据库 migration 脚本，纳入版本管理（如 Flyway / Liquibase）</li>
+          <li><span class="dot"></span>设置读写用户权限，禁止应用层 DROP 操作</li>
+        </ul>
+        <div class="deliverables">
+          <span class="tag">📄 migration_v1.sql</span>
+          <span class="tag">📄 db_schema_doc.md</span>
+        </div>
+      </div>
+      <div class="task-card">
+        <h3><span class="t-icon">⚙</span>服务架构初始化</h3>
+        <ul class="checklist">
+          <li><span class="dot"></span>确认 ERIS 目录：<code>app/</code> + <code>admin/</code> + <code>docker-compose.yml</code>（见 <code>docs/REPO_LAYOUT.md</code>）</li>
+          <li><span class="dot"></span>FastAPI 应用：<code>/health</code>、结构化日志、CORS（<code>app/main.py</code>）</li>
+          <li><span class="dot"></span>配置 Redis 缓存层，用于会话存储与倒计时队列（Redis Stream）</li>
+          <li><span class="dot"></span>WebSocket：<code>app/api/realtime.py</code>（同 eris-api 进程，非独立 ws 服务）</li>
+          <li><span class="dot"></span>配置 .env 环境变量：TG Bot Token、AI API Key、DB Connection String</li>
+          <li><span class="dot"></span>docker-compose 本地联调环境一键启动验证</li>
+        </ul>
+        <div class="deliverables">
+          <span class="tag">📄 .env.template</span>
+          <span class="tag">📄 docker-compose.yml</span>
+        </div>
+      </div>
+      <div class="task-card">
+        <h3><span class="t-icon">🤖</span>Telegram Webhook 接入</h3>
+        <ul class="checklist">
+          <li><span class="dot"></span>注册 Bot，调用 <code>setWebhook</code> 指向网关 <code>/tg/webhook</code> 端点</li>
+          <li><span class="dot"></span>实现消息类型分发：text / photo / voice / sticker / document</li>
+          <li><span class="dot"></span>调用 <code>sendChatAction("typing")</code> 模拟人类输入状态</li>
+          <li><span class="dot"></span>处理 Webhook 超时重试与幂等性（基于 update_id 去重）</li>
+        </ul>
+        <div class="deliverables"><span class="tag">✅ TG 消息可收发验证通过</span></div>
+      </div>
+      <div class="task-card">
+        <h3><span class="t-icon">📐</span>消息标准化网关层</h3>
+        <ul class="checklist">
+          <li><span class="dot"></span>定义统一 JSON Schema：user_id / platform / message_type / content / timestamp</li>
+          <li><span class="dot"></span>实现各端适配器：TG → 标准格式，Web H5 → 标准格式，APP → 标准格式</li>
+          <li><span class="dot"></span>写入 <code>inbound_queue</code>（Redis Stream）供后续模块消费</li>
+          <li><span class="dot"></span>记录原始消息至审计日志表，不可篡改</li>
+        </ul>
+        <div class="deliverables"><span class="tag">📄 schema_spec.json</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PHASE 2 -->
+  <div class="phase p2" id="ph2">
+    <div class="phase-header" onclick="togglePhase('ph2')">
+      <div class="ph-num">02</div>
+      <div class="ph-info">
+        <h2>用户画像分级引擎</h2>
+        <p>地理采集 · 年龄提取 · S/A/B/C/D 分级逻辑 · 动态路由</p>
+      </div>
+      <div class="ph-week">第 2–4 周</div>
+      <div class="ph-toggle">▾</div>
+    </div>
+    <div class="tasks-body">
+      <div class="task-card">
+        <h3><span class="t-icon">🌍</span>地理与年龄信息采集</h3>
+        <ul class="checklist">
+          <li><span class="dot"></span>IP → 国家解析（接入 MaxMind GeoIP 或 ip-api.com），写入 <code>country</code> 字段</li>
+          <li><span class="dot"></span>维护 T1 国家名单配置文件（US/UK/DE/AU/CA/SG 等），支持热更新</li>
+          <li><span class="dot"></span>D 级用户触发专属话术，通过自然对话引导补全 <code>reported_age</code></li>
+          <li><span class="dot"></span>AI 模型从对话中提取年龄数字并置信度校验后写入数据库</li>
+        </ul>
+        <div class="deliverables"><span class="tag">📄 t1_countries.json</span></div>
+      </div>
+      <div class="task-card">
+        <h3><span class="t-icon">📊</span>五级分级规则实现</h3>
+        <ul class="checklist">
+          <li><span class="dot"></span>实现分级函数 <code>calcUserLevel(profile)</code>，返回 S / A / B / C / D</li>
+          <li><span class="dot"></span>S 级条件：T1 + age ≥ 25 + total_spent > 阈值（可配置）</li>
+          <li><span class="dot"></span>A 级条件：T1 + age ≥ 25 + total_spent = 0</li>
+          <li><span class="dot"></span>B 级：T2 + 有低客单付费；C 级：T2 + 零付费；D 级：信息不全</li>
+          <li><span class="dot"></span>每次消息处理前重算 level，变更时写入日志 <code>level_change_logs</code></li>
+        </ul>
+        <div class="deliverables"><span class="tag">📄 level_engine.ts</span></div>
+      </div>
+      <div class="task-card full">
+        <h3><span class="t-icon">🔀</span>动态路由策略 & 自动化测试</h3>
+        <ul class="checklist">
+          <li><span class="dot"></span>根据 level 写入 <code>chat_route</code>：S/A → <code>manual_premium</code>，B → <code>ai_assisted</code>，C/D → <code>ai_auto</code></li>
+          <li><span class="dot"></span>路由变更事件通过 WebSocket 推送坐席看板，触发高净值用户弹窗提醒</li>
+          <li><span class="dot"></span>用户付费成功后自动触发 level 重新评估（Webhook 回调）</li>
+          <li><span class="dot"></span>编写单元测试覆盖全部分级 case，至少 20 个测试用例，准确率 ≥ 99%</li>
+        </ul>
+        <div class="deliverables">
+          <span class="tag">📄 level_engine.test.ts</span>
+          <span class="tag">✅ 分级单测全部通过</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PHASE 3 -->
+  <div class="phase p3" id="ph3">
+    <div class="phase-header" onclick="togglePhase('ph3')">
+      <div class="ph-num">03</div>
+      <div class="ph-info">
+        <h2>AI 处理核心链路</h2>
+        <p>话术底料库 · 意图识别 · AI 拟人化包装 · 智能延迟投递</p>
+      </div>
+      <div class="ph-week">第 3–7 周</div>
+      <div class="ph-toggle">▾</div>
+    </div>
+    <div class="tasks-body">
+      <div class="task-card">
+        <h3><span class="t-icon">📚</span>话术底料库建设</h3>
+        <ul class="checklist">
+          <li><span class="dot"></span>整理话术类目：问候 / 情感维系 / 增值权益引导 / 拒绝处理 / 付费催化</li>
+          <li><span class="dot"></span>每类话术录入 ≥ 10 条底料，存入 <code>script_templates</code> 表</li>
+          <li><span class="dot"></span>为每条底料打关键词标签（视频/相册/VIP/礼包…），支持向量化检索</li>
+          <li><span class="dot"></span>底料支持按 platform / user_level / persona 过滤检索</li>
+        </ul>
+        <div class="deliverables"><span class="tag">📄 scripts_seed.sql</span></div>
+      </div>
+      <div class="task-card">
+        <h3><span class="t-icon">🎯</span>意图识别与话术匹配</h3>
+        <ul class="checklist">
+          <li><span class="dot"></span>定义意图分类体系：内容请求 / 情感互动 / 投诉 / 付费咨询 / 闲聊</li>
+          <li><span class="dot"></span>关键词规则 + 向量嵌入双路召回，返回最相关话术底料</li>
+          <li><span class="dot"></span>输出结构：<code>{ intent, script_template, confidence }</code></li>
+          <li><span class="dot"></span>confidence &lt; 0.6 时降级为通用闲聊话术，避免答非所问</li>
+        </ul>
+        <div class="deliverables"><span class="tag">📄 intent_classifier.ts</span></div>
+      </div>
+      <div class="task-card">
+        <h3><span class="t-icon">🤖</span>AI 拟人化包装模块</h3>
+        <ul class="checklist">
+          <li><span class="dot"></span>为每个人设配置专属系统 Prompt（性格 / 说话风格 / 语气 / 禁用词列表）</li>
+          <li><span class="dot"></span>输入组合：话术底料 + 最近 5 轮上下文 + 人设 Prompt → 调用大模型</li>
+          <li><span class="dot"></span>对输出做安全过滤：屏蔽真实身份暴露、价格硬承诺等高风险词汇</li>
+          <li><span class="dot"></span>包装结果存入 Redis 待发队列，附带目标 <code>send_at</code> 时间戳</li>
+        </ul>
+        <div class="deliverables">
+          <span class="tag">📄 persona_prompts/</span>
+          <span class="tag">📄 safety_filter.ts</span>
+        </div>
+      </div>
+      <div class="task-card">
+        <h3><span class="t-icon">⏱</span>智能延迟投递引擎</h3>
+        <ul class="checklist">
+          <li><span class="dot"></span>基于回复字数计算打字模拟延迟：<code>delay = chars × 0.08s + 3s</code>（可配置）</li>
+          <li><span class="dot"></span>B/C/D 级：倒计时结束后异步自动投递，不占坐席资源</li>
+          <li><span class="dot"></span>S/A 级：挂起自动投递，WebSocket 推送坐席弹窗等待接管操作</li>
+          <li><span class="dot"></span>坐席超时未响应（默认 120s）→ 自动执行兜底投递，记录日志</li>
+        </ul>
+        <div class="deliverables"><span class="tag">📄 delivery_queue.ts</span></div>
+      </div>
+      <div class="task-card full">
+        <h3><span class="t-icon">📦</span>数据归档：premium_chat_logs 写入</h3>
+        <ul class="checklist">
+          <li><span class="dot"></span>S/A 级用户每条消息（上行 + 下行）同步克隆写入 <code>premium_chat_logs</code></li>
+          <li><span class="dot"></span>记录字段：user_id / operator_id / direction / message_text / captured_at</li>
+          <li><span class="dot"></span>归档操作为异步写入，不阻塞主链路响应</li>
+          <li><span class="dot"></span>提供管理端查询 API，支持按用户、按时段、按坐席检索精聊记录</li>
+        </ul>
+        <div class="deliverables">
+          <span class="tag">📄 archive_service.ts</span>
+          <span class="tag">✅ 精聊记录 100% 可查</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PHASE 4 -->
+  <div class="phase p4" id="ph4">
+    <div class="phase-header" onclick="togglePhase('ph4')">
+      <div class="ph-num">04</div>
+      <div class="ph-info">
+        <h2>坐席看板 & 多端前端</h2>
+        <p>实时坐席后台 · Web H5 支付引导 · Native App 推送 · WS 协议定义</p>
+      </div>
+      <div class="ph-week">第 5–9 周</div>
+      <div class="ph-toggle">▾</div>
+    </div>
+    <div class="tasks-body">
+      <div class="task-card">
+        <h3><span class="t-icon">🖥</span>坐席后台看板（核心）</h3>
+        <ul class="checklist">
+          <li><span class="dot"></span>实时用户列表：按 S→A→B 优先级排序，高净值用户高亮置顶</li>
+          <li><span class="dot"></span>对话预览区：展示 AI 预生成回复全文 + 倒计时进度条</li>
+          <li><span class="dot"></span>坐席操作面板：编辑内容 / 立即发送 / 放弃接管 / 查看用户画像卡</li>
+          <li><span class="dot"></span>新 S/A 级接入时全屏弹窗 + 声音提醒（可静音配置）</li>
+          <li><span class="dot"></span>WebSocket 断线自动重连，心跳检测每 30s，掉线状态提示</li>
+        </ul>
+        <div class="deliverables"><span class="tag">✅ 坐席可在 3s 内接管任意对话</span></div>
+      </div>
+      <div class="task-card">
+        <h3><span class="t-icon">📱</span>Web H5 & Native App 端</h3>
+        <ul class="checklist">
+          <li><span class="dot"></span>H5 端：WebSocket 长连，展示「对方正在输入…」状态动效</li>
+          <li><span class="dot"></span>H5 端：增值弹窗组件（VIP 权益说明 + CTA 按钮 → 跳转支付页）</li>
+          <li><span class="dot"></span>App 端：集成 FCM / APNs 推送通道，触发精准唤醒通知</li>
+          <li><span class="dot"></span>App 端：音视频消息原生渲染，支持流式播放</li>
+          <li><span class="dot"></span>App 端：本地消息缓存，弱网环境下保障基本体验</li>
+        </ul>
+      </div>
+      <div class="task-card full">
+        <h3><span class="t-icon">📡</span>WebSocket 事件协议定义（前后端共同对齐）</h3>
+        <ul class="checklist">
+          <li><span class="dot"></span>定义标准事件类型：<code>NEW_MESSAGE</code> / <code>USER_UPGRADED</code> / <code>AI_DRAFT_READY</code> / <code>AGENT_TAKEOVER</code> / <code>SEND_CONFIRMED</code></li>
+          <li><span class="dot"></span>所有 WS 消息统一 Envelope：<code>{ event, payload, timestamp, session_id, version }</code></li>
+          <li><span class="dot"></span>实现消息 ACK 机制：坐席端收到 <code>AI_DRAFT_READY</code> 后回传 <code>ACK</code>，服务端超时重推</li>
+          <li><span class="dot"></span>完整协议文档编写，前后端各自按文档实现，联调验收</li>
+        </ul>
+        <div class="deliverables">
+          <span class="tag">📄 ws_protocol.md</span>
+          <span class="tag">✅ 联调冒烟测试通过</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PHASE 5 -->
+  <div class="phase p5" id="ph5">
+    <div class="phase-header" onclick="togglePhase('ph5')">
+      <div class="ph-num">05</div>
+      <div class="ph-info">
+        <h2>测试 · 灰度上线 · 监控迭代</h2>
+        <p>端到端测试 · 压力测试 · 灰度策略 · 监控看板 · A/B 优化</p>
+      </div>
+      <div class="ph-week">第 9–12 周</div>
+      <div class="ph-toggle">▾</div>
+    </div>
+    <div class="tasks-body">
+      <div class="task-card">
+        <h3><span class="t-icon">🧪</span>测试覆盖计划</h3>
+        <ul class="checklist">
+          <li><span class="dot"></span>全链路 E2E 测试：TG 消息 → 意图识别 → AI 包装 → 延迟投递 → 精聊归档</li>
+          <li><span class="dot"></span>压力测试：1000 并发用户同时发消息，全链路延迟 &lt; 500ms</li>
+          <li><span class="dot"></span>坐席接管场景测试：S 级用户弹窗 → 坐席编辑 → 发送，全流程时序验证</li>
+          <li><span class="dot"></span>分级回归测试：变更 profile 字段后 level 实时更新，路由同步变更验证</li>
+          <li><span class="dot"></span>WebSocket 稳定性：持续 72h 压测，断线重连率 = 0 丢消息</li>
+        </ul>
+        <div class="deliverables"><span class="tag">📄 test_plan.md</span></div>
+      </div>
+      <div class="task-card">
+        <h3><span class="t-icon">📈</span>核心监控指标（Grafana）</h3>
+        <ul class="checklist">
+          <li><span class="dot"></span>AI 回复生成延迟 P50 / P99</li>
+          <li><span class="dot"></span>S/A 级坐席接管率 & 平均接管响应时长</li>
+          <li><span class="dot"></span>D 级画像补全率（D → 有效分级转化率）</li>
+          <li><span class="dot"></span>增值话术触发后 24h / 72h 付费转化率</li>
+          <li><span class="dot"></span>各渠道 DAU 分布 & 消息量趋势</li>
+        </ul>
+        <div class="deliverables"><span class="tag">📄 grafana_dashboard.json</span></div>
+      </div>
+      <div class="task-card full">
+        <h3><span class="t-icon">🚀</span>灰度上线四阶段计划</h3>
+        <ul class="checklist">
+          <li><span class="dot"></span><strong style="color:var(--p5t)">Week 9：</strong>仅 C / D 级流量走 AI 自动通道，验证链路稳定性与归档完整性</li>
+          <li><span class="dot"></span><strong style="color:var(--p5t)">Week 10：</strong>B 级加入，坐席看板对 B 级开启只读观察权限，收集坐席反馈</li>
+          <li><span class="dot"></span><strong style="color:var(--p5t)">Week 11：</strong>A / S 级接入完整坐席接管流程，完成坐席培训与 SOP 文档交付</li>
+          <li><span class="dot"></span><strong style="color:var(--p5t)">Week 12：</strong>全渠道满载上线，启动话术 A/B 测试（对照组 vs 新增值引导话术），持续迭代</li>
+        </ul>
+        <div class="deliverables">
+          <span class="tag">✅ 系统全量上线</span>
+          <span class="tag">📄 runbook.md</span>
+          <span class="tag">📄 agent_sop.md</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DETAILED BREAKDOWN -->
+  <p class="section-label">// 原子子任务分解 & AI 分配（71 项）</p>
+  <div class="detail-section">
+
+    <h3 style="font-size:14px;color:#fff;margin-bottom:12px">阶段 01 · 基础设施（W1–W2）— 16 项</h3>
+    <div class="detail-table-wrap"><table class="detail-table">
+      <thead><tr><th>子任务 ID</th><th>描述</th><th>负责人</th><th>工期</th><th>依赖</th><th>验收标准</th></tr></thead>
+      <tbody>
+        <tr><td class="tid">P1-T01-S1</td><td>设计 user_profiles / premium_chat_logs / audit_logs 表结构</td><td><span class="badge badge-codex">CODEX</span></td><td>1d</td><td class="dep">—</td><td>ER 图 + db_schema_doc.md 评审通过</td></tr>
+        <tr><td class="tid">P1-T01-S2</td><td>编写 Flyway V1__init.sql（含索引、外键、CHECK 约束）</td><td><span class="badge badge-codex">CODEX</span></td><td>1d</td><td class="dep">S1</td><td>空库 migrate 成功</td></tr>
+        <tr><td class="tid">P1-T01-S3</td><td>uuid-ossp 扩展 + 本地/CI 迁移流水线</td><td><span class="badge badge-devin">DEVIN</span></td><td>0.5d</td><td class="dep">S2</td><td>CI 自动跑 migrate</td></tr>
+        <tr><td class="tid">P1-T01-S4</td><td>DB 角色分离：app_rw / app_ro / migrate 三账号</td><td><span class="badge badge-devin">DEVIN</span></td><td>0.5d</td><td class="dep">S2</td><td>应用账号无法 DROP</td></tr>
+        <tr><td class="tid">P1-T02-S1</td><td>确认 ERIS 目录约定（app/admin/docker-compose/AGENTS.md）</td><td><span class="badge badge-cursor">CURSOR</span></td><td>0.5d</td><td class="dep">—</td><td>与 docs/REPO_LAYOUT.md 一致 ✅</td></tr>
+        <tr><td class="tid">P1-T02-S2</td><td>FastAPI 应用：/health、日志、CORS（app/main.py）</td><td><span class="badge badge-devin">DEVIN</span></td><td>1.5d</td><td class="dep">S1</td><td>GET /health 200 ✅</td></tr>
+        <tr><td class="tid">P1-T02-S3</td><td>Redis 连接池 + Stream <code>inbound_queue</code> 消费者骨架</td><td><span class="badge badge-devin">DEVIN</span></td><td>1d</td><td class="dep">S2</td><td>写入/消费 smoke test</td></tr>
+        <tr><td class="tid">P1-T02-S4</td><td>WebSocket：app/api/realtime.py + ping/pong</td><td><span class="badge badge-devin">DEVIN</span></td><td>1d</td><td class="dep">S2</td><td>浏览器可连 /ws 并收 pong</td></tr>
+        <tr><td class="tid">P1-T02-S5</td><td>docker-compose：Postgres + Redis + api 一键启动</td><td><span class="badge badge-devin">DEVIN</span></td><td>1d</td><td class="dep">S2–S4</td><td><code>docker compose up</code> 全绿 ✅</td></tr>
+        <tr><td class="tid">P1-T03-S1</td><td>注册 TG Bot，setWebhook → /tg/webhook</td><td><span class="badge badge-devin">DEVIN</span></td><td>0.5d</td><td class="dep">P1-T02-S2</td><td>Bot 收到测试消息</td></tr>
+        <tr><td class="tid">P1-T03-S2</td><td>消息类型分发器 text/photo/voice/sticker/document</td><td><span class="badge badge-codex">CODEX</span></td><td>1d</td><td class="dep">S1</td><td>各类型单测通过</td></tr>
+        <tr><td class="tid">P1-T03-S3</td><td>sendChatAction(typing) + 出站 sendMessage 封装</td><td><span class="badge badge-codex">CODEX</span></td><td>0.5d</td><td class="dep">S2</td><td>用户侧可见 typing</td></tr>
+        <tr><td class="tid">P1-T03-S4</td><td>update_id 幂等去重 + 超时重试策略</td><td><span class="badge badge-codex">CODEX</span></td><td>1d</td><td class="dep">S2</td><td>重复 webhook 不重复处理</td></tr>
+        <tr><td class="tid">P1-T04-S1</td><td>定义 schema_spec.json 统一入站消息格式</td><td><span class="badge badge-codex">CODEX</span></td><td>0.5d</td><td class="dep">—</td><td>JSON Schema 校验器通过</td></tr>
+        <tr><td class="tid">P1-T04-S2</td><td>TG 适配器 → 标准格式（Codex）；H5/APP 适配器桩（Devin Mock）</td><td><span class="badge badge-joint">联合</span></td><td>1.5d</td><td class="dep">S1</td><td>TG 实测入队成功</td></tr>
+        <tr><td class="tid">P1-T04-S3</td><td>写入 inbound_queue + audit_logs 不可篡改流水</td><td><span class="badge badge-devin">DEVIN</span></td><td>1d</td><td class="dep">S2, P1-T02-S3</td><td>队列可查最近 100 条</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 style="font-size:14px;color:#fff;margin:24px 0 12px">阶段 02 · 分级引擎（W2–W4）— 13 项</h3>
+    <div class="detail-table-wrap"><table class="detail-table">
+      <thead><tr><th>子任务 ID</th><th>描述</th><th>负责人</th><th>工期</th><th>依赖</th><th>验收标准</th></tr></thead>
+      <tbody>
+        <tr><td class="tid">P2-T01-S1</td><td>t1_countries.json 热加载配置模块</td><td><span class="badge badge-codex">CODEX</span></td><td>0.5d</td><td class="dep">—</td><td>改文件无需重启（或 SIGHUP 重载）</td></tr>
+        <tr><td class="tid">P2-T01-S2</td><td>GeoIP 服务封装（MaxMind / ip-api 可切换）</td><td><span class="badge badge-devin">DEVIN</span></td><td>1d</td><td class="dep">—</td><td>IP 解析准确率抽样 ≥95%</td></tr>
+        <tr><td class="tid">P2-T01-S3</td><td>D 级画像探测话术模板 + 触发器</td><td><span class="badge badge-codex">CODEX</span></td><td>1d</td><td class="dep">P3-T01</td><td>D 用户 3 轮内触发补全</td></tr>
+        <tr><td class="tid">P2-T01-S4</td><td>AI 提取 reported_age + 置信度阈值写入</td><td><span class="badge badge-codex">CODEX</span></td><td>1.5d</td><td class="dep">P3-T03</td><td>置信度&lt;0.7 不写入</td></tr>
+        <tr><td class="tid">P2-T02-S1</td><td>实现 calcUserLevel(profile) 纯函数</td><td><span class="badge badge-codex">CODEX</span></td><td>1d</td><td class="dep">P2-T01-S1</td><td>返回 S/A/B/C/D</td></tr>
+        <tr><td class="tid">P2-T02-S2</td><td>可配置阈值：total_spent / age 边界外部化</td><td><span class="badge badge-codex">CODEX</span></td><td>0.5d</td><td class="dep">S1</td><td>.env 改阈值即生效</td></tr>
+        <tr><td class="tid">P2-T02-S3</td><td>level_change_logs 表 + 变更审计写入</td><td><span class="badge badge-codex">CODEX</span></td><td>0.5d</td><td class="dep">P1-T01</td><td>每次变更有日志行</td></tr>
+        <tr><td class="tid">P2-T02-S4</td><td>level_engine.test.ts ≥20 case，覆盖率 ≥99%</td><td><span class="badge badge-codex">CODEX</span></td><td>1.5d</td><td class="dep">S1–S2</td><td>CI 全绿</td></tr>
+        <tr><td class="tid">P2-T03-S1</td><td>chat_route 映射：manual_premium / ai_assisted / ai_auto</td><td><span class="badge badge-codex">CODEX</span></td><td>0.5d</td><td class="dep">P2-T02-S1</td><td>路由与 level 一致</td></tr>
+        <tr><td class="tid">P2-T03-S2</td><td>付费 Webhook → 触发 level 重算流水线</td><td><span class="badge badge-codex">CODEX</span></td><td>1d</td><td class="dep">S1</td><td>模拟付费后 S 级升级</td></tr>
+        <tr><td class="tid">P2-T03-S3</td><td>USER_UPGRADED WS 事件推送（S/A 弹窗数据）</td><td><span class="badge badge-devin">DEVIN</span></td><td>1d</td><td class="dep">P1-T02-S4, S1</td><td>看板 Mock 收到事件</td></tr>
+        <tr><td class="tid">P2-T03-S4</td><td>入站消息处理链集成：入队前 calcUserLevel</td><td><span class="badge badge-devin">DEVIN</span></td><td>1d</td><td class="dep">P2-T02, P1-T04</td><td>TG 实测 level 正确</td></tr>
+        <tr><td class="tid">J-01</td><td>分级引擎集成冒烟：10 组 profile fixture 端到端</td><td><span class="badge badge-joint">联合</span></td><td>0.5d</td><td class="dep">P2 全部</td><td>10/10 路由正确</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 style="font-size:14px;color:#fff;margin:24px 0 12px">阶段 03 · AI 核心链路（W3–W7）— 20 项</h3>
+    <div class="detail-table-wrap"><table class="detail-table">
+      <thead><tr><th>子任务 ID</th><th>描述</th><th>负责人</th><th>工期</th><th>依赖</th><th>验收标准</th></tr></thead>
+      <tbody>
+        <tr><td class="tid">P3-T01-S1</td><td>话术类目枚举 + script_templates 表 DDL</td><td><span class="badge badge-codex">CODEX</span></td><td>0.5d</td><td class="dep">P1-T01</td><td>5 类目定义完成</td></tr>
+        <tr><td class="tid">P3-T01-S2</td><td>scripts_seed.sql 每类 ≥10 条底料</td><td><span class="badge badge-codex">CODEX</span></td><td>2d</td><td class="dep">S1</td><td>seed 可重复执行</td></tr>
+        <tr><td class="tid">P3-T01-S3</td><td>向量化索引（pgvector / 外部向量库）检索 API</td><td><span class="badge badge-codex">CODEX</span></td><td>2d</td><td class="dep">S2</td><td>Top3 召回 latency &lt;100ms</td></tr>
+        <tr><td class="tid">P3-T01-S4</td><td>按 platform / level / persona 过滤检索</td><td><span class="badge badge-codex">CODEX</span></td><td>1d</td><td class="dep">S3</td><td>过滤单测 8 case</td></tr>
+        <tr><td class="tid">P3-T02-S1</td><td>意图 taxonomy 定义（5 大类 + 子类）</td><td><span class="badge badge-codex">CODEX</span></td><td>0.5d</td><td class="dep">—</td><td>文档评审通过</td></tr>
+        <tr><td class="tid">P3-T02-S2</td><td>关键词规则引擎（高置信快捷路径）</td><td><span class="badge badge-codex">CODEX</span></td><td>1d</td><td class="dep">S1</td><td>规则表可热更新</td></tr>
+        <tr><td class="tid">P3-T02-S3</td><td>向量双路召回 + 融合排序 intent_classifier.ts</td><td><span class="badge badge-codex">CODEX</span></td><td>2d</td><td class="dep">P3-T01-S3</td><td>输出 intent/confidence/script</td></tr>
+        <tr><td class="tid">P3-T02-S4</td><td>confidence&lt;0.6 降级通用闲聊策略</td><td><span class="badge badge-codex">CODEX</span></td><td>0.5d</td><td class="dep">S3</td><td>低置信不答非所问</td></tr>
+        <tr><td class="tid">P3-T02-S5</td><td>intent 模块单测 + 50 条标注集回归</td><td><span class="badge badge-codex">CODEX</span></td><td>1d</td><td class="dep">S3–S4</td><td>准确率 ≥85%</td></tr>
+        <tr><td class="tid">P3-T03-S1</td><td>persona_prompts/ 多人设系统 Prompt</td><td><span class="badge badge-codex">CODEX</span></td><td>1.5d</td><td class="dep">—</td><td>≥3 人设可切换</td></tr>
+        <tr><td class="tid">P3-T03-S2</td><td>LLM 调用层：底料+5轮上下文+人设 → 回复</td><td><span class="badge badge-codex">CODEX</span></td><td>1.5d</td><td class="dep">S1, P3-T02</td><td>平均生成 &lt;3s</td></tr>
+        <tr><td class="tid">P3-T03-S3</td><td>safety_filter.ts 禁词/身份/硬承诺过滤</td><td><span class="badge badge-codex">CODEX</span></td><td>1d</td><td class="dep">S2</td><td>红线 case 100% 拦截</td></tr>
+        <tr><td class="tid">P3-T03-S4</td><td>Redis 待发队列结构 + send_at 字段</td><td><span class="badge badge-devin">DEVIN</span></td><td>1d</td><td class="dep">P1-T02-S3</td><td>可按时间扫描投递</td></tr>
+        <tr><td class="tid">P3-T04-S1</td><td>delay = chars×0.08+3 可配置计算器</td><td><span class="badge badge-codex">CODEX</span></td><td>0.5d</td><td class="dep">—</td><td>单测边界值</td></tr>
+        <tr><td class="tid">P3-T04-S2</td><td>B/C/D 自动投递 worker</td><td><span class="badge badge-devin">DEVIN</span></td><td>1.5d</td><td class="dep">S1, P3-T03-S4</td><td>倒计时结束自动发出</td></tr>
+        <tr><td class="tid">P3-T04-S3</td><td>S/A 挂起 + AI_DRAFT_READY 推送坐席</td><td><span class="badge badge-devin">DEVIN</span></td><td>1.5d</td><td class="dep">P2-T03-S3</td><td>坐席可见草稿+倒计时</td></tr>
+        <tr><td class="tid">P3-T04-S4</td><td>120s 超时兜底投递 + 超时日志</td><td><span class="badge badge-codex">CODEX</span></td><td>1d</td><td class="dep">S3</td><td>超时自动 send 有记录</td></tr>
+        <tr><td class="tid">P3-T05-S1</td><td>archive_service 异步写 premium_chat_logs</td><td><span class="badge badge-devin">DEVIN</span></td><td>1d</td><td class="dep">P1-T01</td><td>主链路延迟无劣化</td></tr>
+        <tr><td class="tid">P3-T05-S2</td><td>精聊查询 API：用户/时段/坐席筛选</td><td><span class="badge badge-codex">CODEX</span></td><td>1d</td><td class="dep">S1</td><td>S/A 消息 100% 可查</td></tr>
+        <tr><td class="tid">J-02</td><td>AI 链路冒烟：入站→意图→包装→延迟→出站 TG</td><td><span class="badge badge-joint">联合</span></td><td>1d</td><td class="dep">P3 全部</td><td>全流程 &lt;8s（含 delay）</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 style="font-size:14px;color:#fff;margin:24px 0 12px">阶段 04 · 看板 & 前端（W5–W9）— 12 项</h3>
+    <div class="detail-table-wrap"><table class="detail-table">
+      <thead><tr><th>子任务 ID</th><th>描述</th><th>负责人</th><th>工期</th><th>依赖</th><th>验收标准</th></tr></thead>
+      <tbody>
+        <tr><td class="tid">P4-T00-S1</td><td>ws_protocol.md 事件 Envelope + ACK 机制</td><td><span class="badge badge-codex">CODEX</span></td><td>1d</td><td class="dep">—</td><td>前后端评审签字</td></tr>
+        <tr><td class="tid">P4-T00-S2</td><td>WS 服务端事件广播 + ACK 超时重推</td><td><span class="badge badge-devin">DEVIN</span></td><td>2d</td><td class="dep">S1</td><td>协议 conformance test</td></tr>
+        <tr><td class="tid">P4-T01-S1</td><td>坐席看板 React 项目 + 路由/鉴权</td><td><span class="badge badge-devin">DEVIN</span></td><td>1d</td><td class="dep">P4-T00</td><td>登录后可进主界面</td></tr>
+        <tr><td class="tid">P4-T01-S2</td><td>用户列表 S→A→B 排序 + 高亮置顶</td><td><span class="badge badge-devin">DEVIN</span></td><td>1.5d</td><td class="dep">P2-T03-S3</td><td>新 S 级 3s 内置顶</td></tr>
+        <tr><td class="tid">P4-T01-S3</td><td>对话区：AI 草稿 + 倒计时条 + 编辑/发送/放弃</td><td><span class="badge badge-devin">DEVIN</span></td><td>2d</td><td class="dep">P3-T04-S3</td><td>坐席可改字并发送</td></tr>
+        <tr><td class="tid">P4-T01-S4</td><td>S/A 全屏弹窗 + 声音提醒（可静音）</td><td><span class="badge badge-devin">DEVIN</span></td><td>1d</td><td class="dep">S2</td><td>弹窗+ACK 回传</td></tr>
+        <tr><td class="tid">P4-T01-S5</td><td>WS 客户端断线重连 + 状态提示</td><td><span class="badge badge-codex">CODEX</span></td><td>1d</td><td class="dep">P4-T00-S2</td><td>断网 10s 内自动恢复</td></tr>
+        <tr><td class="tid">P4-T02-S1</td><td>H5 WebSocket +「正在输入」动效</td><td><span class="badge badge-devin">DEVIN</span></td><td>1d</td><td class="dep">P4-T00</td><td>H5 可见 typing</td></tr>
+        <tr><td class="tid">P4-T02-S2</td><td>H5 VIP 增值弹窗 + 支付页跳转</td><td><span class="badge badge-codex">CODEX</span></td><td>1.5d</td><td class="dep">—</td><td>CTA 点击可跳转</td></tr>
+        <tr><td class="tid">P4-T02-S3</td><td>App FCM/APNs 推送通道集成</td><td><span class="badge badge-devin">DEVIN</span></td><td>2d</td><td class="dep">—</td><td>真机收到推送</td></tr>
+        <tr><td class="tid">P4-T02-S4</td><td>App 音视频渲染 + 本地消息缓存</td><td><span class="badge badge-devin">DEVIN</span></td><td>2d</td><td class="dep">S3</td><td>弱网可阅历史</td></tr>
+        <tr><td class="tid">J-03</td><td>看板联调冒烟：AI_DRAFT_READY → 坐席发送</td><td><span class="badge badge-joint">联合</span></td><td>1d</td><td class="dep">P4 全部</td><td>3s 内完成接管发送</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 style="font-size:14px;color:#fff;margin:24px 0 12px">阶段 05 · 测试上线（W9–W12）— 10 项</h3>
+    <div class="detail-table-wrap"><table class="detail-table">
+      <thead><tr><th>子任务 ID</th><th>描述</th><th>负责人</th><th>工期</th><th>依赖</th><th>验收标准</th></tr></thead>
+      <tbody>
+        <tr><td class="tid">P5-T01-S1</td><td>E2E 脚本：TG→AI→投递→归档（Playwright/k6）</td><td><span class="badge badge-devin">DEVIN</span></td><td>2d</td><td class="dep">J-02</td><td>CI nightly 绿</td></tr>
+        <tr><td class="tid">P5-T01-S2</td><td>1000 并发压测 + P99&lt;500ms 报告</td><td><span class="badge badge-devin">DEVIN</span></td><td>2d</td><td class="dep">S1</td><td>压测报告归档</td></tr>
+        <tr><td class="tid">P5-T01-S3</td><td>分级/意图回归集纳入 CI（Codex 维护用例）</td><td><span class="badge badge-codex">CODEX</span></td><td>1d</td><td class="dep">P2,P3 单测</td><td>回归 0 失败</td></tr>
+        <tr><td class="tid">P5-T01-S4</td><td>72h WS 长稳压测脚本</td><td><span class="badge badge-devin">DEVIN</span></td><td>1d</td><td class="dep">P4-T01-S5</td><td>0 丢消息</td></tr>
+        <tr><td class="tid">P5-T02-S1</td><td>Prometheus metrics 埋点（AI 延迟/接管率等）</td><td><span class="badge badge-devin">DEVIN</span></td><td>1.5d</td><td class="dep">P3,P4</td><td>/metrics 可 scrape</td></tr>
+        <tr><td class="tid">P5-T02-S2</td><td>grafana_dashboard.json 五大盘</td><td><span class="badge badge-devin">DEVIN</span></td><td>1d</td><td class="dep">S1</td><td>告警规则可用</td></tr>
+        <tr><td class="tid">P5-T02-S3</td><td>付费转化漏斗 SQL（Codex）+ 面板绑定（Devin）</td><td><span class="badge badge-joint">联合</span></td><td>1d</td><td class="dep">S2</td><td>24h/72h 转化可见</td></tr>
+        <tr><td class="tid">P5-T03-S1</td><td>灰度 Week9–12 流量开关 + feature flag</td><td><span class="badge badge-devin">DEVIN</span></td><td>1d</td><td class="dep">P5-T01</td><td>按 level 切流</td></tr>
+        <tr><td class="tid">P5-T03-S2</td><td>runbook.md + agent_sop.md 坐席手册</td><td><span class="badge badge-devin">DEVIN</span></td><td>1d</td><td class="dep">P4-T01</td><td>坐席培训完成</td></tr>
+        <tr><td class="tid">J-04</td><td>全量上线 Go/No-Go  checklist 签署</td><td><span class="badge badge-joint">联合</span></td><td>0.5d</td><td class="dep">全部</td><td>12 项检查全通过</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 style="font-size:14px;color:#fff;margin:32px 0 12px">并行周计划（Devin ∥ Codex）</h3>
+    <div class="detail-table-wrap"><table class="detail-table">
+      <thead><tr><th>周次</th><th>Devin 主线</th><th>Codex 主线</th><th>同步点</th></tr></thead>
+      <tbody>
+        <tr><td class="tid">W1</td><td>ERIS 目录基线 + docker-compose + realtime WS</td><td>DDL + schema_spec + TG/MTProto 接入</td><td>周五：DB migrate + /health</td></tr>
+        <tr><td class="tid">W2</td><td>TG webhook 联调 + inbound_queue</td><td>消息适配器 + 幂等逻辑</td><td>周五：TG 往返成功</td></tr>
+        <tr><td class="tid">W3–W4</td><td>GeoIP 服务 + level 流水线集成</td><td>level_engine + 20 单测</td><td>J-01 分级冒烟</td></tr>
+        <tr><td class="tid">W4–W6</td><td>Redis 待发队列 + B/C/D worker</td><td>话术库 + intent + persona + safety</td><td>周三对齐接口</td></tr>
+        <tr><td class="tid">W6–W7</td><td>S/A 挂起投递 + archive worker</td><td>delivery 算法 + 精聊 API</td><td>J-02 AI 全链路</td></tr>
+        <tr><td class="tid">W7–W9</td><td>坐席看板 + H5/App 集成</td><td>ws_protocol + WS 客户端重连</td><td>J-03 看板联调</td></tr>
+        <tr><td class="tid">W9–W12</td><td>E2E/k6/Grafana/灰度/runbook</td><td>回归用例 + 转化 SQL</td><td>J-04 上线签署</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <footer>
+    <span>1V1 智能流控系统 — 执行方案 v2.0</span>
+    <span>5 阶段 · 71 子任务 · Devin 31 · Codex 34 · 联合 6</span>
+  </footer>
+
+</div>
+
+<script>
+  function togglePhase(id) {
+    const el = document.getElementById(id);
+    el.classList.toggle('open');
+  }
+</script>
+</body>
+</html>

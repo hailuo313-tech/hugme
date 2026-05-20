@@ -1,0 +1,24 @@
+[project]
+name = "eris"
+version = "0.1.0"
+description = "ERIS — Emotional Relationship Intelligence System"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+src = ["app", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "app"
+files = ["app"]
+namespace_packages = true
+explicit_package_bases = true
+ignore_missing_imports = true
+warn_return_any = false
+check_untyped_defs = false

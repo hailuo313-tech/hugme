@@ -1,0 +1,37 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by:
+    - alertname
+    - severity
+    - component
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  receiver: dashboard-only
+  routes:
+    - matchers:
+        - severity="critical"
+      receiver: discord
+      repeat_interval: 1h
+    - matchers:
+        - severity="warning"
+      receiver: dashboard-only
+      repeat_interval: 6h
+
+receivers:
+  - name: dashboard-only
+
+  - name: discord
+    discord_configs:
+      - webhook_url: __DISCORD_WEBHOOK_URL__
+        send_resolved: true
+
+inhibit_rules:
+  - source_matchers:
+      - severity="critical"
+    target_matchers:
+      - severity="warning"
+    equal:
+      - component

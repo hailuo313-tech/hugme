@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: ERIS
+    orgId: 1
+    folder: ERIS
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards

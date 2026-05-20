@@ -1,0 +1,8 @@
+# 开发 / 测试依赖；不会被 docker 镜像构建用到（参见 app/Dockerfile 只装 app/requirements.txt）。
+pytest>=8.0
+pytest-asyncio>=0.23
+ruff>=0.8.0
+mypy>=1.11.0
+# tzdata: Windows 上 zoneinfo 没有系统 IANA 数据库（Linux 容器自带）；
+# 装上后 zoneinfo.ZoneInfo("UTC"/"Asia/Shanghai") 才能在本机跑测试。
+tzdata>=2024.1
