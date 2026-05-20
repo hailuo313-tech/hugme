@@ -433,7 +433,7 @@ const TASKS = [
   // ── Cursor：框架与检验（14 项 ≈ 12%）──
   { id:"C-01", phase:"01", owner:"cursor", w:1, week:"W1", dep:"—", desc:"确认 ERIS 目录约定（app/admin/docker-compose/AGENTS.md）", acc:"与 docs/REPO_LAYOUT.md 一致；ERIS MVP 基线已满足", baseline:true },
   { id:"C-02", phase:"01", owner:"cursor", w:1, week:"W1", dep:"C-01", desc:"配置 CI：admin lint/typecheck/build + backend ruff/mypy/pytest", acc:"pr-required-gates.yml 三项 job 全绿；分支保护勾选 required checks", baseline:true },
-  { id:"C-03", phase:"01", owner:"cursor", w:1, week:"W1", dep:"—", desc:"编写 .env.template（含 TELEGRAM_API_ID/HASH、SESSION 加密密钥）", acc:"新人可按文档配齐 MTProto 环境" },
+  { id:"C-03", phase:"01", owner:"cursor", w:1, week:"W1", dep:"—", desc:"编写 .env.template（含 TELEGRAM_API_ID/HASH、SESSION 加密密钥）", acc:"新人可按文档配齐 MTProto 环境", baseline:true },
   { id:"C-15", phase:"01", owner:"cursor", w:1, week:"W2", dep:"P1-18", desc:"审查 MTProto/Telethon：Session 存储、密钥与账号隔离", acc:"安全评审无阻塞项" },
   { id:"C-04", phase:"01", owner:"cursor", w:1, week:"W2", dep:"P1完成", desc:"审查 schema_spec.json 与适配器接口契约", acc:"契约评审记录归档" },
   { id:"C-05", phase:"02", owner:"cursor", w:1, week:"W4", dep:"P2-T02", desc:"检验 level_engine 单测覆盖率与边界 case 清单", acc:"≥20 case 且分支覆盖达标" },
@@ -557,7 +557,7 @@ const PHASE_LABEL = { '01':'阶段01 基础设施', '02':'阶段02 分级引擎'
 const PARALLEL = {
   "C-01":{t:"gate",g:"W1-关",n:"ERIS MVP 目录基线已满足；见 docs/REPO_LAYOUT.md"},
   "C-02":{t:"gate",g:"W1-关",n:"CI 门禁已配置；PR 须 管理员-ci+后端-ci+操作守卫 全绿"},
-  "C-03":{t:"now",g:"W1-①",n:"与 C-01、H-01 同时开工"},
+  "C-03":{t:"done",g:"W1-①",n:".env.template + docs/MTProto_ENV_SETUP.md 已交付"},
   "C-15":{t:"gate",g:"W2-关",n:"MTProto 安全评审关口"},
   "C-04":{t:"gate",g:"W2-关",n:"阶段01契约评审关口"},
   "C-05":{t:"gate",g:"W4-关",n:"分级引擎检验关口"},
