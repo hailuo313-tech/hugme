@@ -46,7 +46,7 @@ def main() -> int:
         "handoff lock API",
         "E2E_CHAT_ROUNDS",
         "E2E_SKIP_STRIPE",
-        "POST /api/v1/handoff",
+        "/api/v1/handoff/",
     ):
         if needle not in run_sh:
             failures.append(f"run.sh missing: {needle}")
