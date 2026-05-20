@@ -114,6 +114,22 @@ reconstruct state by applying `task.upsert` / `task.removed`.
 }
 ```
 
+### `user.upgraded` (P2-11)
+
+```json
+{
+  "type": "user.upgraded",
+  "trace_id": "ws-op-1",
+  "user_id": "uuid",
+  "previous_level": "B",
+  "new_level": "A",
+  "reason": "payment_completed",
+  "upgraded_at": "2026-05-19T19:00:00"
+}
+```
+
+Emitted when a user's level changes (e.g., due to payment or manual recalculation). The admin dashboard should use this to highlight upgraded users and potentially trigger sound alerts for S/A level upgrades.
+
 ## Client Events
 
 ### `ping`
