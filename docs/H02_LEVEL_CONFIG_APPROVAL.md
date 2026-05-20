@@ -38,7 +38,7 @@ Amounts are based on `lifetime_spend_usd` and use USD.
 |---|---:|---|
 | Incomplete profile | n/a | `D` |
 | Operator assigned S | n/a | `S` |
-| T1 high spend | `>= 500.00` | `S` |
+| T1 high spend | `>= 200.00` | `S` |
 | Spend threshold | `>= 99.00` | `A` |
 | VIP threshold | `vip_level >= 1` | `A` |
 | Complete T1 below A threshold | `>= 0.00` | `B` |

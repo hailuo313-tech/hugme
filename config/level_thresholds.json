@@ -4,7 +4,7 @@
   "currency": "USD",
   "amount_basis": "lifetime_spend_usd",
   "spend_usd": {
-    "s_min": 500.0,
+    "s_min": 200.0,
     "a_min": 99.0,
     "b_min": 0.0
   },
@@ -22,7 +22,7 @@
     "scope": "Phase 02 user level amount thresholds and default country-tier mapping",
     "rules_summary": [
       "Incomplete profile always returns D for probing.",
-      "T1 users with lifetime_spend_usd >= 500 return S unless manually overridden earlier.",
+      "T1 users with lifetime_spend_usd >= 200 return S unless manually overridden earlier.",
       "Any user with lifetime_spend_usd >= 99 or vip_level >= 1 returns A.",
       "Complete-profile T1 users below A threshold default to B.",
       "T2, T3, and unknown countries default to C."
