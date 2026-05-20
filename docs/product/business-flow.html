@@ -438,7 +438,7 @@ const TASKS = [
   { id:"C-03", phase:"01", owner:"cursor", w:1, week:"W1", dep:"—", desc:"编写 .env.template（含 TELEGRAM_API_ID/HASH、SESSION 加密密钥）", acc:"新人可按文档配齐 MTProto 环境", baseline:true },
   { id:"C-15", phase:"01", owner:"cursor", w:1, week:"W2", dep:"P1-18", desc:"审查 MTProto/Telethon：Session 存储、密钥与账号隔离", acc:"安全评审无阻塞项", baseline:true },
   { id:"C-04", phase:"01", owner:"cursor", w:1, week:"W2", dep:"P1完成", desc:"审查 schema_spec.json 与适配器接口契约", acc:"契约评审记录归档", baseline:true },
-  { id:"C-05", phase:"02", owner:"cursor", w:1, week:"W4", dep:"P2-T02", desc:"检验 level_engine 单测覆盖率与边界 case 清单", acc:"≥20 case 且分支覆盖达标" },
+  { id:"C-05", phase:"02", owner:"cursor", w:1, week:"W4", dep:"P2-T02", desc:"检验 level_engine 单测覆盖率与边界 case 清单", acc:"≥20 case 且分支覆盖达标", baseline:true },
   { id:"C-06", phase:"02", owner:"cursor", w:1, week:"W4", dep:"P2", desc:"执行 J-01 分级冒烟脚本并出具检验报告", acc:"10/10 fixture 通过" },
   { id:"C-07", phase:"03", owner:"cursor", w:1, week:"W6", dep:"P3-12,P3-20", desc:"审查话术全链路匹配覆盖率 + Prompt/安全红线", acc:"8 钩子均有用例且红线 100% 拦截" },
   { id:"C-08", phase:"03", owner:"cursor", w:1, week:"W7", dep:"P3", desc:"执行 J-02 AI 全链路冒烟并记录耗时", acc:"端到端 <8s（含延迟）" },

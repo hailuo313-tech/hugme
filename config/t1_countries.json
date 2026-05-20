@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "description": "P2-01 / H-02: T1 country ISO-3166 alpha-2 codes (draft for level_engine).",
+  "countries": ["US", "CA", "GB", "AU", "DE", "FR", "JP", "KR", "SG", "HK"]
+}

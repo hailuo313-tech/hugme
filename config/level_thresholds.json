@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "spend_usd": {
+    "s_min": 500.0,
+    "a_min": 99.0,
+    "b_min": 0.0
+  },
+  "vip_level_a_min": 1,
+  "tier_default_level": {
+    "T1": "B",
+    "T2": "C",
+    "T3": "C",
+    "unknown": "C"
+  }
+}
