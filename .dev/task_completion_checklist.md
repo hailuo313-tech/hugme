@@ -127,3 +127,4 @@ git restore <files>
 | 基础设施 | 2026-05-19 | #118 | feature/update-task-history | ✅ 完成 |
 | 技能系统 | 2026-05-19 | #119 | feature/add-task-checklist-skill | ✅ 完成 |
 | 文档更新 | 2026-05-19 | #120 | feature/update-skill-readme | ✅ 完成 |
+| P2-02 | 2026-05-19 | #123, #124 | feature/p2-02-geoip-service | ✅ 完成 |
