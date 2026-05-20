@@ -12,6 +12,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from core.database import get_db
+from services.dashboard_integration import sql_order_clause_for_dashboard
 from core.config import settings
 from pydantic import BaseModel
 from typing import Any, Optional
@@ -255,7 +256,7 @@ async def admin_list_conversations(
             LEFT JOIN user_profiles  p  ON p.user_id = u.id
             LEFT JOIN characters     ch ON ch.id = c.character_id
             {where}
-            ORDER BY COALESCE(c.last_message_at, c.created_at) DESC
+            {sql_order_clause_for_dashboard()}
             LIMIT :limit OFFSET :offset
         """),
         params,
