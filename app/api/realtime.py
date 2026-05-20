@@ -24,7 +24,8 @@ import asyncio
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
+from pydantic import BaseModel
 from loguru import logger
 from sqlalchemy import text
 
@@ -32,6 +33,41 @@ from core.database import AsyncSessionLocal
 from services.ws_operator_task_delta import diff_tasks
 
 router = APIRouter()
+
+# ── WebSocket 连接管理器 (P2-11) ─────────────────────────────────
+
+class ConnectionManager:
+    """管理所有活跃的 WebSocket 连接，支持广播用户升级事件。"""
+    
+    def __init__(self):
+        self.active_connections: list[WebSocket] = []
+    
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+    
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+    
+    async def broadcast_user_upgrade(self, upgrade_data: dict[str, Any]) -> None:
+        """向所有连接的坐席广播用户升级事件 (P2-11)。"""
+        if not self.active_connections:
+            return
+        
+        disconnected = []
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(upgrade_data)
+            except Exception:
+                disconnected.append(connection)
+        
+        # 清理断开的连接
+        for conn in disconnected:
+            self.disconnect(conn)
+
+# 全局连接管理器实例
+manager = ConnectionManager()
 
 OPEN_TASK_STATUSES = ("pending", "PENDING", "ESCALATED", "HUMAN_LOCKED")
 POLL_INTERVAL_SECONDS = 1.0
@@ -119,6 +155,47 @@ async def _fetch_open_tasks() -> list[dict[str, Any]]:
     return tasks
 
 
+# ── 用户升级事件推送 (P2-11) ────────────────────────────────
+
+
+async def notify_user_upgrade(
+    user_id: str,
+    previous_level: str,
+    new_level: str,
+    reason: str = "manual_recalculation",
+) -> None:
+    """向所有连接的坐席广播用户升级事件 (P2-11)。
+    
+    Args:
+        user_id: 升级的用户ID
+        previous_level: 升级前的等级 (S/A/B/C/D)
+        new_level: 升级后的等级 (S/A/B/C/D)
+        reason: 升级原因 (payment_completed, manual_recalculation, etc.)
+    """
+    trace_id = f"upgrade-{user_id}"
+    log = logger.bind(
+        trace_id=trace_id,
+        component="ws",
+        user_id=user_id,
+        previous_level=previous_level,
+        new_level=new_level,
+        reason=reason,
+    )
+    
+    upgrade_event = {
+        "type": "user.upgraded",
+        "trace_id": trace_id,
+        "user_id": user_id,
+        "previous_level": previous_level,
+        "new_level": new_level,
+        "reason": reason,
+        "upgraded_at": datetime.now().isoformat(),
+    }
+    
+    await manager.broadcast_user_upgrade(upgrade_event)
+    log.info("ws.user_upgrade_broadcasted")
+
+
 # ── WebSocket 主循环 ─────────────────────────────────
 
 
@@ -146,7 +223,7 @@ async def operator_task_stream(websocket: WebSocket):
         path="/ws/operators/tasks",
     )
 
-    await websocket.accept()
+    await manager.connect(websocket)
     log.info("ws.operator.connected")
     await websocket.send_json(
         {
@@ -225,3 +302,50 @@ async def operator_task_stream(websocket: WebSocket):
             await asyncio.sleep(POLL_INTERVAL_SECONDS)
     except WebSocketDisconnect:
         log.info("ws.operator.disconnected")
+    finally:
+        manager.disconnect(websocket)
+
+
+# ── 测试端点 (P2-11) ────────────────────────────────────────
+
+
+class UserUpgradeTest(BaseModel):
+    user_id: str
+    previous_level: str
+    new_level: str
+    reason: str = "test"
+
+
+@router.post("/test/user-upgrade")
+async def test_user_upgrade(data: UserUpgradeTest):
+    """测试端点：触发用户升级事件广播 (P2-11)。
+    
+    仅用于开发/测试环境，生产环境应移除此端点。
+    """
+    # 验证等级值
+    valid_levels = {"S", "A", "B", "C", "D"}
+    if data.previous_level not in valid_levels:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Invalid previous_level: {data.previous_level}. Must be one of {valid_levels}"
+        )
+    if data.new_level not in valid_levels:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Invalid new_level: {data.new_level}. Must be one of {valid_levels}"
+        )
+    
+    await notify_user_upgrade(
+        user_id=data.user_id,
+        previous_level=data.previous_level,
+        new_level=data.new_level,
+        reason=data.reason,
+    )
+    
+    return {
+        "status": "success",
+        "message": "User upgrade event broadcasted to all connected operators",
+        "user_id": data.user_id,
+        "previous_level": data.previous_level,
+        "new_level": data.new_level,
+    }
