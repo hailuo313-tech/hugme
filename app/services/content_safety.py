@@ -21,6 +21,15 @@ from core.config import settings
 _KEYWORD_BLOCK_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\b(child\s*porn|child\s*sexual|csam)\b", re.IGNORECASE | re.UNICODE),
     re.compile(r"\b(non-?consensual\s*intimate)\b", re.IGNORECASE | re.UNICODE),
+    re.compile(
+        r"(ignore\s+(all\s+)?(previous|above)\s+instructions|jailbreak|DAN\s+mode|"
+        r"你现在是\s*GPT|忽略以上规则|无视.*规则)",
+        re.IGNORECASE | re.UNICODE,
+    ),
+    re.compile(
+        r"\b(how\s+to\s+make\s+(a\s+)?bomb|make\s+meth|武器制造|炸弹制作)\b",
+        re.IGNORECASE | re.UNICODE,
+    ),
 )
 
 
