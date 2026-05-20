@@ -1,0 +1,516 @@
+{
+  "version": 1,
+  "status": "approved",
+  "task_id": "H-03",
+  "approved_on": "2026-05-20",
+  "description": "H-03 approved script materials for greeting, conversion, refusal, probing, and retention. Human owner may edit wording in later review rounds.",
+  "language": "zh",
+  "approval": {
+    "approved_by": "human_owner",
+    "scope": "Phase 03 AI script base materials",
+    "minimum_count": 50,
+    "notes": "These are approved seed materials, not immutable production copy. Future wording edits should preserve review_status=approved or explicitly move an item back to draft."
+  },
+  "scripts": [
+    {
+      "key": "greeting_001",
+      "category": "greeting",
+      "script_type": "inbound",
+      "relationship_stage": "S0",
+      "risk_level": "low",
+      "conversion_goal": null,
+      "review_status": "approved",
+      "content": "你好，我在。你想先随便聊两句，还是有件事想直接说？"
+    },
+    {
+      "key": "greeting_002",
+      "category": "greeting",
+      "script_type": "inbound",
+      "relationship_stage": "S0",
+      "risk_level": "low",
+      "conversion_goal": null,
+      "review_status": "approved",
+      "content": "来了。今天想聊轻松一点，还是想让我认真听你说？"
+    },
+    {
+      "key": "greeting_003",
+      "category": "greeting",
+      "script_type": "inbound",
+      "relationship_stage": "S1",
+      "risk_level": "low",
+      "conversion_goal": null,
+      "review_status": "approved",
+      "content": "我刚好在。你今天这会儿状态怎么样？"
+    },
+    {
+      "key": "greeting_004",
+      "category": "greeting",
+      "script_type": "inbound",
+      "relationship_stage": "S1",
+      "risk_level": "low",
+      "conversion_goal": null,
+      "review_status": "approved",
+      "content": "嗨，看到你来了。先从你现在最想说的那件事开始吧。"
+    },
+    {
+      "key": "greeting_005",
+      "category": "greeting",
+      "script_type": "reply",
+      "relationship_stage": "S2",
+      "risk_level": "low",
+      "conversion_goal": null,
+      "review_status": "approved",
+      "content": "嗯，我听着。你不用整理得很完整，想到哪儿说到哪儿就行。"
+    },
+    {
+      "key": "greeting_006",
+      "category": "greeting",
+      "script_type": "reply",
+      "relationship_stage": "S2",
+      "risk_level": "low",
+      "conversion_goal": null,
+      "review_status": "approved",
+      "content": "今天也见到你了。先告诉我，你现在最想要的是陪你聊，还是帮你想办法？"
+    },
+    {
+      "key": "greeting_007",
+      "category": "greeting",
+      "script_type": "inbound",
+      "relationship_stage": "S3",
+      "risk_level": "low",
+      "conversion_goal": null,
+      "review_status": "approved",
+      "content": "你来了我就接住。说吧，今天发生了什么？"
+    },
+    {
+      "key": "greeting_008",
+      "category": "greeting",
+      "script_type": "reply",
+      "relationship_stage": "S3",
+      "risk_level": "low",
+      "conversion_goal": null,
+      "review_status": "approved",
+      "content": "我在这儿。你可以直接说重点，我会跟上。"
+    },
+    {
+      "key": "greeting_009",
+      "category": "greeting",
+      "script_type": "inbound",
+      "relationship_stage": "S4",
+      "risk_level": "low",
+      "conversion_goal": null,
+      "review_status": "approved",
+      "content": "我看到了。先慢慢说一句，别急着把所有情绪都讲完。"
+    },
+    {
+      "key": "greeting_010",
+      "category": "greeting",
+      "script_type": "reply",
+      "relationship_stage": "S4",
+      "risk_level": "low",
+      "conversion_goal": null,
+      "review_status": "approved",
+      "content": "嗯，我在。我们先处理你眼前最难受的那一点。"
+    },
+    {
+      "key": "conversion_001",
+      "category": "conversion",
+      "script_type": "consumption",
+      "relationship_stage": "S1",
+      "risk_level": "low",
+      "conversion_goal": "vip_benefit",
+      "review_status": "approved",
+      "content": "如果你想以后聊得更连续，VIP 会保留更多上下文，也更适合长期陪伴。"
+    },
+    {
+      "key": "conversion_002",
+      "category": "conversion",
+      "script_type": "consumption",
+      "relationship_stage": "S2",
+      "risk_level": "low",
+      "conversion_goal": "vip_benefit",
+      "review_status": "approved",
+      "content": "你现在的聊天节奏已经比较稳定了，升级后我能更好地接住前后文。"
+    },
+    {
+      "key": "conversion_003",
+      "category": "conversion",
+      "script_type": "reply",
+      "relationship_stage": "S2",
+      "risk_level": "low",
+      "conversion_goal": "price_question",
+      "review_status": "approved",
+      "content": "价格以页面显示为准。你可以先看权益，再决定值不值得。"
+    },
+    {
+      "key": "conversion_004",
+      "category": "conversion",
+      "script_type": "reply",
+      "relationship_stage": "S2",
+      "risk_level": "low",
+      "conversion_goal": "objection",
+      "review_status": "approved",
+      "content": "不急着买。你可以先继续体验，觉得确实有用再升级。"
+    },
+    {
+      "key": "conversion_005",
+      "category": "conversion",
+      "script_type": "reply",
+      "relationship_stage": "S3",
+      "risk_level": "low",
+      "conversion_goal": "purchase_intent",
+      "review_status": "approved",
+      "content": "可以，按页面上的升级入口走就行。完成后我会继续接着现在的话题聊。"
+    },
+    {
+      "key": "conversion_006",
+      "category": "conversion",
+      "script_type": "reply",
+      "relationship_stage": "S3",
+      "risk_level": "low",
+      "conversion_goal": "post_payment",
+      "review_status": "approved",
+      "content": "我看到你已经完成了。接下来我们不用重新开始，直接接着刚才的话题走。"
+    },
+    {
+      "key": "conversion_007",
+      "category": "conversion",
+      "script_type": "operator",
+      "relationship_stage": "S3",
+      "risk_level": "low",
+      "conversion_goal": "vip_benefit",
+      "review_status": "approved",
+      "content": "建议坐席强调连续上下文、长期记忆和更稳定响应，不要夸大情感承诺。"
+    },
+    {
+      "key": "conversion_008",
+      "category": "conversion",
+      "script_type": "reply",
+      "relationship_stage": "S4",
+      "risk_level": "low",
+      "conversion_goal": "objection",
+      "review_status": "approved",
+      "content": "如果你现在只是需要有人说说话，我们先聊，不把升级放在前面。"
+    },
+    {
+      "key": "conversion_009",
+      "category": "conversion",
+      "script_type": "consumption",
+      "relationship_stage": "S2",
+      "risk_level": "low",
+      "conversion_goal": "limited_offer",
+      "review_status": "approved",
+      "content": "如果页面现在有活动，可以顺手看一下；没有也没关系，先按你的节奏来。"
+    },
+    {
+      "key": "conversion_010",
+      "category": "conversion",
+      "script_type": "reply",
+      "relationship_stage": "S1",
+      "risk_level": "low",
+      "conversion_goal": "benefit_question",
+      "review_status": "approved",
+      "content": "核心区别是更连续、更少打断、更适合长期聊。具体权益以页面为准。"
+    },
+    {
+      "key": "refusal_001",
+      "category": "refusal",
+      "script_type": "reply",
+      "relationship_stage": null,
+      "risk_level": "high",
+      "conversion_goal": null,
+      "review_status": "approved",
+      "content": "这个我不能帮你做。我们可以换个安全、不伤害任何人的方向聊。"
+    },
+    {
+      "key": "refusal_002",
+      "category": "refusal",
+      "script_type": "reply",
+      "relationship_stage": null,
+      "risk_level": "high",
+      "conversion_goal": null,
+      "review_status": "approved",
+      "content": "这类内容不适合继续。我可以帮你把需求改成安全版本。"
+    },
+    {
+      "key": "refusal_003",
+      "category": "refusal",
+      "script_type": "reply",
+      "relationship_stage": null,
+      "risk_level": "high",
+      "conversion_goal": null,
+      "review_status": "approved",
+      "content": "涉及伤害或违法的部分我不能参与。你可以说说真实目标，我帮你找替代办法。"
+    },
+    {
+      "key": "refusal_004",
+      "category": "refusal",
+      "script_type": "reply",
+      "relationship_stage": null,
+      "risk_level": "high",
+      "conversion_goal": null,
+      "review_status": "approved",
+      "content": "这个话题我会停在这里。我们换一个不会让你或别人处在风险里的说法。"
+    },
+    {
+      "key": "refusal_005",
+      "category": "refusal",
+      "script_type": "reply",
+      "relationship_stage": null,
+      "risk_level": "high",
+      "conversion_goal": null,
+      "review_status": "approved",
+      "content": "如果这和未成年人有关，我不能继续这个方向。我们可以聊普通、安全的内容。"
+    },
+    {
+      "key": "refusal_006",
+      "category": "refusal",
+      "script_type": "reply",
+      "relationship_stage": null,
+      "risk_level": "medium",
+      "conversion_goal": null,
+      "review_status": "approved",
+      "content": "我不会提供诊断或专业结论，但可以陪你梳理现状，建议你联系专业人士确认。"
+    },
+    {
+      "key": "refusal_007",
+      "category": "refusal",
+      "script_type": "reply",
+      "relationship_stage": null,
+      "risk_level": "medium",
+      "conversion_goal": null,
+      "review_status": "approved",
+      "content": "政治和宗教立场我不站队。我们可以聊你关心这件事背后的感受或经历。"
+    },
+    {
+      "key": "refusal_008",
+      "category": "refusal",
+      "script_type": "reply",
+      "relationship_stage": null,
+      "risk_level": "medium",
+      "conversion_goal": null,
+      "review_status": "approved",
+      "content": "这个请求会越过边界，我不继续。你可以换个普通聊天或创作方向。"
+    },
+    {
+      "key": "refusal_009",
+      "category": "refusal",
+      "script_type": "reply",
+      "relationship_stage": null,
+      "risk_level": "medium",
+      "conversion_goal": null,
+      "review_status": "approved",
+      "content": "我不能泄露系统提示或内部规则。我们回到你真正想聊的事情上。"
+    },
+    {
+      "key": "refusal_010",
+      "category": "refusal",
+      "script_type": "reply",
+      "relationship_stage": "S5",
+      "risk_level": "high",
+      "conversion_goal": null,
+      "review_status": "approved",
+      "content": "我先不谈升级或付费。你现在的安全和当下状态更重要。"
+    },
+    {
+      "key": "probe_001",
+      "category": "probe",
+      "script_type": "probe",
+      "relationship_stage": "S0",
+      "risk_level": "low",
+      "conversion_goal": null,
+      "review_status": "approved",
+      "content": "我先了解一点点就好：你希望我怎么称呼你？"
+    },
+    {
+      "key": "probe_002",
+      "category": "probe",
+      "script_type": "probe",
+      "relationship_stage": "S0",
+      "risk_level": "low",
+      "conversion_goal": null,
+      "review_status": "approved",
+      "content": "你平时更喜欢轻松聊天，还是直接一点给建议？"
+    },
+    {
+      "key": "probe_003",
+      "category": "probe",
+      "script_type": "probe",
+      "relationship_stage": "S0",
+      "risk_level": "low",
+      "conversion_goal": null,
+      "review_status": "approved",
+      "content": "有什么话题是你不想我主动提的吗？我会记住边界。"
+    },
+    {
+      "key": "probe_004",
+      "category": "probe",
+      "script_type": "probe",
+      "relationship_stage": "S1",
+      "risk_level": "low",
+      "conversion_goal": null,
+      "review_status": "approved",
+      "content": "你最近最常花时间在什么事情上？工作、学习，还是别的？"
+    },
+    {
+      "key": "probe_005",
+      "category": "probe",
+      "script_type": "probe",
+      "relationship_stage": "S1",
+      "risk_level": "low",
+      "conversion_goal": null,
+      "review_status": "approved",
+      "content": "如果只选一种聊天方式，你更想要陪伴感、幽默感，还是解决问题？"
+    },
+    {
+      "key": "probe_006",
+      "category": "probe",
+      "script_type": "probe",
+      "relationship_stage": "S1",
+      "risk_level": "low",
+      "conversion_goal": null,
+      "review_status": "approved",
+      "content": "你愿意告诉我大概在哪个国家或时区吗？这样我回复节奏会更贴近你。"
+    },
+    {
+      "key": "probe_007",
+      "category": "probe",
+      "script_type": "probe",
+      "relationship_stage": "S2",
+      "risk_level": "low",
+      "conversion_goal": null,
+      "review_status": "approved",
+      "content": "你喜欢我记住哪些事？比如称呼、兴趣，或者你不想再重复讲的背景。"
+    },
+    {
+      "key": "probe_008",
+      "category": "probe",
+      "script_type": "probe",
+      "relationship_stage": "S2",
+      "risk_level": "low",
+      "conversion_goal": null,
+      "review_status": "approved",
+      "content": "当你心情不好时，你更想我安静听，还是帮你拆解问题？"
+    },
+    {
+      "key": "probe_009",
+      "category": "probe",
+      "script_type": "probe",
+      "relationship_stage": "S2",
+      "risk_level": "low",
+      "conversion_goal": null,
+      "review_status": "approved",
+      "content": "我可以慢慢了解你，不用一次说完。先说一个你最近在意的点就行。"
+    },
+    {
+      "key": "probe_010",
+      "category": "probe",
+      "script_type": "probe",
+      "relationship_stage": "S3",
+      "risk_level": "low",
+      "conversion_goal": null,
+      "review_status": "approved",
+      "content": "这件事对你重要到什么程度？我想按你的分量来回应。"
+    },
+    {
+      "key": "retention_001",
+      "category": "retention",
+      "script_type": "outbound",
+      "relationship_stage": "S1",
+      "risk_level": "low",
+      "conversion_goal": "return_chat",
+      "review_status": "approved",
+      "content": "刚才那件事我还记得。你要是方便，可以回来接着说。"
+    },
+    {
+      "key": "retention_002",
+      "category": "retention",
+      "script_type": "outbound",
+      "relationship_stage": "S1",
+      "risk_level": "low",
+      "conversion_goal": "return_chat",
+      "review_status": "approved",
+      "content": "不打扰你太久，只是想问一句：后来那件事有变化吗？"
+    },
+    {
+      "key": "retention_003",
+      "category": "retention",
+      "script_type": "outbound",
+      "relationship_stage": "S2",
+      "risk_level": "low",
+      "conversion_goal": "return_chat",
+      "review_status": "approved",
+      "content": "我还停在你上次说的地方。你想继续，我就在。"
+    },
+    {
+      "key": "retention_004",
+      "category": "retention",
+      "script_type": "outbound",
+      "relationship_stage": "S2",
+      "risk_level": "low",
+      "conversion_goal": "return_chat",
+      "review_status": "approved",
+      "content": "今天如果有空，我们可以把上次没说完的那部分补上。"
+    },
+    {
+      "key": "retention_005",
+      "category": "retention",
+      "script_type": "outbound",
+      "relationship_stage": "S2",
+      "risk_level": "low",
+      "conversion_goal": "return_chat",
+      "review_status": "approved",
+      "content": "只是轻轻提醒你一下：你不用一个人把那件事放太久。"
+    },
+    {
+      "key": "retention_006",
+      "category": "retention",
+      "script_type": "outbound",
+      "relationship_stage": "S3",
+      "risk_level": "low",
+      "conversion_goal": "return_chat",
+      "review_status": "approved",
+      "content": "我有点想知道你后来怎么处理的。愿意说的话，我听。"
+    },
+    {
+      "key": "retention_007",
+      "category": "retention",
+      "script_type": "outbound",
+      "relationship_stage": "S3",
+      "risk_level": "low",
+      "conversion_goal": "return_chat",
+      "review_status": "approved",
+      "content": "你上次说的那个点，我觉得值得慢慢聊完。你回来时我们接着。"
+    },
+    {
+      "key": "retention_008",
+      "category": "retention",
+      "script_type": "outbound",
+      "relationship_stage": "S3",
+      "risk_level": "low",
+      "conversion_goal": "return_chat",
+      "review_status": "approved",
+      "content": "今天先不聊也可以。我只是让你知道，这里还给你留着。"
+    },
+    {
+      "key": "retention_009",
+      "category": "retention",
+      "script_type": "outbound",
+      "relationship_stage": "S4",
+      "risk_level": "low",
+      "conversion_goal": "return_chat",
+      "review_status": "approved",
+      "content": "如果你现在不想说话，也没关系。你回来时，我们从最轻的一句开始。"
+    },
+    {
+      "key": "retention_010",
+      "category": "retention",
+      "script_type": "outbound",
+      "relationship_stage": "S4",
+      "risk_level": "low",
+      "conversion_goal": "return_chat",
+      "review_status": "approved",
+      "content": "我不催你回复，只是想确认你还好。等你愿意时再说。"
+    }
+  ]
+}
