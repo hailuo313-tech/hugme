@@ -30,3 +30,8 @@ from services.mtproto.channel_adapter import (
     MtprotoInboundResult,
     register_mtproto_newmessage_listener,
 )
+from services.mtproto.account_pool import (
+    AccountPool,
+    AccountPoolSendResult,
+    AccountRoute,
+)
