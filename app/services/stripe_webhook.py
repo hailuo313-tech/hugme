@@ -24,6 +24,15 @@ from core.config import settings
 from services.minor_protection import should_block_consumption
 
 
+# 导入 WebSocket 通知函数 (P2-11)
+try:
+    from api.realtime import notify_user_upgrade
+except ImportError:
+    # 如果导入失败（循环依赖），提供一个空实现
+    async def notify_user_upgrade(*args, **kwargs):
+        pass
+
+
 class SignatureError(Exception):
     """验签失败或缺少 STRIPE_WEBHOOK_SECRET。"""
 
@@ -224,4 +233,59 @@ async def _handle_checkout_completed(db: AsyncSession, event: dict[str, Any]) ->
             ),
             {"uid": user_id},
         )
+        
+        # P2-11: 触发用户升级 WebSocket 通知（简化版本，后续 P2 分级引擎会完善）
+        # 当前假设付费成功后升级到 A 级，实际分级逻辑由 P2 分级引擎处理
+        try:
+            # 获取当前用户等级
+            profile_row = await db.execute(
+                text(
+                    """
+                    SELECT user_level FROM user_profiles 
+                    WHERE user_id = :uid
+                    """
+                ),
+                {"uid": user_id},
+            )
+            current_level = profile_row.scalar()
+            
+            if current_level and current_level != "S":
+                # 如果当前不是 S 级，升级到 A 级（简化逻辑）
+                new_level = "A"
+                await db.execute(
+                    text(
+                        """
+                        UPDATE user_profiles 
+                        SET user_level = :new_level, 
+                            level_updated_at = NOW(),
+                            level_reason = jsonb_build_object('source', 'payment_completed', 'previous_level', :current_level)
+                        WHERE user_id = :uid
+                        """
+                    ),
+                    {"uid": user_id, "new_level": new_level, "current_level": current_level},
+                )
+                await db.commit()
+                
+                # 触发 WebSocket 通知
+                await notify_user_upgrade(
+                    user_id=str(user_id),
+                    previous_level=current_level,
+                    new_level=new_level,
+                    reason="payment_completed",
+                )
+                
+                logger.bind(
+                    component="stripe_webhook",
+                    user_id=str(user_id),
+                    previous_level=current_level,
+                    new_level=new_level,
+                ).info("stripe_webhook.user_upgrade_notified")
+        except Exception as upgrade_exc:
+            # 升级通知失败不影响主流程
+            logger.bind(
+                component="stripe_webhook",
+                user_id=str(user_id),
+                error_type=type(upgrade_exc).__name__,
+            ).warning("stripe_webhook.user_upgrade_failed")
+    
     await db.commit()
