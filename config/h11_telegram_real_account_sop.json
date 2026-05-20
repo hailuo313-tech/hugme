@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "task_id": "H-11",
+  "status": "signed",
+  "signed_on": "2026-05-20",
+  "signed_by": "ops_owner_pending_final_review",
+  "scope": "Telegram real-user MTProto account operating SOP, rate limits, batching, and ToS guardrails",
+  "source_refs": [
+    "docs/MTProto_ENV_SETUP.md",
+    "docs/MTProto_SECURITY_REVIEW_C15.md",
+    "docs/sketches/telegram_accounts_P1-09.sql",
+    "app/services/mtproto/account_routing.py",
+    "app/services/mtproto/security_policy.py",
+    "docs/product/business-flow.html"
+  ],
+  "account_policy": {
+    "allowed_account_type": "Telegram user account operated via MTProto/Telethon only after owner authorization",
+    "session_storage": "production_db_ciphertext_only",
+    "session_encryption": "Fernet using TELEGRAM_SESSION_FERNET_KEY",
+    "production_plaintext_session_strings_allowed": false,
+    "one_client_per_account_id": true,
+    "stable_user_account_routing_required": true,
+    "redis_prefix_isolation_required": true
+  },
+  "rate_limits": {
+    "per_account": {
+      "new_dialogs_per_hour_max": 5,
+      "new_dialogs_per_day_max": 30,
+      "outbound_messages_per_minute_max": 3,
+      "outbound_messages_per_hour_max": 60,
+      "outbound_messages_per_day_max": 300,
+      "same_user_messages_per_minute_max": 2,
+      "same_user_messages_per_hour_max": 20,
+      "minimum_typing_delay_seconds": 2,
+      "minimum_inter_message_delay_seconds": 8
+    },
+    "batching": {
+      "batch_size_max": 20,
+      "batch_cooldown_minutes": 20,
+      "parallel_accounts_per_batch_max": 3,
+      "marketing_blast_enabled": false,
+      "cold_outreach_enabled": false
+    },
+    "global_pool": {
+      "pool_outbound_messages_per_minute_max": 10,
+      "pool_new_dialogs_per_hour_max": 10,
+      "pool_new_dialogs_per_day_max": 60
+    }
+  },
+  "tos_guardrails": [
+    "Use only accounts that the project is authorized to operate.",
+    "Do not buy, rent, scrape, or share Telegram accounts.",
+    "Do not send spam, unsolicited bulk outreach, deceptive messages, phishing, malware, adult solicitation, or harassment.",
+    "Do not evade Telegram limits, flood waits, bans, reports, or anti-abuse controls.",
+    "Do not add users to groups/channels without consent.",
+    "Do not use automation to impersonate a person outside the approved ERIS chat context.",
+    "Honor opt-out immediately and do not re-contact marketing opt-outs.",
+    "Stop or pause sending if Telegram returns FloodWait, peer flood, account restriction, or repeated user reports."
+  ],
+  "allowed_use_cases": [
+    "reply to user-initiated conversations",
+    "operator-approved handoff replies",
+    "low-frequency opted-in reactivation",
+    "beta test conversations with invited users"
+  ],
+  "blocked_use_cases": [
+    "cold outreach",
+    "bulk marketing blast",
+    "scraped lead messaging",
+    "ban or flood-limit evasion",
+    "adult or minor-risk solicitation",
+    "messages to users who opted out"
+  ],
+  "pause_conditions": [
+    "FloodWait or peer flood is returned by Telegram.",
+    "Any account status becomes banned, restricted, or disabled.",
+    "User report, block, or opt-out rate rises above normal baseline.",
+    "Outbound failures exceed 5% over the last hour.",
+    "A session, api_hash, or Fernet key may have leaked.",
+    "An operator requests pause for safety, privacy, or ToS review."
+  ],
+  "operator_runbook": {
+    "daily_preflight": [
+      "Confirm MTProto_ENABLED is intended for the environment.",
+      "Confirm production TELEGRAM_SESSION_STRINGS is empty.",
+      "Confirm active telegram_accounts are authorized and not banned.",
+      "Confirm per-account counters are below signed limits.",
+      "Confirm opt-out and safety queues have no unresolved blocker."
+    ],
+    "incident_actions": [
+      "Disable the affected account_id.",
+      "Stop queued outbound tasks for that account.",
+      "Preserve logs after redaction.",
+      "Notify release owner and document the incident.",
+      "Resume only after the root cause is fixed and counters are reset."
+    ]
+  },
+  "acceptance": [
+    "Written SOP is signed.",
+    "Frequency limits are signed and machine-readable.",
+    "Batch limits prohibit cold outreach and marketing blasts.",
+    "ToS guardrails are explicit.",
+    "Pause conditions and incident actions are documented."
+  ]
+}
