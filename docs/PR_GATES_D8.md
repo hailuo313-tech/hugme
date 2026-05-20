@@ -14,6 +14,14 @@ Current state (**CUR-D8-01** — workflow is real):
 
 This document remains the **reviewer contract**; CI is the **automated minimum**.
 
+### Local verification (Windows)
+
+```powershell
+cd E:\eris
+.\scripts\bootstrap-python.ps1   # first time: portable Python 3.12 under .tools/
+.\scripts\ci-check.ps1           # full gates; -AdminOnly / -BackendOnly optional
+```
+
 ## Current Check Name Mapping
 
 | Job id in workflow | GitHub check display name currently seen on PRs | Current behavior | D8 risk |
