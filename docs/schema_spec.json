@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://eris.local/schemas/inbound-envelope/v1",
+  "title": "ERIS Standard Inbound Envelope",
+  "description": "P1-13 / C-04: canonical inbound message shape for Redis Stream inbound_queue and downstream adapters.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "platform",
+    "external_user_id",
+    "message_type",
+    "content",
+    "trace_id"
+  ],
+  "properties": {
+    "platform": {
+      "type": "string",
+      "description": "Ingress channel identity. telegram_real_user = MTProto userbot; telegram = Bot API.",
+      "enum": [
+        "telegram_real_user",
+        "telegram",
+        "web",
+        "app"
+      ]
+    },
+    "account_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "Telegram pool account id (required for telegram_real_user)."
+    },
+    "sender_phone": {
+      "type": "string",
+      "pattern": "^\\+?[0-9]{6,20}$",
+      "description": "E.164-ish phone when available from MTProto contact."
+    },
+    "external_user_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Stable user key, e.g. tg_12345 or app uuid."
+    },
+    "message_type": {
+      "type": "string",
+      "enum": ["text", "image", "audio", "voice", "document", "video", "sticker", "other"]
+    },
+    "content": {
+      "type": "string",
+      "maxLength": 8000
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "telegram_message_id": { "type": "string" },
+        "telegram_chat_id": { "type": "string" },
+        "idempotency_key": { "type": "string" },
+        "raw_update_id": { "type": "string" }
+      }
+    },
+    "trace_id": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 64
+    },
+    "received_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "platform": { "const": "telegram_real_user" } },
+        "required": ["platform"]
+      },
+      "then": {
+        "required": ["account_id"],
+        "properties": {
+          "metadata": {
+            "required": ["telegram_message_id"]
+          }
+        }
+      }
+    }
+  ]
+}
