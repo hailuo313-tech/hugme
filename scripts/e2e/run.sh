@@ -285,8 +285,13 @@ main() {
   assert_eq "handoff lock API" "$lock_status" "locked"
   task_status="$(db_query "SELECT status FROM handoff_tasks WHERE id='$HANDOFF_TASK_ID';")"
   assert_eq "handoff lock DB" "$task_status" "HUMAN_LOCKED"
-  reply_status="$(curl_json POST "/api/v1/handoff/${HANDOFF_TASK_ID}/reply" '{"content":"我在，这条是 D7-3 E2E operator 回复。"}' "d7-3-${E2E_RUN_ID}-handoff-reply" | json_get status "")"
-  assert_eq "handoff reply API" "$reply_status" "sent"
+  if [[ "${E2E_SKIP_HANDOFF_REPLY:-0}" == "1" ]]; then
+    log "handoff reply skipped (E2E_SKIP_HANDOFF_REPLY=1, no Telegram in CI)"
+    record_pass "handoff reply skipped smoke profile"
+  else
+    reply_status="$(curl_json POST "/api/v1/handoff/${HANDOFF_TASK_ID}/reply" '{"content":"我在，这条是 D7-3 E2E operator 回复。"}' "d7-3-${E2E_RUN_ID}-handoff-reply" | json_get status "")"
+    assert_eq "handoff reply API" "$reply_status" "sent"
+  fi
   return_status="$(curl_json POST "/api/v1/handoff/${HANDOFF_TASK_ID}/return-ai" '{"notes":"D7-3 E2E complete","allow_upsell":true}' "d7-3-${E2E_RUN_ID}-handoff-return" | json_get status "")"
   assert_eq "handoff return API" "$return_status" "returned_to_ai"
   task_status="$(db_query "SELECT status FROM handoff_tasks WHERE id='$HANDOFF_TASK_ID';")"
