@@ -25,3 +25,8 @@ from services.mtproto.human_like_send import (
     send_typing,
     wait_for_inter_message_gap,
 )
+from services.mtproto.channel_adapter import (
+    MtprotoChannelAdapter,
+    MtprotoInboundResult,
+    register_mtproto_newmessage_listener,
+)
