@@ -134,5 +134,14 @@ class Settings(BaseSettings):
     IPAPI_ENABLED: bool = True  # 是否启用 ip-api.com（备用方案）
     IPAPI_API_KEY: Optional[str] = None  # ip-api.com API 密钥（免费版不需要）
     GEOIP_CACHE_TTL: int = 3600  # GeoIP 结果缓存时间（秒）
+    # P4-10：移动端推送服务配置（FCM/APNs）
+    FCM_ENABLED: bool = False  # 是否启用 FCM（Android）
+    FCM_CREDENTIALS_PATH: Optional[str] = None  # Firebase 服务账号密钥文件路径
+    APNS_ENABLED: bool = False  # 是否启用 APNs（iOS）
+    APNS_TEAM_ID: Optional[str] = None  # Apple Team ID
+    APNS_KEY_ID: Optional[str] = None  # APNs Key ID
+    APNS_KEY_PATH: Optional[str] = None  # APNs 私钥文件路径（.p8）
+    APNS_BUNDLE_ID: str = 'com.hugme.app'  # App Bundle ID
+    APNS_PRODUCTION: bool = False  # 是否使用生产环境 APNs（False = 开发环境）
 
 settings = Settings()
