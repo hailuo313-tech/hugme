@@ -115,49 +115,48 @@ class TestMobilePushService:
 class TestMobilePushServiceWithFirebase:
     """带 Firebase 模拟的测试"""
 
+    @patch('services.mobile_push_service.credentials.Certificate')
     @patch('services.mobile_push_service.FIREBASE_AVAILABLE', True)
     @patch('services.mobile_push_service.firebase_admin')
-    async def test_fcm_initialization_success(self, mock_firebase_admin, mock_settings):
+    async def test_fcm_initialization_success(self, mock_firebase_admin, mock_settings, mock_certificate):
         """测试 Firebase 初始化成功"""
         mock_settings.FCM_ENABLED = True
         mock_settings.FCM_CREDENTIALS_PATH = "/path/to/credentials.json"
 
         mock_creds = Mock()
-        mock_firebase_admin.credentials.Certificate.return_value = mock_creds
+        mock_certificate.return_value = mock_creds
         mock_firebase_admin.initialize_app.return_value = None
         mock_firebase_admin.get_app.return_value = Mock()
 
         service = MobilePushService()
-        with patch("services.mobile_push_service.os.path.exists", return_value=True):
-            await service._init_firebase()
-        
+        await service._init_firebase()
+
         assert service._firebase_app is not None
-        mock_firebase_admin.credentials.Certificate.assert_called_once_with("/path/to/credentials.json")
+        mock_certificate.assert_called_once_with("/path/to/credentials.json")
         mock_firebase_admin.initialize_app.assert_called_once_with(mock_creds)
 
+    @patch('services.mobile_push_service.credentials.Certificate')
     @patch('services.mobile_push_service.FIREBASE_AVAILABLE', True)
     @patch('services.mobile_push_service.firebase_admin')
     @patch('services.mobile_push_service.messaging')
-    async def test_fcm_send_success(self, mock_messaging, mock_firebase_admin, mock_settings):
+    async def test_fcm_send_success(self, mock_messaging, mock_firebase_admin, mock_settings, mock_certificate):
         """测试 FCM 发送成功"""
         mock_settings.FCM_ENABLED = True
         mock_settings.FCM_CREDENTIALS_PATH = "/path/to/credentials.json"
         
         mock_creds = Mock()
-        mock_firebase_admin.credentials.Certificate.return_value = mock_creds
+        mock_certificate.return_value = mock_creds
         mock_firebase_admin.initialize_app.return_value = None
         mock_firebase_admin.get_app.return_value = Mock()
-        
+
         mock_messaging.send.return_value = "message_id_123"
-        
+
         service = MobilePushService()
-        with patch("services.mobile_push_service.os.path.exists", return_value=True):
-            service._firebase_app = Mock()
-            result = await service.send_fcm_notification(
-                device_token="test_token",
-                title="Test Title",
-                body="Test Body",
-            )
+        result = await service.send_fcm_notification(
+            device_token="test_token",
+            title="Test Title",
+            body="Test Body",
+        )
 
         assert result.success is True
         assert result.provider == "fcm"
