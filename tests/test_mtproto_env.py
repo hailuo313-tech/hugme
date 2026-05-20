@@ -39,18 +39,27 @@ def test_mtproto_env_status_incomplete_by_default(monkeypatch):
 
 def test_mtproto_env_status_ok_with_valid_fernet(monkeypatch):
     from cryptography.fernet import Fernet
+    from core.config import Settings
 
     key = Fernet.generate_key().decode()
-    monkeypatch.setenv("TELEGRAM_API_ID", "12345")
-    monkeypatch.setenv("TELEGRAM_API_HASH", "abc123realhash")
-    monkeypatch.setenv("TELEGRAM_SESSION_FERNET_KEY", key)
-    monkeypatch.setenv("TELEGRAM_SESSION_STRINGS", "1BVtsOHwBu5Xexample")
     
-    # 重新导入 config 以获取新的环境变量
-    import importlib
-    from core import config
-    importlib.reload(config)
+    # 创建一个有效的 Settings 对象
+    test_settings = Settings()
+    test_settings.TELEGRAM_API_ID = 12345
+    test_settings.TELEGRAM_API_HASH = "abc123realhash"
+    test_settings.TELEGRAM_SESSION_FERNET_KEY = key
+    test_settings.TELEGRAM_SESSION_STRINGS = "1BVtsOHwBu5Xexample"
+    test_settings.TELEGRAM_SESSION_DIR = "./data/telegram_sessions"
     
-    ok, issues = mtproto_env_status()
-    assert ok is True
-    assert issues == []
+    # 临时替换 settings
+    import app.core.mtproto_env as mtproto_module
+    original_settings = mtproto_module.settings
+    mtproto_module.settings = test_settings
+    
+    try:
+        ok, issues = mtproto_env_status()
+        assert ok is True
+        assert issues == []
+    finally:
+        # 恢复原始 settings
+        mtproto_module.settings = original_settings
