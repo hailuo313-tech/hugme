@@ -12,7 +12,7 @@ interface PushTestRequest {
   payload: {
     title: string;
     body: string;
-    [key: string]: string | number | boolean | null | undefined;
+    [key: string]: any;
   };
 }
 
