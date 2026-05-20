@@ -479,7 +479,7 @@ const TASKS = [
   { id:"P1-14", phase:"01", owner:"codex", w:1, week:"W2", dep:"P1-13,P1-10", desc:"MTProto 渠道适配器 → 标准入站格式", acc:"MTProto 消息成功入队", baseline:true },
   { id:"P1-15", phase:"01", owner:"devin", w:0.5, week:"W2", dep:"P1-13", desc:"H5/APP 适配器 Mock 桩", acc:"Mock 可本地联调" },
   { id:"P1-16", phase:"01", owner:"devin", w:1, week:"W2", dep:"P1-06,P1-14,P1-19", desc:"写入 inbound_queue + audit_logs（预留 script_hit_id）", acc:"审计可查最近 100 条" },
-  { id:"P1-17", phase:"01", owner:"codex", w:1.5, week:"W2", dep:"P1-09", desc:"AccountPool：user_id hash 分配账号 + send_message 路由", acc:"同用户固定账号收发" },
+  { id:"P1-17", phase:"01", owner:"codex", w:1.5, week:"W2", dep:"P1-09", desc:"AccountPool：user_id hash 分配账号 + send_message 路由", acc:"同用户固定账号收发", baseline:true },
   { id:"P1-18", phase:"01", owner:"devin", w:1, week:"W2", dep:"P1-09", desc:"Session AES 加密存储 + 断线自动重连", acc:"重启后免手工扫码恢复" },
   { id:"P1-19", phase:"01", owner:"codex", w:0.5, week:"W2", dep:"P1-06", desc:"Redis conv:{user_id} 会话上下文 lrange/rpush（50 轮）", acc:"LLM 可读取最近对话" },
   { id:"P1-20", phase:"01", owner:"devin", w:1, week:"W3", dep:"P1-17,P1-18", desc:"账号在线率/发送成功率监控 + 封号预警埋点", acc:"指标可 scrape + 告警规则" },
