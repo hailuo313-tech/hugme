@@ -64,8 +64,10 @@ class TestConnectionManager:
         # 创建多个模拟 WebSocket
         mock_ws1 = Mock(spec=WebSocket)
         mock_ws2 = Mock(spec=WebSocket)
-        mock_ws1.send_json = asyncio.coroutine(lambda x: None)
-        mock_ws2.send_json = asyncio.coroutine(lambda x: None)
+        async def mock_send_json(data):
+            pass
+        mock_ws1.send_json = mock_send_json
+        mock_ws2.send_json = mock_send_json
         
         # 连接多个客户端
         await manager.connect(mock_ws1)
@@ -102,8 +104,15 @@ class TestConnectionManager:
         # 创建一个正常和一个异常的 WebSocket
         mock_ws_ok = Mock(spec=WebSocket)
         mock_ws_fail = Mock(spec=WebSocket)
-        mock_ws_ok.send_json = asyncio.coroutine(lambda x: None)
-        mock_ws_fail.send_json = asyncio.coroutine(lambda x: (_ for _ in ()).throw(Exception("Connection lost")))
+        
+        async def mock_send_json_ok(data):
+            pass
+        
+        async def mock_send_json_fail(data):
+            raise Exception("Connection lost")
+        
+        mock_ws_ok.send_json = mock_send_json_ok
+        mock_ws_fail.send_json = mock_send_json_fail
         
         # 连接客户端
         await manager.connect(mock_ws_ok)
@@ -146,7 +155,9 @@ class TestNotifyUserUpgrade:
         
         # 创建模拟 WebSocket
         mock_ws = Mock(spec=WebSocket)
-        mock_ws.send_json = asyncio.coroutine(lambda x: None)
+        async def mock_send_json(data):
+            pass
+        mock_ws.send_json = mock_send_json
         await manager.connect(mock_ws)
         
         # 调用通知函数

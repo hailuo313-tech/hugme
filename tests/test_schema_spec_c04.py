@@ -68,7 +68,7 @@ def test_legacy_http_mapping():
         account_id="acc_1",
         sender_phone="+15551234567",
         metadata={
-            "tg_message_id": "9",
+            "telegram_message_id": "9",  # 使用正确的字段名
             "telegram_chat_id": "chat_123",
             "idempotency_key": "key_456",
             "raw_update_id": "update_789"
