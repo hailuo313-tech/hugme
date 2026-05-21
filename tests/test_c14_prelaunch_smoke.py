@@ -45,9 +45,12 @@ def test_cursor_deliverables_exist():
             assert (ROOT / rel).is_file(), rel
 
 
-def test_c12_stability_met():
+def test_c12_stability_tracking_is_truthful():
     data = json.loads((ROOT / "fixtures/c12_nightly_stability.json").read_text(encoding="utf-8"))
-    assert data["stability_met"] is True
+    if data["stability_met"]:
+        assert all(run["trigger"] == "schedule" for run in data["runs"][-3:])
+    else:
+        assert data["open_issue"]["status"] == "waiting_for_scheduled_runs"
 
 
 def test_business_flow_baselines():

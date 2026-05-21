@@ -1,7 +1,7 @@
 # C-12 检验报告：E2E/CI Nightly 审查
 
 **任务：** C-12 — 审查 E2E/压测脚本与 CI nightly 配置  
-**结论：** **通过（审查交付 + nightly 工作流；连续 3 次绿已记账）**
+**结论：** **过程审查通过；稳定性验收待 3 个连续 schedule 夜跑**
 
 ---
 
@@ -14,7 +14,7 @@
 | 压测脚本 | `scripts/perf/d8_2_retrieval_load.py`（明确 outside CI） |
 | PR 门禁 | `pr-required-gates.yml`（3 jobs） |
 | Nightly | `nightly-e2e-ci.yml`（`c12-audit` + `e2e-smoke`） |
-| 稳定 3 天 | `fixtures/c12_nightly_stability.json` 记账 |
+| 稳定 3 天 | `fixtures/c12_nightly_stability.json` 记录为待 schedule 夜跑 |
 
 ---
 
@@ -44,4 +44,4 @@
 |--------|------|
 | 脚本审查归档 | 通过 |
 | Nightly 配置 | 通过 |
-| 3 日稳定 | **3/3**（runs 26159926313, 26160200408, 26160289620） |
+| 3 日稳定 | **未满足**（现有 3 次为 workflow_dispatch；不计入 schedule nightly 验收） |

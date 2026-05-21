@@ -5,7 +5,7 @@
     { "id": "C14-01", "title": "REPO_LAYOUT canonical paths exist", "gate": "prelaunch_integration.CANONICAL_PATHS" },
     { "id": "C14-02", "title": "No legacy gateway/ws/worker/dashboard dirs", "gate": "audit script" },
     { "id": "C14-03", "title": "PR required gates (admin + backend + ops-guard)", "gate": "pr-required-gates.yml" },
-    { "id": "C14-04", "title": "C-12 nightly stability_met", "gate": "fixtures/c12_nightly_stability.json" },
+    { "id": "C14-04", "title": "C-12 scheduled nightly stability tracking", "gate": "fixtures/c12_nightly_stability.json" },
     { "id": "C14-05", "title": "C-01..C-13 inspection deliverables", "gate": "CURSOR_DELIVERABLES" },
     { "id": "C14-06", "title": "docker-compose api/postgres/redis", "gate": "audit script" },
     { "id": "C14-07", "title": "admin basePath /admin", "gate": "admin/next.config.js" },

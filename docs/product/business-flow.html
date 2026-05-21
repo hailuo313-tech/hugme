@@ -445,7 +445,7 @@ const TASKS = [
   { id:"C-09", phase:"04", owner:"cursor", w:1, week:"W7", dep:"—", desc:"审查 ws_protocol.md 与实现一致性", acc:"协议 conformance 通过", baseline:true },
   { id:"C-10", phase:"04", owner:"cursor", w:1, week:"W9", dep:"P4", desc:"执行 J-03 看板联调检验（3s 接管）", acc:"录屏 + 检验清单签字", baseline:true },
   { id:"C-11", phase:"04", owner:"cursor", w:1, week:"W9", dep:"P4-T01", desc:"坐席看板 UI/UX 走查（优先级、弹窗、断线提示）", acc:"走查问题单关闭", baseline:true },
-  { id:"C-12", phase:"05", owner:"cursor", w:1, week:"W10", dep:"P5-T01", desc:"审查 E2E/压测脚本与 CI nightly 配置", acc:"流水线稳定 3 天", baseline:true },
+  { id:"C-12", phase:"05", owner:"cursor", w:1, week:"W10", dep:"P5-T01", desc:"审查 E2E/压测脚本与 CI nightly 配置", acc:"流水线稳定 3 天", baseline:false },
   { id:"C-13", phase:"05", owner:"cursor", w:1, week:"W11", dep:"P5-T02", desc:"Grafana 大盘与告警规则走查", acc:"核心指标均有告警", baseline:true },
   { id:"C-14", phase:"05", owner:"cursor", w:1, week:"W12", dep:"全部", desc:"全量上线前代码审查 + 架构一致性终检", acc:"终检报告无阻塞项", baseline:true },
 
@@ -569,7 +569,7 @@ const PARALLEL = {
   "C-09":{t:"group",g:"W7-①",n:"与 P3-18、P4-10 可并行"},
   "C-10":{t:"done",g:"W9-关",n:"J-03 看板联调检验签字 + 录屏归档"},
   "C-11":{t:"done",g:"W9-①",n:"坐席看板 UI/UX 走查问题单关闭"},
-  "C-12":{t:"done",g:"W10-关",n:"E2E nightly 连续 3 天绿；fixtures/c12_nightly_stability.json"},
+  "C-12":{t:"wait",g:"W10-跟踪",n:"待 3 个连续 schedule nightly 绿；workflow_dispatch 不计入验收"},
   "C-13":{t:"done",g:"W11-关",n:"14 条告警 + Grafana MVP 大盘走查归档"},
   "C-14":{t:"done",g:"W12-关",n:"架构终检通过；见 docs/C14_INSPECTION_REPORT.md"},
   "H-01":{t:"done",g:"W1-①",n:"技术选型书面确认；REPO_LAYOUT 一致"},

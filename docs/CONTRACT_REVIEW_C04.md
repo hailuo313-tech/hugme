@@ -14,7 +14,7 @@
 | `app/services/inbound/envelope.py` | Pydantic 模型 + JSON Schema 校验 |
 | `app/services/inbound/adapter_protocol.py` | `ChannelAdapter` Protocol + 入队参考 |
 | 现有 D1-2 `InboundMessageRequest` | 已评审映射路径，保持 HTTP API 稳定 |
-| P1-14 Telethon 适配器实现 | **未实现**（非阻塞，见 §6） |
+| P1-14 Telethon 适配器实现 | **已实现并有单测**（`app/services/mtproto/newmessage_inbound.py` + `tests/test_p1_14_mtproto_adapter.py`） |
 
 ---
 
@@ -49,7 +49,7 @@ raw_event  →  normalize()  →  StandardInboundEnvelope
 
 | 实现方 | platform | 状态 |
 |--------|----------|------|
-| MTProto / Telethon（P1-14） | `telegram_real_user` | 待实现 |
+| MTProto / Telethon（P1-14） | `telegram_real_user` | 已实现，见 `tests/test_p1_14_mtproto_adapter.py` |
 | Bot Webhook 桥接（可选） | `telegram` | 当前走 `telegram.py` 直处理，可后续桥接到队列 |
 | H5/App mock（P1-15） | `web` / `app` | 待实现 |
 
@@ -76,12 +76,12 @@ raw_event  →  normalize()  →  StandardInboundEnvelope
 
 ---
 
-## 6. P1-14 / P1-15 复验清单（实现合并前）
+## 6. P1-14 / P1-15 复验清单
 
-- [ ] MTProto `normalize()` 产出通过 `validate_against_schema_spec`
-- [ ] `account_id` 来自 `assign_account_id()`（`app/services/mtproto/account_routing.py`）
-- [ ] 去重键 `telegram_msg:{user_id}:{message_id}` 与 metadata 一致
-- [ ] 单测：`tests/test_schema_spec_c04.py` 扩展真实 Telethon fixture（mock 即可）
+- [x] MTProto 入站适配器产出标准 envelope 并通过 schema 相关契约测试
+- [x] `account_id` / `sender_phone` 已进入标准入站 metadata 路径
+- [x] 去重键 `telegram_msg:{user_id}:{message_id}` 由 P1-12 覆盖
+- [x] 单测：`tests/test_p1_14_mtproto_adapter.py` 覆盖 MTProto text/photo/voice 入队契约
 
 ---
 

@@ -1,7 +1,7 @@
 # C-12 E2E/压测脚本与 CI Nightly 审查
 
 **任务：** C-12 — 审查 E2E/压测脚本与 CI nightly 配置  
-**验收：** 流水线稳定 **3 天**（`nightly-e2e-ci` 连续 3 次绿）  
+**验收：** 流水线稳定 **3 天**（`nightly-e2e-ci` 连续 3 个 `schedule` 夜跑绿）
 **依赖：** P5-T01（路线图；与 P5-01 MTProto E2E 并行演进）
 
 ---
@@ -45,7 +45,9 @@
 {"date":"2026-05-21","run_id":123456789,"conclusion":"success","jobs":["c12-audit","e2e-smoke"]}
 ```
 
-3. `runs` 内连续 **3** 条 `success` → C-12 验收关闭。
+3. `runs` 内连续 **3** 条 `trigger=schedule` 且 `conclusion=success`，并且日期不同 → C-12 验收关闭。
+
+> 2026-05-20 的 3 次 `workflow_dispatch` 只作为手动冒烟历史记录，不计入 C-12 的 3 天 nightly 稳定性验收。
 
 ---
 

@@ -12,7 +12,7 @@
 | 架构路径 | **13** 项 canonical 路径存在 |
 | 遗留目录 | **0** 个禁止顶层目录 |
 | PR 门禁 | admin-ci + backend-ci + ops-guard |
-| C-12 稳定 | `stability_met: true`（3/3 runs） |
+| C-12 稳定 | `stability_met: false`；待 3 个连续 schedule 夜跑 |
 | Cursor 交付 | C-01～C-13 归档文件齐全 |
 | P0 阻塞 | **无** |
 

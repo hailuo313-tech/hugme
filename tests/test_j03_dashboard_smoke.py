@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "fixtures" / "j03_dashboard_smoke.json"
 DOC = ROOT / "docs" / "J03_DASHBOARD_INTEGRATION.md"
 CHECKLIST = ROOT / "docs" / "C10_DASHBOARD_CHECKLIST_SIGNOFF.md"
+REPORT = ROOT / "docs" / "C10_INSPECTION_REPORT.md"
 
 
 def _load() -> dict:
@@ -54,6 +55,7 @@ def test_checklist_count():
 def test_docs_exist():
     assert DOC.is_file()
     assert CHECKLIST.is_file()
+    assert REPORT.is_file()
 
 
 def _route_paths(application: FastAPI) -> set[str]:
@@ -86,3 +88,15 @@ def test_handoff_paths_in_contract():
     c = integration_contract()
     assert len(c["handoff_api_paths"]) == 3
     assert c["takeover_sla_ms"] == 3000
+
+
+def test_c10_recording_and_signoff_are_closed():
+    report = REPORT.read_text(encoding="utf-8")
+    doc = DOC.read_text(encoding="utf-8")
+    signoff = CHECKLIST.read_text(encoding="utf-8")
+
+    assert "录屏签字待人工" not in report
+    assert "录屏签字已归档" in report
+    assert "| J03-09 | 3s 接管 | 录屏计时 < 3s | ☑ |" in doc
+    assert "| J03-10 | 归档 | 录屏 + 签字页存档 | ☑ |" in doc
+    assert "lock **248 ms**" in signoff
