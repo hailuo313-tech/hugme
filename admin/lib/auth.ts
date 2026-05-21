@@ -3,7 +3,7 @@
 
 export const ADMIN_BASE_PATH = "/admin";
 export const LOGIN_PATH = `${ADMIN_BASE_PATH}/login`;
-export const DEFAULT_ADMIN_ENTRY_PATH = `${ADMIN_BASE_PATH}/operator-dashboard`;
+export const DEFAULT_ADMIN_ENTRY_PATH = ADMIN_BASE_PATH;
 
 export const TOKEN_KEY = "eris_admin_token";
 export const OPERATOR_KEY = "eris_admin_operator";

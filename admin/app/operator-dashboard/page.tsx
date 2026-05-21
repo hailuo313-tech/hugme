@@ -244,7 +244,7 @@ function OperatorDashboard({ operator }: { operator: Operator }) {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <a
-              href="/admin"
+              href="/admin/conversations"
               className="text-slate-400 hover:text-white transition"
             >
               ← 返回会话总览
@@ -512,7 +512,7 @@ function OperatorDashboard({ operator }: { operator: Operator }) {
                       <button
                         onClick={() => {
                           // 跳转到对话详情页面
-                          window.location.href = `/admin/?conversation_id=${selectedTask.conversation_id}`;
+                          window.location.href = `/admin/conversations?conversation_id=${selectedTask.conversation_id}`;
                         }}
                         className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm font-medium transition"
                       >
