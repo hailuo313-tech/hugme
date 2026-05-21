@@ -6,7 +6,7 @@ on:
       duration_hours:
         description: 'Test duration in hours'
         required: false
-        default: '1'  # Default to 1 hour for CI, use 72 for production
+        default: '72'
       ping_interval:
         description: 'Ping interval in seconds'
         required: false
@@ -14,9 +14,9 @@ on:
       report_interval:
         description: 'Report interval in seconds'
         required: false
-        default: '600'  # 10 minutes for CI
+        default: '3600'
   schedule:
-    # Run weekly 1-hour smoke test on Monday at 00:00 UTC
+    # Run weekly 72-hour acceptance test on Monday at 00:00 UTC.
     - cron: '0 0 * * 1'
 
 permissions:
@@ -30,7 +30,7 @@ jobs:
   websocket-stability:
     name: p5-04-websocket-stability
     runs-on: ubuntu-latest
-    timeout-minutes: 90  # 1.5 hours for safety margin
+    timeout-minutes: 4380
     steps:
       - uses: actions/checkout@v4
 
@@ -73,9 +73,9 @@ jobs:
         env:
           WS_URL: ws://127.0.0.1:8000/ws/operators/tasks
           OPERATOR_ID: test_p5_04_ci_operator
-          TEST_DURATION_HOURS: ${{ github.event.inputs.duration_hours || '1' }}
+          TEST_DURATION_HOURS: ${{ github.event.inputs.duration_hours || '72' }}
           PING_INTERVAL: ${{ github.event.inputs.ping_interval || '30' }}
-          REPORT_INTERVAL: ${{ github.event.inputs.report_interval || '600' }}
+          REPORT_INTERVAL: ${{ github.event.inputs.report_interval || '3600' }}
           OUTPUT_DIR: scripts/perf/reports
         run: bash scripts/perf/run_p5_04_websocket_stability.sh
 
@@ -91,20 +91,11 @@ jobs:
         if: failure()
         run: docker compose logs api --tail 200
 
-      - name: Check zero message loss acceptance criteria
+      - name: Validate P5-04 72h stability report
         if: success()
         run: |
-          # Find the latest report and check for zero message loss
           latest_report=$(find scripts/perf/reports -name "p5_04_websocket_stability_report_*.json" -type f -printf '%T@ %p\n' | sort -n | tail -1 | cut -d' ' -f2-)
-          if [ -f "$latest_report" ]; then
-            zero_loss=$(python3 -c "import json; print(json.load(open('$latest_report'))['report']['zero_message_loss'])")
-            if [ "$zero_loss" = "True" ]; then
-              echo "✅ Zero message loss acceptance criteria passed"
-            else
-              echo "❌ Zero message loss acceptance criteria failed"
-              exit 1
-            fi
-          fi
+          python3 scripts/check_p5_04_stability_report.py "$latest_report"
 
       - name: Add summary comment
         if: always()
