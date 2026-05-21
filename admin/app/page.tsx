@@ -611,6 +611,12 @@ function DashboardContent({ operator }: { operator: Operator }) {
             >
               推送
             </a>
+            <a
+              href="/admin/telegram-accounts"
+              className="text-sm text-slate-400 hover:text-white px-3 py-1 rounded-md hover:bg-slate-700 transition"
+            >
+              TG账号
+            </a>
           </nav>
         </div>
         <div className="flex items-center gap-4 flex-wrap justify-end">
