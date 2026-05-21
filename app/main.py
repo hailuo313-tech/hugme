@@ -36,6 +36,7 @@ from api.mtproto_sessions import router as mtproto_sessions_router
 from api.monitoring import router as monitoring_router
 from api.user_level import router as user_level_router
 from api.message_schedule import router as message_schedule_router
+from api.intents import router as intents_router
 from core.database import init_db
 from core.config import settings
 from services.mtproto.session_manager import session_manager
@@ -213,6 +214,7 @@ app.include_router(mtproto_sessions_router, tags=["mtproto-sessions"])
 app.include_router(monitoring_router, tags=["monitoring"])
 app.include_router(user_level_router, tags=["user-level"])
 app.include_router(message_schedule_router, prefix="/api/v1/message-schedule", tags=["message-schedule"])
+app.include_router(intents_router, prefix="/api/v1/intents", tags=["intents"])
 app.include_router(realtime_router, tags=["realtime"])
 app.include_router(llm_router, prefix="/api/v1", tags=["llm"])
 app.include_router(onboarding_router, prefix="/api/v1", tags=["onboarding"])

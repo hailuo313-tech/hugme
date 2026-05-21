@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from typing import Optional
+from uuid import uuid4
 
 from sqlalchemy import BigInteger, Boolean, CheckConstraint, Column, DateTime, Index, Integer, String, Text, event
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -16,7 +17,7 @@ class MessageSchedule(Base):
 
     __tablename__ = "message_schedules"
 
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     user_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     external_user_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     message_type: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -37,7 +38,7 @@ class MessageSchedule(Base):
     retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_retries: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    metadata: Mapped[dict] = mapped_column(JSONB, nullable=False, default={})
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, default=dict)
     trace_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)

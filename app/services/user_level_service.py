@@ -3,17 +3,24 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Optional
+from dataclasses import dataclass
+from typing import Any, Optional
 
 from loguru import logger
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-from telethon.errors import SessionPasswordNeededError
+from sqlalchemy import text
 
 from core.database import get_async_session
-from models.users import User
 from services.level_engine import UserLevelInput, calc_user_level, load_thresholds
-from services.telegram_account_manager import telegram_account_manager
+
+
+@dataclass(frozen=True)
+class UserProfileSignals:
+    """Profile signals needed by the level engine."""
+
+    country_code: Optional[str] = None
+    lifetime_spend_usd: float = 0.0
+    vip_level: int = 0
+    operator_assigned_s: bool = False
 
 
 class UserLevelService:
@@ -59,7 +66,7 @@ class UserLevelService:
                 return self._get_default_level_result("invalid_user_id", "unknown")
 
             # Fetch user profile from database
-            user_profile = await self._get_user_profile(telegram_user_id)
+            user_profile = await self._get_user_profile(external_user_id, telegram_user_id)
 
             # Prepare input for level calculation
             level_input = UserLevelInput(
@@ -103,17 +110,72 @@ class UserLevelService:
             return external_user_id[3:]
         return external_user_id
 
-    async def _get_user_profile(self, telegram_user_id: str) -> Optional[User]:
+    async def _get_user_profile(
+        self,
+        external_user_id: str,
+        telegram_user_id: str,
+    ) -> Optional[UserProfileSignals]:
         """Fetch user profile from database."""
         try:
             async for session in get_async_session():
                 result = await session.execute(
-                    select(User).where(User.telegram_user_id == telegram_user_id)
+                    text(
+                        """
+                        SELECT
+                            p.country_code,
+                            COALESCE(p.vip_level, 0) AS vip_level,
+                            COALESCE(p.preferences, '{}'::jsonb) AS preferences,
+                            COALESCE(p.user_level, 'C') AS user_level,
+                            COALESCE((
+                                SELECT SUM(o.amount)
+                                FROM orders o
+                                WHERE o.user_id = u.id
+                                  AND o.status = 'paid'
+                                  AND UPPER(COALESCE(o.currency, 'USD')) = 'USD'
+                            ), 0) AS lifetime_spend_cents
+                        FROM users u
+                        JOIN user_profiles p ON p.user_id = u.id
+                        WHERE u.external_id IN (:external_user_id, :telegram_user_id, :tg_external_user_id)
+                        ORDER BY
+                            CASE
+                                WHEN u.external_id = :external_user_id THEN 0
+                                WHEN u.external_id = :tg_external_user_id THEN 1
+                                ELSE 2
+                            END
+                        LIMIT 1
+                        """
+                    ),
+                    {
+                        "external_user_id": external_user_id,
+                        "telegram_user_id": telegram_user_id,
+                        "tg_external_user_id": f"tg_{telegram_user_id}",
+                    },
                 )
-                return result.scalar_one_or_none()
+                row = result.fetchone()
+                if row is None:
+                    return None
+                return self._profile_signals_from_row(row)
         except Exception as e:
             logger.error(f"Error fetching user profile for {telegram_user_id}: {e}")
             return None
+
+    def _profile_signals_from_row(self, row: Any) -> UserProfileSignals:
+        data = getattr(row, "_mapping", row)
+        preferences = data.get("preferences") or {}
+        if not isinstance(preferences, dict):
+            preferences = {}
+        country_code = data.get("country_code") or preferences.get("country_code")
+        lifetime_spend_cents = float(data.get("lifetime_spend_cents") or 0)
+        return UserProfileSignals(
+            country_code=str(country_code).upper() if country_code else None,
+            lifetime_spend_usd=lifetime_spend_cents / 100.0,
+            vip_level=int(data.get("vip_level") or 0),
+            operator_assigned_s=bool(
+                preferences.get("operator_assigned_s")
+                or preferences.get("manual_s")
+                or data.get("user_level") == "S"
+            ),
+        )
 
     def _get_default_level_result(self, reason: str, country_tier: str) -> dict:
         """Return default level result for error cases."""

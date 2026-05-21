@@ -158,7 +158,7 @@ async def add_scheduled_message(
             status="pending",
             send_at=send_at,
             priority=priority,
-            metadata=metadata or {},
+            metadata_json=metadata or {},
             trace_id=trace_id,
         )
         session.add(schedule)
@@ -281,11 +281,11 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
 def start_scheduler() -> None:
     """Start the message schedule scheduler."""
     global _scheduler
-    if _scheduler is None:
+    if AsyncIOScheduler is None or IntervalTrigger is None:
         logger.warning("APScheduler not available, message schedule scheduler not started")
         return
 
-    if _scheduler.running:
+    if _scheduler is not None and _scheduler.running:
         logger.warning("Message schedule scheduler already running")
         return
 
