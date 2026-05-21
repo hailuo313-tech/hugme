@@ -19,7 +19,8 @@
     "summary": "Approved for full launch after C-14 repository final inspection shows no P0 blocker and H-stage release signoffs are documented.",
     "p0_blockers_open": 0,
     "p1_items_allowed_as_release_tracking": [
-      "PL-01 production deploy tracking for ops_ai image refresh"
+      "PL-01 production deploy tracking for ops_ai image refresh",
+      "C12-SCHED-01 collect 3 consecutive scheduled nightly-e2e-ci green runs"
     ],
     "p2_items_allowed_as_release_tracking": [
       "PL-03 Grafana production visual signoff",
@@ -53,7 +54,7 @@
       "category": "stability",
       "title": "Nightly/E2E stability evidence",
       "status": "passed",
-      "evidence": "C-14 references C-12 stability_met true with 3/3 runs."
+      "evidence": "C-12 scheduled-night stability remains release tracking until 3 consecutive schedule runs pass; manual dispatch smoke is recorded separately."
     },
     {
       "id": "GO-05",
@@ -117,6 +118,8 @@
     "Attach Grafana production visual signoff evidence for PL-03.",
     "Confirm business-flow static copy is synced to nginx/static hosting for PL-04.",
     "Run beta/full-launch metrics cadence at +1h, +4h, +24h, and daily for seven days."
+    ,
+    "Record C-12 scheduled nightly evidence until fixtures/c12_nightly_stability.json reaches stability_met true."
   ],
   "acceptance": [
     "Exactly 12 Go/No-Go checks are present.",

@@ -29,8 +29,8 @@
 | J03-06 | 接管锁 | `POST /handoff/{id}/lock` | ☐ |
 | J03-07 | 坐席回复 | `POST /handoff/{id}/reply` | ☐ |
 | J03-08 | WS 任务流 | `wss://.../ws/operators/tasks` | ☐ |
-| J03-09 | 3s 接管 | 录屏计时 < 3s | ☐ |
-| J03-10 | 归档 | 录屏 + 签字页存档 | ☐ |
+| J03-09 | 3s 接管 | 录屏计时 < 3s | ☑ |
+| J03-10 | 归档 | 录屏 + 签字页存档 | ☑ |
 
 签字页：[`C10_DASHBOARD_CHECKLIST_SIGNOFF.md`](C10_DASHBOARD_CHECKLIST_SIGNOFF.md)
 

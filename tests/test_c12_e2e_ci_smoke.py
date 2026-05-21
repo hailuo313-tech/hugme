@@ -85,3 +85,21 @@ def test_contract_shape():
     assert c["nightly_stability_days"] == 3
     assert "c12-audit" in c["ci_jobs"]
     assert "e2e-smoke" in c["ci_jobs"]
+
+
+def test_c12_stability_acceptance_requires_scheduled_nights():
+    data = json.loads(STABILITY.read_text(encoding="utf-8"))
+
+    assert "failed_attempts" not in data
+    assert data["requirement"].endswith("3 consecutive scheduled runs")
+
+    runs = data["runs"]
+    if data["stability_met"]:
+        assert len(runs) >= data["stability_days"]
+        recent = runs[-data["stability_days"] :]
+        assert [run["conclusion"] for run in recent] == ["success"] * data["stability_days"]
+        assert {run["trigger"] for run in recent} == {"schedule"}
+        assert len({run["date"] for run in recent}) == data["stability_days"]
+    else:
+        assert data["open_issue"]["status"] == "waiting_for_scheduled_runs"
+        assert all(run["trigger"] == "workflow_dispatch" for run in data["manual_dispatch_history"])

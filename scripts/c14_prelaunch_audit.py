@@ -62,8 +62,12 @@ def main() -> int:
     stability = ROOT / "fixtures/c12_nightly_stability.json"
     if stability.is_file():
         data = json.loads(stability.read_text(encoding="utf-8"))
-        if not data.get("stability_met"):
-            failures.append("c12_nightly_stability.json stability_met is false")
+        if data.get("stability_met"):
+            recent = data.get("runs", [])[-int(data.get("stability_days", 3)) :]
+            if not recent or any(run.get("trigger") != "schedule" for run in recent):
+                failures.append("c12_nightly_stability.json stable runs must be scheduled")
+        elif data.get("open_issue", {}).get("status") != "waiting_for_scheduled_runs":
+            failures.append("c12_nightly_stability.json must record scheduled-run open issue")
     else:
         failures.append("missing fixtures/c12_nightly_stability.json")
 

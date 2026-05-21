@@ -85,3 +85,12 @@ def test_schema_spec_required_keys_documented():
     schema = json.loads((root / "docs" / "schema_spec.json").read_text(encoding="utf-8"))
     for key in ("platform", "account_id", "sender_phone", "external_user_id"):
         assert key in schema["properties"]
+
+
+def test_c04_review_doc_no_longer_marks_p1_14_unimplemented():
+    root = Path(__file__).resolve().parents[1]
+    text = (root / "docs" / "CONTRACT_REVIEW_C04.md").read_text(encoding="utf-8")
+
+    assert "P1-14 Telethon 适配器实现 | **未实现**" not in text
+    assert "P1-14 Telethon 适配器实现 | **已实现并有单测**" in text
+    assert "tests/test_p1_14_mtproto_adapter.py" in text

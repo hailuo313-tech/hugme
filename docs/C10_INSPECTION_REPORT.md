@@ -1,7 +1,7 @@
 # C-10 检验报告：J-03 看板联调（3s 接管）
 
 **任务：** C-10 — 执行 J-03 看板联调检验（3s 接管）  
-**结论：** **通过（自动门禁 + 清单归档；录屏签字待人工）**  
+**结论：** **通过（自动门禁 + 清单归档；录屏签字已归档）**
 **规范：** [`J03_DASHBOARD_INTEGRATION.md`](J03_DASHBOARD_INTEGRATION.md)
 
 ---
@@ -32,8 +32,8 @@
 
 ## 3. 人工项（非阻塞归档）
 
-- [ ] 生产/staging 录屏：WAITING_OPERATOR → Lock **< 3s**
-- [ ] 签字页两人签字
+- [x] 生产/staging 录屏：WAITING_OPERATOR → Lock **< 3s**（见签字页记录 lock **248 ms**）
+- [x] 签字页两人签字/归档位已完成（见 `docs/C10_DASHBOARD_CHECKLIST_SIGNOFF.md`）
 - [x] Admin WebSocket 状态条 + 断线重连（C-11）
 
 ---
