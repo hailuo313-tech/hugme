@@ -1,0 +1,105 @@
+name: Load Testing
+
+on:
+  workflow_dispatch:
+    inputs:
+      concurrency:
+        description: 'Number of concurrent requests'
+        required: false
+        default: '1000'
+      requests_per_endpoint:
+        description: 'Requests per endpoint'
+        required: false
+        default: '10'
+      timeout:
+        description: 'Request timeout in seconds'
+        required: false
+        default: '30'
+  schedule:
+    # Run load tests weekly on Sunday at 00:00 UTC
+    - cron: '0 0 * * 0'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: load-testing-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  load-test:
+    name: p5-02-load-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            app/requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r app/requirements.txt -r requirements-dev.txt
+
+      - name: Start stack (postgres, redis, api)
+        env:
+          LLM_ECHO_FALLBACK: "1"
+          CONTENT_SAFETY_ENABLED: "0"
+          SCORE_WORKER_ENABLED: "0"
+          POLICY_HANDOFF_ENABLED: "0"
+        run: |
+          docker compose up -d postgres redis
+          docker compose up -d --build api
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8000/health/detail | grep -q '"api":"ok"'; then
+              echo "API ready"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "API not healthy in time" >&2
+          docker compose logs api --tail 80
+          exit 1
+
+      - name: Run P5-02 Load Test
+        env:
+          API_BASE: http://127.0.0.1:8000
+          CONCURRENCY: ${{ github.event.inputs.concurrency || '1000' }}
+          REQUESTS_PER_ENDPOINT: ${{ github.event.inputs.requests_per_endpoint || '10' }}
+          TIMEOUT_SECONDS: ${{ github.event.inputs.timeout || '30' }}
+          OUTPUT_DIR: scripts/perf/reports
+        run: bash scripts/perf/run_p5_02_load_test.sh
+
+      - name: Upload load test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-test-reports
+          path: scripts/perf/reports/*.json
+          retention-days: 30
+
+      - name: Upload API logs on failure
+        if: failure()
+        run: docker compose logs api --tail 200
+
+      - name: Check P99 acceptance criteria
+        if: success()
+        run: |
+          # Find the latest report and check if P99 < 500ms
+          latest_report=$(find scripts/perf/reports -name "p5_02_load_test_report_*.json" -type f -printf '%T@ %p\n' | sort -n | tail -1 | cut -d' ' -f2-)
+          if [ -f "$latest_report" ]; then
+            p99_actual=$(python3 -c "import json; print(json.load(open('$latest_report'))['test_summary']['acceptance_criteria']['p99_actual_ms'])")
+            if (( $(echo "$p99_actual < 500" | bc -l) )); then
+              echo "✅ P99 acceptance criteria passed: ${p99_actual}ms < 500ms"
+            else
+              echo "❌ P99 acceptance criteria failed: ${p99_actual}ms >= 500ms"
+              exit 1
+            fi
+          fi
