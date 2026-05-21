@@ -511,7 +511,7 @@ const TASKS = [
   { id:"P3-10", phase:"03", owner:"codex", w:1.5, week:"W5", dep:"H-04", desc:"persona_prompts 多人设 Prompt", acc:"≥3 人设", baseline:true },
   { id:"P3-11", phase:"03", owner:"codex", w:2, week:"W6", dep:"P3-10,P3-07,P3-20", desc:"LLM 调用层（仅包装已命中话术底料）", acc:"无命中话术则降级/拒答", baseline:true },
   { id:"P3-12", phase:"03", owner:"codex", w:1, week:"W6", dep:"P3-11,H-04", desc:"safety_filter 安全过滤", acc:"红线 100% 拦截", baseline:true },
-  { id:"P3-13", phase:"03", owner:"devin", w:1, week:"W6", dep:"P1-06", desc:"Redis 待发队列 + send_at", acc:"可按时间扫描" },
+  { id:"P3-13", phase:"03", owner:"devin", w:1, week:"W6", dep:"P1-06", desc:"Redis 待发队列 + send_at", acc:"可按时间扫描", baseline:true },
   { id:"P3-14", phase:"03", owner:"codex", w:0.5, week:"W6", dep:"—", desc:"拟人延迟计算器", acc:"单测边界通过", baseline:true },
   { id:"P3-15", phase:"03", owner:"devin", w:1.5, week:"W6", dep:"P3-13,14,P1-17", desc:"B/C/D 自动投递 Worker（AccountPool 出站）", acc:"倒计时后经 MTProto 拟人发出" },
   { id:"P3-16", phase:"03", owner:"devin", w:1.5, week:"W7", dep:"P2-11,P3-13,P3-20", desc:"S/A 挂起 + 草稿含 Top3 话术与 script_ids", acc:"坐席见推荐话术+倒计时" },
