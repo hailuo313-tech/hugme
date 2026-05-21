@@ -84,6 +84,13 @@
         "type": "task.ack",
         "task_id": "00000000-0000-0000-0000-000000000001"
       }
+    },
+    {
+      "id": "C09-C-03",
+      "payload": {
+        "type": "message.ack",
+        "message_id": "task.upsert-abc123"
+      }
     }
   ],
   "invalid_server_events": [

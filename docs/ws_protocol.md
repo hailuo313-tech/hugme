@@ -92,4 +92,44 @@ P4-01 acceptance is met when:
 .\scripts\check-c09-ws-protocol.ps1
 ```
 
+## P4-02: ACK 重推机制 (2026-05-21)
+
+### 新增客户端事件
+
+|| `type` | Required fields |
+||--------|-----------------|
+|| `message.ack` | `message_id` |
+
+### 服务器消息变更
+
+除 `connection.ready`, `task.snapshot`, `pong` 外，所有服务器消息现在包含 `message_id` 字段：
+
+- 服务器发送消息时自动生成 `message_id` 并跟踪确认状态
+- 客户端收到消息后应发送 `message.ack` 确认
+- 未确认的消息将在 5 秒后自动重推，最多重试 3 次
+- 30 秒未确认的消息将被放弃并记录警告日志
+
+### 示例
+
+```json
+// 服务器发送（自动添加 message_id）
+{
+  "type": "task.upsert",
+  "trace_id": "ws-op-1",
+  "message_id": "task.upsert-a1b2c3d4",
+  "task": {...}
+}
+
+// 客户端确认
+{
+  "type": "message.ack",
+  "message_id": "task.upsert-a1b2c3d4"
+}
+```
+
+### 兼容性
+
+- 旧的 `task.ack` 仍然支持，但建议使用新的 `message.ack`
+- 广播消息（如 `user.upgraded`）也支持 ACK 重推机制
+
 See `fixtures/c09_ws_protocol.json` and `docs/C09_INSPECTION_REPORT.md`.
