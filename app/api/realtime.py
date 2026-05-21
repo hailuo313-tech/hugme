@@ -177,15 +177,9 @@ class ConnectionManager:
             if pending.acked:
                 message_ids_to_remove.append(message_id)
                 continue
-            
             # 检查是否需要重推
             time_since_send = current_time - (pending.last_sent_at or 0)
-            if (
-                time_since_send >= self.retry_interval_seconds
-                and pending.send_count < self.max_retry_count
-            ):
-                messages_to_retry.append(pending)
-            elif time_since_send >= self.message_timeout_seconds:
+            if time_since_send >= self.message_timeout_seconds:
                 # 超过超时时间，放弃重推
                 logger.bind(
                     component="ws",
@@ -194,6 +188,11 @@ class ConnectionManager:
                     send_count=pending.send_count,
                 ).warning("ws.message_timeout_gave_up")
                 message_ids_to_remove.append(message_id)
+            elif (
+                time_since_send >= self.retry_interval_seconds
+                and pending.send_count <= self.max_retry_count
+            ):
+                messages_to_retry.append(pending)
         
         # 执行重推
         for pending in messages_to_retry:

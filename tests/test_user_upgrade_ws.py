@@ -86,8 +86,9 @@ class TestConnectionManager:
         await manager.broadcast_user_upgrade(upgrade_data)
         
         # 验证所有连接都收到了消息
-        mock_ws1.send_json.assert_called_once_with(upgrade_data)
-        mock_ws2.send_json.assert_called_once_with(upgrade_data)
+        expected_payload = {**upgrade_data, "message_id": ANY}
+        mock_ws1.send_json.assert_called_once_with(expected_payload)
+        mock_ws2.send_json.assert_called_once_with(expected_payload)
         
         # 清理
         manager.disconnect(mock_ws1)
@@ -125,7 +126,7 @@ class TestConnectionManager:
         await manager.broadcast_user_upgrade(upgrade_data)
         
         # 验证正常连接收到消息
-        mock_ws_ok.send_json.assert_called_once_with(upgrade_data)
+        mock_ws_ok.send_json.assert_called_once_with({**upgrade_data, "message_id": ANY})
         
         # 验证断开的连接被移除
         assert len(manager.active_connections) == 1
