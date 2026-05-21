@@ -404,6 +404,14 @@ function DashboardContent({ operator }: { operator: Operator }) {
               共 {total} 条会话 · 第 {page} / {totalPages} 页
             </p>
           </div>
+          <div>
+            <a
+              href="/admin/operator-dashboard"
+              className="px-4 py-2 bg-violet-600 hover:bg-violet-500 rounded-lg text-sm font-medium transition"
+            >
+              坐席看板
+            </a>
+          </div>
         </div>
 
         {/* Filters */}
