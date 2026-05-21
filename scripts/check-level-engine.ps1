@@ -8,7 +8,10 @@ if (-not (Test-Path $py)) { $py = "python" }
 $env:PYTHONPATH = Join-Path $Root "app"
 
 & $py -m pip install -q pytest pytest-cov 2>$null
-& $py -m pytest (Join-Path $Root "tests\test_level_engine.py") -q `
+& $py -m pytest `
+  (Join-Path $Root "tests\test_level_engine.py") `
+  (Join-Path $Root "tests\test_p2_08_level_engine_case_gate.py") `
+  -q `
   --cov=services.level_engine `
   --cov-branch `
   --cov-fail-under=85 `

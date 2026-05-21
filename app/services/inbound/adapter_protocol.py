@@ -24,7 +24,9 @@ class ChannelAdapter(Protocol):
 
     def validate_envelope(self, envelope: StandardInboundEnvelope) -> None:
         """JSON Schema + pydantic checks before enqueue."""
-        issues = validate_against_schema_spec(envelope.model_dump(mode="json"))
+        issues = validate_against_schema_spec(
+            envelope.model_dump(mode="json", exclude_none=True)
+        )
         if issues:
             raise AdapterError("; ".join(issues))
 
