@@ -193,6 +193,14 @@ class ConnectionManager:
                 and pending.send_count <= self.max_retry_count
             ):
                 messages_to_retry.append(pending)
+            elif time_since_send >= self.retry_interval_seconds:
+                logger.bind(
+                    component="ws",
+                    message_id=message_id,
+                    message_type=pending.message_type,
+                    send_count=pending.send_count,
+                ).warning("ws.message_retry_count_gave_up")
+                message_ids_to_remove.append(message_id)
         
         # 执行重推
         for pending in messages_to_retry:

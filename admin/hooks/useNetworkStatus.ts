@@ -11,7 +11,7 @@ interface NetworkStatus {
 
 export function useNetworkStatus() {
   const [status, setStatus] = useState<NetworkStatus>({
-    isOnline: navigator.onLine,
+    isOnline: typeof navigator === "undefined" ? true : navigator.onLine,
     effectiveType: "unknown",
     downlink: 0,
     rtt: 0,
