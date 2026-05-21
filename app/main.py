@@ -35,6 +35,7 @@ from api.geoip import router as geoip_router
 from api.mtproto_sessions import router as mtproto_sessions_router
 from api.monitoring import router as monitoring_router
 from api.user_level import router as user_level_router
+from api.message_schedule import router as message_schedule_router
 from api.intents import router as intents_router
 from core.database import init_db
 from core.config import settings
@@ -56,6 +57,10 @@ from services.profile_score_scheduler import (
 from services.notification_sender_worker import (
     start_scheduler as start_notification_sender_worker,
     shutdown_scheduler as shutdown_notification_sender_worker,
+)
+from services.message_schedule_service import (
+    start_scheduler as start_message_schedule_scheduler,
+    shutdown_scheduler as shutdown_message_schedule_scheduler,
 )
 
 
@@ -99,6 +104,10 @@ async def lifespan(app: FastAPI):
     if settings.ALERT_SCHEDULER_ENABLED:
         await alert_scheduler.start()
         logger.info("Alert scheduler started")
+    # P3-13: Start message schedule scheduler if enabled
+    if settings.MESSAGE_SCHEDULE_ENABLED:
+        start_message_schedule_scheduler()
+        logger.info("Message schedule scheduler started")
     try:
         yield
     finally:
@@ -118,6 +127,10 @@ async def lifespan(app: FastAPI):
         if settings.ACCOUNT_MONITOR_ENABLED:
             await account_monitor.stop()
             logger.info("Account monitor stopped")
+        # P3-13: Stop message schedule scheduler
+        if settings.MESSAGE_SCHEDULE_ENABLED:
+            shutdown_message_schedule_scheduler()
+            logger.info("Message schedule scheduler stopped")
         logger.info("ERIS shutting down...")
 
 
@@ -200,6 +213,7 @@ app.include_router(telegram_accounts_router, tags=["telegram-accounts"])
 app.include_router(mtproto_sessions_router, tags=["mtproto-sessions"])
 app.include_router(monitoring_router, tags=["monitoring"])
 app.include_router(user_level_router, tags=["user-level"])
+app.include_router(message_schedule_router, prefix="/api/v1/message-schedule", tags=["message-schedule"])
 app.include_router(intents_router, prefix="/api/v1/intents", tags=["intents"])
 app.include_router(realtime_router, tags=["realtime"])
 app.include_router(llm_router, prefix="/api/v1", tags=["llm"])

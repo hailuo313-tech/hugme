@@ -698,6 +698,11 @@ function loadDoneSet() {
     p2Completed.forEach(id => {
       if (!set.has(id)) { set.add(id); changed = true; }
     });
+    // 自动标记 P3-13 为已完成（Devin 已完成此任务）
+    const p3Completed = ['P3-13'];
+    p3Completed.forEach(id => {
+      if (!set.has(id)) { set.add(id); changed = true; }
+    });
     if (changed) localStorage.setItem(DONE_STORAGE_KEY, JSON.stringify([...set]));
     return set;
   } catch {
@@ -708,6 +713,8 @@ function loadDoneSet() {
     p1AdditionalCompleted.forEach(id => set.add(id));
     const p2Completed = ['P2-12'];
     p2Completed.forEach(id => set.add(id));
+    const p3Completed = ['P3-13'];
+    p3Completed.forEach(id => set.add(id));
     return set;
   }
 }

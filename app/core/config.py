@@ -159,5 +159,9 @@ class Settings(BaseSettings):
     ALERT_SCHEDULER_ENABLED: bool = False  # 是否启用告警调度器
     ALERT_SCHEDULER_CHECK_INTERVAL: int = 60  # 告警检查间隔（秒）
     ALERT_RULES_PATH: str = "config/alert_rules.json"  # 告警规则配置文件路径
+    # P3-13：消息待发队列配置（Redis pending queue + send_at）
+    MESSAGE_SCHEDULE_ENABLED: bool = False  # 是否启用消息待发队列
+    MESSAGE_SCHEDULE_POLL_SECONDS: int = 20  # 轮询间隔（秒）
+    MESSAGE_SCHEDULE_SCHEDULER_MAX_INSTANCES: int = 1  # 调度器最大并发实例数
 
 settings = Settings()
