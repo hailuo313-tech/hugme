@@ -65,7 +65,7 @@ class MediaCacheManager {
     }
 
     const expiration = options?.expiration || this.defaultExpiration;
-    const id = this.generateId(url, type);
+    const id = await this.generateId(url, type);
     const now = Date.now();
     const metadata = {
       size: data.size,
@@ -109,7 +109,7 @@ class MediaCacheManager {
       await this.init();
     }
 
-    const id = this.generateId(url, type);
+    const id = await this.generateId(url, type);
 
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction([this.storeName], "readonly");
@@ -322,7 +322,7 @@ class MediaCacheManager {
     });
   }
 
-  private generateId(url: string, type: string): string {
+  private async generateId(url: string, type: string): Promise<string> {
     // 使用 URL 和类型生成唯一 ID
     const encoder = new TextEncoder();
     const data = encoder.encode(`${type}:${url}`);
