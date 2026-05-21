@@ -88,3 +88,42 @@ jobs:
       - name: Upload API logs on failure
         if: failure()
         run: docker compose logs api --tail 200
+
+  p5-01-e2e:
+    name: p5-01-e2e-mtproto-flow
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: c12-audit
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start stack (postgres, redis, api)
+        env:
+          LLM_ECHO_FALLBACK: "1"
+          CONTENT_SAFETY_ENABLED: "0"
+          SCORE_WORKER_ENABLED: "0"
+          POLICY_HANDOFF_ENABLED: "0"
+        run: |
+          docker compose up -d postgres redis
+          docker compose up -d --build api
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8000/health/detail | grep -q '"api":"ok"'; then
+              echo "API ready"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "API not healthy in time" >&2
+          docker compose logs api --tail 80
+          exit 1
+
+      - name: Run P5-01 E2E tests
+        env:
+          API_BASE: http://127.0.0.1:8000
+          DB_CONTAINER: eris-postgres
+          PYTHONPATH: app
+        run: bash scripts/e2e/run_p5_01.sh
+
+      - name: Upload API logs on failure
+        if: failure()
+        run: docker compose logs api --tail 200
