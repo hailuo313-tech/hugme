@@ -20,6 +20,7 @@ import uuid, json, time
 import redis.asyncio as aioredis
 
 from services.memory_writer import maybe_write_memory
+from services.age_extraction import maybe_extract_and_write_age
 from services.content_safety import evaluate_inbound_content_safety
 from services.minor_protection import evaluate_inbound_minor_protection
 
@@ -398,6 +399,18 @@ async def inbound_message(
         )
     except Exception as e:
         log.warning(f"message.inbound.memory_writer.spawn_failed err={e}")
+
+    # P2-04: AI extracts age and writes only high-confidence results.
+    try:
+        asyncio.create_task(
+            maybe_extract_and_write_age(
+                user_id=user_id,
+                content=data.content,
+                trace_id=trace_id,
+            )
+        )
+    except Exception as e:
+        log.warning(f"message.inbound.age_extraction.spawn_failed err={e}")
 
     # ── 构造响应并缓存幂等结果 ────────────────────────────
     elapsed = (time.time() - start_ts) * 1000
