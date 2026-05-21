@@ -1,0 +1,52 @@
+{
+  "rules": [
+    {
+      "name": "account_banned",
+      "enabled": true,
+      "condition": "is_banned == true",
+      "severity": "critical",
+      "description": "Account has been banned",
+      "cooldown_minutes": 60
+    },
+    {
+      "name": "account_offline",
+      "enabled": true,
+      "condition": "is_connected == false and is_banned == false",
+      "severity": "warning",
+      "description": "Account is offline",
+      "cooldown_minutes": 30
+    },
+    {
+      "name": "high_error_rate",
+      "enabled": true,
+      "condition": "error_rate > 0.5",
+      "severity": "error",
+      "description": "Account error rate exceeds 50%",
+      "cooldown_minutes": 15
+    },
+    {
+      "name": "low_success_rate",
+      "enabled": true,
+      "condition": "send_success_rate < 0.8 and is_connected == true",
+      "severity": "warning",
+      "description": "Account send success rate below 80%",
+      "cooldown_minutes": 20
+    },
+    {
+      "name": "long_offline_duration",
+      "enabled": true,
+      "condition": "is_connected == false and connection_duration > 3600",
+      "severity": "error",
+      "description": "Account offline for more than 1 hour",
+      "cooldown_minutes": 60
+    },
+    {
+      "name": "critical_error_rate",
+      "enabled": true,
+      "condition": "error_rate > 0.8",
+      "severity": "critical",
+      "description": "Account error rate exceeds 80%",
+      "cooldown_minutes": 10
+    }
+  ]
+}

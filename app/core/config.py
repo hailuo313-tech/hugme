@@ -148,5 +148,14 @@ class Settings(BaseSettings):
     SESSION_RECONNECT_INTERVAL: int = 30  # 重连间隔（秒）
     SESSION_MAX_RECONNECT_ATTEMPTS: int = 5  # 最大重连尝试次数
     SESSION_HEALTH_CHECK_INTERVAL: int = 60  # 健康检查间隔（秒）
+    # P1-20：账号监控配置
+    ACCOUNT_MONITOR_ENABLED: bool = False  # 是否启用账号监控
+    ACCOUNT_MONITOR_METRICS_PORT: int = 9091  # Prometheus metrics 端口
+    ACCOUNT_MONITOR_COLLECTION_INTERVAL: int = 60  # 数据收集间隔（秒）
+    ACCOUNT_MONITOR_HISTORY_RETENTION_HOURS: int = 24  # 历史数据保留时长（小时）
+    # P1-20：告警调度器配置
+    ALERT_SCHEDULER_ENABLED: bool = False  # 是否启用告警调度器
+    ALERT_SCHEDULER_CHECK_INTERVAL: int = 60  # 告警检查间隔（秒）
+    ALERT_RULES_PATH: str = "config/alert_rules.json"  # 告警规则配置文件路径
 
 settings = Settings()

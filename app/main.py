@@ -33,9 +33,12 @@ from api.ab_experiments import router as ab_experiments_router
 from api.open_api import router as open_api_router
 from api.geoip import router as geoip_router
 from api.mtproto_sessions import router as mtproto_sessions_router
+from api.monitoring import router as monitoring_router
 from core.database import init_db
 from core.config import settings
 from services.mtproto.session_manager import session_manager
+from services.account_monitor import account_monitor
+from services.alert_scheduler import alert_scheduler
 from services.silent_reactivation_scheduler import (
     start_scheduler as start_silent_reactivation_scheduler,
     shutdown_scheduler as shutdown_silent_reactivation_scheduler,
@@ -86,6 +89,14 @@ async def lifespan(app: FastAPI):
     if settings.SESSION_MANAGER_ENABLED:
         await session_manager.start()
         logger.info("Session manager started")
+    # P1-20: Start account monitor if enabled
+    if settings.ACCOUNT_MONITOR_ENABLED:
+        await account_monitor.start()
+        logger.info("Account monitor started")
+    # P1-20: Start alert scheduler if enabled
+    if settings.ALERT_SCHEDULER_ENABLED:
+        await alert_scheduler.start()
+        logger.info("Alert scheduler started")
     try:
         yield
     finally:
@@ -97,6 +108,14 @@ async def lifespan(app: FastAPI):
         if settings.SESSION_MANAGER_ENABLED:
             await session_manager.stop()
             logger.info("Session manager stopped")
+        # P1-20: Stop alert scheduler
+        if settings.ALERT_SCHEDULER_ENABLED:
+            await alert_scheduler.stop()
+            logger.info("Alert scheduler stopped")
+        # P1-20: Stop account monitor
+        if settings.ACCOUNT_MONITOR_ENABLED:
+            await account_monitor.stop()
+            logger.info("Account monitor stopped")
         logger.info("ERIS shutting down...")
 
 
@@ -177,6 +196,7 @@ app.include_router(scripts_router, prefix="/api/v1/scripts", tags=["scripts"])
 app.include_router(telegram_router, tags=["telegram"])
 app.include_router(telegram_accounts_router, tags=["telegram-accounts"])
 app.include_router(mtproto_sessions_router, tags=["mtproto-sessions"])
+app.include_router(monitoring_router, tags=["monitoring"])
 app.include_router(realtime_router, tags=["realtime"])
 app.include_router(llm_router, prefix="/api/v1", tags=["llm"])
 app.include_router(onboarding_router, prefix="/api/v1", tags=["onboarding"])
