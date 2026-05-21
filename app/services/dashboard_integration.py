@@ -95,16 +95,25 @@ def sort_conversations_for_dashboard(
 
 
 def sql_order_clause_for_dashboard() -> str:
-    """ORDER BY fragment aligned with ``sort_conversations_for_dashboard``."""
+    """ORDER BY fragment aligned with ``sort_conversations_for_dashboard``.
+    
+    P4-04: SAB 级别排序置顶 - 优先按 S→A→B→C→D 级别排序，然后按状态和时间。
+    """
     return """
             ORDER BY
+              CASE 
+                WHEN p.vip_level >= 3 THEN 0  -- S 级
+                WHEN p.vip_level >= 2 THEN 1  -- A 级
+                WHEN p.vip_level >= 1 THEN 2  -- B 级
+                ELSE 3                        -- C/D 级
+              END,
               CASE c.state
                 WHEN 'WAITING_OPERATOR' THEN 0
                 WHEN 'HUMAN_LOCKED' THEN 1
                 WHEN 'AI_ACTIVE' THEN 2
                 ELSE 3
               END,
-              COALESCE(p.vip_level, 0) DESC,
+              c.handoff_count DESC,
               COALESCE(c.last_message_at, c.created_at) DESC
     """
 

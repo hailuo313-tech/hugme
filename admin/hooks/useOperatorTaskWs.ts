@@ -10,19 +10,30 @@ export interface WsTaskAlert {
   at: number;
 }
 
+export interface WsUserUpgrade {
+  userId: string;
+  previousLevel: string;
+  newLevel: string;
+  reason: string;
+  upgradedAt: string;
+}
+
 interface UseOperatorTaskWsOptions {
   operatorId: string;
   enabled?: boolean;
   onTaskUpsert?: (task: { task_id: string; priority?: string }) => void;
+  onUserUpgraded?: (upgrade: WsUserUpgrade) => void; // P4-04: 用户升级回调
 }
 
 export function useOperatorTaskWs({
   operatorId,
   enabled = true,
   onTaskUpsert,
+  onUserUpgraded,
 }: UseOperatorTaskWsOptions) {
   const [connState, setConnState] = useState<WsConnState>("connecting");
   const [lastAlert, setLastAlert] = useState<WsTaskAlert | null>(null);
+  const [lastUpgrade, setLastUpgrade] = useState<WsUserUpgrade | null>(null); // P4-04
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
@@ -46,11 +57,30 @@ export function useOperatorTaskWs({
         const msg = JSON.parse(ev.data as string) as {
           type?: string;
           task?: { task_id?: string; priority?: string };
+          user_id?: string;
+          previous_level?: string;
+          new_level?: string;
+          reason?: string;
+          upgraded_at?: string;
         };
+        
         if (msg.type === "task.upsert" && msg.task?.task_id) {
           const pri = msg.task.priority || "P3";
           setLastAlert({ taskId: msg.task.task_id, priority: pri, at: Date.now() });
           onTaskUpsert?.({ task_id: msg.task.task_id, priority: pri });
+        }
+        
+        // P4-04: 处理用户升级事件
+        if (msg.type === "user.upgraded" && msg.user_id && msg.new_level) {
+          const upgrade: WsUserUpgrade = {
+            userId: msg.user_id,
+            previousLevel: msg.previous_level || "unknown",
+            newLevel: msg.new_level,
+            reason: msg.reason || "unknown",
+            upgradedAt: msg.upgraded_at || new Date().toISOString(),
+          };
+          setLastUpgrade(upgrade);
+          onUserUpgraded?.(upgrade);
         }
       } catch {
         /* ignore malformed */
@@ -66,7 +96,7 @@ export function useOperatorTaskWs({
     ws.onerror = () => {
       ws.close();
     };
-  }, [enabled, operatorId, onTaskUpsert]);
+  }, [enabled, operatorId, onTaskUpsert, onUserUpgraded]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -85,6 +115,7 @@ export function useOperatorTaskWs({
   }, [connect]);
 
   const dismissAlert = useCallback(() => setLastAlert(null), []);
+  const dismissUpgrade = useCallback(() => setLastUpgrade(null), []); // P4-04
 
-  return { connState, lastAlert, dismissAlert, reconnect: connect };
+  return { connState, lastAlert, dismissAlert, reconnect: connect, lastUpgrade, dismissUpgrade };
 }

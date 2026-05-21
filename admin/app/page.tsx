@@ -105,6 +105,23 @@ const STATE_OPTIONS = [
   { value: "CLOSED", label: "已关闭" },
 ];
 
+// P4-04: SAB 级别排序权重
+const LEVEL_PRIORITY: Record<string, number> = {
+  "S": 0,
+  "A": 1,
+  "B": 2,
+  "C": 3,
+  "D": 4,
+};
+
+// P4-04: 状态排序权重
+const STATE_PRIORITY: Record<string, number> = {
+  "WAITING_OPERATOR": 0,
+  "HUMAN_LOCKED": 1,
+  "AI_ACTIVE": 2,
+  "CLOSED": 3,
+};
+
 const CHANNEL_OPTIONS = [
   { value: "", label: "全部渠道" },
   { value: "telegram", label: "Telegram" },
@@ -149,6 +166,53 @@ function riskColor(r: string | null): string {
   }
 }
 
+// P4-04: SAB 级别排序函数
+function sortConversationsByLevelAndState(
+  items: ConversationRow[],
+  priorityUserIds?: Set<string>
+): ConversationRow[] {
+  return [...items].sort((a, b) => {
+    // P4-04: 优先处理置顶的 S 级用户
+    if (priorityUserIds) {
+      const aIsPriority = priorityUserIds.has(a.user_id || "");
+      const bIsPriority = priorityUserIds.has(b.user_id || "");
+      if (aIsPriority && !bIsPriority) return -1;
+      if (!aIsPriority && bIsPriority) return 1;
+    }
+    
+    // 获取等级优先级
+    const getLevelPriority = (row: ConversationRow) => {
+      const vip = row.vip_level || 0;
+      if (vip >= 3) return LEVEL_PRIORITY["S"];
+      if (vip >= 2) return LEVEL_PRIORITY["A"];
+      if (vip >= 1) return LEVEL_PRIORITY["B"];
+      return LEVEL_PRIORITY["C"];
+    };
+    
+    // 获取状态优先级
+    const getStatePriority = (row: ConversationRow) => {
+      return STATE_PRIORITY[row.state || ""] || 99;
+    };
+    
+    // 1. 按等级排序 (S→A→B→C→D)
+    const levelDiff = getLevelPriority(a) - getLevelPriority(b);
+    if (levelDiff !== 0) return levelDiff;
+    
+    // 2. 按状态排序 (WAITING_OPERATOR→HUMAN_LOCKED→AI_ACTIVE→CLOSED)
+    const stateDiff = getStatePriority(a) - getStatePriority(b);
+    if (stateDiff !== 0) return stateDiff;
+    
+    // 3. 按 handoff_count 降序
+    const handoffDiff = (b.handoff_count || 0) - (a.handoff_count || 0);
+    if (handoffDiff !== 0) return handoffDiff;
+    
+    // 4. 按最后消息时间降序
+    const timeA = new Date(a.last_message_at || a.created_at || 0).getTime();
+    const timeB = new Date(b.last_message_at || b.created_at || 0).getTime();
+    return timeB - timeA;
+  });
+}
+
 // ── 主页面（内部组件，由 AuthGate 传入 operator） ─────────────────
 
 function DashboardContent({ operator }: { operator: Operator }) {
@@ -177,6 +241,32 @@ function DashboardContent({ operator }: { operator: Operator }) {
   const [translationLoading, setTranslationLoading] = useState(false);
   const [translationError, setTranslationError] = useState<string | null>(null);
 
+  // P4-04: S 级用户置顶机制
+  const [priorityUserIds, setPriorityUserIds] = useState<Set<string>>(new Set());
+  const [priorityTimer, setPriorityTimer] = useState<NodeJS.Timeout | null>(null);
+
+  // P4-04: 处理 S 级用户置顶
+  const handlePriorityUser = useCallback((userId: string) => {
+    setPriorityUserIds((prev) => {
+      const newSet = new Set(prev);
+      newSet.add(userId);
+      return newSet;
+    });
+
+    // 3 秒后移除置顶状态
+    if (priorityTimer) {
+      clearTimeout(priorityTimer);
+    }
+    const timer = setTimeout(() => {
+      setPriorityUserIds((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(userId);
+        return newSet;
+      });
+    }, 3000);
+    setPriorityTimer(timer);
+  }, [priorityTimer]);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -191,7 +281,9 @@ function DashboardContent({ operator }: { operator: Operator }) {
       const resp = await apiFetch<ListResponse>(
         `/admin/conversations?${qs.toString()}`
       );
-      setItems(resp.items);
+      // P4-04: 应用 SAB 级别排序，包含置顶用户处理
+      const sortedItems = sortConversationsByLevelAndState(resp.items, priorityUserIds);
+      setItems(sortedItems);
       setTotal(resp.total);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -200,18 +292,26 @@ function DashboardContent({ operator }: { operator: Operator }) {
     } finally {
       setLoading(false);
     }
-  }, [page, state, channel, appliedSearch]);
+  }, [page, state, channel, appliedSearch, priorityUserIds]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  const { connState, lastAlert, dismissAlert, reconnect } = useOperatorTaskWs({
+  const { connState, lastAlert, dismissAlert, reconnect, lastUpgrade, dismissUpgrade } = useOperatorTaskWs({
     operatorId: operator.operator_id,
     onTaskUpsert: (task) => {
       if (task.priority === "P0" || task.priority === "P1") {
         setState("WAITING_OPERATOR");
         setPage(1);
+      }
+    },
+    // P4-04: 处理用户升级事件，S 级用户 3 秒置顶
+    onUserUpgraded: (upgrade) => {
+      if (upgrade.newLevel === "S") {
+        handlePriorityUser(upgrade.userId);
+        // 重新加载列表以应用新的排序
+        load();
       }
     },
   });
@@ -394,6 +494,27 @@ function DashboardContent({ operator }: { operator: Operator }) {
           </button>
         </div>
       </header>
+
+      {/* P4-04: S 级用户升级通知横幅 */}
+      {lastUpgrade && lastUpgrade.newLevel === "S" && (
+        <div className="bg-rose-900/40 border border-rose-700 text-rose-200 px-6 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🎉</span>
+            <div>
+              <div className="font-semibold">用户升级为 S 级</div>
+              <div className="text-sm text-rose-300">
+                用户从 {lastUpgrade.previousLevel} 级升级到 S 级，已自动置顶 3 秒
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={dismissUpgrade}
+            className="text-rose-300 hover:text-white transition"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Main */}
       <main className="p-8 max-w-7xl mx-auto">
