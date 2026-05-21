@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "redlines": [
+    {
+      "id": "sexual_minors",
+      "category": "sexual_minors",
+      "reason": "redline:sexual_minors",
+      "patterns": ["child\\s*porn", "child\\s*sexual", "csam", "sexual\\s+minor", "未成年.*裸", "儿童.*性"]
+    },
+    {
+      "id": "jailbreak",
+      "category": "jailbreak",
+      "reason": "redline:jailbreak",
+      "patterns": ["ignore\\s+(all\\s+)?(previous|above)\\s+instructions", "jailbreak", "dan\\s+mode", "忽略.*规则", "无视.*规则"]
+    },
+    {
+      "id": "weapon_or_harm",
+      "category": "weapon_or_harm",
+      "reason": "redline:weapon_or_harm",
+      "patterns": ["how\\s+to\\s+make\\s+(a\\s+)?bomb", "make\\s+meth", "weapon\\s+instructions", "炸弹.*制作", "制毒"]
+    },
+    {
+      "id": "non_consensual",
+      "category": "non_consensual",
+      "reason": "redline:non_consensual",
+      "patterns": ["non-?consensual", "blackmail.*photo", "forced\\s+sexual", "偷拍", "胁迫"]
+    },
+    {
+      "id": "illegal_request",
+      "category": "illegal_request",
+      "reason": "redline:illegal_request",
+      "patterns": ["credit\\s+card\\s+fraud", "phishing\\s+kit", "steal\\s+password", "诈骗教程", "盗号"]
+    }
+  ]
+}
