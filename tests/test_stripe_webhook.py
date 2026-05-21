@@ -127,6 +127,52 @@ async def test_handle_event_checkout_completed_happy_path():
     assert session.execute.await_count >= 2
 
 
+async def test_handle_event_checkout_completed_recalculates_paid_user_to_s():
+    """P2-10: paid T1 user with >= $200 lifetime spend recalculates to S."""
+    session = _make_session_mock(
+        execute_results=[
+            ("user-uuid",),  # UPDATE orders ... RETURNING user_id
+            (True, False),  # minor protection user row
+            None,  # user_profiles vip upsert
+            (20000,),  # paid lifetime spend in cents
+            (1, {"country_code": "US"}, "B", None),  # profile signals
+            None,  # user_profiles level/chat_route update
+            None,  # _mark_result
+        ]
+    )
+    event = {
+        "id": "evt_paid_s",
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "id": "cs_test_s",
+                "metadata": {"order_id": "ord-uuid", "user_id": "user-uuid"},
+            }
+        },
+    }
+
+    with patch.object(sw, "notify_user_upgrade", new=AsyncMock()) as notify:
+        out = await sw.handle_event(session, event)
+
+    assert out == "processed"
+    level_updates = [
+        call.args[1]
+        for call in session.execute.await_args_list
+        if len(call.args) > 1
+        and isinstance(call.args[1], dict)
+        and call.args[1].get("user_level") == "S"
+    ]
+    assert level_updates
+    assert level_updates[0]["chat_route"] == "manual_premium"
+    assert level_updates[0]["lifetime_spend_usd"] == 200.0
+    notify.assert_awaited_once_with(
+        user_id="user-uuid",
+        previous_level="B",
+        new_level="S",
+        reason="payment_completed",
+    )
+
+
 async def test_handle_event_checkout_completed_falls_back_to_session_id():
     """metadata 里没 order_id 时按 provider_order_id 反查 orders。"""
     # 1) SELECT id FROM orders WHERE provider_order_id → ("ord-uuid",)

@@ -18,6 +18,14 @@ Level = Literal["S", "A", "B", "C", "D"]
 ChatRoute = Literal["manual_premium", "ai_assisted", "ai_auto"]
 CountryTier = Literal["T1", "T2", "T3", "unknown"]
 
+CHAT_ROUTE_BY_LEVEL: dict[Level, ChatRoute] = {
+    "S": "manual_premium",
+    "A": "manual_premium",
+    "B": "ai_assisted",
+    "C": "ai_auto",
+    "D": "ai_auto",
+}
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_T1_PATH = _REPO_ROOT / "config" / "t1_countries.json"
 DEFAULT_THRESHOLDS_PATH = _REPO_ROOT / "config" / "level_thresholds.json"
@@ -154,11 +162,7 @@ def country_tier(
 
 
 def level_to_chat_route(level: Level) -> ChatRoute:
-    if level in ("S", "A"):
-        return "manual_premium"
-    if level == "B":
-        return "ai_assisted"
-    return "ai_auto"
+    return CHAT_ROUTE_BY_LEVEL[level]
 
 
 def calc_user_level(
