@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiFetch, Operator, LOGIN_PATH } from "@/lib/auth";
+import { apiFetch, Operator } from "@/lib/auth";
 import AuthGate from "@/components/AuthGate";
 
 // ── 类型定义 ─────────────────────────────────────────────────────
@@ -15,6 +15,7 @@ interface TelegramAccount {
   username: string | null;
   user_id: number | null;
   is_connected: boolean;
+  is_bot: boolean;
   last_connected_at: string | null;
   last_error_at: string | null;
   error_message: string | null;
