@@ -14,6 +14,8 @@ def test_admin_root_is_home_dashboard() -> None:
     assert '<h1 className="mb-2 text-2xl font-semibold">总后台</h1>' in page
     assert 'href="/admin/conversations"' in page
     assert 'href="/admin/operator-dashboard"' in page
+    assert 'href="/admin/telegram-accounts"' in page
+    assert 'title: "TG账号"' in page
     assert 'title: "会话总览"' in page
 
 
