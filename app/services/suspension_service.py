@@ -3,7 +3,7 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from loguru import logger
 from sqlalchemy import text
@@ -403,7 +403,7 @@ async def suspend_sa_message(
             }
 
         # Create new handoff task
-        new_task_id = str(UUID())  # Generate new UUID
+        new_task_id = str(uuid4())
 
         await db.execute(
             text("""
