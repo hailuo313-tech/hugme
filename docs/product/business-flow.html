@@ -489,7 +489,7 @@ const TASKS = [
   { id:"P2-02", phase:"02", owner:"devin", w:1, week:"W3", dep:"—", desc:"GeoIP 服务封装（MaxMind/ip-api）", acc:"抽样准确率 ≥95%", baseline:true },
   { id:"P2-03", phase:"02", owner:"codex", w:1, week:"W3", dep:"H-03", desc:"D 级探测触发器（预留③探测话术匹配接口）", acc:"3 轮内触发补全", baseline:true },
   { id:"P2-04", phase:"02", owner:"codex", w:1.5, week:"W4", dep:"P3-12", desc:"AI 提取年龄 + 置信度写入", acc:"低置信不写入", baseline:true },
-  { id:"P2-05", phase:"02", owner:"codex", w:1, week:"W3", dep:"P2-01,H-02", desc:"calcUserLevel() 纯函数", acc:"正确返回 S/A/B/C/D" },
+  { id:"P2-05", phase:"02", owner:"codex", w:1, week:"W3", dep:"P2-01,H-02", desc:"calcUserLevel() 纯函数", acc:"正确返回 S/A/B/C/D", baseline:true },
   { id:"P2-06", phase:"02", owner:"codex", w:0.5, week:"W3", dep:"P2-05", desc:"分级阈值外部化配置", acc:".env 改阈值即生效" },
   { id:"P2-07", phase:"02", owner:"codex", w:0.5, week:"W3", dep:"P1-02", desc:"level_change_logs 审计", acc:"每次变更有记录", baseline:true },
   { id:"P2-08", phase:"02", owner:"codex", w:2, week:"W4", dep:"P2-05,06", desc:"level_engine.test.ts ≥20 case", acc:"CI 全绿" },
