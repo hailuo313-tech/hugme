@@ -8,9 +8,8 @@ import {
   Operator,
 } from "@/lib/auth";
 import AuthGate from "@/components/AuthGate";
-import FeedbackForm from "@/components/FeedbackForm";
 import OperatorWsStatus from "@/components/OperatorWsStatus";
-import { useOperatorTaskWs } from "@/hooks/useOperatorTaskWs";
+import { useOperatorTaskWs, type WsUserAlert } from "@/hooks/useOperatorTaskWs";
 import { levelBadgeClass, rowPriorityClass, vipToLevelTier } from "@/lib/priorityDisplay";
 
 // ── 类型 ──────────────────────────────────────────────────────────
@@ -35,6 +34,26 @@ interface ConversationRow {
   character_id: string | null;
   character_name: string | null;
 }
+
+interface ScriptSuggestion {
+  id?: string;
+  content: string;
+  match_score?: number;
+  script_type?: string;
+}
+
+interface ScriptSuggestionContext {
+  language?: string | null;
+  loneliness_score?: number | null;
+  risk_level?: string | null;
+  character_id?: string | null;
+  relationship_stage?: string | null;
+}
+
+type AudioWindow = typeof window & {
+  webkitAudioContext?: typeof AudioContext;
+  operatorWs?: WebSocket;
+};
 
 interface ListResponse {
   items: ConversationRow[];
@@ -242,23 +261,16 @@ function DashboardContent({ operator }: { operator: Operator }) {
   const [translationError, setTranslationError] = useState<string | null>(null);
 
   // P4-05: 话术库推荐话术
-  const [scriptSuggestions, setScriptSuggestions] = useState<any[] | null>(null);
+  const [scriptSuggestions, setScriptSuggestions] = useState<ScriptSuggestion[] | null>(null);
   const [scriptLoading, setScriptLoading] = useState(false);
   const [scriptError, setScriptError] = useState<string | null>(null);
-  const [scriptPanelOpen, setScriptPanelOpen] = useState(true);
 
   // P4-04: S 级用户置顶机制
   const [priorityUserIds, setPriorityUserIds] = useState<Set<string>>(new Set());
   const [priorityTimer, setPriorityTimer] = useState<NodeJS.Timeout | null>(null);
 
   // P4-06: S/A 全屏弹窗 + 声音提醒
-  const [alertModal, setAlertModal] = useState<{
-    userId: string;
-    level: string;
-    nickname: string | null;
-    externalId: string | null;
-    messageId: string;
-  } | null>(null);
+  const [alertModal, setAlertModal] = useState<WsUserAlert | null>(null);
   const [audioEnabled, setAudioEnabled] = useState(true);
 
   // P4-04: 处理 S 级用户置顶
@@ -289,7 +301,9 @@ function DashboardContent({ operator }: { operator: Operator }) {
     
     try {
       // 使用 Web Audio API 生成提示音
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const audioCtor = window.AudioContext || (window as AudioWindow).webkitAudioContext;
+      if (!audioCtor) return;
+      const audioContext = new audioCtor();
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
       
@@ -313,13 +327,7 @@ function DashboardContent({ operator }: { operator: Operator }) {
   }, [audioEnabled]);
 
   // P4-06: 处理 S/A 级用户弹窗
-  const handleUserAlert = useCallback((alert: {
-    userId: string;
-    level: string;
-    nickname: string | null;
-    externalId: string | null;
-    messageId: string;
-  }) => {
+  const handleUserAlert = useCallback((alert: WsUserAlert) => {
     // 只对 S 和 A 级用户显示弹窗
     if (alert.level !== 'S' && alert.level !== 'A') return;
     
@@ -333,7 +341,7 @@ function DashboardContent({ operator }: { operator: Operator }) {
     
     try {
       // 发送 ACK 确认
-      const ws = (window as any).operatorWs;
+      const ws = (window as AudioWindow).operatorWs;
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
           type: 'message.ack',
@@ -351,7 +359,7 @@ function DashboardContent({ operator }: { operator: Operator }) {
     }
     
     setAlertModal(null);
-  }, [alertModal, items]);
+  }, [alertModal, items, openDetail]);
 
   // P4-06: 忽略弹窗
   const handleAlertDismiss = useCallback(() => {
@@ -359,7 +367,7 @@ function DashboardContent({ operator }: { operator: Operator }) {
   }, []);
 
   // P4-05: 获取话术库推荐话术
-  const loadScriptSuggestions = useCallback(async (conversationData: any) => {
+  const loadScriptSuggestions = useCallback(async (conversationData: ScriptSuggestionContext | null) => {
     if (!conversationData) return;
     
     setScriptLoading(true);
@@ -379,7 +387,7 @@ function DashboardContent({ operator }: { operator: Operator }) {
         body.relationship_stage = conversationData.relationship_stage;
       }
       
-      const resp = await apiFetch<{ items: any[] }>("/scripts/suggest", {
+      const resp = await apiFetch<{ items: ScriptSuggestion[] }>("/scripts/suggest", {
         method: "POST",
         body: JSON.stringify(body),
       });

@@ -40,7 +40,7 @@ export default function OperatorWsStatus({
           }`}
         />
         <span>{connLabel}</span>
-        {connState === "disconnected" && (
+        {(connState === "disconnected" || connState === "reconnecting") && (
           <button
             type="button"
             onClick={onReconnect}

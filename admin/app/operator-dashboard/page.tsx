@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { apiFetch, Operator, LOGIN_PATH } from "@/lib/auth";
 import AuthGate from "@/components/AuthGate";
 
