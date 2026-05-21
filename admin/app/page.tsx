@@ -251,6 +251,16 @@ function DashboardContent({ operator }: { operator: Operator }) {
   const [priorityUserIds, setPriorityUserIds] = useState<Set<string>>(new Set());
   const [priorityTimer, setPriorityTimer] = useState<NodeJS.Timeout | null>(null);
 
+  // P4-06: S/A 全屏弹窗 + 声音提醒
+  const [alertModal, setAlertModal] = useState<{
+    userId: string;
+    level: string;
+    nickname: string | null;
+    externalId: string | null;
+    messageId: string;
+  } | null>(null);
+  const [audioEnabled, setAudioEnabled] = useState(true);
+
   // P4-04: 处理 S 级用户置顶
   const handlePriorityUser = useCallback((userId: string) => {
     setPriorityUserIds((prev) => {
@@ -272,6 +282,81 @@ function DashboardContent({ operator }: { operator: Operator }) {
     }, 3000);
     setPriorityTimer(timer);
   }, [priorityTimer]);
+
+  // P4-06: 播放提醒声音
+  const playAlertSound = useCallback(() => {
+    if (!audioEnabled) return;
+    
+    try {
+      // 使用 Web Audio API 生成提示音
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      
+      oscillator.frequency.value = 800; // 频率 800Hz
+      oscillator.type = 'sine';
+      gainNode.gain.value = 0.3; // 音量
+      
+      oscillator.start();
+      
+      // 播放 0.5 秒
+      setTimeout(() => {
+        oscillator.stop();
+        audioContext.close();
+      }, 500);
+    } catch (e) {
+      console.error('Failed to play alert sound:', e);
+    }
+  }, [audioEnabled]);
+
+  // P4-06: 处理 S/A 级用户弹窗
+  const handleUserAlert = useCallback((alert: {
+    userId: string;
+    level: string;
+    nickname: string | null;
+    externalId: string | null;
+    messageId: string;
+  }) => {
+    // 只对 S 和 A 级用户显示弹窗
+    if (alert.level !== 'S' && alert.level !== 'A') return;
+    
+    setAlertModal(alert);
+    playAlertSound();
+  }, [playAlertSound]);
+
+  // P4-06: 确认弹窗并发送 ACK
+  const handleAlertConfirm = useCallback(async () => {
+    if (!alertModal) return;
+    
+    try {
+      // 发送 ACK 确认
+      const ws = (window as any).operatorWs;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'message.ack',
+          message_id: alertModal.messageId
+        }));
+      }
+      
+      // 查找对应的会话并打开详情
+      const targetConversation = items.find(item => item.user_id === alertModal.userId);
+      if (targetConversation) {
+        await openDetail(targetConversation.conversation_id);
+      }
+    } catch (e) {
+      console.error('Failed to send ACK:', e);
+    }
+    
+    setAlertModal(null);
+  }, [alertModal, items]);
+
+  // P4-06: 忽略弹窗
+  const handleAlertDismiss = useCallback(() => {
+    setAlertModal(null);
+  }, []);
 
   // P4-05: 获取话术库推荐话术
   const loadScriptSuggestions = useCallback(async (conversationData: any) => {
@@ -338,7 +423,7 @@ function DashboardContent({ operator }: { operator: Operator }) {
     load();
   }, [load]);
 
-  const { connState, lastAlert, dismissAlert, reconnect, lastUpgrade, dismissUpgrade } = useOperatorTaskWs({
+  const { connState, lastAlert, dismissAlert, reconnect, lastUpgrade, dismissUpgrade, lastAlertModal, dismissAlertModal } = useOperatorTaskWs({
     operatorId: operator.operator_id,
     onTaskUpsert: (task) => {
       if (task.priority === "P0" || task.priority === "P1") {
@@ -353,6 +438,10 @@ function DashboardContent({ operator }: { operator: Operator }) {
         // 重新加载列表以应用新的排序
         load();
       }
+    },
+    // P4-06: 处理 S/A 级用户提醒事件
+    onUserAlert: (alert) => {
+      handleUserAlert(alert);
     },
   });
 
@@ -523,6 +612,14 @@ function DashboardContent({ operator }: { operator: Operator }) {
             onDismissAlert={dismissAlert}
             onReconnect={reconnect}
           />
+          {/* P4-06: 声音提醒开关 */}
+          <button
+            onClick={() => setAudioEnabled(!audioEnabled)}
+            className={`text-sm transition ${audioEnabled ? 'text-violet-300' : 'text-slate-500'}`}
+            title={audioEnabled ? "声音提醒已开启" : "声音提醒已关闭"}
+          >
+            {audioEnabled ? '🔊' : '🔇'}
+          </button>
           <span className="text-sm text-slate-300">
             {operator.display_name || operator.username}
             <span className="ml-2 text-xs text-slate-500 bg-slate-700 px-2 py-0.5 rounded-full">
@@ -556,6 +653,54 @@ function DashboardContent({ operator }: { operator: Operator }) {
           >
             ✕
           </button>
+        </div>
+      )}
+
+      {/* P4-06: S/A 全屏弹窗 */}
+      {alertModal && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 backdrop-blur-sm">
+          <div className="bg-slate-800 border-2 border-violet-500 rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
+            <div className="text-center">
+              <div className="text-6xl mb-4">
+                {alertModal.level === 'S' ? '⭐' : '🔔'}
+              </div>
+              <h2 className="text-2xl font-bold text-white mb-2">
+                {alertModal.level === 'S' ? 'S 级用户提醒' : 'A 级用户提醒'}
+              </h2>
+              <div className="bg-slate-900 rounded-lg p-4 mb-6">
+                <div className="text-slate-300 mb-2">
+                  <span className="text-slate-500">用户：</span>
+                  <span className="text-white font-medium">
+                    {alertModal.nickname || alertModal.externalId || '未知'}
+                  </span>
+                </div>
+                <div className="text-slate-300 mb-2">
+                  <span className="text-slate-500">等级：</span>
+                  <span className={`font-bold ${alertModal.level === 'S' ? 'text-yellow-400' : 'text-violet-400'}`}>
+                    {alertModal.level} 级
+                  </span>
+                </div>
+                <div className="text-slate-300">
+                  <span className="text-slate-500">原因：</span>
+                  <span className="text-slate-200">{alertModal.reason}</span>
+                </div>
+              </div>
+              <div className="flex gap-3 justify-center">
+                <button
+                  onClick={handleAlertDismiss}
+                  className="px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition font-medium"
+                >
+                  稍后处理
+                </button>
+                <button
+                  onClick={handleAlertConfirm}
+                  className="px-6 py-3 bg-violet-600 hover:bg-violet-500 text-white rounded-lg transition font-medium"
+                >
+                  立即查看
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
