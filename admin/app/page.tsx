@@ -104,6 +104,13 @@ function AdminHome({ operator }: { operator: Operator }) {
         status: "config",
       },
       {
+        title: "TG账号",
+        desc: "管理真人 Telegram 账号、连接状态与会话凭证",
+        href: "/admin/telegram-accounts",
+        metric: "Telegram",
+        status: "config",
+      },
+      {
         title: "反馈",
         desc: "处理运营反馈、问题归档与验收记录",
         href: "/admin/feedback",
@@ -168,6 +175,12 @@ function AdminHome({ operator }: { operator: Operator }) {
               >
                 角色
               </a>
+              <a
+                href="/admin/telegram-accounts"
+                className="rounded-md px-3 py-1 text-sm text-slate-400 transition hover:bg-slate-800 hover:text-white"
+              >
+                TG账号
+              </a>
             </nav>
           </div>
           <div className="flex items-center gap-4">
@@ -192,7 +205,7 @@ function AdminHome({ operator }: { operator: Operator }) {
           <div>
             <h1 className="mb-2 text-2xl font-semibold">总后台</h1>
             <p className="text-sm text-slate-400">
-              从这里进入会话、坐席、话术、角色、记忆、推送和验收模块。
+              从这里进入会话、坐席、话术、角色、记忆、推送、TG账号和验收模块。
             </p>
           </div>
           <a
@@ -210,7 +223,7 @@ function AdminHome({ operator }: { operator: Operator }) {
         )}
 
         <section className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-3">
-          <SummaryBlock label="核心入口" value="9 个模块" />
+          <SummaryBlock label="核心入口" value="10 个模块" />
           <SummaryBlock label="会话数据" value={conversationTotal === null ? "加载中" : `${conversationTotal} 条`} />
           <SummaryBlock label="当前身份" value={operator.role} />
         </section>
