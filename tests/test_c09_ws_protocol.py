@@ -87,9 +87,13 @@ def test_server_event_type_count():
     assert len(SERVER_EVENT_TYPES) == 6
 
 
+def test_client_event_type_count():
+    assert len(CLIENT_EVENT_TYPES) == 3
+
+
 def test_task_required_field_count():
     assert len(TASK_REQUIRED_FIELDS) == 14
 
 
 def test_client_event_types():
-    assert CLIENT_EVENT_TYPES == {"ping", "task.ack"}
+    assert CLIENT_EVENT_TYPES == {"ping", "task.ack", "message.ack"}

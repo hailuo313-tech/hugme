@@ -8,9 +8,8 @@ import {
   Operator,
 } from "@/lib/auth";
 import AuthGate from "@/components/AuthGate";
-import FeedbackForm from "@/components/FeedbackForm";
 import OperatorWsStatus from "@/components/OperatorWsStatus";
-import { useOperatorTaskWs } from "@/hooks/useOperatorTaskWs";
+import { useOperatorTaskWs, type WsUserAlert } from "@/hooks/useOperatorTaskWs";
 import { levelBadgeClass, rowPriorityClass, vipToLevelTier } from "@/lib/priorityDisplay";
 
 // ── 类型 ──────────────────────────────────────────────────────────
@@ -35,6 +34,26 @@ interface ConversationRow {
   character_id: string | null;
   character_name: string | null;
 }
+
+interface ScriptSuggestion {
+  id?: string;
+  content: string;
+  match_score?: number;
+  script_type?: string;
+}
+
+interface ScriptSuggestionContext {
+  language?: string | null;
+  loneliness_score?: number | null;
+  risk_level?: string | null;
+  character_id?: string | null;
+  relationship_stage?: string | null;
+}
+
+type AudioWindow = typeof window & {
+  webkitAudioContext?: typeof AudioContext;
+  operatorWs?: WebSocket;
+};
 
 interface ListResponse {
   items: ConversationRow[];
@@ -105,6 +124,23 @@ const STATE_OPTIONS = [
   { value: "CLOSED", label: "已关闭" },
 ];
 
+// P4-04: SAB 级别排序权重
+const LEVEL_PRIORITY: Record<string, number> = {
+  "S": 0,
+  "A": 1,
+  "B": 2,
+  "C": 3,
+  "D": 4,
+};
+
+// P4-04: 状态排序权重
+const STATE_PRIORITY: Record<string, number> = {
+  "WAITING_OPERATOR": 0,
+  "HUMAN_LOCKED": 1,
+  "AI_ACTIVE": 2,
+  "CLOSED": 3,
+};
+
 const CHANNEL_OPTIONS = [
   { value: "", label: "全部渠道" },
   { value: "telegram", label: "Telegram" },
@@ -149,6 +185,53 @@ function riskColor(r: string | null): string {
   }
 }
 
+// P4-04: SAB 级别排序函数
+function sortConversationsByLevelAndState(
+  items: ConversationRow[],
+  priorityUserIds?: Set<string>
+): ConversationRow[] {
+  return [...items].sort((a, b) => {
+    // P4-04: 优先处理置顶的 S 级用户
+    if (priorityUserIds) {
+      const aIsPriority = priorityUserIds.has(a.user_id || "");
+      const bIsPriority = priorityUserIds.has(b.user_id || "");
+      if (aIsPriority && !bIsPriority) return -1;
+      if (!aIsPriority && bIsPriority) return 1;
+    }
+    
+    // 获取等级优先级
+    const getLevelPriority = (row: ConversationRow) => {
+      const vip = row.vip_level || 0;
+      if (vip >= 3) return LEVEL_PRIORITY["S"];
+      if (vip >= 2) return LEVEL_PRIORITY["A"];
+      if (vip >= 1) return LEVEL_PRIORITY["B"];
+      return LEVEL_PRIORITY["C"];
+    };
+    
+    // 获取状态优先级
+    const getStatePriority = (row: ConversationRow) => {
+      return STATE_PRIORITY[row.state || ""] || 99;
+    };
+    
+    // 1. 按等级排序 (S→A→B→C→D)
+    const levelDiff = getLevelPriority(a) - getLevelPriority(b);
+    if (levelDiff !== 0) return levelDiff;
+    
+    // 2. 按状态排序 (WAITING_OPERATOR→HUMAN_LOCKED→AI_ACTIVE→CLOSED)
+    const stateDiff = getStatePriority(a) - getStatePriority(b);
+    if (stateDiff !== 0) return stateDiff;
+    
+    // 3. 按 handoff_count 降序
+    const handoffDiff = (b.handoff_count || 0) - (a.handoff_count || 0);
+    if (handoffDiff !== 0) return handoffDiff;
+    
+    // 4. 按最后消息时间降序
+    const timeA = new Date(a.last_message_at || a.created_at || 0).getTime();
+    const timeB = new Date(b.last_message_at || b.created_at || 0).getTime();
+    return timeB - timeA;
+  });
+}
+
 // ── 主页面（内部组件，由 AuthGate 传入 operator） ─────────────────
 
 function DashboardContent({ operator }: { operator: Operator }) {
@@ -177,6 +260,146 @@ function DashboardContent({ operator }: { operator: Operator }) {
   const [translationLoading, setTranslationLoading] = useState(false);
   const [translationError, setTranslationError] = useState<string | null>(null);
 
+  // P4-05: 话术库推荐话术
+  const [scriptSuggestions, setScriptSuggestions] = useState<ScriptSuggestion[] | null>(null);
+  const [scriptLoading, setScriptLoading] = useState(false);
+  const [scriptError, setScriptError] = useState<string | null>(null);
+
+  // P4-04: S 级用户置顶机制
+  const [priorityUserIds, setPriorityUserIds] = useState<Set<string>>(new Set());
+  const [priorityTimer, setPriorityTimer] = useState<NodeJS.Timeout | null>(null);
+
+  // P4-06: S/A 全屏弹窗 + 声音提醒
+  const [alertModal, setAlertModal] = useState<WsUserAlert | null>(null);
+  const [audioEnabled, setAudioEnabled] = useState(true);
+
+  // P4-04: 处理 S 级用户置顶
+  const handlePriorityUser = useCallback((userId: string) => {
+    setPriorityUserIds((prev) => {
+      const newSet = new Set(prev);
+      newSet.add(userId);
+      return newSet;
+    });
+
+    // 3 秒后移除置顶状态
+    if (priorityTimer) {
+      clearTimeout(priorityTimer);
+    }
+    const timer = setTimeout(() => {
+      setPriorityUserIds((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(userId);
+        return newSet;
+      });
+    }, 3000);
+    setPriorityTimer(timer);
+  }, [priorityTimer]);
+
+  // P4-06: 播放提醒声音
+  const playAlertSound = useCallback(() => {
+    if (!audioEnabled) return;
+    
+    try {
+      // 使用 Web Audio API 生成提示音
+      const audioCtor = window.AudioContext || (window as AudioWindow).webkitAudioContext;
+      if (!audioCtor) return;
+      const audioContext = new audioCtor();
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      
+      oscillator.frequency.value = 800; // 频率 800Hz
+      oscillator.type = 'sine';
+      gainNode.gain.value = 0.3; // 音量
+      
+      oscillator.start();
+      
+      // 播放 0.5 秒
+      setTimeout(() => {
+        oscillator.stop();
+        audioContext.close();
+      }, 500);
+    } catch (e) {
+      console.error('Failed to play alert sound:', e);
+    }
+  }, [audioEnabled]);
+
+  // P4-06: 处理 S/A 级用户弹窗
+  const handleUserAlert = useCallback((alert: WsUserAlert) => {
+    // 只对 S 和 A 级用户显示弹窗
+    if (alert.level !== 'S' && alert.level !== 'A') return;
+    
+    setAlertModal(alert);
+    playAlertSound();
+  }, [playAlertSound]);
+
+  // P4-06: 确认弹窗并发送 ACK
+  const handleAlertConfirm = useCallback(async () => {
+    if (!alertModal) return;
+    
+    try {
+      // 发送 ACK 确认
+      const ws = (window as AudioWindow).operatorWs;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'message.ack',
+          message_id: alertModal.messageId
+        }));
+      }
+      
+      // 查找对应的会话并打开详情
+      const targetConversation = items.find(item => item.user_id === alertModal.userId);
+      if (targetConversation) {
+        await openDetail(targetConversation.conversation_id);
+      }
+    } catch (e) {
+      console.error('Failed to send ACK:', e);
+    }
+    
+    setAlertModal(null);
+  }, [alertModal, items, openDetail]);
+
+  // P4-06: 忽略弹窗
+  const handleAlertDismiss = useCallback(() => {
+    setAlertModal(null);
+  }, []);
+
+  // P4-05: 获取话术库推荐话术
+  const loadScriptSuggestions = useCallback(async (conversationData: ScriptSuggestionContext | null) => {
+    if (!conversationData) return;
+    
+    setScriptLoading(true);
+    setScriptError(null);
+    try {
+      const body: Record<string, unknown> = {
+        language: conversationData.language || "en",
+        loneliness_score: conversationData.loneliness_score || 50,
+        risk_level: conversationData.risk_level || "low",
+        limit: 5,
+      };
+      
+      if (conversationData.character_id) {
+        body.character_id = conversationData.character_id;
+      }
+      if (conversationData.relationship_stage) {
+        body.relationship_stage = conversationData.relationship_stage;
+      }
+      
+      const resp = await apiFetch<{ items: ScriptSuggestion[] }>("/scripts/suggest", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      setScriptSuggestions(resp.items || []);
+    } catch (e) {
+      setScriptError(e instanceof Error ? e.message : String(e));
+      setScriptSuggestions([]);
+    } finally {
+      setScriptLoading(false);
+    }
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -191,7 +414,9 @@ function DashboardContent({ operator }: { operator: Operator }) {
       const resp = await apiFetch<ListResponse>(
         `/admin/conversations?${qs.toString()}`
       );
-      setItems(resp.items);
+      // P4-04: 应用 SAB 级别排序，包含置顶用户处理
+      const sortedItems = sortConversationsByLevelAndState(resp.items, priorityUserIds);
+      setItems(sortedItems);
       setTotal(resp.total);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -200,19 +425,31 @@ function DashboardContent({ operator }: { operator: Operator }) {
     } finally {
       setLoading(false);
     }
-  }, [page, state, channel, appliedSearch]);
+  }, [page, state, channel, appliedSearch, priorityUserIds]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  const { connState, lastAlert, dismissAlert, reconnect } = useOperatorTaskWs({
+  const { connState, lastAlert, dismissAlert, reconnect, lastUpgrade, dismissUpgrade, lastAlertModal, dismissAlertModal } = useOperatorTaskWs({
     operatorId: operator.operator_id,
     onTaskUpsert: (task) => {
       if (task.priority === "P0" || task.priority === "P1") {
         setState("WAITING_OPERATOR");
         setPage(1);
       }
+    },
+    // P4-04: 处理用户升级事件，S 级用户 3 秒置顶
+    onUserUpgraded: (upgrade) => {
+      if (upgrade.newLevel === "S") {
+        handlePriorityUser(upgrade.userId);
+        // 重新加载列表以应用新的排序
+        load();
+      }
+    },
+    // P4-06: 处理 S/A 级用户提醒事件
+    onUserAlert: (alert) => {
+      handleUserAlert(alert);
     },
   });
 
@@ -239,12 +476,15 @@ function DashboardContent({ operator }: { operator: Operator }) {
     setMessageTranslations({});
     setTranslationError(null);
     setDetailLoading(true);
+    setScriptSuggestions(null); // P4-05: 重置话术推荐
     try {
       const resp = await apiFetch<DetailResponse>(
         `/admin/conversations/${cid}`
       );
       setDetail(resp);
       void translateMessages(resp);
+      // P4-05: 加载话术库推荐话术
+      void loadScriptSuggestions(resp.conversation);
     } catch (e) {
       setDetailError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -380,6 +620,14 @@ function DashboardContent({ operator }: { operator: Operator }) {
             onDismissAlert={dismissAlert}
             onReconnect={reconnect}
           />
+          {/* P4-06: 声音提醒开关 */}
+          <button
+            onClick={() => setAudioEnabled(!audioEnabled)}
+            className={`text-sm transition ${audioEnabled ? 'text-violet-300' : 'text-slate-500'}`}
+            title={audioEnabled ? "声音提醒已开启" : "声音提醒已关闭"}
+          >
+            {audioEnabled ? '🔊' : '🔇'}
+          </button>
           <span className="text-sm text-slate-300">
             {operator.display_name || operator.username}
             <span className="ml-2 text-xs text-slate-500 bg-slate-700 px-2 py-0.5 rounded-full">
@@ -395,6 +643,75 @@ function DashboardContent({ operator }: { operator: Operator }) {
         </div>
       </header>
 
+      {/* P4-04: S 级用户升级通知横幅 */}
+      {lastUpgrade && lastUpgrade.newLevel === "S" && (
+        <div className="bg-rose-900/40 border border-rose-700 text-rose-200 px-6 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🎉</span>
+            <div>
+              <div className="font-semibold">用户升级为 S 级</div>
+              <div className="text-sm text-rose-300">
+                用户从 {lastUpgrade.previousLevel} 级升级到 S 级，已自动置顶 3 秒
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={dismissUpgrade}
+            className="text-rose-300 hover:text-white transition"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* P4-06: S/A 全屏弹窗 */}
+      {alertModal && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 backdrop-blur-sm">
+          <div className="bg-slate-800 border-2 border-violet-500 rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
+            <div className="text-center">
+              <div className="text-6xl mb-4">
+                {alertModal.level === 'S' ? '⭐' : '🔔'}
+              </div>
+              <h2 className="text-2xl font-bold text-white mb-2">
+                {alertModal.level === 'S' ? 'S 级用户提醒' : 'A 级用户提醒'}
+              </h2>
+              <div className="bg-slate-900 rounded-lg p-4 mb-6">
+                <div className="text-slate-300 mb-2">
+                  <span className="text-slate-500">用户：</span>
+                  <span className="text-white font-medium">
+                    {alertModal.nickname || alertModal.externalId || '未知'}
+                  </span>
+                </div>
+                <div className="text-slate-300 mb-2">
+                  <span className="text-slate-500">等级：</span>
+                  <span className={`font-bold ${alertModal.level === 'S' ? 'text-yellow-400' : 'text-violet-400'}`}>
+                    {alertModal.level} 级
+                  </span>
+                </div>
+                <div className="text-slate-300">
+                  <span className="text-slate-500">原因：</span>
+                  <span className="text-slate-200">{alertModal.reason}</span>
+                </div>
+              </div>
+              <div className="flex gap-3 justify-center">
+                <button
+                  onClick={handleAlertDismiss}
+                  className="px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition font-medium"
+                >
+                  稍后处理
+                </button>
+                <button
+                  onClick={handleAlertConfirm}
+                  className="px-6 py-3 bg-violet-600 hover:bg-violet-500 text-white rounded-lg transition font-medium"
+                >
+                  立即查看
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Main */}
       <main className="p-8 max-w-7xl mx-auto">
         <div className="flex items-baseline justify-between mb-6">
@@ -403,6 +720,14 @@ function DashboardContent({ operator }: { operator: Operator }) {
             <p className="text-slate-400 text-sm">
               共 {total} 条会话 · 第 {page} / {totalPages} 页
             </p>
+          </div>
+          <div>
+            <a
+              href="/admin/operator-dashboard"
+              className="px-4 py-2 bg-violet-600 hover:bg-violet-500 rounded-lg text-sm font-medium transition"
+            >
+              坐席看板
+            </a>
           </div>
         </div>
 
@@ -836,8 +1161,95 @@ function DashboardContent({ operator }: { operator: Operator }) {
                             placeholder="点击“填入草稿”后可在这里编辑；当前页面不会自动发送。"
                             className="w-full bg-slate-950 border border-slate-700 text-sm rounded-md px-3 py-2 text-slate-100 placeholder-slate-600"
                           />
+                          {/* P4-05: 发送按钮 */}
+                          {draftReply.trim() && (
+                            <div className="mt-2 flex justify-end">
+                              <button
+                                onClick={async () => {
+                                  // TODO: 实现发送功能
+                                  alert("发送功能待实现 - 需要集成 handoff API");
+                                }}
+                                className="bg-green-600 hover:bg-green-500 text-white text-xs font-medium px-4 py-2 rounded-md transition"
+                              >
+                                发送
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </>
+                    )}
+                  </div>
+
+                  {/* P4-05: 话术库推荐话术 */}
+                  <div className="border border-sky-800/70 bg-sky-950/20 rounded-xl p-4 space-y-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <h3 className="text-sm font-medium text-sky-200">
+                          话术库推荐话术
+                        </h3>
+                        <p className="text-xs text-slate-400 mt-1">
+                          基于当前用户画像匹配的推荐话术，可一键插入或编辑后发送。
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (detail) void loadScriptSuggestions(detail.conversation);
+                        }}
+                        disabled={scriptLoading}
+                        className="bg-sky-600 hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium px-3 py-2 rounded-md transition whitespace-nowrap"
+                      >
+                        {scriptLoading ? "加载中…" : "刷新推荐"}
+                      </button>
+                    </div>
+
+                    {scriptError && (
+                      <div className="bg-rose-900/30 border border-rose-800 text-rose-200 text-sm rounded-md px-3 py-2">
+                        加载失败：{scriptError}
+                      </div>
+                    )}
+
+                    {scriptSuggestions && scriptSuggestions.length > 0 ? (
+                      <div className="space-y-3">
+                        {scriptSuggestions.map((script, index) => (
+                          <div
+                            key={script.id || index}
+                            className="border border-slate-700 bg-slate-900/70 rounded-lg p-3"
+                          >
+                            <div className="flex items-center justify-between gap-3 mb-2">
+                              <span className="text-xs text-sky-300">
+                                推荐话术 {index + 1}
+                                {script.match_score && (
+                                  <span className="ml-2 text-slate-500">
+                                    (匹配度: {Math.round(script.match_score * 100)}%)
+                                  </span>
+                                )}
+                              </span>
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setDraftReply(script.content || "")}
+                                  className="text-xs text-sky-400 hover:text-sky-300"
+                                >
+                                  填入草稿
+                                </button>
+                              </div>
+                            </div>
+                            <p className="text-sm text-slate-100 whitespace-pre-wrap">
+                              {script.content}
+                            </p>
+                            {script.script_type && (
+                              <p className="text-xs text-slate-500 mt-2">
+                                类型: {script.script_type}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-slate-500 text-center py-4">
+                        {scriptLoading ? "加载中..." : "暂无推荐话术"}
+                      </div>
                     )}
                   </div>
 
