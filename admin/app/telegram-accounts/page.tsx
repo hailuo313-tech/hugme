@@ -27,6 +27,20 @@ interface TelegramAccountsResponse {
   connected_count: number;
 }
 
+interface SessionLoginStartResponse {
+  login_id: string;
+  phone: string;
+  expires_at: string;
+}
+
+interface SessionLoginVerifyResponse {
+  account_id: string | null;
+  status: string;
+  requires_password: boolean;
+  username: string | null;
+  display_name: string | null;
+}
+
 // ── Telegram账号管理组件 ─────────────────────────────────────────
 
 export default function TelegramAccountsPage() {
@@ -42,12 +56,16 @@ function TelegramAccountsManager() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [newAccount, setNewAccount] = useState({
+  const [loginForm, setLoginForm] = useState({
     phone: "",
-    session_string: "",
-    is_bot: false,
     display_name: "",
+    code: "",
+    password: "",
+    auto_connect: true,
   });
+  const [loginId, setLoginId] = useState<string | null>(null);
+  const [requiresPassword, setRequiresPassword] = useState(false);
+  const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
 
   // 加载账号列表
   const loadAccounts = async () => {
@@ -67,21 +85,71 @@ function TelegramAccountsManager() {
     loadAccounts();
   }, []);
 
-  // 添加账号
-  const handleAddAccount = async (e: React.FormEvent) => {
+  const resetLoginForm = () => {
+    setLoginForm({
+      phone: "",
+      display_name: "",
+      code: "",
+      password: "",
+      auto_connect: true,
+    });
+    setLoginId(null);
+    setRequiresPassword(false);
+    setCodeSentTo(null);
+  };
+
+  // 发送验证码
+  const handleStartSessionLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
     try {
-      await apiFetch("/telegram/accounts", {
+      const resp = await apiFetch<SessionLoginStartResponse>("/telegram/session-login/start", {
         method: "POST",
-        body: JSON.stringify(newAccount),
+        body: JSON.stringify({
+          phone: loginForm.phone,
+          display_name: loginForm.display_name,
+        }),
       });
+      setLoginId(resp.login_id);
+      setCodeSentTo(resp.phone);
+      setRequiresPassword(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "发送验证码失败");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 验证并添加账号
+  const handleVerifySessionLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!loginId) return;
+
+    setLoading(true);
+    setError(null);
+    try {
+      const resp = await apiFetch<SessionLoginVerifyResponse>("/telegram/session-login/verify", {
+        method: "POST",
+        body: JSON.stringify({
+          login_id: loginId,
+          code: loginForm.code || null,
+          password: loginForm.password || null,
+          display_name: loginForm.display_name,
+          auto_connect: loginForm.auto_connect,
+        }),
+      });
+
+      if (resp.requires_password) {
+        setRequiresPassword(true);
+        return;
+      }
+
       setShowAddModal(false);
-      setNewAccount({ phone: "", session_string: "", is_bot: false, display_name: "" });
+      resetLoginForm();
       await loadAccounts();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "添加账号失败");
+      setError(e instanceof Error ? e.message : "验证登录失败");
     } finally {
       setLoading(false);
     }
@@ -329,26 +397,16 @@ function TelegramAccountsManager() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-slate-800 rounded-xl border border-slate-700 p-6 w-full max-w-md">
             <h3 className="text-lg font-semibold mb-4">添加 Telegram 账号</h3>
-            <form onSubmit={handleAddAccount} className="space-y-4">
+            <form onSubmit={loginId ? handleVerifySessionLogin : handleStartSessionLogin} className="space-y-4">
               <div>
                 <label className="block text-sm text-slate-400 mb-1">手机号</label>
                 <input
                   type="text"
-                  value={newAccount.phone}
-                  onChange={(e) => setNewAccount({ ...newAccount, phone: e.target.value })}
+                  value={loginForm.phone}
+                  onChange={(e) => setLoginForm({ ...loginForm, phone: e.target.value })}
                   placeholder="+1234567890"
                   className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-blue-500"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-slate-400 mb-1">Session String</label>
-                <textarea
-                  value={newAccount.session_string}
-                  onChange={(e) => setNewAccount({ ...newAccount, session_string: e.target.value })}
-                  placeholder="Telethon StringSession"
-                  rows={3}
-                  className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-blue-500"
+                  disabled={!!loginId}
                   required
                 />
               </div>
@@ -356,26 +414,64 @@ function TelegramAccountsManager() {
                 <label className="block text-sm text-slate-400 mb-1">显示名称</label>
                 <input
                   type="text"
-                  value={newAccount.display_name}
-                  onChange={(e) => setNewAccount({ ...newAccount, display_name: e.target.value })}
+                  value={loginForm.display_name}
+                  onChange={(e) => setLoginForm({ ...loginForm, display_name: e.target.value })}
                   placeholder="可选"
                   className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-blue-500"
                 />
               </div>
-              <div className="flex items-center gap-2">
+
+              {loginId && (
+                <div className="rounded-lg border border-blue-800 bg-blue-950/30 p-3 text-sm text-blue-200">
+                  验证码已发送到 {codeSentTo}
+                </div>
+              )}
+
+              {loginId && !requiresPassword && (
+                <div>
+                  <label className="block text-sm text-slate-400 mb-1">验证码</label>
+                  <input
+                    type="text"
+                    value={loginForm.code}
+                    onChange={(e) => setLoginForm({ ...loginForm, code: e.target.value })}
+                    placeholder="Telegram 验证码"
+                    className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-blue-500"
+                    required
+                  />
+                </div>
+              )}
+
+              {requiresPassword && (
+                <div>
+                  <label className="block text-sm text-slate-400 mb-1">2FA 密码</label>
+                  <input
+                    type="password"
+                    value={loginForm.password}
+                    onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
+                    placeholder="Telegram 两步验证密码"
+                    className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-blue-500"
+                    required
+                  />
+                </div>
+              )}
+
+              <label className="flex items-center gap-2 text-sm text-slate-300">
                 <input
                   type="checkbox"
-                  id="is_bot"
-                  checked={newAccount.is_bot}
-                  onChange={(e) => setNewAccount({ ...newAccount, is_bot: e.target.checked })}
+                  checked={loginForm.auto_connect}
+                  onChange={(e) => setLoginForm({ ...loginForm, auto_connect: e.target.checked })}
                   className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-blue-600 focus:ring-blue-500"
                 />
-                <label htmlFor="is_bot" className="text-sm text-slate-300">Bot 账号</label>
-              </div>
+                添加后自动连接
+              </label>
+
               <div className="flex gap-2 pt-4">
                 <button
                   type="button"
-                  onClick={() => setShowAddModal(false)}
+                  onClick={() => {
+                    setShowAddModal(false);
+                    resetLoginForm();
+                  }}
                   className="flex-1 px-4 py-2 bg-slate-600 hover:bg-slate-500 rounded-lg text-sm transition"
                 >
                   取消
@@ -385,7 +481,7 @@ function TelegramAccountsManager() {
                   disabled={loading}
                   className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg text-sm transition"
                 >
-                  添加
+                  {loading ? "处理中..." : loginId ? "验证并添加" : "发送验证码"}
                 </button>
               </div>
             </form>

@@ -3,10 +3,16 @@
 from typing import List
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from api.admin import require_operator
+from services.telegram_session_login import (
+    TelegramSessionLoginError,
+    TelegramSessionPasswordRequired,
+    telegram_session_login_manager,
+)
 from services.telegram_account_manager import telegram_account_manager
 
 router = APIRouter()
@@ -44,6 +50,89 @@ class TelegramAccountStatusResponse(BaseModel):
     accounts: List[TelegramAccountResponse]
     total: int
     connected_count: int
+
+
+class TelegramSessionLoginStartRequest(BaseModel):
+    """Start a Telethon phone-code login flow."""
+
+    phone: str = Field(..., description="Phone number in international format")
+    display_name: str = Field(default="", description="Optional display name")
+
+
+class TelegramSessionLoginStartResponse(BaseModel):
+    """Response after sending Telegram code."""
+
+    login_id: str
+    phone: str
+    expires_at: str
+
+
+class TelegramSessionLoginVerifyRequest(BaseModel):
+    """Verify a Telegram code or 2FA password and save StringSession."""
+
+    login_id: str = Field(..., description="Login flow ID from /session-login/start")
+    code: str | None = Field(default=None, description="Telegram login code")
+    password: str | None = Field(default=None, description="2FA password when required")
+    display_name: str = Field(default="", description="Optional display name override")
+    auto_connect: bool = Field(default=False, description="Connect account after saving session")
+
+
+class TelegramSessionLoginVerifyResponse(BaseModel):
+    """Response after verifying Telegram login."""
+
+    account_id: str | None = None
+    phone: str | None = None
+    status: str
+    requires_password: bool = False
+    telegram_user_id: int | None = None
+    username: str | None = None
+    display_name: str | None = None
+
+
+@router.post(
+    "/api/v1/telegram/session-login/start",
+    response_model=TelegramSessionLoginStartResponse,
+)
+async def start_telegram_session_login(
+    request: TelegramSessionLoginStartRequest,
+    _operator: dict = Depends(require_operator),
+):
+    """Send Telegram login code for creating a Telethon StringSession."""
+    try:
+        result = await telegram_session_login_manager.start_login(
+            phone=request.phone,
+            display_name=request.display_name or None,
+        )
+        return TelegramSessionLoginStartResponse(**result)
+    except TelegramSessionLoginError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post(
+    "/api/v1/telegram/session-login/verify",
+    response_model=TelegramSessionLoginVerifyResponse,
+)
+async def verify_telegram_session_login(
+    request: TelegramSessionLoginVerifyRequest,
+    _operator: dict = Depends(require_operator),
+):
+    """Verify Telegram code/2FA and save encrypted StringSession."""
+    try:
+        result = await telegram_session_login_manager.verify_login(
+            login_id=request.login_id,
+            code=request.code,
+            password=request.password,
+            display_name=request.display_name or None,
+            auto_connect=request.auto_connect,
+        )
+        return TelegramSessionLoginVerifyResponse(**result)
+    except TelegramSessionPasswordRequired:
+        return TelegramSessionLoginVerifyResponse(
+            status="password_required",
+            requires_password=True,
+        )
+    except TelegramSessionLoginError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.post("/api/v1/telegram/accounts", response_model=dict, status_code=status.HTTP_201_CREATED)
