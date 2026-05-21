@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { saveAuth, isLoggedIn, getOperator, clearAuth, API_BASE, ADMIN_BASE_PATH } from "@/lib/auth";
+import { saveAuth, isLoggedIn, getOperator, clearAuth, API_BASE, DEFAULT_ADMIN_ENTRY_PATH } from "@/lib/auth";
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
@@ -16,8 +16,8 @@ export default function LoginPage() {
       clearAuth();
       return;
     }
-    // 已完整登录 → 跳首页
-    window.location.href = ADMIN_BASE_PATH + "/";
+    // 已完整登录 → 跳新版坐席后台
+    window.location.href = DEFAULT_ADMIN_ENTRY_PATH;
   }, []);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -44,7 +44,7 @@ export default function LoginPage() {
         display_name: data.display_name,
         role: data.role,
       });
-      window.location.href = ADMIN_BASE_PATH + "/";
+      window.location.href = DEFAULT_ADMIN_ENTRY_PATH;
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "用户名或密码错误");
     } finally {
