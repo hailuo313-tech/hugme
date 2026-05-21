@@ -7,6 +7,9 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-eris}
       POSTGRES_USER: ${POSTGRES_USER:-eris}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-eris_secret_2026}
+      POSTGRES_MIGRATION_USER: ${POSTGRES_MIGRATION_USER:-eris_migration}
+      POSTGRES_WRITER_USER: ${POSTGRES_WRITER_USER:-eris_writer}
+      POSTGRES_READER_USER: ${POSTGRES_READER_USER:-eris_reader}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -44,6 +47,8 @@ services:
       - ./docs:/srv/ops-docs:ro
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-eris}:${POSTGRES_PASSWORD:-eris_secret_2026}@postgres:5432/${POSTGRES_DB:-eris}
+      DATABASE_MIGRATION_URL: postgresql+asyncpg://${POSTGRES_MIGRATION_USER:-eris_migration}:${POSTGRES_MIGRATION_PASSWORD:-eris_migration_secret_2026}@postgres:5432/${POSTGRES_DB:-eris}
+      DATABASE_READER_URL: postgresql+asyncpg://${POSTGRES_READER_USER:-eris_reader}:${POSTGRES_READER_PASSWORD:-eris_reader_secret_2026}@postgres:5432/${POSTGRES_DB:-eris}
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secret_2026}@redis:6379/0
       SECRET_KEY: ${SECRET_KEY:-change_this_secret_key_in_production}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}

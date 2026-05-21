@@ -10,7 +10,7 @@ BEGIN
 END
 $$;
 
--- 2. 创建写角色（应用使用，可读写表但无 DROP 权限）
+-- 2. 创建写角色（应用使用，可读写表且无结构变更权限）
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'eris_writer') THEN
@@ -33,7 +33,7 @@ GRANT ALL PRIVILEGES ON DATABASE eris TO eris_migration;
 GRANT ALL PRIVILEGES ON SCHEMA public TO eris_migration;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO eris_migration;
 
--- 授予写角色读写权限，但明确拒绝 DROP 权限
+-- 授予写角色读写权限，不授予结构变更权限
 GRANT CONNECT ON DATABASE eris TO eris_writer;
 GRANT USAGE ON SCHEMA public TO eris_writer;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO eris_writer;
