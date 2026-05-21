@@ -187,7 +187,7 @@ class TelegramAccountManager:
                 session_string=encrypted_session,
                 is_bot=is_bot,
                 display_name=display_name,
-                metadata=metadata or {},
+                metadata_json=metadata or {},
             )
             session.add(account)
             await session.commit()
