@@ -167,5 +167,9 @@ class Settings(BaseSettings):
     AUTO_DELIVERY_ENABLED: bool = False  # 是否启用 B/C/D 自动投递 Worker
     AUTO_DELIVERY_POLL_SECONDS: int = 20  # 轮询间隔（秒）
     AUTO_DELIVERY_SCHEDULER_MAX_INSTANCES: int = 1  # 调度器最大并发实例数
+    # P3-18：异步精聊归档 Worker 配置
+    ARCHIVE_WORKER_ENABLED: bool = False  # 是否启用异步精聊归档 Worker
+    ARCHIVE_WORKER_POLL_SECONDS: int = 30  # 轮询间隔（秒）
+    ARCHIVE_WORKER_SCHEDULER_MAX_INSTANCES: int = 1  # 调度器最大并发实例数
 
 settings = Settings()

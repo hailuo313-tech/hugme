@@ -708,6 +708,16 @@ function loadDoneSet() {
     p3AdditionalCompleted.forEach(id => {
       if (!set.has(id)) { set.add(id); changed = true; }
     });
+    // 自动标记 P3-16 为已完成（Devin 已完成此任务）
+    const p3MoreCompleted = ['P3-16'];
+    p3MoreCompleted.forEach(id => {
+      if (!set.has(id)) { set.add(id); changed = true; }
+    });
+    // 自动标记 P3-18 为已完成（Devin 已完成此任务）
+    const p3AdditionalCompleted2 = ['P3-18'];
+    p3AdditionalCompleted2.forEach(id => {
+      if (!set.has(id)) { set.add(id); changed = true; }
+    });
     if (changed) localStorage.setItem(DONE_STORAGE_KEY, JSON.stringify([...set]));
     return set;
   } catch {
@@ -722,6 +732,10 @@ function loadDoneSet() {
     p3Completed.forEach(id => set.add(id));
     const p3AdditionalCompleted = ['P3-15'];
     p3AdditionalCompleted.forEach(id => set.add(id));
+    const p3MoreCompleted = ['P3-16'];
+    p3MoreCompleted.forEach(id => set.add(id));
+    const p3AdditionalCompleted2 = ['P3-18'];
+    p3AdditionalCompleted2.forEach(id => set.add(id));
     return set;
   }
 }

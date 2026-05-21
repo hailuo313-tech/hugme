@@ -37,6 +37,7 @@ from api.monitoring import router as monitoring_router
 from api.user_level import router as user_level_router
 from api.message_schedule import router as message_schedule_router
 from api.auto_delivery import router as auto_delivery_router
+from api.archive import router as archive_router
 from api.intents import router as intents_router
 from core.database import init_db
 from core.config import settings
@@ -66,6 +67,10 @@ from services.message_schedule_service import (
 from services.auto_delivery_worker import (
     start_scheduler as start_auto_delivery_worker,
     shutdown_scheduler as shutdown_auto_delivery_worker,
+)
+from services.archive_service import (
+    start_scheduler as start_archive_worker,
+    shutdown_scheduler as shutdown_archive_worker,
 )
 
 
@@ -117,6 +122,10 @@ async def lifespan(app: FastAPI):
     if settings.AUTO_DELIVERY_ENABLED:
         start_auto_delivery_worker()
         logger.info("Auto-delivery worker started")
+    # P3-18: Start archive worker if enabled
+    if settings.ARCHIVE_WORKER_ENABLED:
+        start_archive_worker()
+        logger.info("Archive worker started")
     try:
         yield
     finally:
@@ -144,6 +153,10 @@ async def lifespan(app: FastAPI):
         if settings.AUTO_DELIVERY_ENABLED:
             shutdown_auto_delivery_worker()
             logger.info("Auto-delivery worker stopped")
+        # P3-18: Stop archive worker
+        if settings.ARCHIVE_WORKER_ENABLED:
+            shutdown_archive_worker()
+            logger.info("Archive worker stopped")
         logger.info("ERIS shutting down...")
 
 
@@ -228,6 +241,7 @@ app.include_router(monitoring_router, tags=["monitoring"])
 app.include_router(user_level_router, tags=["user-level"])
 app.include_router(message_schedule_router, prefix="/api/v1/message-schedule", tags=["message-schedule"])
 app.include_router(auto_delivery_router, prefix="/api/v1/auto-delivery", tags=["auto-delivery"])
+app.include_router(archive_router, prefix="/api/v1/archive", tags=["archive"])
 app.include_router(intents_router, prefix="/api/v1/intents", tags=["intents"])
 app.include_router(realtime_router, tags=["realtime"])
 app.include_router(llm_router, prefix="/api/v1", tags=["llm"])
