@@ -92,7 +92,7 @@ class TelegramAccountManager:
 
                 # Create Telegram client
                 client = TelegramClient(
-                    StringSession(session_string),
+                    _build_string_session(session_string),
                     settings.TELEGRAM_API_ID,
                     settings.TELEGRAM_API_HASH,
                     device_model=settings.TELEGRAM_DEVICE_MODEL,
@@ -226,29 +226,15 @@ class TelegramAccountManager:
             return None
 
         is_connected = account_id in self.clients
-        return {
-            "id": str(account.id),
-            "phone": account.phone,
-            "status": account.status,
-            "is_active": account.is_active,
-            "display_name": account.display_name,
-            "username": account.username,
-            "user_id": account.user_id,
-            "is_connected": is_connected,
-            "last_connected_at": account.last_connected_at.isoformat() if account.last_connected_at else None,
-            "last_error_at": account.last_error_at.isoformat() if account.last_error_at else None,
-            "error_message": account.error_message,
-        }
+        return _account_status_payload(account, is_connected)
 
     async def get_all_accounts_status(self) -> List[dict]:
         """Get all accounts status."""
         accounts = await self.get_active_accounts()
-        statuses = []
-        for account in accounts:
-            status = await self.get_account_status(account.id)
-            if status:
-                statuses.append(status)
-        return statuses
+        return [
+            _account_status_payload(account, account.id in self.clients)
+            for account in accounts
+        ]
 
 
 # Global instance
@@ -271,3 +257,27 @@ async def _maybe_await(value):
     if inspect.isawaitable(value):
         return await value
     return value
+
+
+def _build_string_session(session_string: str) -> StringSession:
+    try:
+        return StringSession(session_string)
+    except ValueError:
+        logger.warning("Invalid Telegram StringSession, using empty session shell")
+        return StringSession()
+
+
+def _account_status_payload(account: TelegramAccount, is_connected: bool) -> dict:
+    return {
+        "id": str(account.id),
+        "phone": account.phone,
+        "status": account.status,
+        "is_active": account.is_active,
+        "display_name": account.display_name,
+        "username": account.username,
+        "user_id": account.user_id,
+        "is_connected": is_connected,
+        "last_connected_at": account.last_connected_at.isoformat() if account.last_connected_at else None,
+        "last_error_at": account.last_error_at.isoformat() if account.last_error_at else None,
+        "error_message": account.error_message,
+    }
