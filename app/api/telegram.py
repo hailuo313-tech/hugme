@@ -38,6 +38,7 @@ from api.onboarding import (
 )
 from services.llm_orchestrator import generate_reply, LLMOrchestratorError
 from services.memory_writer import maybe_write_memory
+from services.age_extraction import maybe_extract_and_write_age
 from services.content_safety import evaluate_inbound_content_safety
 from services.minor_protection import evaluate_inbound_minor_protection
 from services.reply_consistency import (
@@ -608,6 +609,20 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
     except Exception as exc:
         log.bind(error_type=type(exc).__name__).warning(
             "tg.memory_writer.spawn_failed"
+        )
+
+    # P2-04: persist the user's age only when AI confidence passes the write gate.
+    try:
+        asyncio.create_task(
+            maybe_extract_and_write_age(
+                user_id=user_id,
+                content=text_content,
+                trace_id=trace_id,
+            )
+        )
+    except Exception as exc:
+        log.bind(error_type=type(exc).__name__).warning(
+            "tg.age_extraction.spawn_failed"
         )
 
     bot_reply = None
