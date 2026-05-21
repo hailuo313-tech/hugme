@@ -7,6 +7,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
     DATABASE_URL: str = 'postgresql+asyncpg://eris:eris_secret_2026@postgres:5432/eris'
+    DATABASE_MIGRATION_URL: Optional[str] = None
+    DATABASE_READER_URL: Optional[str] = None
     REDIS_URL: str = 'redis://:redis_secret_2026@redis:6379/0'
     SECRET_KEY: str = 'change_this_secret_key_in_production'
     OPENROUTER_API_KEY: Optional[str] = None
