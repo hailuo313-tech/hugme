@@ -1,0 +1,129 @@
+name: WebSocket Stability Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration_hours:
+        description: 'Test duration in hours'
+        required: false
+        default: '1'  # Default to 1 hour for CI, use 72 for production
+      ping_interval:
+        description: 'Ping interval in seconds'
+        required: false
+        default: '30'
+      report_interval:
+        description: 'Report interval in seconds'
+        required: false
+        default: '600'  # 10 minutes for CI
+  schedule:
+    # Run weekly 1-hour smoke test on Monday at 00:00 UTC
+    - cron: '0 0 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: websocket-stability-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  websocket-stability:
+    name: p5-04-websocket-stability
+    runs-on: ubuntu-latest
+    timeout-minutes: 90  # 1.5 hours for safety margin
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            app/requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r app/requirements.txt -r requirements-dev.txt
+          pip install websockets
+
+      - name: Start stack (postgres, redis, api)
+        env:
+          LLM_ECHO_FALLBACK: "1"
+          CONTENT_SAFETY_ENABLED: "0"
+          SCORE_WORKER_ENABLED: "0"
+          POLICY_HANDOFF_ENABLED: "0"
+        run: |
+          docker compose up -d postgres redis
+          docker compose up -d --build api
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8000/health/detail | grep -q '"api":"ok"'; then
+              echo "API ready"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "API not healthy in time" >&2
+          docker compose logs api --tail 80
+          exit 1
+
+      - name: Run P5-04 WebSocket Stability Test
+        env:
+          WS_URL: ws://127.0.0.1:8000/ws/operators/tasks
+          OPERATOR_ID: test_p5_04_ci_operator
+          TEST_DURATION_HOURS: ${{ github.event.inputs.duration_hours || '1' }}
+          PING_INTERVAL: ${{ github.event.inputs.ping_interval || '30' }}
+          REPORT_INTERVAL: ${{ github.event.inputs.report_interval || '600' }}
+          OUTPUT_DIR: scripts/perf/reports
+        run: bash scripts/perf/run_p5_04_websocket_stability.sh
+
+      - name: Upload stability test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: websocket-stability-reports
+          path: scripts/perf/reports/p5_04_websocket_stability_report_*.json
+          retention-days: 30
+
+      - name: Upload API logs on failure
+        if: failure()
+        run: docker compose logs api --tail 200
+
+      - name: Check zero message loss acceptance criteria
+        if: success()
+        run: |
+          # Find the latest report and check for zero message loss
+          latest_report=$(find scripts/perf/reports -name "p5_04_websocket_stability_report_*.json" -type f -printf '%T@ %p\n' | sort -n | tail -1 | cut -d' ' -f2-)
+          if [ -f "$latest_report" ]; then
+            zero_loss=$(python3 -c "import json; print(json.load(open('$latest_report'))['report']['zero_message_loss'])")
+            if [ "$zero_loss" = "True" ]; then
+              echo "✅ Zero message loss acceptance criteria passed"
+            else
+              echo "❌ Zero message loss acceptance criteria failed"
+              exit 1
+            fi
+          fi
+
+      - name: Add summary comment
+        if: always()
+        run: |
+          latest_report=$(find scripts/perf/reports -name "p5_04_websocket_stability_report_*.json" -type f -printf '%T@ %p\n' | sort -n | tail -1 | cut -d' ' -f2-)
+          if [ -f "$latest_report" ]; then
+            echo "## WebSocket Stability Test Results" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            python3 -c "
+import json
+report = json.load(open('$latest_report'))['report']
+print(f'**Duration:** {report[\"duration_hours\"]:.2f} hours')
+print(f'**Uptime:** {report[\"uptime_percentage\"]}%')
+print(f'**Reconnects:** {report[\"reconnect_count\"]}')
+print(f'**Message Loss:** {\"✅ ZERO\" if report[\"zero_message_loss\"] else \"❌ DETECTED\"}')
+print(f'**Ping Success Rate:** {report[\"ping_success_rate\"]}%')
+print()
+print('**Recommendations:**')
+for rec in report['recommendations']:
+    print(f'- {rec}')
+" >> $GITHUB_STEP_SUMMARY
+          fi

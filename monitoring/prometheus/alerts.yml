@@ -1,0 +1,166 @@
+groups:
+  - name: eris_business_alerts
+    interval: 30s
+    rules:
+      # Business Metrics Alerts
+      - alert: LowActiveUsers
+        expr: eris_users_daily_active < 50
+        for: 1h
+        labels:
+          severity: warning
+          category: business
+        annotations:
+          summary: "Low daily active users detected"
+          description: "Daily active users has been below 50 for more than 1 hour. Current value: {{ $value }}"
+
+      - alert: ConversionRateDrop
+        expr: eris_conversion_rate < 0.01
+        for: 2h
+        labels:
+          severity: warning
+          category: business
+        annotations:
+          summary: "Conversion rate dropped significantly"
+          description: "Conversion rate has been below 1% for more than 2 hours. Current value: {{ $value }}"
+
+      - alert: HighMessageQueue
+        expr: eris_messages_queue_size > 1000
+        for: 5m
+        labels:
+          severity: critical
+          category: business
+        annotations:
+          summary: "Message queue backlog detected"
+          description: "Message queue size has been above 1000 for more than 5 minutes. Current value: {{ $value }}"
+
+  - name: eris_llm_alerts
+    interval: 30s
+    rules:
+      # LLM Performance Alerts
+      - alert: HighLLMErrorRate
+        expr: sum(rate(eris_llm_requests_total{status="error"}[5m])) / sum(rate(eris_llm_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          category: llm
+        annotations:
+          summary: "LLM error rate above threshold"
+          description: "LLM error rate has been above 5% for more than 5 minutes. Current value: {{ $value | humanizePercentage }}"
+
+      - alert: LLMLatencyHigh
+        expr: histogram_quantile(0.95, sum(rate(eris_llm_processing_time_seconds_bucket[5m])) by (le)) > 10
+        for: 5m
+        labels:
+          severity: warning
+          category: llm
+        annotations:
+          summary: "LLM processing latency high"
+          description: "LLM P95 processing time has been above 10s for more than 5 minutes. Current value: {{ $value }}s"
+
+      - alert: LLMCostSpike
+        expr: rate(eris_llm_cost_usd[1h]) > 10
+        for: 10m
+        labels:
+          severity: warning
+          category: llm
+        annotations:
+          summary: "LLM cost spike detected"
+          description: "LLM cost rate has been above $10/hour for more than 10 minutes. Current value: ${{ $value }}/hour"
+
+  - name: eris_system_alerts
+    interval: 30s
+    rules:
+      # System Health Alerts
+      - alert: APIDown
+        expr: up{job="eris-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: system
+        annotations:
+          summary: "API service is down"
+          description: "ERIS API service has been down for more than 1 minute"
+
+      - alert: HighAPIResponseTime
+        expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) > 2
+        for: 5m
+        labels:
+          severity: warning
+          category: system
+        annotations:
+          summary: "API response time degraded"
+          description: "API P95 response time has been above 2s for more than 5 minutes. Current value: {{ $value }}s"
+
+      - alert: HighHTTPErrorRate
+        expr: sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          category: system
+        annotations:
+          summary: "HTTP error rate high"
+          description: "HTTP 5xx error rate has been above 5% for more than 5 minutes. Current value: {{ $value | humanizePercentage }}"
+
+      - alert: WebSocketConnectionDrop
+        expr: rate(eris_websocket_connections_active[5m]) < -10
+        for: 2m
+        labels:
+          severity: warning
+          category: system
+        annotations:
+          summary: "WebSocket connections dropping rapidly"
+          description: "WebSocket connections are dropping at a rate of more than 10 per minute. Current rate: {{ $value }}/min"
+
+  - name: eris_infrastructure_alerts
+    interval: 30s
+    rules:
+      # Infrastructure Alerts
+      - alert: HighCPUUsage
+        expr: 100 * (1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) by (instance)) > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "High CPU usage detected"
+          description: "CPU usage has been above 80% for more than 5 minutes. Current value: {{ $value }}%"
+
+      - alert: HighMemoryUsage
+        expr: 100 * (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 85
+        for: 5m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage has been above 85% for more than 5 minutes. Current value: {{ $value }}%"
+
+      - alert: HighDiskUsage
+        expr: 100 * (1 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"})) > 85
+        for: 5m
+        labels:
+          severity: critical
+          category: infrastructure
+        annotations:
+          summary: "High disk usage detected"
+          description: "Disk usage has been above 85% for more than 5 minutes. Current value: {{ $value }}%"
+
+      - alert: DatabaseConnectionHigh
+        expr: pg_stat_activity_count / pg_settings_max_connections > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "Database connection usage high"
+          description: "Database connection usage has been above 80% for more than 5 minutes. Current value: {{ $value | humanizePercentage }}"
+
+      - alert: RedisCacheHitRateLow
+        expr: redis_keyspace_hits_total / (redis_keyspace_hits_total + redis_keyspace_misses_total) < 0.8
+        for: 10m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "Redis cache hit rate low"
+          description: "Redis cache hit rate has been below 80% for more than 10 minutes. Current value: {{ $value | humanizePercentage }}"
