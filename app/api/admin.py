@@ -429,3 +429,140 @@ async def admin_silent_reactivation_run(
         "trace_id": trace_id,
         **summary.as_dict(),
     }
+
+
+# ── P4-03: 坐席看板任务管理 ───────────────────────────────────────────
+
+@router.post(
+    "/admin/handoff-tasks/{task_id}/accept",
+    summary="P4-03：坐席接受任务（需要 operator JWT）",
+)
+async def admin_accept_handoff_task(
+    task_id: str,
+    payload: dict = Depends(require_operator),
+    db: AsyncSession = Depends(get_db),
+):
+    """坐席接受指定的 handoff 任务，将任务分配给当前坐席。"""
+    try:
+        uuid.UUID(task_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="task_id must be a valid UUID")
+    
+    operator_id = payload.get("sub")
+    
+    # 检查任务是否存在且未分配
+    task_row = await db.execute(
+        text("""
+            SELECT id, status, assigned_operator_id
+            FROM handoff_tasks
+            WHERE id = :task_id
+        """),
+        {"task_id": task_id},
+    )
+    task = task_row.fetchone()
+    
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    if task[2] is not None:  # assigned_operator_id
+        raise HTTPException(status_code=400, detail="Task already assigned to another operator")
+    
+    # 更新任务状态
+    await db.execute(
+        text("""
+            UPDATE handoff_tasks
+            SET assigned_operator_id = :operator_id,
+                status = 'HUMAN_LOCKED',
+                locked_at = NOW()
+            WHERE id = :task_id
+        """),
+        {"operator_id": operator_id, "task_id": task_id},
+    )
+    
+    # 同时更新对应的会话状态
+    await db.execute(
+        text("""
+            UPDATE conversations
+            SET assigned_operator_id = :operator_id,
+                state = 'HUMAN_LOCKED'
+            WHERE id = (SELECT conversation_id FROM handoff_tasks WHERE id = :task_id)
+        """),
+        {"operator_id": operator_id, "task_id": task_id},
+    )
+    
+    await db.commit()
+    
+    logger.bind(
+        operator_id=operator_id,
+        task_id=task_id,
+    ).info("admin.handoff_task.accepted")
+    
+    return {"status": "success", "task_id": task_id, "operator_id": operator_id}
+
+
+@router.post(
+    "/admin/handoff-tasks/{task_id}/reject",
+    summary="P4-03：坐席拒绝任务（需要 operator JWT）",
+)
+async def admin_reject_handoff_task(
+    task_id: str,
+    payload: dict = Depends(require_operator),
+    db: AsyncSession = Depends(get_db),
+):
+    """坐席拒绝指定的 handoff 任务，清除任务分配。"""
+    try:
+        uuid.UUID(task_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="task_id must be a valid UUID")
+    
+    operator_id = payload.get("sub")
+    
+    # 检查任务是否存在
+    task_row = await db.execute(
+        text("""
+            SELECT id, status, assigned_operator_id
+            FROM handoff_tasks
+            WHERE id = :task_id
+        """),
+        {"task_id": task_id},
+    )
+    task = task_row.fetchone()
+    
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    # 只有任务分配给当前坐席时才能拒绝
+    if task[2] != operator_id:
+        raise HTTPException(status_code=400, detail="Task not assigned to current operator")
+    
+    # 更新任务状态
+    await db.execute(
+        text("""
+            UPDATE handoff_tasks
+            SET assigned_operator_id = NULL,
+                status = 'pending',
+                locked_at = NULL
+            WHERE id = :task_id
+        """),
+        {"task_id": task_id},
+    )
+    
+    # 同时更新对应的会话状态
+    await db.execute(
+        text("""
+            UPDATE conversations
+            SET assigned_operator_id = NULL,
+                state = 'WAITING_OPERATOR'
+            WHERE id = (SELECT conversation_id FROM handoff_tasks WHERE id = :task_id)
+        """),
+        {"task_id": task_id},
+    )
+    
+    await db.commit()
+    
+    logger.bind(
+        operator_id=operator_id,
+        task_id=task_id,
+    ).info("admin.handoff_task.rejected")
+    
+    return {"status": "success", "task_id": task_id, "operator_id": operator_id}
