@@ -37,3 +37,5 @@ def test_login_entry_returns_to_admin_home() -> None:
     auth = read("admin/lib/auth.ts")
 
     assert "export const DEFAULT_ADMIN_ENTRY_PATH = ADMIN_BASE_PATH;" in auth
+    assert "function getBrowserStorage(): Storage | null" in auth
+    assert "return getBrowserStorage()?.getItem(TOKEN_KEY) ?? null;" in auth
