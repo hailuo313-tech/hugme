@@ -36,6 +36,7 @@ from api.mtproto_sessions import router as mtproto_sessions_router
 from api.monitoring import router as monitoring_router
 from api.user_level import router as user_level_router
 from api.message_schedule import router as message_schedule_router
+from api.suspension import router as suspension_router
 from api.auto_delivery import router as auto_delivery_router
 from api.intents import router as intents_router
 from core.database import init_db
@@ -218,6 +219,7 @@ app.include_router(conversations_router, prefix="/api/v1/conversations", tags=["
 app.include_router(memories_router, prefix="/api/v1", tags=["memories"])
 app.include_router(characters_router, prefix="/api/v1/characters", tags=["characters"])
 app.include_router(handoff_router, prefix="/api/v1/handoff", tags=["handoff"])
+app.include_router(suspension_router, prefix="/api/v1/suspension", tags=["suspension"])
 app.include_router(notifications_router, prefix="/api/v1/notifications", tags=["notifications"])
 app.include_router(payments_router, prefix="/api/v1", tags=["payments"])
 app.include_router(scripts_router, prefix="/api/v1/scripts", tags=["scripts"])
