@@ -1,6 +1,7 @@
-"""B/C/D auto-delivery worker for P3-15: AccountPool outbound with countdown."""
+"""B/C/D auto-delivery worker plus P3-17 timeout fallback delivery."""
 
 import asyncio
+import json
 from datetime import datetime, timezone
 from typing import Any, Optional
 from uuid import UUID
@@ -15,6 +16,7 @@ from services.human_delay_calculator import calculate_human_delay
 from services.mtproto.account_pool import AccountPool
 from services.mtproto.account_routing import route_redis_key
 from services.telegram_account_manager import telegram_account_manager
+from services.telegram_send import telegram_chat_id_from_external
 
 try:
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -25,9 +27,64 @@ except ModuleNotFoundError:
 
 _ADVISORY_LOCK_KEY = 6_300_422
 JOB_ID = "auto_delivery_worker_tick"
+TIMEOUT_FALLBACK_MESSAGE_TYPE = "timeout_fallback"
+TIMEOUT_FALLBACK_DELIVERY_MODE = "timeout_fallback"
+DEFAULT_TIMEOUT_FALLBACK_SCRIPT_HIT_ID = "default.timeout_fallback.safe_reply"
+DEFAULT_TIMEOUT_FALLBACK_CONTENT = "我先接住你刚才这条消息。真人同事稍后继续跟进，我们也可以先把最重要的点说清楚。"
 
 _scheduler: Optional[AsyncIOScheduler] = None
 _account_pool: Optional[AccountPool] = None
+
+
+def _row_get(row: Any, key: str, default: Any = None) -> Any:
+    data = row._mapping if hasattr(row, "_mapping") else row
+    if hasattr(data, "get"):
+        return data.get(key, default)
+    return getattr(data, key, default)
+
+
+def _normalize_timeout_fallback_script(row: Any | None) -> dict[str, str]:
+    """Return a user-facing default fallback script with a stable hit id."""
+    if row is None:
+        return {
+            "script_hit_id": DEFAULT_TIMEOUT_FALLBACK_SCRIPT_HIT_ID,
+            "content": DEFAULT_TIMEOUT_FALLBACK_CONTENT,
+        }
+
+    script_hit_id = str(_row_get(row, "id") or "").strip()
+    content = str(_row_get(row, "content") or "").strip()
+    return {
+        "script_hit_id": script_hit_id or DEFAULT_TIMEOUT_FALLBACK_SCRIPT_HIT_ID,
+        "content": content or DEFAULT_TIMEOUT_FALLBACK_CONTENT,
+    }
+
+
+def _build_timeout_fallback_metadata(
+    *,
+    handoff_task_id: str,
+    conversation_id: str | None,
+    user_level: str | None,
+    script_hit_id: str,
+    trace_id: str | None,
+) -> dict[str, Any]:
+    return {
+        "delivery_mode": TIMEOUT_FALLBACK_DELIVERY_MODE,
+        "fallback_reason": "handoff_draft_timeout_120s",
+        "script_hit_id": script_hit_id,
+        "script_match_stage": "timeout_fallback",
+        "source_handoff_task_id": handoff_task_id,
+        "conversation_id": conversation_id,
+        "user_level": user_level,
+        "trace_id": trace_id,
+    }
+
+
+def _is_timeout_fallback_message(message: dict[str, Any]) -> bool:
+    metadata = message.get("metadata") or {}
+    return (
+        message.get("message_type") == TIMEOUT_FALLBACK_MESSAGE_TYPE
+        or metadata.get("delivery_mode") == TIMEOUT_FALLBACK_DELIVERY_MODE
+    )
 
 
 async def _get_redis():
@@ -76,8 +133,166 @@ async def _init_account_pool():
         return False
 
 
+async def _select_timeout_fallback_script(
+    session: AsyncSession,
+    *,
+    platform: str,
+    user_level: str,
+) -> dict[str, str]:
+    """Choose the approved default fallback script for timeout delivery."""
+    row = (
+        await session.execute(
+            text(
+                """
+                SELECT id, content
+                FROM script_templates
+                WHERE status = 'approved'
+                  AND category_key = 'fallback'
+                  AND (platform = :platform OR channel = :platform OR platform IS NULL)
+                  AND (hook IN ('reply', 'outbound') OR hook IS NULL)
+                ORDER BY
+                  CASE
+                    WHEN user_level = :user_level THEN 0
+                    WHEN user_level IS NULL THEN 1
+                    WHEN user_level IN ('B', 'C', 'D') THEN 2
+                    ELSE 3
+                  END,
+                  CASE WHEN hook = 'reply' THEN 0 WHEN hook = 'outbound' THEN 1 ELSE 2 END,
+                  updated_at DESC,
+                  created_at DESC
+                LIMIT 1
+                """
+            ),
+            {"platform": platform, "user_level": user_level},
+        )
+    ).mappings().first()
+    return _normalize_timeout_fallback_script(row)
+
+
+async def schedule_expired_timeout_fallbacks(
+    session: AsyncSession,
+    *,
+    trace_id: str | None = None,
+    batch_size: int = 10,
+) -> int:
+    """Queue S/A draft timeout fallback messages with script_hit_id metadata."""
+    rows = (
+        await session.execute(
+            text(
+                """
+                SELECT
+                    ht.id AS handoff_task_id,
+                    ht.user_id::text AS user_id,
+                    ht.conversation_id::text AS conversation_id,
+                    u.external_id AS external_user_id,
+                    u.level AS user_level,
+                    COALESCE(NULLIF(u.channel, ''), 'telegram_real_user') AS platform,
+                    ht.draft_expires_at
+                FROM handoff_tasks ht
+                JOIN users u ON ht.user_id = u.id
+                WHERE ht.status IN ('pending', 'HUMAN_LOCKED')
+                  AND u.level IN ('S', 'A')
+                  AND ht.draft_expires_at IS NOT NULL
+                  AND ht.draft_expires_at <= NOW()
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM message_schedules ms
+                      WHERE ms.metadata->>'delivery_mode' = :delivery_mode
+                        AND ms.metadata->>'source_handoff_task_id' = ht.id::text
+                  )
+                ORDER BY ht.draft_expires_at ASC
+                FOR UPDATE SKIP LOCKED
+                LIMIT :batch_size
+                """
+            ),
+            {
+                "delivery_mode": TIMEOUT_FALLBACK_DELIVERY_MODE,
+                "batch_size": max(1, batch_size),
+            },
+        )
+    ).mappings().all()
+
+    queued = 0
+    for row in rows:
+        platform = str(_row_get(row, "platform") or "telegram_real_user")
+        if platform == "telegram":
+            platform = "telegram_real_user"
+        user_level = str(_row_get(row, "user_level") or "")
+        external_user_id = str(_row_get(row, "external_user_id") or "")
+        chat_id = telegram_chat_id_from_external(external_user_id)
+        script = await _select_timeout_fallback_script(
+            session,
+            platform=platform,
+            user_level=user_level,
+        )
+        handoff_task_id = str(_row_get(row, "handoff_task_id"))
+        conversation_id = _row_get(row, "conversation_id")
+        metadata = _build_timeout_fallback_metadata(
+            handoff_task_id=handoff_task_id,
+            conversation_id=str(conversation_id) if conversation_id else None,
+            user_level=user_level,
+            script_hit_id=script["script_hit_id"],
+            trace_id=trace_id,
+        )
+
+        await session.execute(
+            text(
+                """
+                INSERT INTO message_schedules (
+                    user_id,
+                    external_user_id,
+                    message_type,
+                    content,
+                    platform,
+                    chat_id,
+                    status,
+                    send_at,
+                    priority,
+                    metadata,
+                    trace_id
+                ) VALUES (
+                    :user_id,
+                    :external_user_id,
+                    :message_type,
+                    :content,
+                    :platform,
+                    :chat_id,
+                    'pending',
+                    NOW(),
+                    :priority,
+                    CAST(:metadata AS jsonb),
+                    :trace_id
+                )
+                """
+            ),
+            {
+                "user_id": str(_row_get(row, "user_id")),
+                "external_user_id": external_user_id,
+                "message_type": TIMEOUT_FALLBACK_MESSAGE_TYPE,
+                "content": script["content"],
+                "platform": platform,
+                "chat_id": chat_id,
+                "priority": 100,
+                "metadata": json.dumps(metadata, ensure_ascii=False),
+                "trace_id": trace_id,
+            },
+        )
+        queued += 1
+
+        logger.bind(
+            trace_id=trace_id,
+            handoff_task_id=handoff_task_id,
+            user_level=user_level,
+            script_hit_id=script["script_hit_id"],
+        ).info("auto_delivery_worker.timeout_fallback.queued")
+
+    if queued:
+        await session.commit()
+    return queued
+
+
 async def _claim_bcd_message(session: AsyncSession) -> dict[str, Any] | None:
-    """Claim one pending B/C/D level message that should be sent now."""
+    """Claim one pending B/C/D message or P3-17 timeout fallback."""
     row = (
         await session.execute(
             text(
@@ -89,7 +304,11 @@ async def _claim_bcd_message(session: AsyncSession) -> dict[str, Any] | None:
                     WHERE ms.status = 'pending'
                       AND (ms.send_at IS NULL OR ms.send_at <= NOW())
                       AND ms.retry_count < ms.max_retries
-                      AND u.level IN ('B', 'C', 'D')
+                      AND (
+                          u.level IN ('B', 'C', 'D')
+                          OR ms.metadata->>'delivery_mode' = :delivery_mode
+                          OR ms.message_type = :timeout_message_type
+                      )
                     ORDER BY ms.priority DESC, ms.send_at ASC NULLS LAST, ms.created_at ASC
                     FOR UPDATE SKIP LOCKED
                     LIMIT 1
@@ -103,7 +322,11 @@ async def _claim_bcd_message(session: AsyncSession) -> dict[str, Any] | None:
                        ms.content, ms.platform, ms.account_id, ms.chat_id,
                        ms.metadata, ms.trace_id, ms.retry_count
                 """
-            )
+            ),
+            {
+                "delivery_mode": TIMEOUT_FALLBACK_DELIVERY_MODE,
+                "timeout_message_type": TIMEOUT_FALLBACK_MESSAGE_TYPE,
+            },
         )
     ).mappings().first()
     if not row:
@@ -208,6 +431,7 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
     trace_id = trace_id or f"auto-{int(datetime.utcnow().timestamp())}"
     log = logger.bind(component="auto_delivery_worker", trace_id=trace_id)
     stats: dict[str, Any] = {
+        "timeout_fallback_queued": 0,
         "claimed": 0,
         "sent": 0,
         "failed": 0,
@@ -239,6 +463,12 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
                     log.warning("auto_delivery_worker.tick.skip_no_pool")
                     return stats
 
+                # P3-17: turn expired S/A handoff drafts into deliverable fallback rows.
+                stats["timeout_fallback_queued"] = await schedule_expired_timeout_fallbacks(
+                    session,
+                    trace_id=trace_id,
+                )
+
                 # Claim one B/C/D message to send
                 message = await _claim_bcd_message(session)
                 if not message:
@@ -255,6 +485,8 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
                     message_id=message_id,
                     user_id=user_id,
                     message_type=message["message_type"],
+                    script_hit_id=(message.get("metadata") or {}).get("script_hit_id"),
+                    timeout_fallback=_is_timeout_fallback_message(message),
                 ).info("auto_delivery_worker.tick.claimed")
 
                 # Send via AccountPool

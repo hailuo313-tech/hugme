@@ -515,7 +515,7 @@ const TASKS = [
   { id:"P3-14", phase:"03", owner:"codex", w:0.5, week:"W6", dep:"—", desc:"拟人延迟计算器", acc:"单测边界通过", baseline:true },
   { id:"P3-15", phase:"03", owner:"devin", w:1.5, week:"W6", dep:"P3-13,14,P1-17", desc:"B/C/D 自动投递 Worker（AccountPool 出站）", acc:"倒计时后经 MTProto 拟人发出" },
   { id:"P3-16", phase:"03", owner:"devin", w:1.5, week:"W7", dep:"P2-11,P3-13,P3-20", desc:"S/A 挂起 + 草稿含 Top3 话术与 script_ids", acc:"坐席见推荐话术+倒计时" },
-  { id:"P3-17", phase:"03", owner:"codex", w:1, week:"W7", dep:"P3-16", desc:"120s 超时兜底投递（默认命中兜底话术）", acc:"超时投递带 script_hit_id" },
+  { id:"P3-17", phase:"03", owner:"codex", w:1, week:"W7", dep:"P3-16", desc:"120s 超时兜底投递（默认命中兜底话术）", acc:"超时投递带 script_hit_id", baseline:true },
   { id:"P3-18", phase:"03", owner:"devin", w:1, week:"W7", dep:"P1-02", desc:"archive_service 异步精聊归档", acc:"不阻塞主链路" },
   { id:"P3-19", phase:"03", owner:"codex", w:1, week:"W7", dep:"P3-18,P3-21", desc:"精聊查询 API（含每步 script_hit 轨迹）", acc:"S/A 100% 可查且可追溯话术" },
   { id:"P3-20", phase:"03", owner:"codex", w:2, week:"W5", dep:"P3-04", desc:"script_match 全链路编排（8 钩子：入站/消费/探测/分级/回复/坐席/出站/归档）", acc:"每步必有 match 结果或明确降级" },
