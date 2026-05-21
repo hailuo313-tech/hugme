@@ -5,6 +5,12 @@
 **P2-12**: 入站流水线集成 calcUserLevel
 **验收标准**: MTProto 真人号实测分级正确
 
+补充验收归档：
+
+- 脱敏实测归档规范：`docs/P2-12_MTPROTO_LEVEL_ARCHIVE_EVIDENCE.md`
+- 归档校验脚本：`scripts/check_p2_12_mtproto_level_archive.py`
+- CI 覆盖：`tests/test_p2_12_mtproto_level_archive.py`
+
 ## 实现内容
 
 ### 1. 用户分级服务
