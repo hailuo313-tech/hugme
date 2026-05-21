@@ -143,5 +143,10 @@ class Settings(BaseSettings):
     APNS_KEY_PATH: Optional[str] = None  # APNs 私钥文件路径（.p8）
     APNS_BUNDLE_ID: str = 'com.hugme.app'  # App Bundle ID
     APNS_PRODUCTION: bool = False  # 是否使用生产环境 APNs（False = 开发环境）
+    # P1-18：Session 管理器配置（自动重连 + 健康检查）
+    SESSION_MANAGER_ENABLED: bool = False  # 是否启用 Session 管理器
+    SESSION_RECONNECT_INTERVAL: int = 30  # 重连间隔（秒）
+    SESSION_MAX_RECONNECT_ATTEMPTS: int = 5  # 最大重连尝试次数
+    SESSION_HEALTH_CHECK_INTERVAL: int = 60  # 健康检查间隔（秒）
 
 settings = Settings()
