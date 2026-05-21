@@ -163,5 +163,9 @@ class Settings(BaseSettings):
     MESSAGE_SCHEDULE_ENABLED: bool = False  # 是否启用消息待发队列
     MESSAGE_SCHEDULE_POLL_SECONDS: int = 20  # 轮询间隔（秒）
     MESSAGE_SCHEDULE_SCHEDULER_MAX_INSTANCES: int = 1  # 调度器最大并发实例数
+    # P3-15：B/C/D 自动投递 Worker 配置
+    AUTO_DELIVERY_ENABLED: bool = False  # 是否启用 B/C/D 自动投递 Worker
+    AUTO_DELIVERY_POLL_SECONDS: int = 20  # 轮询间隔（秒）
+    AUTO_DELIVERY_SCHEDULER_MAX_INSTANCES: int = 1  # 调度器最大并发实例数
 
 settings = Settings()
