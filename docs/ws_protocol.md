@@ -6,6 +6,8 @@
 
 ## Endpoint
 
+### 坐席任务端点
+
 ```text
 GET /ws/operators/tasks?operator_id=<operator-id>&trace_id=<optional>
 wss://hugme2.com/ws/operators/tasks?operator_id=<operator-id>
@@ -13,7 +15,18 @@ wss://hugme2.com/ws/operators/tasks?operator_id=<operator-id>
 
 Future auth (D5-1/D5-3): `&token=<operator-jwt>`; not enforced in current backend.
 
+### H5 用户端端点 (P4-08)
+
+```text
+GET /ws/h5/chat?user_id=<user-id>&conversation_id=<conversation-id>&trace_id=<optional>
+wss://hugme2.com/ws/h5/chat?user_id=<user-id>&conversation_id=<conversation-id>
+```
+
+用于 H5 移动端聊天页面，支持正在输入状态同步。
+
 ## Lifecycle
+
+### 坐席任务端点
 
 1. Client connects.
 2. Server sends `connection.ready`.
@@ -23,6 +36,15 @@ Future auth (D5-1/D5-3): `&token=<operator-jwt>`; not enforced in current backen
 6. Optional broadcast: `user.upgraded` (P2-11).
 
 After the initial snapshot, clients must apply deltas; there is no second snapshot.
+
+### H5 用户端端点 (P4-08)
+
+1. Client connects with `user_id` and `conversation_id`.
+2. Server sends `connection.ready`.
+3. Client may send `typing.start` / `typing.stop` to indicate typing status.
+4. Server sends `typing.status` to notify typing status changes.
+5. Client may send `ping`; server responds with `pong`.
+6. Client may send `message.ack` to acknowledge message receipt.
 
 ## Server Events
 
@@ -175,5 +197,107 @@ P4-01 acceptance is met when:
 
 - 此事件依赖 P4-02 的 ACK 重推机制
 - 仅对 S 和 A 级用户触发，B/C/D 级用户不触发
+
+## P4-08: H5 用户端 WebSocket (2026-05-21)
+
+### 新增端点
+
+```text
+GET /ws/h5/chat?user_id=<user-id>&conversation_id=<conversation-id>&trace_id=<optional>
+```
+
+用于 H5 移动端聊天页面，支持正在输入状态同步。
+
+### 服务器事件
+
+|| `type` | Required fields | Notes |
+||--------|-----------------|-------|
+|| `connection.ready` | `trace_id`, `user_id`, `conversation_id`, `server_time` | 连接就绪确认 |
+|| `typing.status` | `user_id`, `is_typing`, `timestamp` | 正在输入状态通知 |
+|| `pong` | `trace_id`, `server_time` | Reply to client `ping` |
+
+### 客户端事件
+
+|| `type` | Required fields | Notes |
+||--------|-----------------|-------|
+|| `ping` | `type` only | 保持连接活跃 |
+|| `typing.start` | `type` only | 用户开始输入 |
+|| `typing.stop` | `type` only | 用户停止输入 |
+|| `message.ack` | `message_id` | 消息确认 |
+
+### 生命周期
+
+1. Client connects with `user_id` and `conversation_id`.
+2. Server sends `connection.ready`.
+3. Client may send `typing.start` / `typing.stop` to indicate typing status.
+4. Server sends `typing.status` to notify typing status changes.
+5. Client may send `ping`; server responds with `pong`.
+6. Client may send `message.ack` to acknowledge message receipt.
+
+### 正在输入动效实现
+
+前端实现三个跳动的圆点动画：
+
+```css
+.typing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.typing-dot {
+  width: 8px;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 50%;
+  animation: bounce 1.4s infinite ease-in-out both;
+}
+
+.typing-dot:nth-child(1) { animation-delay: -0.32s; }
+.typing-dot:nth-child(2) { animation-delay: -0.16s; }
+.typing-dot:nth-child(3) { animation-delay: 0s; }
+
+@keyframes bounce {
+  0%, 80%, 100% { transform: scale(0); }
+  40% { transform: scale(1); }
+}
+```
+
+### 示例
+
+```json
+// 服务器发送连接就绪
+{
+  "type": "connection.ready",
+  "trace_id": "h5-ws-1",
+  "user_id": "user_123",
+  "conversation_id": "conv_456",
+  "server_time": "2026-05-21T00:50:00Z"
+}
+
+// 服务器发送正在输入状态
+{
+  "type": "typing.status",
+  "user_id": "user_789",
+  "is_typing": true,
+  "timestamp": "2026-05-21T00:50:05Z"
+}
+
+// 客户端发送开始输入
+{
+  "type": "typing.start"
+}
+
+// 客户端发送停止输入
+{
+  "type": "typing.stop"
+}
+```
+
+### 兼容性
+
+- 与现有的坐席任务端点独立运行
+- 支持移动端浏览器环境
+- 自动重连机制由前端实现
 
 See `fixtures/c09_ws_protocol.json` and `docs/C09_INSPECTION_REPORT.md`.

@@ -755,3 +755,130 @@ async def websocket_endpoint(websocket: WebSocket):
         log.bind(error=str(e)).error("ws.client.error")
     finally:
         manager.disconnect(websocket)
+
+
+# ── P4-08: H5 用户端 WebSocket ─────────────────────────────────────────
+
+class H5ConnectionManager:
+    """H5 用户端 WebSocket 连接管理器。"""
+    
+    def __init__(self):
+        # user_id -> WebSocket
+        self.active_connections: dict[str, WebSocket] = {}
+    
+    async def connect(self, user_id: str, websocket: WebSocket):
+        """连接用户。"""
+        self.active_connections[user_id] = websocket
+        logger.bind(user_id=user_id).info("h5.ws.user_connected")
+    
+    def disconnect(self, user_id: str):
+        """断开用户连接。"""
+        if user_id in self.active_connections:
+            del self.active_connections[user_id]
+            logger.bind(user_id=user_id).info("h5.ws.user_disconnected")
+    
+    async def send_typing_status(self, user_id: str, is_typing: bool):
+        """向指定用户发送正在输入状态。"""
+        if user_id in self.active_connections:
+            websocket = self.active_connections[user_id]
+            try:
+                await websocket.send_json({
+                    "type": "typing.status",
+                    "user_id": user_id,
+                    "is_typing": is_typing,
+                    "timestamp": datetime.now().isoformat(),
+                })
+            except Exception as e:
+                logger.bind(user_id=user_id, error=str(e)).error("h5.ws.send_typing_failed")
+
+
+h5_manager = H5ConnectionManager()
+
+
+@router.websocket("/ws/h5/chat")
+async def h5_chat_websocket(
+    websocket: WebSocket,
+    user_id: str,
+    conversation_id: str,
+    trace_id: str = "h5-ws-default",
+):
+    """
+    P4-08: H5 用户端聊天 WebSocket 端点。
+    
+    用途：
+    - 实时接收正在输入状态
+    - 发送消息确认
+    - 保持连接活跃
+    
+    URL 参数：
+    - user_id: 用户 ID
+    - conversation_id: 会话 ID
+    - trace_id: 可选的追踪 ID
+    """
+    await websocket.accept()
+    
+    log = logger.bind(
+        trace_id=trace_id,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        component="h5-ws",
+    )
+    
+    await h5_manager.connect(user_id, websocket)
+    
+    # 发送连接就绪消息
+    await websocket.send_json({
+        "type": "connection.ready",
+        "trace_id": trace_id,
+        "user_id": user_id,
+        "conversation_id": conversation_id,
+        "server_time": datetime.now().isoformat(),
+    })
+    
+    try:
+        while True:
+            # 非阻塞接收客户端消息
+            try:
+                client_msg = await asyncio.wait_for(
+                    websocket.receive_json(),
+                    timeout=CLIENT_RECV_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                client_msg = None
+            
+            if client_msg is not None:
+                msg_type = client_msg.get("type")
+                
+                if msg_type == "ping":
+                    # 响应 ping
+                    await websocket.send_json({
+                        "type": "pong",
+                        "trace_id": trace_id,
+                        "server_time": datetime.now().isoformat(),
+                    })
+                    log.info("h5.ws.ping_pong")
+                
+                elif msg_type == "typing.start":
+                    # 用户开始输入
+                    log.info("h5.ws.typing_started")
+                    # 这里可以广播给其他用户（如果是群聊）
+                    # 暂时只记录日志
+                
+                elif msg_type == "typing.stop":
+                    # 用户停止输入
+                    log.info("h5.ws.typing_stopped")
+                
+                elif msg_type == "message.ack":
+                    # 消息确认
+                    message_id = client_msg.get("message_id")
+                    log.bind(message_id=message_id).info("h5.ws.message_ack")
+                
+                else:
+                    log.bind(msg_type=msg_type).warning("h5.ws.unknown_message_type")
+    
+    except WebSocketDisconnect:
+        log.info("h5.ws.disconnected")
+    except Exception as e:
+        log.bind(error=str(e)).error("h5.ws.error")
+    finally:
+        h5_manager.disconnect(user_id)
