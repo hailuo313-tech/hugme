@@ -1,985 +1,995 @@
-# ERIS MVP Runbook v1
+# ERIS 运维手册 (RUNBOOK.md)
 
-Last updated: 2026-05-16
-Host: `67.216.204.137`
-Domain: `hugme2.com`
-Project root: `/opt/eris`
+## 文档信息
+- **版本**: v1.0
+- **最后更新**: 2026-05-21
+- **维护团队**: ERIS DevOps Team
+- **适用环境**: Production / Staging / Development
 
-## Current System
+## 文档目的
+本运维手册提供 ERIS 系统的完整运维指南，包括系统架构、部署流程、监控告警、故障排查、备份恢复、应急响应等关键运维操作，确保系统稳定可靠运行。
 
-Services:
+---
 
-```text
-eris-api        FastAPI app, local port 127.0.0.1:8000
-eris-postgres   PostgreSQL + pgvector, local port 127.0.0.1:5432
-eris-redis      Redis, local port 127.0.0.1:6379
-nginx           public HTTP/HTTPS reverse proxy
+## 目录
+1. [系统架构](#1-系统架构)
+2. [部署流程](#2-部署流程)
+3. [监控和告警](#3-监控和告警)
+4. [故障排查](#4-故障排查)
+5. [备份和恢复](#5-备份和恢复)
+6. [应急响应](#6-应急响应)
+7. [性能优化](#7-性能优化)
+8. [安全最佳实践](#8-安全最佳实践)
+9. [日常运维](#9-日常运维)
+10. [演练场景](#10-演练场景)
+
+---
+
+## 1. 系统架构
+
+### 1.1 整体架构
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      用户层 (Users)                          │
+│  Telegram 真人用户 | H5 网页用户 | 移动 App 用户           │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│                      接入层 (Ingress)                        │
+│  MTProto 接入 | WebSocket 服务 | HTTP API                 │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│                   应用层 (Application)                       │
+│  FastAPI 服务 (eris-api)                                    │
+│  - 业务逻辑处理                                             │
+│  - AI 处理 (LLM Orchestrator)                               │
+│  - 消息队列处理                                             │
+│  - WebSocket 管理                                           │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│                   数据层 (Data)                              │
+│  PostgreSQL (主数据库) | Redis (缓存)                      │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│                  监控层 (Monitoring)                         │
+│  Prometheus | Grafana | Node Exporter | Exporters          │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-**API 容器源码路径**：`docker-compose.yml` 里 `api` 的 `build.context` 为 `./app`，镜像内
-`WORKDIR=/app`，代码在 **`/app/services/...`**、**`/app/api/...`**。因此 `docker exec eris-api python -m py_compile …`
-里请写 **`services/...`** / **`api/...`**，不要写仓库根视角的 **`app/services/...`**（容器里不存在该前缀）。
+### 1.2 核心组件
 
-Public endpoints:
+#### 应用服务
+- **eris-api**: FastAPI 主应用服务
+  - 端口: 8000
+  - 职责: 业务逻辑处理、API 服务、WebSocket 服务
+  - 健康检查: `/health`
 
-```text
-https://hugme2.com/health
-https://hugme2.com/health/detail
-https://hugme2.com/roadmap                    # 对外短链；见下「公开路线图」
-https://hugme2.com/ops/eris-roadmap.html      # 与 roadmap 同源：仓库 docs/eris-roadmap.html
-https://hugme2.com/ops/20260514v001.html      # 仓库 docs/ 下的版本化 smoke HTML；勿用 /docs/（Swagger）
-wss://hugme2.com/ws/operators/tasks?operator_id=<operator-id>
-```
+#### 数据库服务
+- **PostgreSQL**: 主数据库
+  - 端口: 5432
+  - 版本: pgvector/pgvector:pg16
+  - 数据库: eris
+  - 备份: 每日自动备份
 
-## 公开路线图（`hugme2.com/roadmap` = 静态 `eris-roadmap.html`）
+- **Redis**: 缓存服务
+  - 端口: 6379
+  - 版本: 7-alpine
+  - 用途: 缓存、会话管理、消息队列
 
-**源文件（Git）**：[`docs/eris-roadmap.html`](docs/eris-roadmap.html)。与 [`docs/ROADMAP_RECONCILE_D8.md`](docs/ROADMAP_RECONCILE_D8.md) 一起在 PR 里审完再合 `main`。
-版本化 smoke 页：[`docs/20260514v001.html`](docs/20260514v001.html)。
+#### 监控服务
+- **Prometheus**: 指标收集和存储
+  - 端口: 9090
+  - 数据保留: 30天
 
-**线上如何生效**：
+- **Grafana**: 可视化面板
+  - 端口: 3000
+  - 认证: admin/admin (生产环境需修改)
 
-1. `docker-compose.yml` 将宿主机 **`/opt/eris/docs`** 只读挂进 API 容器的 **`/srv/ops-docs`**（`api.volumes`）。
-2. FastAPI **`GET /ops/{filename}.html`**（[`app/main.py`](app/main.py)）从该目录读文件 → **`https://hugme2.com/ops/eris-roadmap.html`** 与仓库 `docs/` 同步。
-3. **`https://hugme2.com/roadmap`** 由 **Nginx**（不在本仓库）配置：常见为 **`alias` 到** `/opt/eris/docs/eris-roadmap.html`、或 **`proxy_pass`** 到 `http://127.0.0.1:8000/ops/eris-roadmap.html`、或 **301** 到 `/ops/eris-roadmap.html`。只要最终读的是 **`/opt/eris/docs/eris-roadmap.html`**，发布流程一致。
+- **Node Exporter**: 系统指标收集
+  - 端口: 9100
 
-**发布步骤（改完 HTML 后）**：
+- **PostgreSQL Exporter**: 数据库指标
+  - 端口: 9187
 
+- **Redis Exporter**: 缓存指标
+  - 端口: 9121
+
+### 1.3 网络架构
+- **内部网络**: Docker 内部网络，服务间通信
+- **外部访问**: 通过反向代理暴露必要端口
+- **安全组**: 仅开放必要端口 (80, 443, 22)
+
+### 1.4 数据流
+1. **用户消息**: Telegram → MTProto → API → 业务处理 → AI → 响应
+2. **WebSocket 连接**: 客户端 → WebSocket → 实时消息处理
+3. **数据持久化**: 应用 → PostgreSQL/Redis
+4. **监控数据**: 应用/系统 → Exporters → Prometheus → Grafana
+
+---
+
+## 2. 部署流程
+
+### 2.1 环境准备
+
+#### 服务器要求
+- **CPU**: 4核心以上
+- **内存**: 8GB 以上
+- **磁盘**: 100GB 以上 SSD
+- **操作系统**: Ubuntu 20.04+ / CentOS 7+
+- **网络**: 稳定的互联网连接
+
+#### 软件依赖
 ```bash
-cd /opt/eris
-git pull origin main
-# bind mount 下一般立刻生效；若 CDN/浏览器强缓存，可 restart api 或换带版本 query
-docker compose restart api
-curl -fsS -o /dev/null -w "%{http_code}\n" https://hugme2.com/ops/eris-roadmap.html
-curl -fsS -o /dev/null -w "%{http_code}\n" https://hugme2.com/roadmap
+# Docker
+curl -fsSL https://get.docker.com -o get-docker.sh
+sh get-docker.sh
+
+# Docker Compose
+sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+sudo chmod +x /usr/local/bin/docker-compose
+
+# Git
+sudo apt update
+sudo apt install git -y
 ```
 
-若 Nginx 对 `/roadmap` 指向 **另一目录的拷贝**（非 `/opt/eris/docs`），需在该目录 **额外同步** `eris-roadmap.html`，并在服务器 Nginx `location` 旁注释真实路径，避免与 compose 挂载两套源。
+### 2.2 代码部署
 
-SSH:
-
+#### 克隆代码仓库
 ```bash
-ssh -i C:\Users\13267\.ssh\eris_67.216.204.137 -p 2222 root@67.216.204.137
+cd /opt
+git clone https://github.com/hailuo313-tech/hugme.git eris
+cd eris
 ```
 
-## Health Checks
-
-From any machine:
-
+#### 配置环境变量
 ```bash
-curl -i https://hugme2.com/health
-curl -i https://hugme2.com/health/detail
+# 创建 .env 文件
+cat > .env <<EOF
+POSTGRES_DB=eris
+POSTGRES_USER=eris
+POSTGRES_PASSWORD=your_secure_password
+POSTGRES_MIGRATION_USER=eris_migration
+POSTGRES_MIGRATION_PASSWORD=your_migration_password
+POSTGRES_WRITER_USER=eris_writer
+POSTGRES_WRITER_PASSWORD=your_writer_password
+POSTGRES_READER_USER=eris_reader
+POSTGRES_READER_PASSWORD=your_reader_password
+
+REDIS_PASSWORD=your_redis_password
+
+SECRET_KEY=your_secret_key_here
+
+OPENROUTER_API_KEY=your_openrouter_api_key
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+TELEGRAM_API_ID=your_telegram_api_id
+TELEGRAM_API_HASH=your_telegram_api_hash
+TELEGRAM_SESSION_FERNET_KEY=your_fernet_key
+
+GRAFANA_ADMIN_USER=admin
+GRAFANA_ADMIN_PASSWORD=your_grafana_password
+
+ENV=production
+EOF
 ```
 
-On server:
-
+#### 启动服务
 ```bash
-cd /opt/eris
-docker ps
+# 构建并启动所有服务
+docker compose up -d --build
+
+# 查看服务状态
 docker compose ps
-curl -i http://127.0.0.1:8000/health
-curl -i http://127.0.0.1:8000/health/detail
+
+# 查看日志
+docker compose logs -f api
 ```
 
-Expected:
-
-```text
-/health        200 {"status":"ok","service":"ERIS API","version":"0.1.0"}
-/health/detail 200 {"api":"ok","db":"ok","redis":"ok"}
-```
-
-## Logs
-
-API logs:
-
+### 2.3 数据库迁移
 ```bash
-docker logs --tail 200 eris-api
-docker logs -f eris-api
+# 运行数据库迁移
+docker compose exec api python -m alembic upgrade head
+
+# 验证迁移状态
+docker compose exec api python -m alembic current
 ```
 
-Trace one request:
-
+### 2.4 健康检查
 ```bash
-curl -H 'X-Trace-Id: manual-check-001' https://hugme2.com/health
-docker logs --tail 200 eris-api | grep manual-check-001
+# 检查 API 健康状态
+curl http://localhost:8000/health
+
+# 检查数据库连接
+docker compose exec postgres pg_isready -U eris
+
+# 检查 Redis 连接
+docker compose exec redis redis-cli -a your_redis_password ping
+
+# 检查监控服务
+curl http://localhost:9090/api/v1/targets  # Prometheus
+curl http://localhost:3000/api/health       # Grafana
 ```
 
-Nginx logs:
+### 2.5 回滚流程
 
+#### 快速回滚
 ```bash
-tail -100 /var/log/nginx/eris.access.log
-tail -100 /var/log/nginx/eris.error.log
-tail -100 /var/log/nginx/error.log
-```
-
-Certbot logs:
-
-```bash
-tail -100 /var/log/letsencrypt/letsencrypt.log
-```
-
-## Memory Writer: 三阶段记忆写入 (D3-3)
-
-**核心**：`app/services/memory_writer.py` 在用户消息持久化之后被
-`asyncio.create_task(...)` 异步触发，自带 DB session，**绝不阻塞**用户回复。
-
-```text
-Phase 1  规则预过滤  ─ too_short / acknowledgement / emoji-only / 24h dedup
-Phase 2  LLM 评分    ─ JSON 输出 {is_memory_worthy, memory_type, content,
-                                  importance_score, confidence, emotion_tags}
-Phase 3  持久化      ─ INSERT INTO memories (embedding=NULL，D3-4 异步补)
-```
-
-**接入点**：
-- `app/api/telegram.py` — 用户消息持久化 + 上下文 push 后立即触发；onboarding
-  期间 `is_onboarding=True`，writer 直接跳过（onboarding 数据走 user_profiles）。
-- `app/api/messages.py` — `/api/v1/messages/inbound` 同样触发，默认 onboarding=False。
-
-**环境变量**（`.env`）：
-
-```bash
-MEMORY_WRITE_ENABLED=true                  # 总开关；false 时 writer noop
-LLM_MEMORY_MODEL=openai/gpt-4o-mini        # 评分用模型；留空走主备路由
-MEMORY_IMPORTANCE_THRESHOLD=5              # 评分 ≥ 此值才入库
-```
-
-**日志事件**（均带 `trace_id` + `component=memory_writer`）：
-
-```text
-memory.write.start
-memory.write.prefilter_skip       reason=too_short|acknowledgement|emoji_or_punct_only|duplicate_24h|onboarding|disabled_by_flag|empty
-memory.write.llm.start            model=...
-memory.write.llm.failed           reason / error_type
-memory.write.llm.scored           importance / memory_type / confidence / duration_ms
-memory.write.below_threshold      score / threshold
-memory.write.persisted            memory_id / importance
-memory.write.persist_failed       error_type
-```
-
-**Smoke**（服务器上跑）：
-
-```bash
-# 1) 模块可正确导入（拦 SyntaxError 类问题）
-docker exec eris-api python -m py_compile services/memory_writer.py && echo "OK"
-
-# 2) 真发一条有营养的 TG 消息后，看日志是否走完三阶段
-docker logs --tail 200 eris-api | grep -E "memory\.write\.(start|scored|persisted)"
-
-# 3) DB 校验
-docker exec eris-postgres psql -U eris -d eris -c \
-  "SELECT id, memory_type, importance_score, content, created_at FROM memories \
-   ORDER BY created_at DESC LIMIT 5;"
-```
-
-**预期**：寒暄/嗯哼/表情包等不入库；身份事实/偏好/关系/创伤等 importance≥5 才入库。
-
-## Embedding Worker: 异步 backfill (D3-4)
-
-**核心**：`app/services/embedding_worker.py` 在 FastAPI lifespan 里启动一个
-APScheduler IntervalTrigger（默认每 30s），扫 `memories.embedding IS NULL` 的行,
-批量调 `services/embedder.py`（OpenAI `text-embedding-3-small` / 1536 维）后写回。
-
-**为什么异步而不同步**：D3-3 已经为每条用户消息花了一次 LLM 评分，再叠加 embedding
-会拉长用户回复路径 0.3–0.8s。embedding 失败也不影响行本身已经入库的事实，下一个
-tick 自动重试。
-
-**互斥**：`pg_try_advisory_lock(6_300_410)` + `SELECT ... FOR UPDATE SKIP LOCKED`
-双保险，多 worker 进程 / 多 pod 安全；UPDATE 条件再加 `AND embedding IS NULL` 做幂等。
-
-**环境变量**（`.env`）：
-
-```bash
-EMBEDDING_WORKER_ENABLED=true              # 总开关；false 时 scheduler 不启动
-OPENAI_API_KEY=sk-...                      # 直连 OpenAI 的 key；缺失则 worker 自动跳过
-EMBEDDING_MODEL=text-embedding-3-small     # 1536 维必须和 schema vector(1536) 对齐
-EMBEDDING_BATCH_SIZE=32                    # 单次 tick 最多处理多少行
-EMBEDDING_POLL_SECONDS=30                  # 轮询间隔，最小 5
-```
-
-**日志事件**（均带 `component=embedding_worker` 或 `component=embedder`）：
-
-```text
-embedding_worker.scheduler.started        interval_s / batch_size
-embedding_worker.scheduler.disabled       (开关关闭)
-embedding_worker.scheduler.no_api_key     (key 缺失)
-embedding_worker.tick.batch_pulled        batch=N
-embedding_worker.tick.empty               (队列空，正常)
-embedding_worker.tick.embed_failed        error
-embedding_worker.tick.persisted           selected / embedded / updated / model
-embedding_worker.skip_no_lock             (advisory lock 被别人占着)
-embedder.call.start / .ok / .timeout / .4xx / .5xx
-```
-
-**Smoke**（服务器上跑）：
-
-```bash
-# 1) 编译 sanity
-docker exec eris-api python -m py_compile \
-  services/embedder.py services/embedding_worker.py && echo OK
-
-# 2) 启动日志（应在 30s 内出现 scheduler.started）
-docker logs --tail 200 eris-api | grep -E "embedding_worker\.scheduler\."
-
-# 3) 看 tick 是否在跑
-docker logs --tail 500 eris-api | grep -E "embedding_worker\.tick\."
-
-# 4) DB 进度
-docker exec eris-postgres psql -U eris -d eris -c \
-  "SELECT COUNT(*) AS total,
-          COUNT(*) FILTER (WHERE embedding IS NOT NULL) AS embedded,
-          COUNT(*) FILTER (WHERE embedding IS NULL) AS pending
-   FROM memories WHERE is_active = true;"
-```
-
-**预期**：发完一条"值得记住"的消息后，~30s 内 `pending` 减 1、`embedded` 加 1。
-
-**降级**：OpenAI key 失效 / 5xx → 行积压，每次 tick log 一次 `embed_failed`，
-切回好 key 后自动追平；schema 维度不匹配 → UPDATE 报错（不会出现在正常路径，
-切模型前需 migrate schema）。
-
-## Profile score worker（D4-4：initiation_score + trigger_threshold）
-
-**核心**：`app/services/profile_score_worker.py` 周期性写回 `user_profiles.initiation_score`
-（近 N 天 `sender_type='user'` 消息条数 / cap 饱和到 0–100）与 **min-only**
-`trigger_threshold`（与 `scripts/init.sql` 默认 65、`LONELINESS_BASELINE` pivot 对齐）。
-调度：`app/services/profile_score_scheduler.py`（APScheduler，`main` lifespan 启停）。
-
-**互斥**：`pg_try_advisory_lock(6_300_413)`，与 embedding / silent_reactivation 错开。
-
-**环境变量**（`.env`）：
-
-```bash
-SCORE_WORKER_ENABLED=true                 # 默认 false；生产需显式打开
-SCORE_WORKER_POLL_SECONDS=120
-SCORE_WORKER_SCHEDULER_MAX_INSTANCES=1
-SCORE_INITIATION_LOOKBACK_DAYS=7
-SCORE_INITIATION_CAP_MESSAGES=40
-SCORE_PROFILE_MIN_UPDATE_DELTA=0.05
-TRIGGER_THRESHOLD_BASE=65
-TRIGGER_THRESHOLD_PIVOT=35
-TRIGGER_THRESHOLD_K=0.15
-TRIGGER_THRESHOLD_FLOOR=50
-TRIGGER_THRESHOLD_CEIL=82
-POLICY_SERVICE_ENABLED=1                  # handoff 阈值 smoke 需要打开
-POLICY_RISK_SCORE_THRESHOLD=75
-POLICY_LONELINESS_THRESHOLD=82
-POLICY_VIP_LEVEL_THRESHOLD=1
-POLICY_HANDOFF_COUNT_THRESHOLD=3
-```
-
-**Compose 透传要求**：`docker-compose.yml` 的 `api.environment` 必须显式透传上述
-`SCORE_WORKER_*`、`SCORE_INITIATION_*`、`TRIGGER_THRESHOLD_*`、`POLICY_*`。
-Compose 只读取 `.env` 做变量替换，不会自动把整份 `.env` 注入 `eris-api` 容器。
-若 `docker inspect eris-api ... | grep -E 'SCORE_WORKER|POLICY_SERVICE'` 看不到这些变量，
-scheduler 会保持 `profile_score.scheduler.disabled`。
-
-**日志**：`profile_score_worker.tick.done`（`profiles_scanned` / `profiles_updated`）、
-`profile_score_worker.skip_no_lock`、`profile_score.scheduler.*`。
-
-**Smoke**：
-
-```bash
-docker exec eris-api python -m py_compile \
-  services/profile_score_worker.py services/profile_score_scheduler.py && echo OK
-docker logs --tail 200 eris-api | grep -E "profile_score"
-```
-
-## Memory Retrieval: Hybrid (D4-1)
-
-**核心**：`app/services/memory_retriever.py` 把"当前 query → embed → tag-filter +
-pgvector cosine → rerank → top k"做成一个纯函数式调用；
-HTTP 入口 `POST /api/v1/users/{user_id}/memories/retrieve`。
-
-```text
-Phase 1  Embed query     ← 复用 D3-4 embedder（OpenAI text-embedding-3-small）
-                            失败 → fallback：importance DESC
-Phase 2  tag-filter SQL  ← user_id / is_active / memory_type / character_id /
-                            importance ≥ :min；ORDER BY embedding <=> :qvec
-                            LIMIT :k_candidates（默认 30）
-Phase 3  Python rerank   ← 0.55·sim + 0.25·(imp/10)
-                            + 0.15·recency(30d half-life) + 0.05·conf
-                            sort desc, 截 k_final（默认 10）
-Phase 4  touch           ← asyncio.create_task: UPDATE last_used_at = NOW()
-                            fire-and-forget；不阻塞响应
-```
-
-**为什么 Hybrid 而不是纯 vector**：纯 vector 会跨用户串味、把 importance=2 的
-废话也召回来；纯 SQL 又没法理解"颜色 ≈ 色彩"。SQL 把"哪些行是有效候选"先砍掉
-一刀，cosine + rerank 再做精排，体感"AI 真的记得我"。
-
-**API 示例**（目标行为：须 operator JWT；当前 `main` 尚未在 memories 路由调用 `require_operator`，见 [`docs/A8_2_AUTH_JWT.md`](docs/A8_2_AUTH_JWT.md) 与 CUR-API-01）：
-
-```bash
-TOKEN=$(...)  # operator JWT (D5-2)
-USER_ID=<某个有 memories 的用户>
-
-curl -s -X POST "http://127.0.0.1:8000/api/v1/users/$USER_ID/memories/retrieve" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"query":"我喜欢什么音乐","k":5}' | python -m json.tool
-```
-
-**日志事件**（均带 `component=memory_retriever` + `trace_id`）：
-
-```text
-retriever.skip.empty_query
-retriever.embed.fallback           error=4xx:401|no_vector|...
-retriever.sql.failed               error_type
-retriever.empty_candidates
-retriever.done                     candidates / returned / top_sim / top_score / duration_ms
-retriever.touch.ok                 touched=N
-retriever.touch.failed             error_type
-```
-
-**性能预估**：query embedding ~100–250ms；SQL `<=>` + LIMIT 30 (≤10k 行) <30ms；
-rerank <5ms。**P50 ≈ 200ms，P95 ≈ 400ms**；超 600ms 应告警。
-
-**Smoke**（服务器上跑）：
-
-```bash
-# 1) 编译 sanity
-docker exec eris-api python -m py_compile \
-  services/memory_retriever.py api/memories.py && echo OK
-
-# 2) 跑一次 retrieve（需要先有 OPENAI_API_KEY 和已 embed 的 memories）
-TOKEN=$(...)
-curl -s -X POST "http://127.0.0.1:8000/api/v1/users/<uid>/memories/retrieve" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"query":"hello","k":3}' | python -m json.tool
-
-# 3) 验证 fallback：故意把 OPENAI_API_KEY 改错（worker 也会停）
-#    retrieve 仍应返回 embedding_used=false，hits 按 importance 排序
-```
-
-**D4-2（L6 进 Prompt）**：`generate_reply(..., db=...)` 在组装 prompt 前会调用同一套
-`memory_retriever.retrieve`（query = 当前 `user_text`，`k_final` = `MEMORY_RETRIEVE_TOP_K`，默认 8）。
-**编排顺序**：同一次调用里 **D4-3 / D4-4**（`loneliness_updater`：记忆标签 + 当前句关键词）先执行，**D4-2** 检索后执行（见 `app/services/llm_orchestrator.py`）。
-环境变量 `MEMORY_RETRIEVE_IN_PROMPT=false` 可关掉（避免每次回复都打 embed）。
-**D4-2 记忆一致性（任务卡 9）**：仅当 `MEMORY_CONSISTENCY_ENABLED=true`（默认）且 `MEMORY_RETRIEVE_IN_PROMPT=true` 时，在写入 L6 前用 `services/memory_consistency.py` 做轻量规则过滤；默认 `MEMORY_CONSISTENCY_LLM_MAX_OUTPUT_TOKENS=0`（不调 LLM）故额外 completion 为 0，有滤除时打 `memory.consistency.filtered`。
-结构化日志 `orchestrator.prompt.assembled` 增加 `memory_hits` /
-`memory_embedding_used` / `memory_candidates_scanned` / `memory_consistency_dropped`。
-
-## D8：memories 性能索引（D8-1 / D8-2）
-
-设计说明见 **`docs/D8_PERFORMANCE_INDEXES.md`**。新库跑 `scripts/init.sql` 已含 **D8-1** btree；
-**D8-2** IVFFLAT 在迁移文件中（大表 / 已回填 embedding 后再执行）。
-
-```bash
-# 例：宿主机 psql（勿包在显式事务里；CONCURRENTLY 需 autocommit）
-psql "postgresql://eris:...@host:5432/eris" -v ON_ERROR_STOP=1 \
-  -f scripts/migrations/d8-1_memories_btree_indexes.sql
-psql "postgresql://eris:...@host:5432/eris" -v ON_ERROR_STOP=1 \
-  -f scripts/migrations/d8-2_memories_embedding_ivfflat.sql
-```
-
-**D8-2 压测（retrieve）**：`scripts/perf/d8_2_retrieval_load.py` 对 `POST .../memories/retrieve`
-打并发；脚本可带 **`ERIS_OPERATOR_JWT`**，但当前 `main` 的 memories 路由尚未强制 `require_operator`。证据与结论写入
-`docs/D8_2_PERFORMANCE_PROOF.md`。可调 worker 相关：`EMBEDDING_HTTP_TIMEOUT_SECONDS`、
-`EMBEDDING_SCHEDULER_MAX_INSTANCES`、`SCORE_WORKER_SCHEDULER_MAX_INSTANCES`（见 `.env.example`）。
-
-## LLM Orchestrator: 10 层 Prompt 结构 (D3-2)
-
-**核心**：`app/services/prompt_builder.py` 把 system content 拆成 10 个层，
-每层一个 `## ===== Lx_NAME =====` 标签，便于线上 grep。
-
-```text
-L1_SAFETY            硬红线（自伤 / 未成年 / 越狱抗性）
-L2_IDENTITY          "我是 Aria"
-L3_CHARACTER         characters 表 → 人格 6 维 band（low/mid/high）
-L4_RELATIONSHIP      user_profiles.relationship_stage + vip_level
-L5_USER_PROFILE      chat_style / interests / forbidden_topics / nickname
-L6_MEMORY            D4-2：hybrid retrieve 写入；无命中则占位说明
-L7_CONVERSATION_STATE loneliness_score 分段（D4-3 每轮刷新；阈值 35/55/75）
-L8_RECENT_CONTEXT    走 messages 数组，不在 system
-L9_FORMAT            character 决定的 reply_length / tone / emoji 频率
-L10_ANCHOR           末层锚点：再次提醒"先共情、L1 硬红线、你是 Aria"
-```
-
-**调用入口**：`generate_reply(..., db=AsyncSession)` —— 提供 db 时自动查
-`characters`（经 `conversations.character_id` LEFT JOIN）+ `user_profiles`。
-在同一次调用里，**先于** D4-2 记忆检索执行 D4-3 / D4-4：在 `LONELINESS_REFRESH_ENABLED` 为真且存在
-`user_profiles` 行时，按近期 `memories.emotion_tags` **与**当前 `user_text` 关键词（D4-4，见
-`D4-4_UTTERANCE_EMOTION.md`）刷新 `loneliness_score`（详见 `D4-3_LONELINESS_SCORING.md`）；随后在
-`MEMORY_RETRIEVE_IN_PROMPT` 为真时用当前用户句调用 `memory_retriever.retrieve` 填 `L6_MEMORY`（D4-2）。
-任意 db 查询失败被吞，对应层走"未知/默认"降级；不阻塞回复。
-
-**日志**：`orchestrator.prompt.assembled` 会带：
-- `layers`: 10 层名称
-- `layers_with_data`: 实际有内容的层（用于排查"为什么 L3 是默认人格"）
-- `system_chars` / `estimated_tokens`：粗估，告警阈值用
-- `has_character` / `has_profile`：bool
-- `loneliness_score`：D4-3 写库刷新后本回合用于 L7 的值（无 profile 时为 null）
-- `loneliness_utterance_tags`：D4-4 当前句关键词推断出的标准标签（无命中为 null）
-- `memory_hits` / `memory_embedding_used` / `memory_candidates_scanned`：D4-2 检索摘要
-
-**Smoke**：
-
-```bash
-docker exec eris-api python -c "
-from services.prompt_builder import DEFAULT_SYSTEM_PROMPT, LAYER_ORDER
-for label in LAYER_ORDER:
-    if label == 'L8_RECENT_CONTEXT':
-        continue
-    assert '## ===== ' + label + ' =====' in DEFAULT_SYSTEM_PROMPT
-print('OK: 9 system layers all present')
-"
-```
-
-发一条 Telegram 消息后，看 `docker logs eris-api | grep prompt.assembled` 应有一行带 `layers_with_data=[...]`。
-
-## Admin: 会话列表 / 详情 (D5-2)
-
-A8-2 Auth/JWT 契约见 [`docs/A8_2_AUTH_JWT.md`](docs/A8_2_AUTH_JWT.md)。该文档以当前
-`app/api/admin.py` 和 `admin/lib/auth.ts` 为准：MVP 只有 operator JWT，没有 `scope=user`
-token 或 refresh token。
-
-**前端**：Next.js 应用 `admin/`，`basePath=/admin`，构建后由 Nginx 静态托管；运行时通过
-`next.config.js` 的 rewrite 把 `/admin/api/:path*` 反代到 `http://127.0.0.1:8000/api/:path*`。
-
-**后端接口（均要 operator JWT）**：
-
-- `GET /api/v1/admin/conversations` — 会话列表
-  - 查询参数：`page` (≥1, 默认 1)、`page_size` (1–100, 默认 20)
-  - 过滤：`state` ∈ {`AI_ACTIVE`, `WAITING_OPERATOR`, `HUMAN_LOCKED`, `CLOSED`}（白名单，非法 → 400）
-  - 过滤：`channel` ∈ {`telegram`, `whatsapp`, `web`, `discord`}（白名单，非法 → 400）
-  - 模糊搜索：`search` —— 对 `users.nickname` / `users.external_id` 做 `ILIKE %q%`
-  - 排序：`COALESCE(last_message_at, created_at) DESC`
-  - 返回：`{items: [...], total, page, page_size}`
-- `GET /api/v1/admin/conversations/{conversation_id}` — 会话详情
-  - 校验 UUID 格式；非法 → 400
-  - 不存在 → 404
-  - 返回 `{conversation: {...meta + 用户画像 + 角色}, messages: [...最近 50 条按时间倒序]}`
-
-**Smoke**（在服务器上跑，先拿一个 operator token，再调列表）：
-
-```bash
-TOKEN=$(curl -s -X POST http://127.0.0.1:8000/api/v1/admin/login \
-  -H 'Content-Type: application/json' \
-  -d '{"username":"admin","password":"<your-pw>"}' | python -c "import sys,json;print(json.load(sys.stdin)['token'])")
-
-curl -s -H "Authorization: Bearer $TOKEN" \
-  "http://127.0.0.1:8000/api/v1/admin/conversations?page=1&page_size=5" | python -m json.tool
-
-curl -s -H "Authorization: Bearer $TOKEN" \
-  "http://127.0.0.1:8000/api/v1/admin/conversations?state=AI_ACTIVE&search=tg" | python -m json.tool
-
-# 401 反向验证
-curl -i http://127.0.0.1:8000/api/v1/admin/conversations
-```
-
-**期望**：
-
-- 无 token → `401`
-- 列表 → `200` + JSON `{items: [...], total: N, page: 1, page_size: 5}`
-- `state=BANANA` → `400`
-- 详情命中 → `200` + `{conversation, messages}`；不存在的 UUID → `404`
-
-**前端部署**：
-
-```bash
-cd /opt/eris/admin
-npm ci
-npm run build
-docker compose restart admin   # 若 admin 在 compose 中跑；否则按现有部署方式重启
-```
-
-## Handoff `return-ai`（RISK-S5 / REL-01）
-
-运营将会话交回 AI：`POST /api/v1/handoff/{task_id}/return-ai`，body JSON
-`{"notes":"…","allow_upsell": true|false}`（字段名以 `ReturnAIData` 为准）。
-
-**RISK-S5**：若用户画像 `relationship_stage = S5`（危机后），须满足
-`handoff_return_ai_block_reason` 为空才会 **200**；否则会 **409**（常见原因：未满 7 天恢复窗、或
-`allow_upsell` 在 S5 下不能为 `true`）。成功且满足恢复条件时，接口会将阶段降为 **S4** 并把
-`conversations.state` 置为 **`AI_ACTIVE`**；响应里会有 `s5_recovery_applied`（布尔）。
-
-**Smoke**（与 D5-2 相同方式取 `TOKEN`；`TASK_ID` 用未关闭的 `handoff_tasks.id`）：
-
-```bash
-curl -sS -X POST "http://127.0.0.1:8000/api/v1/handoff/${TASK_ID}/return-ai" \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d '{"notes":"runbook smoke","allow_upsell":true}' | python -m json.tool
-```
-
-**期望**：
-
-- 非 S5 用户：HTTP **200**，`status` 为 `returned_to_ai`，`s5_recovery_applied` 为 `false`。
-- S5 且仍被门控挡住：HTTP **409**，`detail` 含 `S5` 说明。
-- S5 且已满 7 天、`allow_upsell: false`：HTTP **200**，`s5_recovery_applied` 为 `true`，画像阶段变为 S4（可用 Admin 用户详情或 SQL 核对）。
-
-## Stripe webhook (D6-2)
-
-**Required env**（宿主 `/opt/eris/.env`；compose `api.environment` 已透传）：
-
-- `STRIPE_SECRET_KEY` — D6-1 创建 Checkout Session 用
-- `STRIPE_WEBHOOK_SECRET` — D6-2 验签用；**缺失会让 webhook 返回 400 signature_failed，DB 不写**
-- `STRIPE_SUCCESS_URL` / `STRIPE_CANCEL_URL` — Checkout 跳转，默认 `https://hugme2.com/payment/{success,cancel}`
-
-**接口**：`POST /api/v1/webhooks/stripe`
-
-- 同步阶段（毫秒级）：验签 → 抢占 `stripe_webhook_events.event_id`（ON CONFLICT DO NOTHING）→ 返回 200 `queued`/`duplicate`。
-- 后台阶段：`checkout.session.completed` → `orders.status='paid' + paid_at=NOW()` → `user_profiles.vip_level += 1`；其它事件 `result='ignored'`。
-- 完成后回写 `stripe_webhook_events.result` (`processed`/`ignored`/`failed`) + `handled_at`。
-
-**首次部署需要**：新表 `stripe_webhook_events`。`init.sql` 已声明，但 docker volume 上的 PG 不会重跑该脚本，需手动建表（一次性）：
-
-```bash
-docker exec eris-postgres psql -U eris -d eris -c "
-CREATE TABLE IF NOT EXISTS stripe_webhook_events (
-    event_id VARCHAR(64) PRIMARY KEY,
-    event_type VARCHAR(80) NOT NULL,
-    payload JSONB NOT NULL,
-    result VARCHAR(20) DEFAULT 'received',
-    error TEXT,
-    received_at TIMESTAMP DEFAULT NOW(),
-    handled_at TIMESTAMP
-);
-CREATE INDEX IF NOT EXISTS idx_stripe_webhook_events_type_received
-    ON stripe_webhook_events(event_type, received_at DESC);
-"
-```
-
-**Stripe Dashboard 配置**（手动）：在 Stripe Test 后台 Webhooks → Add endpoint → `https://hugme2.com/api/v1/webhooks/stripe`，订阅事件至少：`checkout.session.completed`；签名密钥贴到 `.env` 的 `STRIPE_WEBHOOK_SECRET`。
-
-**Smoke**（在服务器上用 Stripe CLI 转发 + 4242 测试卡走一遍 Checkout）：
-
-```bash
-docker logs --since=5m eris-api 2>&1 | grep -E 'stripe_webhook|payments\.'
-docker exec eris-postgres psql -U eris -d eris -c "
-SELECT event_id, event_type, result, handled_at FROM stripe_webhook_events ORDER BY received_at DESC LIMIT 5;"
-docker exec eris-postgres psql -U eris -d eris -c "
-SELECT id, status, paid_at, provider_order_id FROM orders ORDER BY created_at DESC LIMIT 5;"
-```
-
-期望：events 表有该 `evt_*` 行 `result='processed'`；对应 `orders.status='paid'`、`user_profiles.vip_level` +1。
-
-## Silent reactivation (D6-3)
-
-**Flags**（宿主 `/opt/eris/.env`；`docker-compose.yml` 的 `api.environment` 必须显式透传，容器内才读得到）：
-
-- `SILENT_REACTIVATION_ENABLED=1` —— 打开后才会查库 / 写 `notification_tasks`；`0` 时 admin 接口与定时任务均 short-circuit。
-- `SILENT_REACTIVATION_CRON` —— 可选；crontab 五段，**UTC**（默认 `0 2 * * *` = 每天 UTC 02:00）。仅在 `SILENT_REACTIVATION_ENABLED=1` 时注册 APScheduler job。
-
-**手动 smoke**（在服务器上，`127.0.0.1:8000` 为 api 容器映射）：
-
-1. 登录拿 JWT —— 路径是 **`POST /api/v1/admin/login`**（不是 `/auth/login`），body 用 **`username` + `password`**（`operators` 表；默认 seed 账号 **`admin`**）。
-
-```bash
-TOKEN=$(curl -s -X POST http://127.0.0.1:8000/api/v1/admin/login \
-  -H 'Content-Type: application/json' \
-  -d '{"username":"admin","password":"YOUR_PASSWORD"}' \
-  | docker exec -i eris-api python -c "import sys,json; print(json.load(sys.stdin)['token'])")
-```
-
-2. 触发一次扫描：
-
-```bash
-curl -s -X POST http://127.0.0.1:8000/api/v1/admin/silent-reactivation/run \
-  -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{}' | docker exec -i eris-api python -m json.tool
-```
-
-期望 JSON 含 `"enabled": true`（flag 打开时）；`docker logs eris-api` 出现 `silent_reactivation.scan.start` / `candidates_loaded` / `scan.complete`。
-
-**定时调度**：合并含 scheduler 的代码后 `docker compose up -d --build --force-recreate api`（`requirements.txt` 有变更需重建镜像）。启动日志应含 `silent_reactivation.scheduler.started`（仅 `SILENT_REACTIVATION_ENABLED=1` 时）。多 worker 时同一时刻只会有一个实例抢到 `pg_try_advisory_lock`，其余打 `silent_reactivation.scheduler.skip_no_lock`。
-
-## Notification sender (D6-4 / V001-P0-4)
-
-**Flags**（与 D6-3 一样经 compose 透传到 `api` 容器）：
-
-- `NOTIFICATION_SENDER_ENABLED=1` —— 注册 APScheduler，按间隔从 `notification_tasks` 拉 `pending` → 调 Telegram `sendMessage`。
-- `NOTIFICATION_SENDER_POLL_SECONDS` —— 轮询间隔（秒），默认 `20`，最低 `5`。
-- 依赖 **`TELEGRAM_BOT_TOKEN`**；未配置时 worker **不启动**（打 `notification_sender_worker.scheduler.no_bot_token`）。
-
-**支持的通知类型**（其余类型会 `failed` + `unsupported_notification_type:…`）：
-
-- `silent_reactivation`（按 `payload.tier` D1/D3/D7 选文案）
-- `s5_care_checkin`
-
-**Smoke**：插入一条 `pending` + `scheduled_at <= now` 的 `telegram` 任务后，打开 flag 并重建 `api`；日志应出现 `notification_sender_worker.sent` 或 `send_failed`；DB 中该行 `status` 变为 `sent` / `failed`。
-
-## Content safety (V001-P0-5)
-
-**Flags**（compose 透传）：
-
-- `CONTENT_SAFETY_ENABLED=1` —— 对 **Telegram 完成后入站** 与 **`POST /messages/inbound` 文本** 跑关键词 +（可选）OpenAI moderation；结果写入 ``messages.safety_result``。
-- `CONTENT_SAFETY_MODERATION_ENABLED=1` —— 调用 ``https://api.openai.com/v1/moderations``，需 **`OPENAI_API_KEY`**（与 embedding 同源）。
-- `CONTENT_SAFETY_MODERATION_TIMEOUT_S` —— 默认 `12` 秒。
-
-**拦截语义**：关键词命中或 moderation 命中（**不含**纯 `self-harm` 类目，以便危机协议在 orchestrator 层处理）→ 不入 Redis 上下文 / 不调 LLM（TG）；`/inbound` 返回 **422** + `status=blocked_by_safety`。
-
-## Restart Procedures
-
-Restart API only:
-
-```bash
-cd /opt/eris
-docker compose up -d --build api
-```
-
-Restart all app containers:
-
-```bash
-cd /opt/eris
+# 回滚到上一个版本
+git pull origin main
+git checkout <previous_commit_hash>
+docker compose up -d --build
+
+# 或者回滚到特定分支
+git checkout <previous_branch>
 docker compose up -d --build
 ```
 
-Restart Nginx:
-
+#### 数据库回滚
 ```bash
-nginx -t
-systemctl reload nginx
+# 回滚数据库迁移
+docker compose exec api python -m alembic downgrade -1
+
+# 回滚到特定版本
+docker compose exec api python -m alembic downgrade <revision_id>
 ```
 
-Restart Redis/Postgres only when needed:
+---
 
+## 3. 监控和告警
+
+### 3.1 监控指标
+
+#### 业务指标
+- **活跃用户数**: 实时在线用户数
+- **转化率**: 付费转化率
+- **消息处理量**: 每秒消息处理数
+- **LLM 调用**: AI 模型调用次数和延迟
+- **收入**: 实时收入统计
+
+#### 系统指标
+- **CPU 使用率**: 服务器 CPU 使用情况
+- **内存使用率**: 内存占用情况
+- **磁盘使用率**: 存储空间使用情况
+- **网络流量**: 入站/出站网络流量
+
+#### 应用指标
+- **API 响应时间**: 请求响应延迟
+- **错误率**: HTTP 错误率
+- **WebSocket 连接数**: 实时连接数
+- **消息队列深度**: 待处理消息数
+
+### 3.2 Grafana 仪表板
+
+#### 访问仪表板
+1. 登录 Grafana: http://your-server:3000
+2. 导航到 Dashboards → ERIS Monitoring
+3. 选择相应仪表板
+
+#### 关键仪表板
+- **业务概览**: 关键业务指标和 KPI
+- **LLM 性能**: AI 处理性能和成本
+- **系统健康**: 应用健康状态
+- **基础设施**: 系统资源使用情况
+- **实时监控**: 实时运营状态
+- **转化漏斗**: 付费转化分析
+
+### 3.3 告警规则
+
+#### 关键告警
+- **API 宕机**: API 服务不可用
+- **高错误率**: HTTP 5xx 错误率 > 5%
+- **高延迟**: P95 响应时间 > 2s
+- **队列积压**: 消息队列 > 1000
+- **资源耗尽**: CPU/内存/磁盘 > 90%
+
+#### 告警处理流程
+1. **接收告警**: 通过 Prometheus Alertmanager
+2. **评估严重性**: 根据告警级别确定响应优先级
+3. **执行响应**: 按照故障排查流程处理
+4. **记录处理**: 更新故障处理记录
+5. **事后分析**: 总结经验教训
+
+### 3.4 日志管理
+
+#### 日志收集
 ```bash
-cd /opt/eris
-docker compose restart redis
-docker compose restart postgres
+# 查看应用日志
+docker compose logs -f api
+
+# 查看特定时间段日志
+docker compose logs --since="2024-01-01T00:00:00" api
+
+# 查看错误日志
+docker compose logs api | grep ERROR
 ```
 
-## Environment Variables
+#### 日志分析
+- **错误日志**: 关注 ERROR 和 CRITICAL 级别
+- **性能日志**: 分析慢查询和延迟问题
+- **业务日志**: 追踪业务流程和用户行为
 
-Server env file:
+---
 
-```text
-/opt/eris/.env
-```
+## 4. 故障排查
 
-Required keys:
+### 4.1 常见问题
 
-```text
-POSTGRES_DB
-POSTGRES_USER
-POSTGRES_PASSWORD
-REDIS_PASSWORD
-SECRET_KEY
-OPENROUTER_API_KEY
-TELEGRAM_BOT_TOKEN
-ENV
-STRIPE_PUBLISHABLE_KEY
-STRIPE_SECRET_KEY
-STRIPE_WEBHOOK_SECRET
-```
+#### API 服务无法启动
+**症状**: API 容器无法启动或频繁重启
 
-Never paste real values into chat.
+**排查步骤**:
+1. 检查容器日志: `docker compose logs api`
+2. 检查端口占用: `netstat -tuln | grep 8000`
+3. 检查数据库连接: `docker compose exec api python -c "from core.database import init_db; import asyncio; asyncio.run(init_db())"`
+4. 检查环境变量: `docker compose config`
 
-Safe check for variable names:
+**解决方案**:
+- 修复配置错误
+- 释放端口占用
+- 检查数据库连接参数
+- 重启服务: `docker compose restart api`
 
+#### 数据库连接失败
+**症状**: 应用无法连接到数据库
+
+**排查步骤**:
+1. 检查数据库状态: `docker compose ps postgres`
+2. 检查数据库日志: `docker compose logs postgres`
+3. 测试连接: `docker compose exec postgres pg_isready -U eris`
+4. 检查网络连接: `docker compose exec api ping postgres`
+
+**解决方案**:
+- 重启数据库: `docker compose restart postgres`
+- 检查数据库凭证
+- 检查网络配置
+- 扩大数据库连接池
+
+#### Redis 连接失败
+**症状**: 缓存操作失败
+
+**排查步骤**:
+1. 检查 Redis 状态: `docker compose ps redis`
+2. 检查 Redis 日志: `docker compose logs redis`
+3. 测试连接: `docker compose exec redis redis-cli ping`
+4. 检查内存使用: `docker compose exec redis redis-cli INFO memory`
+
+**解决方案**:
+- 重启 Redis: `docker compose restart redis`
+- 检查 Redis 密码
+- 清理 Redis 内存: `docker compose exec redis redis-cli FLUSHALL`
+- 扩大 Redis 内存限制
+
+#### LLM API 调用失败
+**症状**: AI 处理功能异常
+
+**排查步骤**:
+1. 检查 API 密钥配置
+2. 检查 OpenRouter API 状态
+3. 查看应用日志中的 LLM 相关错误
+4. 检查网络连接
+
+**解决方案**:
+- 更新 API 密钥
+- 启用降级模式
+- 检查 API 配额
+- 实现重试机制
+
+#### WebSocket 连接异常
+**症状**: 实时连接不稳定
+
+**排查步骤**:
+1. 检查 WebSocket 日志
+2. 检查网络连接稳定性
+3. 查看连接数统计
+4. 检查负载均衡配置
+
+**解决方案**:
+- 优化 WebSocket 配置
+- 实现自动重连机制
+- 扩展连接数限制
+- 检查防火墙设置
+
+### 4.2 性能问题
+
+#### 响应时间慢
+**排查步骤**:
+1. 检查系统资源使用: `htop`
+2. 查看慢查询日志
+3. 分析数据库性能
+4. 检查网络延迟
+
+**解决方案**:
+- 优化数据库查询
+- 增加缓存命中率
+- 扩展服务器资源
+- 优化应用代码
+
+#### 内存泄漏
+**排查步骤**:
+1. 监控内存使用趋势
+2. 分析内存增长模式
+3. 检查应用代码
+4. 使用内存分析工具
+
+**解决方案**:
+- 重启应用服务
+- 修复内存泄漏代码
+- 优化内存使用
+- 增加内存限制
+
+### 4.3 紧急故障处理
+
+#### 服务完全不可用
+**处理流程**:
+1. **立即响应**: 收到告警后 5 分钟内响应
+2. **评估影响**: 确定影响范围和严重程度
+3. **快速恢复**: 执行快速恢复措施
+4. **根因分析**: 确定根本原因
+5. **预防措施**: 制定预防措施
+
+**快速恢复措施**:
+- 重启服务: `docker compose restart`
+- 回滚到稳定版本
+- 切换到备用服务
+- 扩展服务容量
+
+---
+
+## 5. 备份和恢复
+
+### 5.1 备份策略
+
+#### 数据库备份
 ```bash
-cd /opt/eris
-nl -ba .env | sed -E 's/(=).+/=***REDACTED***/'
+# 每日自动备份
+0 2 * * * docker compose exec postgres pg_dump -U eris eris > /backup/eris_$(date +\%Y\%m\%d).sql
+
+# 手动备份
+docker compose exec postgres pg_dump -U eris eris > backup.sql
 ```
 
-Current note:
-
-```text
-Line 1 was observed malformed: a bare OpenRouter key is prefixed to POSTGRES_DB.
-Service is still healthy because docker-compose has defaults, but this should be cleaned.
-```
-
-Safe fix:
-
+#### Redis 备份
 ```bash
-cd /opt/eris
-cp .env .env.bak.$(date +%Y%m%d%H%M%S)
-nano .env
+# Redis RDB 备份（配置在 redis.conf）
+save 900 1
+save 300 10
+save 60 10000
+
+# 手动备份
+docker compose exec redis redis-cli BGSAVE
 ```
 
-Make the first line exactly:
-
-```env
-POSTGRES_DB=eris
-```
-
-Do not change any secret values while fixing the first line.
-
-After env changes:
-
+#### 配置文件备份
 ```bash
-cd /opt/eris
-docker compose up -d --build api
-curl -i https://hugme2.com/health/detail
+# 备份环境配置
+cp .env .env.backup.$(date +%Y%m%d)
+
+# 备份 Docker 配置
+tar czf docker_config_backup_$(date +%Y%m%d).tar.gz docker-compose.yml .env
 ```
 
-## Nginx / TLS
+### 5.2 恢复流程
 
-Primary config:
-
-```text
-/etc/nginx/conf.d/eris.conf
-```
-
-Check config:
-
+#### 数据库恢复
 ```bash
-nginx -t
-nginx -T | sed -n '1,260p'
+# 停止应用服务
+docker compose stop api
+
+# 恢复数据库
+docker compose exec -T postgres psql -U eris eris < backup.sql
+
+# 重启应用服务
+docker compose start api
 ```
 
-Certificate:
-
-```text
-/etc/letsencrypt/live/hugme2.com/fullchain.pem
-/etc/letsencrypt/live/hugme2.com/privkey.pem
-```
-
-Check certificate:
-
+#### Redis 恢复
 ```bash
-certbot certificates
+# 停止 Redis
+docker compose stop redis
+
+# 恢复 RDB 文件
+cp dump.rdb /var/lib/redis/
+
+# 重启 Redis
+docker compose start redis
 ```
 
-Known certificate:
-
-```text
-Domain: hugme2.com
-Expires: 2026-08-10 01:31:21 UTC
-```
-
-Manual renewal dry run:
-
+#### 配置恢复
 ```bash
-certbot renew --dry-run
+# 恢复环境配置
+cp .env.backup.20240101 .env
+
+# 重启服务
+docker compose restart
 ```
 
-If renewal succeeds:
+### 5.3 灾难恢复
 
-```bash
-systemctl reload nginx
+#### 完整系统恢复
+1. **准备新服务器**: 按照环境准备步骤配置新服务器
+2. **恢复代码**: 克隆代码仓库
+3. **恢复配置**: 恢复环境配置文件
+4. **恢复数据**: 恢复数据库和 Redis 数据
+5. **启动服务**: 启动所有服务
+6. **验证恢复**: 执行健康检查和功能测试
+
+#### 数据同步
+- **主从复制**: 配置 PostgreSQL 主从复制
+- **实时同步**: 使用 Redis 主从复制
+- **定期同步**: 定期备份到异地存储
+
+---
+
+## 6. 应急响应
+
+### 6.1 应急响应团队
+
+#### 角色和职责
+- **应急指挥官**: 负责整体协调和决策
+- **技术负责人**: 负责技术问题解决
+- **运维工程师**: 负责基础设施操作
+- **业务负责人**: 负责业务影响评估
+
+#### 联系方式
+- **紧急电话**: [设置紧急联系电话]
+- **Slack 频道**: #incidents
+- **邮件列表**: incidents@eris.com
+
+### 6.2 响应级别
+
+#### P1 - 严重故障
+- **定义**: 核心服务完全不可用
+- **响应时间**: 15 分钟
+- **解决时间**: 4 小时
+- **示例**: API 宕机、数据库无法访问
+
+#### P2 - 重要故障
+- **定义**: 核心功能降级但部分可用
+- **响应时间**: 30 分钟
+- **解决时间**: 8 小时
+- **示例**: 性能严重下降、部分功能不可用
+
+#### P3 - 一般故障
+- **定义**: 非核心功能受影响
+- **响应时间**: 1 小时
+- **解决时间**: 24 小时
+- **示例**: 次要功能异常、性能轻微下降
+
+### 6.3 应急流程
+
+#### 故障发现和报告
+1. **自动发现**: 监控系统自动检测和告警
+2. **用户报告**: 用户反馈问题
+3. **主动发现**: 运维人员主动检查发现
+
+#### 故障响应流程
+1. **接收告警**: 通过告警系统接收故障通知
+2. **评估严重性**: 确定故障级别和影响范围
+3. **启动响应**: 根据级别启动相应响应流程
+4. **故障处理**: 按照故障排查流程处理
+5. **恢复验证**: 验证服务恢复正常
+6. **事后分析**: 进行根因分析和总结
+
+#### 通信机制
+- **内部通信**: 使用 Slack 进行团队沟通
+- **外部通信**: 通过状态页面通知用户
+- **定期更新**: 每 30 分钟更新故障处理进度
+
+---
+
+## 7. 性能优化
+
+### 7.1 应用优化
+
+#### 代码优化
+- **异步处理**: 使用异步 I/O 提高并发能力
+- **连接池**: 使用数据库连接池减少连接开销
+- **缓存策略**: 合理使用缓存减少数据库压力
+- **查询优化**: 优化数据库查询，添加必要索引
+
+#### 配置优化
+```python
+# 数据库连接池配置
+DATABASE_POOL_SIZE = 20
+DATABASE_MAX_OVERFLOW = 10
+DATABASE_POOL_TIMEOUT = 30
+
+# Redis 连接配置
+REDIS_CONNECTION_POOL_SIZE = 50
+REDIS_SOCKET_TIMEOUT = 5
 ```
 
-## Database
+### 7.2 数据库优化
 
-Open psql:
-
-```bash
-docker exec -it eris-postgres psql -U eris -d eris
-```
-
-List tables:
-
+#### 索引优化
 ```sql
-\dt
+-- 创建常用查询索引
+CREATE INDEX idx_users_created_at ON users(created_at);
+CREATE INDEX idx_messages_user_id ON messages(user_id);
+CREATE INDEX idx_conversations_status ON conversations(status);
 ```
 
-Useful counts:
+#### 查询优化
+- 避免全表扫描
+- 使用合适的索引
+- 优化 JOIN 操作
+- 分页查询大数据集
 
+#### 数据库配置
+```ini
+# postgresql.conf 优化
+shared_buffers = 256MB
+effective_cache_size = 1GB
+maintenance_work_mem = 64MB
+checkpoint_completion_target = 0.9
+wal_buffers = 16MB
+default_statistics_target = 100
+random_page_cost = 1.1
+effective_io_concurrency = 200
+work_mem = 16MB
+min_wal_size = 1GB
+max_wal_size = 4GB
+```
+
+### 7.3 缓存优化
+
+#### Redis 配置
+```ini
+# redis.conf 优化
+maxmemory 512mb
+maxmemory-policy allkeys-lru
+save 900 1
+save 300 10
+save 60 10000
+```
+
+#### 缓存策略
+- **热点数据**: 缓存访问频繁的数据
+- **计算结果**: 缓存复杂计算结果
+- **会话数据**: 缓存用户会话信息
+- **过期策略**: 设置合理的过期时间
+
+### 7.4 网络优化
+
+#### 负载均衡
+- 使用 Nginx 进行负载均衡
+- 配置健康检查
+- 实现会话保持
+
+#### CDN 加速
+- 静态资源使用 CDN
+- 配置缓存策略
+- 启用压缩传输
+
+---
+
+## 8. 安全最佳实践
+
+### 8.1 访问控制
+
+#### 服务器安全
+- **SSH 访问**: 仅使用密钥认证，禁用密码登录
+- **防火墙**: 配置 iptables 或 ufw
+- **用户管理**: 创建专门的运维用户，禁用 root 直接登录
+
+#### 应用安全
+- **API 认证**: 实现完善的 API 认证机制
+- **权限控制**: 基于角色的访问控制 (RBAC)
+- **输入验证**: 严格验证所有用户输入
+- **SQL 注入防护**: 使用参数化查询
+
+### 8.2 数据安全
+
+#### 数据加密
+- **传输加密**: 使用 HTTPS/TLS 加密数据传输
+- **存储加密**: 敏感数据加密存储
+- **会话加密**: 使用加密的会话管理
+
+#### 备份加密
+- **备份加密**: 备份文件加密存储
+- **传输加密**: 备份传输过程加密
+- **访问控制**: 备份文件访问权限控制
+
+### 8.3 密钥管理
+
+#### 密钥存储
+- **环境变量**: 使用环境变量存储密钥
+- **密钥轮换**: 定期轮换密钥
+- **密钥分发**: 安全的密钥分发机制
+
+#### 密钥安全
+- **不硬编码**: 不在代码中硬编码密钥
+- **访问控制**: 限制密钥访问权限
+- **审计日志**: 记录密钥使用情况
+
+### 8.4 安全监控
+
+#### 入侵检测
+- **日志监控**: 监控异常登录和操作
+- **行为分析**: 分析异常行为模式
+- **实时告警**: 配置安全事件告警
+
+#### 漏洞管理
+- **定期扫描**: 定期进行安全漏洞扫描
+- **及时修补**: 及时修补已知漏洞
+- **依赖更新**: 定期更新依赖包
+
+---
+
+## 9. 日常运维
+
+### 9.1 每日任务
+
+#### 健康检查
 ```bash
-docker exec eris-postgres psql -U eris -d eris -c "select count(*) from users;"
-docker exec eris-postgres psql -U eris -d eris -c "select count(*) from messages;"
-docker exec eris-postgres psql -U eris -d eris -c "select count(*) from notification_tasks;"
+# 每日健康检查脚本
+#!/bin/bash
+echo "=== 每日健康检查 $(date) ==="
+
+# 检查服务状态
+docker compose ps
+
+# 检查 API 健康
+curl -f http://localhost:8000/health || echo "API 健康检查失败"
+
+# 检查磁盘空间
+df -h | grep -E '(Filesystem|/dev/)'
+
+# 检查内存使用
+free -h
+
+# 检查日志错误
+docker compose logs --since="1d" api | grep ERROR | tail -20
 ```
 
-Backup:
+#### 日志检查
+- 检查错误日志
+- 分析异常模式
+- 监控性能指标
 
+#### 备份验证
+- 验证备份完整性
+- 测试恢复流程
+- 检查备份存储空间
+
+### 9.2 每周任务
+
+#### 系统更新
 ```bash
-mkdir -p /opt/eris/backups
-docker exec eris-postgres pg_dump -U eris -d eris \
-  > /opt/eris/backups/eris_$(date +%Y%m%d_%H%M%S).sql
+# 更新系统包
+sudo apt update && sudo apt upgrade -y
+
+# 更新 Docker
+sudo apt-get update
+sudo apt-get install docker-ce docker-ce-cli containerd.io
 ```
 
-Restore to a fresh DB only:
+#### 性能分析
+- 分析性能趋势
+- 识别性能瓶颈
+- 制定优化计划
 
+#### 安全检查
+- 检查安全日志
+- 分析异常访问
+- 更新安全规则
+
+### 9.3 每月任务
+
+#### 容量规划
+- 分析资源使用趋势
+- 预测未来需求
+- 制定扩容计划
+
+#### 灾难恢复演练
+- 执行灾难恢复演练
+- 验证备份恢复流程
+- 更新应急响应计划
+
+#### 文档更新
+- 更新系统架构文档
+- 更新故障处理记录
+- 更新运维流程
+
+---
+
+## 10. 演练场景
+
+### 10.1 演练目的
+- 验证运维手册的有效性
+- 提升团队应急响应能力
+- 发现潜在问题和改进点
+- 确保系统稳定性和可靠性
+
+### 10.2 演练场景
+
+#### 场景 1: API 服务宕机
+**目标**: 验证 API 服务故障恢复流程
+
+**步骤**:
+1. 停止 API 服务: `docker compose stop api`
+2. 模拟故障告警
+3. 执行故障排查流程
+4. 恢复 API 服务: `docker compose start api`
+5. 验证服务恢复正常
+6. 记录处理过程和改进建议
+
+**验收标准**:
+- 故障发现时间 < 5 分钟
+- 故障恢复时间 < 15 分钟
+- 服务完全恢复正常
+
+#### 场景 2: 数据库故障
+**目标**: 验证数据库故障切换和恢复流程
+
+**步骤**:
+1. 停止数据库服务: `docker compose stop postgres`
+2. 模拟数据库故障告警
+3. 执行数据库故障排查
+4. 恢复数据库服务: `docker compose start postgres`
+5. 验证数据完整性
+6. 测试应用连接
+
+**验收标准**:
+- 故障发现时间 < 5 分钟
+- 数据恢复时间 < 30 分钟
+- 数据完整性验证通过
+
+#### 场景 3: 高负载压力测试
+**目标**: 验证系统在高负载下的表现
+
+**步骤**:
+1. 使用压力测试工具模拟高负载
+2. 监控系统资源使用情况
+3. 观察系统响应时间和错误率
+4. 记录系统瓶颈
+5. 制定性能优化建议
+
+**验收标准**:
+- 系统在负载下保持稳定
+- 响应时间在可接受范围内
+- 错误率低于阈值
+
+#### 场景 4: 数据恢复演练
+**目标**: 验证备份恢复流程的有效性
+
+**步骤**:
+1. 创建测试数据
+2. 执行数据库备份
+3. 删除部分数据
+4. 执行数据恢复
+5. 验证数据完整性
+6. 记录恢复过程
+
+**验收标准**:
+- 备份过程顺利完成
+- 数据恢复成功
+- 数据完整性验证通过
+- 恢复时间在预期范围内
+
+#### 场景 5: 安全事件响应
+**目标**: 验证安全事件响应流程
+
+**步骤**:
+1. 模拟安全事件（异常登录）
+2. 触发安全告警
+3. 执行安全事件响应流程
+4. 分析安全日志
+5. 采取相应安全措施
+6. 更新安全策略
+
+**验收标准**:
+- 安全事件及时发现
+- 响应流程执行正确
+- 安全措施有效
+- 事件记录完整
+
+### 10.3 演练评估
+
+#### 评估标准
+- **响应时间**: 是否在规定时间内响应
+- **处理效果**: 问题是否得到有效解决
+- **团队协作**: 团队配合是否顺畅
+- **文档完整性**: 文档是否准确完整
+- **改进建议**: 是否有可行的改进建议
+
+#### 演练报告
+每次演练后需要提交演练报告，包括：
+- 演练场景和目标
+- 演练过程记录
+- 发现的问题和改进点
+- 团队表现评估
+- 后续改进计划
+
+### 10.4 演练频率
+- **月度演练**: 每月进行一次小规模演练
+- **季度演练**: 每季度进行一次全面演练
+- **年度演练**: 每年进行一次大规模演练
+
+---
+
+## 附录
+
+### A. 常用命令
+
+#### Docker Compose 命令
 ```bash
-docker exec -i eris-postgres psql -U eris -d eris < /opt/eris/backups/<backup>.sql
+# 启动所有服务
+docker compose up -d
+
+# 停止所有服务
+docker compose down
+
+# 重启特定服务
+docker compose restart api
+
+# 查看服务状态
+docker compose ps
+
+# 查看服务日志
+docker compose logs -f api
+
+# 进入服务容器
+docker compose exec api bash
 ```
 
-## Redis
-
-Ping:
-
+#### 数据库命令
 ```bash
-docker exec eris-redis redis-cli --pass "$REDIS_PASSWORD" ping
+# 连接数据库
+docker compose exec postgres psql -U eris -d eris
+
+# 备份数据库
+docker compose exec postgres pg_dump -U eris eris > backup.sql
+
+# 恢复数据库
+docker compose exec -T postgres psql -U eris eris < backup.sql
+
+# 查看数据库大小
+docker compose exec postgres psql -U eris -c "SELECT pg_size_pretty(pg_database_size('eris'));"
 ```
 
-If running from host and env is loaded:
-
+#### Redis 命令
 ```bash
-cd /opt/eris
-source .env
-docker exec eris-redis redis-cli --pass "$REDIS_PASSWORD" ping
+# 连接 Redis
+docker compose exec redis redis-cli -a your_password
+
+# 查看所有键
+docker compose exec redis redis-cli -a your_password KEYS '*'
+
+# 清空所有数据
+docker compose exec redis redis-cli -a your_password FLUSHALL
+
+# 查看 Redis 信息
+docker compose exec redis redis-cli -a your_password INFO
 ```
 
-Inspect context keys:
+### B. 联系方式
 
-```bash
-docker exec eris-redis redis-cli --pass "$REDIS_PASSWORD" keys 'ctx:*'
-```
+#### 运维团队
+- **负责人**: [运维负责人姓名]
+- **电话**: [运维负责人电话]
+- **邮箱**: [运维负责人邮箱]
 
-Avoid `FLUSHALL` unless explicitly resetting all transient context.
+#### 应急联系
+- **紧急电话**: [紧急联系电话]
+- **Slack 频道**: #operations
+- **邮件列表**: ops@eris.com
 
-## Common Incidents
+### C. 相关文档
+- 系统架构文档: `docs/ARCHITECTURE.md`
+- API 文档: `docs/API.md`
+- 部署文档: `docs/DEPLOYMENT.md`
+- 监控文档: `docs/P5-05_PROMETHEUS_MONITORING.md`
+- Grafana 文档: `docs/P5-06_GRAFANA_DASHBOARDS.md`
 
-### API Unhealthy
+### D. 版本历史
+- **v1.0** (2026-05-21): 初始版本，包含完整的运维手册内容
 
-```bash
-docker ps
-docker logs --tail 200 eris-api
-cd /opt/eris
-docker compose up -d --build api
-curl -i http://127.0.0.1:8000/health/detail
-```
+---
 
-If DB or Redis is down:
+**文档维护**: 本文档应随着系统演进定期更新，至少每季度评审一次。
 
-```bash
-docker compose restart postgres redis
-docker compose up -d --build api
-```
-
-### Public Site Down
-
-```bash
-curl -i http://127.0.0.1:8000/health
-nginx -t
-systemctl status nginx --no-pager -l
-tail -100 /var/log/nginx/eris.error.log
-systemctl reload nginx
-```
-
-### Telegram Webhook Failing
-
-Check bot token exists, without printing it:
-
-```bash
-docker inspect eris-api --format '{{range .Config.Env}}{{println .}}{{end}}' \
-  | grep TELEGRAM_BOT_TOKEN \
-  | sed -E 's/=.*/=***REDACTED***/'
-```
-
-Check Telegram webhook info:
-
-```bash
-curl -s https://hugme2.com/telegram/webhook/info
-```
-
-Check logs:
-
-```bash
-docker logs --tail 200 eris-api | grep telegram
-```
-
-### Stripe Webhook Failing
-
-Check endpoint:
-
-```text
-https://hugme2.com/api/v1/billing/stripe/webhook
-```
-
-Current code may also expose:
-
-```text
-/api/v1/webhooks/stripe
-```
-
-Keep Stripe dashboard endpoint aligned with implemented backend route.
-
-Check secret exists:
-
-```bash
-docker inspect eris-api --format '{{range .Config.Env}}{{println .}}{{end}}' \
-  | grep STRIPE_WEBHOOK_SECRET \
-  | sed -E 's/=.*/=***REDACTED***/'
-```
-
-### WebSocket Tasks Not Showing
-
-Connect:
-
-```text
-wss://hugme2.com/ws/operators/tasks?operator_id=debug
-```
-
-Check open tasks:
-
-```bash
-docker exec eris-postgres psql -U eris -d eris \
-  -c "select id, priority, status, trigger_reason, created_at from handoff_tasks where closed_at is null order by created_at desc limit 20;"
-```
-
-Check logs:
-
-```bash
-docker logs --tail 200 eris-api | grep 'ws.operator'
-```
-
-### Notification Queue Stuck
-
-List tasks:
-
-```bash
-curl -s 'http://127.0.0.1:8000/api/v1/notifications/tasks?status=pending&limit=50'
-```
-
-Cancel pending silent reactivation:
-
-```sql
-UPDATE notification_tasks
-SET status = 'cancelled',
-    failure_reason = 'manual rollback'
-WHERE notification_type = 'silent_reactivation'
-  AND status = 'pending';
-```
-
-## Rollback
-
-Rollback Nginx config:
-
-```bash
-cp /etc/nginx/conf.d/eris.conf /etc/nginx/conf.d/eris.conf.bak.$(date +%Y%m%d%H%M%S)
-nginx -t
-systemctl reload nginx
-```
-
-Rollback app code requires restoring from backup or source control. Before risky edits:
-
-```bash
-cd /opt/eris
-cp docker-compose.yml docker-compose.yml.bak.$(date +%Y%m%d%H%M%S)
-tar -czf /opt/eris/backups/app_$(date +%Y%m%d_%H%M%S).tgz app docker-compose.yml *.md
-```
-
-## Release Checklist
-
-Before `v0.1.0`:
-
-- `https://hugme2.com/health/detail` returns all ok.
-- Telegram webhook receives and stores a message.
-- AI conversation works.
-- Admin handoff can lock/reply/return.
-- WebSocket task stream works.
-- Stripe test payment works.
-- Stripe webhook updates order/VIP.
-- `notification_tasks` queue has no stuck test data.
-- DB backup exists.
-- `.env` contains no malformed lines.
-- Runbook is updated.
-
-## D8-4 Second Beta Data Report
-
-D8-4 uses a read-only report for the second beta wave. It does not add schema
-or APIs.
-
-```bash
-cd /opt/eris
-REPORT_FILE=/opt/eris/backups/d8_4_report_$(date -u +%Y%m%dT%H%M%SZ).txt \
-  DAYS=7 \
-  bash scripts/beta/d8_4_report.sh
-```
-
-The report prints D1 retention, score distribution, persisted-message token
-volume, optional cost floor estimates, 24-hour operational guardrails, and data
-quality checks.
-
-Token cost is a floor estimate until the app persists provider token usage.
-Set `PROMPT_USD_PER_1K` and `COMPLETION_USD_PER_1K` explicitly when using the
-cost column.
-
-Do not start the second beta invite wave if the report fails, `/health/detail`
-is degraded, backups are stale, or any private user endpoint is reachable
-without operator auth.
+**演练要求**: 按照本手册中的演练场景定期进行演练，确保运维团队熟练掌握应急响应流程。
