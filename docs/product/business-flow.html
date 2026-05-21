@@ -492,7 +492,7 @@ const TASKS = [
   { id:"P2-05", phase:"02", owner:"codex", w:1, week:"W3", dep:"P2-01,H-02", desc:"calcUserLevel() 纯函数", acc:"正确返回 S/A/B/C/D", baseline:true },
   { id:"P2-06", phase:"02", owner:"codex", w:0.5, week:"W3", dep:"P2-05", desc:"分级阈值外部化配置", acc:".env 改阈值即生效", baseline:true },
   { id:"P2-07", phase:"02", owner:"codex", w:0.5, week:"W3", dep:"P1-02", desc:"level_change_logs 审计", acc:"每次变更有记录", baseline:true },
-  { id:"P2-08", phase:"02", owner:"codex", w:2, week:"W4", dep:"P2-05,06", desc:"level_engine.test.ts ≥20 case", acc:"CI 全绿" },
+  { id:"P2-08", phase:"02", owner:"codex", w:2, week:"W4", dep:"P2-05,06", desc:"level_engine.test.ts ≥20 case", acc:"CI 全绿", baseline:true },
   { id:"P2-09", phase:"02", owner:"codex", w:0.5, week:"W4", dep:"P2-05", desc:"chat_route 路由映射", acc:"路由与 level 一致" },
   { id:"P2-10", phase:"02", owner:"codex", w:1, week:"W4", dep:"P2-09", desc:"付费 Webhook 分级重算（付费话术匹配由 P3-20 接入）", acc:"模拟付费升 S" },
   { id:"P2-11", phase:"02", owner:"devin", w:1, week:"W4", dep:"P1-07,P2-09", desc:"USER_UPGRADED WebSocket 推送", acc:"看板收到升级事件", baseline:true },
