@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from services.level_engine import (
+    CHAT_ROUTE_BY_LEVEL,
     LevelThresholds,
     UserLevelInput,
     calc_user_level,
@@ -63,6 +64,16 @@ def test_country_tier_mapping(code, expected):
 )
 def test_level_to_chat_route(level, route):
     assert level_to_chat_route(level) == route
+
+
+def test_chat_route_mapping_is_complete_and_explicit():
+    assert CHAT_ROUTE_BY_LEVEL == {
+        "S": "manual_premium",
+        "A": "manual_premium",
+        "B": "ai_assisted",
+        "C": "ai_auto",
+        "D": "ai_auto",
+    }
 
 
 # --- calc_user_level core (cases 12-25+) ---
