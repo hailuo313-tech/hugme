@@ -241,6 +241,12 @@ function DashboardContent({ operator }: { operator: Operator }) {
   const [translationLoading, setTranslationLoading] = useState(false);
   const [translationError, setTranslationError] = useState<string | null>(null);
 
+  // P4-05: 话术库推荐话术
+  const [scriptSuggestions, setScriptSuggestions] = useState<any[] | null>(null);
+  const [scriptLoading, setScriptLoading] = useState(false);
+  const [scriptError, setScriptError] = useState<string | null>(null);
+  const [scriptPanelOpen, setScriptPanelOpen] = useState(true);
+
   // P4-04: S 级用户置顶机制
   const [priorityUserIds, setPriorityUserIds] = useState<Set<string>>(new Set());
   const [priorityTimer, setPriorityTimer] = useState<NodeJS.Timeout | null>(null);
@@ -266,6 +272,40 @@ function DashboardContent({ operator }: { operator: Operator }) {
     }, 3000);
     setPriorityTimer(timer);
   }, [priorityTimer]);
+
+  // P4-05: 获取话术库推荐话术
+  const loadScriptSuggestions = useCallback(async (conversationData: any) => {
+    if (!conversationData) return;
+    
+    setScriptLoading(true);
+    setScriptError(null);
+    try {
+      const body: Record<string, unknown> = {
+        language: conversationData.language || "en",
+        loneliness_score: conversationData.loneliness_score || 50,
+        risk_level: conversationData.risk_level || "low",
+        limit: 5,
+      };
+      
+      if (conversationData.character_id) {
+        body.character_id = conversationData.character_id;
+      }
+      if (conversationData.relationship_stage) {
+        body.relationship_stage = conversationData.relationship_stage;
+      }
+      
+      const resp = await apiFetch<{ items: any[] }>("/scripts/suggest", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      setScriptSuggestions(resp.items || []);
+    } catch (e) {
+      setScriptError(e instanceof Error ? e.message : String(e));
+      setScriptSuggestions([]);
+    } finally {
+      setScriptLoading(false);
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -339,12 +379,15 @@ function DashboardContent({ operator }: { operator: Operator }) {
     setMessageTranslations({});
     setTranslationError(null);
     setDetailLoading(true);
+    setScriptSuggestions(null); // P4-05: 重置话术推荐
     try {
       const resp = await apiFetch<DetailResponse>(
         `/admin/conversations/${cid}`
       );
       setDetail(resp);
       void translateMessages(resp);
+      // P4-05: 加载话术库推荐话术
+      void loadScriptSuggestions(resp.conversation);
     } catch (e) {
       setDetailError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -965,8 +1008,95 @@ function DashboardContent({ operator }: { operator: Operator }) {
                             placeholder="点击“填入草稿”后可在这里编辑；当前页面不会自动发送。"
                             className="w-full bg-slate-950 border border-slate-700 text-sm rounded-md px-3 py-2 text-slate-100 placeholder-slate-600"
                           />
+                          {/* P4-05: 发送按钮 */}
+                          {draftReply.trim() && (
+                            <div className="mt-2 flex justify-end">
+                              <button
+                                onClick={async () => {
+                                  // TODO: 实现发送功能
+                                  alert("发送功能待实现 - 需要集成 handoff API");
+                                }}
+                                className="bg-green-600 hover:bg-green-500 text-white text-xs font-medium px-4 py-2 rounded-md transition"
+                              >
+                                发送
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </>
+                    )}
+                  </div>
+
+                  {/* P4-05: 话术库推荐话术 */}
+                  <div className="border border-sky-800/70 bg-sky-950/20 rounded-xl p-4 space-y-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <h3 className="text-sm font-medium text-sky-200">
+                          话术库推荐话术
+                        </h3>
+                        <p className="text-xs text-slate-400 mt-1">
+                          基于当前用户画像匹配的推荐话术，可一键插入或编辑后发送。
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (detail) void loadScriptSuggestions(detail.conversation);
+                        }}
+                        disabled={scriptLoading}
+                        className="bg-sky-600 hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-medium px-3 py-2 rounded-md transition whitespace-nowrap"
+                      >
+                        {scriptLoading ? "加载中…" : "刷新推荐"}
+                      </button>
+                    </div>
+
+                    {scriptError && (
+                      <div className="bg-rose-900/30 border border-rose-800 text-rose-200 text-sm rounded-md px-3 py-2">
+                        加载失败：{scriptError}
+                      </div>
+                    )}
+
+                    {scriptSuggestions && scriptSuggestions.length > 0 ? (
+                      <div className="space-y-3">
+                        {scriptSuggestions.map((script, index) => (
+                          <div
+                            key={script.id || index}
+                            className="border border-slate-700 bg-slate-900/70 rounded-lg p-3"
+                          >
+                            <div className="flex items-center justify-between gap-3 mb-2">
+                              <span className="text-xs text-sky-300">
+                                推荐话术 {index + 1}
+                                {script.match_score && (
+                                  <span className="ml-2 text-slate-500">
+                                    (匹配度: {Math.round(script.match_score * 100)}%)
+                                  </span>
+                                )}
+                              </span>
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setDraftReply(script.content || "")}
+                                  className="text-xs text-sky-400 hover:text-sky-300"
+                                >
+                                  填入草稿
+                                </button>
+                              </div>
+                            </div>
+                            <p className="text-sm text-slate-100 whitespace-pre-wrap">
+                              {script.content}
+                            </p>
+                            {script.script_type && (
+                              <p className="text-xs text-slate-500 mt-2">
+                                类型: {script.script_type}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-slate-500 text-center py-4">
+                        {scriptLoading ? "加载中..." : "暂无推荐话术"}
+                      </div>
                     )}
                   </div>
 
