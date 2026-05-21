@@ -139,7 +139,7 @@ class TestMobilePushServiceWithFirebase:
     @patch('services.mobile_push_service.FIREBASE_AVAILABLE', True)
     @patch('services.mobile_push_service.firebase_admin')
     @patch('services.mobile_push_service.messaging')
-    async def test_fcm_send_success(self, mock_messaging, mock_firebase_admin, mock_settings, mock_certificate):
+    async def test_fcm_send_success(self, mock_messaging, mock_firebase_admin, mock_certificate, mock_settings):
         """测试 FCM 发送成功"""
         mock_settings.FCM_ENABLED = True
         mock_settings.FCM_CREDENTIALS_PATH = "/path/to/credentials.json"

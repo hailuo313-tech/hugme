@@ -11,6 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.admin import require_operator
 from core.database import get_db
+from services.script_template_retriever import (
+    ScriptTemplateQuery,
+    search_script_templates,
+)
 
 router = APIRouter()
 
@@ -61,6 +65,17 @@ class ScriptSuggestRequest(BaseModel):
     risk_level: Optional[str] = None
     conversion_goal: Optional[str] = None
     limit: int = Field(default=5, ge=1, le=20)
+
+
+class ScriptTemplateSearchRequest(BaseModel):
+    query: str = Field(..., min_length=1, max_length=2000)
+    platform: str = Field(default="telegram_real_user", min_length=1, max_length=40)
+    user_level: Optional[str] = Field(default=None, pattern="^[SABCD]$")
+    persona_slug: Optional[str] = Field(default=None, max_length=80)
+    hook: Optional[str] = Field(default=None, max_length=40)
+    category_key: Optional[str] = Field(default=None, max_length=40)
+    language: str = Field(default="zh", min_length=1, max_length=10)
+    limit: int = Field(default=3, ge=1, le=3)
 
 
 def _validate_uuid(value: str | None, field_name: str) -> str | None:
@@ -352,3 +367,37 @@ async def suggest_scripts(
         params,
     )
     return {"items": [_row_to_dict(r) for r in res.fetchall()]}
+
+
+@router.post("/templates/search")
+async def search_templates(
+    data: ScriptTemplateSearchRequest,
+    db: AsyncSession = Depends(get_db),
+    _operator: dict = Depends(require_operator),
+):
+    result = await search_script_templates(
+        db=db,
+        query=ScriptTemplateQuery(**data.model_dump()),
+    )
+    return {
+        "embedding_used": result.embedding_used,
+        "fallback_reason": result.fallback_reason,
+        "latency_ms": round(result.latency_ms, 2),
+        "items": [
+            {
+                "id": hit.id,
+                "category_key": hit.category_key,
+                "title": hit.title,
+                "content": hit.content,
+                "language": hit.language,
+                "platform": hit.platform,
+                "user_level": hit.user_level,
+                "persona_slug": hit.persona_slug,
+                "hook": hit.hook,
+                "similarity": round(hit.similarity, 6)
+                if hit.similarity is not None
+                else None,
+            }
+            for hit in result.hits
+        ],
+    }

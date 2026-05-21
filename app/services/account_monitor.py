@@ -42,49 +42,49 @@ class AccountMonitor:
     def _setup_prometheus_metrics(self):
         """Setup Prometheus metrics for account monitoring."""
         # Account online status
-        self.account_online Gauge = Gauge(
+        self.account_online: Gauge = Gauge(
             'eris_telegram_account_online',
             'Telegram account online status (1=online, 0=offline)',
             ['account_id', 'phone']
         )
 
         # Account connection duration
-        self.account_connection_duration Gauge = Gauge(
+        self.account_connection_duration: Gauge = Gauge(
             'eris_telegram_account_connection_duration_seconds',
             'Telegram account connection duration in seconds',
             ['account_id', 'phone']
         )
 
         # Message send attempts
-        self.message_send_attempts Counter = Counter(
+        self.message_send_attempts: Counter = Counter(
             'eris_telegram_message_send_attempts_total',
             'Total message send attempts',
             ['account_id', 'phone', 'status']
         )
 
         # Message send success rate
-        self.message_send_success_rate Gauge = Gauge(
+        self.message_send_success_rate: Gauge = Gauge(
             'eris_telegram_message_send_success_rate',
             'Message send success rate (0-1)',
             ['account_id', 'phone']
         )
 
         # Account banned status
-        self.account_banned Gauge = Gauge(
+        self.account_banned: Gauge = Gauge(
             'eris_telegram_account_banned',
             'Telegram account banned status (1=banned, 0=active)',
             ['account_id', 'phone']
         )
 
         # Account error rate
-        self.account_error_rate Gauge = Gauge(
+        self.account_error_rate: Gauge = Gauge(
             'eris_telegram_account_error_rate',
             'Account error rate in last hour',
             ['account_id', 'phone']
         )
 
         # Collection duration
-        self.collection_duration Histogram = Histogram(
+        self.collection_duration: Histogram = Histogram(
             'eris_account_monitor_collection_duration_seconds',
             'Account monitor collection duration'
         )

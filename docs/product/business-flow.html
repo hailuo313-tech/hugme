@@ -500,9 +500,9 @@ const TASKS = [
 
   // ── 阶段 03（19 项）──
   { id:"P3-01", phase:"03", owner:"codex", w:0.5, week:"W4", dep:"P1-02", desc:"script_templates 表 + 话术类目 DDL", acc:"5 类目就绪", baseline:true },
-  { id:"P3-02", phase:"03", owner:"codex", w:1.5, week:"W5", dep:"H-03,P3-01", desc:"scripts_seed.sql 录入底料", acc:"每类 ≥10 条" },
-  { id:"P3-03", phase:"03", owner:"codex", w:2, week:"W5", dep:"P3-02", desc:"向量化话术检索 API（全链路匹配引擎核心）", acc:"Top3 <100ms" },
-  { id:"P3-04", phase:"03", owner:"codex", w:1, week:"W5", dep:"P3-03", desc:"按 platform/level/persona/场景 step 过滤", acc:"8 条过滤单测" },
+  { id:"P3-02", phase:"03", owner:"codex", w:1.5, week:"W5", dep:"H-03,P3-01", desc:"scripts_seed.sql 录入底料", acc:"每类 ≥10 条", baseline:true },
+  { id:"P3-03", phase:"03", owner:"codex", w:2, week:"W5", dep:"P3-02", desc:"向量化话术检索 API（全链路匹配引擎核心）", acc:"Top3 <100ms", baseline:true },
+  { id:"P3-04", phase:"03", owner:"codex", w:1, week:"W5", dep:"P3-03", desc:"按 platform/level/persona/场景 step 过滤", acc:"8 条过滤单测", baseline:true },
   { id:"P3-05", phase:"03", owner:"codex", w:0.5, week:"W5", dep:"—", desc:"意图 taxonomy 文档", acc:"评审通过", baseline:true },
   { id:"P3-06", phase:"03", owner:"codex", w:1, week:"W5", dep:"P3-05", desc:"关键词规则引擎", acc:"规则可热更新" },
   { id:"P3-07", phase:"03", owner:"codex", w:2.5, week:"W6", dep:"P3-03", desc:"intent_classifier 双路召回", acc:"输出 intent/confidence" },

@@ -7,6 +7,7 @@ Thresholds externalized in ``config/level_thresholds.json`` (P2-06).
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -17,9 +18,18 @@ Level = Literal["S", "A", "B", "C", "D"]
 ChatRoute = Literal["manual_premium", "ai_assisted", "ai_auto"]
 CountryTier = Literal["T1", "T2", "T3", "unknown"]
 
+CHAT_ROUTE_BY_LEVEL: dict[Level, ChatRoute] = {
+    "S": "manual_premium",
+    "A": "manual_premium",
+    "B": "ai_assisted",
+    "C": "ai_auto",
+    "D": "ai_auto",
+}
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_T1_PATH = _REPO_ROOT / "config" / "t1_countries.json"
 DEFAULT_THRESHOLDS_PATH = _REPO_ROOT / "config" / "level_thresholds.json"
+DEFAULT_ENV_PATH = _REPO_ROOT / ".env"
 
 # T2 sample — H-02 will replace with signed config
 _DEFAULT_T2 = frozenset({"BR", "MX", "IN", "ID", "TH", "VN", "PH", "MY"})
@@ -59,17 +69,31 @@ def load_t1_countries(path: Path = DEFAULT_T1_PATH) -> frozenset[str]:
     return load_t1_countries_hot(path)
 
 
-def load_thresholds(path: Path = DEFAULT_THRESHOLDS_PATH) -> LevelThresholds:
+def load_thresholds(
+    path: Path = DEFAULT_THRESHOLDS_PATH,
+    *,
+    env_path: Path = DEFAULT_ENV_PATH,
+) -> LevelThresholds:
     data = load_json_config(path)
     spend = data.get("spend_usd", {})
     tier_map = data.get("tier_default_level", {})
+    env = _load_env_overrides(env_path)
     return LevelThresholds(
-        s_min_spend=float(spend.get("s_min", 500)),
-        a_min_spend=float(spend.get("a_min", 99)),
-        b_min_spend=float(spend.get("b_min", 0)),
-        vip_level_a_min=int(data.get("vip_level_a_min", 1)),
+        s_min_spend=_env_float(env, "LEVEL_S_MIN_SPEND", spend.get("s_min", 500)),
+        a_min_spend=_env_float(env, "LEVEL_A_MIN_SPEND", spend.get("a_min", 99)),
+        b_min_spend=_env_float(env, "LEVEL_B_MIN_SPEND", spend.get("b_min", 0)),
+        vip_level_a_min=_env_int(
+            env,
+            "LEVEL_VIP_LEVEL_A_MIN",
+            data.get("vip_level_a_min", 1),
+        ),
         tier_default_level={
-            str(k): _coerce_level(str(v)) for k, v in tier_map.items()
+            "T1": _coerce_level(_env_value(env, "LEVEL_T1_DEFAULT", tier_map.get("T1", "B"))),
+            "T2": _coerce_level(_env_value(env, "LEVEL_T2_DEFAULT", tier_map.get("T2", "C"))),
+            "T3": _coerce_level(_env_value(env, "LEVEL_T3_DEFAULT", tier_map.get("T3", "C"))),
+            "unknown": _coerce_level(
+                _env_value(env, "LEVEL_UNKNOWN_DEFAULT", tier_map.get("unknown", "C"))
+            ),
         },
     )
 
@@ -79,6 +103,44 @@ def _coerce_level(value: str) -> Level:
     if v not in {"S", "A", "B", "C", "D"}:
         raise ValueError(f"invalid level: {value}")
     return v  # type: ignore[return-value]
+
+
+def _load_env_overrides(path: Path) -> dict[str, str]:
+    values = {k: v for k, v in os.environ.items() if k.startswith("LEVEL_")}
+    if not path.exists():
+        return values
+    for line in path.read_text(encoding="utf-8").splitlines():
+        key, sep, raw_value = line.partition("=")
+        if not sep:
+            continue
+        key = key.strip()
+        if key.startswith("LEVEL_") and key not in values:
+            values[key] = _strip_env_value(raw_value)
+    return values
+
+
+def _strip_env_value(value: str) -> str:
+    cleaned = value.strip()
+    if "#" in cleaned and not cleaned.startswith(("'", '"')):
+        cleaned = cleaned.split("#", 1)[0].strip()
+    if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in ("'", '"'):
+        return cleaned[1:-1]
+    return cleaned
+
+
+def _env_value(env: dict[str, str], key: str, default: object) -> str:
+    value = env.get(key)
+    if value is None or str(value).strip() == "":
+        return str(default)
+    return str(value).strip()
+
+
+def _env_float(env: dict[str, str], key: str, default: object) -> float:
+    return float(_env_value(env, key, default))
+
+
+def _env_int(env: dict[str, str], key: str, default: object) -> int:
+    return int(_env_value(env, key, default))
 
 
 def country_tier(
@@ -100,11 +162,7 @@ def country_tier(
 
 
 def level_to_chat_route(level: Level) -> ChatRoute:
-    if level in ("S", "A"):
-        return "manual_premium"
-    if level == "B":
-        return "ai_assisted"
-    return "ai_auto"
+    return CHAT_ROUTE_BY_LEVEL[level]
 
 
 def calc_user_level(
