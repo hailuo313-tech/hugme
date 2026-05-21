@@ -541,7 +541,7 @@ const TASKS = [
   { id:"P5-04", phase:"05", owner:"devin", w:1, week:"W10", dep:"P4-07", desc:"72h WebSocket 长稳压测", acc:"0 丢消息" },
   { id:"P5-05", phase:"05", owner:"devin", w:1.5, week:"W11", dep:"P3,P4", desc:"Prometheus 埋点", acc:"/metrics 可 scrape" },
   { id:"P5-06", phase:"05", owner:"devin", w:1, week:"W11", dep:"P5-05", desc:"Grafana 五大盘 + 告警", acc:"告警可用" },
-  { id:"P5-07", phase:"05", owner:"codex", w:0.5, week:"W11", dep:"P5-06", desc:"付费转化漏斗 SQL", acc:"SQL 评审通过" },
+  { id:"P5-07", phase:"05", owner:"codex", w:0.5, week:"W11", dep:"P5-06", desc:"付费转化漏斗 SQL", acc:"SQL 评审通过", baseline:true },
   { id:"P5-08", phase:"05", owner:"devin", w:0.5, week:"W11", dep:"P5-07", desc:"Grafana 绑定转化面板", acc:"24h/72h 可见" },
   { id:"P5-09", phase:"05", owner:"devin", w:1, week:"W11", dep:"H-07", desc:"灰度 feature flag 按 level 切流", acc:"可按级开关" },
   { id:"P5-10", phase:"05", owner:"devin", w:1, week:"W11", dep:"H-09", desc:"runbook.md 运维手册", acc:"演练通过" },
