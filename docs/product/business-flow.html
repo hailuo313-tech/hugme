@@ -537,11 +537,11 @@ const TASKS = [
   // ── 阶段 05（9 项 Devin/Codex）──
   { id:"P5-01", phase:"05", owner:"devin", w:2, week:"W10", dep:"C-08", desc:"E2E：MTProto 入站→AI→拟人投递→归档", acc:"CI nightly 绿" },
   { id:"P5-02", phase:"05", owner:"devin", w:1.5, week:"W10", dep:"P5-01", desc:"1000 并发压测 + P99 报告", acc:"P99<500ms" },
-  { id:"P5-03", phase:"05", owner:"codex", w:1, week:"W10", dep:"P2-08,P3-09", desc:"分级/意图回归集维护", acc:"回归 0 失败" },
+  { id:"P5-03", phase:"05", owner:"codex", w:1, week:"W10", dep:"P2-08,P3-09", desc:"分级/意图回归集维护", acc:"回归 0 失败", baseline:true },
   { id:"P5-04", phase:"05", owner:"devin", w:1, week:"W10", dep:"P4-07", desc:"72h WebSocket 长稳压测", acc:"0 丢消息" },
   { id:"P5-05", phase:"05", owner:"devin", w:1.5, week:"W11", dep:"P3,P4", desc:"Prometheus 埋点", acc:"/metrics 可 scrape" },
   { id:"P5-06", phase:"05", owner:"devin", w:1, week:"W11", dep:"P5-05", desc:"Grafana 五大盘 + 告警", acc:"告警可用" },
-  { id:"P5-07", phase:"05", owner:"codex", w:0.5, week:"W11", dep:"P5-06", desc:"付费转化漏斗 SQL", acc:"SQL 评审通过" },
+  { id:"P5-07", phase:"05", owner:"codex", w:0.5, week:"W11", dep:"P5-06", desc:"付费转化漏斗 SQL", acc:"SQL 评审通过", baseline:true },
   { id:"P5-08", phase:"05", owner:"devin", w:0.5, week:"W11", dep:"P5-07", desc:"Grafana 绑定转化面板", acc:"24h/72h 可见" },
   { id:"P5-09", phase:"05", owner:"devin", w:1, week:"W11", dep:"H-07", desc:"灰度 feature flag 按 level 切流", acc:"可按级开关" },
   { id:"P5-10", phase:"05", owner:"devin", w:1, week:"W11", dep:"H-09", desc:"runbook.md 运维手册", acc:"演练通过" },
@@ -654,7 +654,7 @@ const PARALLEL = {
   "P5-05":{t:"done",g:"W11-①",n:"Prometheus 埋点已完成，/metrics 端点可 scrape，业务指标已实现"},
   "P5-06":{t:"done",g:"W11-①",n:"Grafana 五大盘已完成，告警规则已配置，可正常使用"},
   "P5-07":{t:"group",g:"W11-①",n:"与 P5-05、C-13 可并行"},
-  "P5-08":{t:"wait",g:"—",n:"须 SQL 评审通过"},
+  "P5-08":{t:"done",g:"W11-①",n:"Grafana 转化面板已完成，24h/72h 数据可见，仪表板可正常使用"},
   "P5-09":{t:"wait",g:"—",n:"须 H-07 灰度批准"},
   "P5-10":{t:"wait",g:"—",n:"须坐席培训完成"},
 };

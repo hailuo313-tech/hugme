@@ -215,6 +215,33 @@ class BusinessMetrics:
             registry=self.registry
         )
         
+        # Conversion Funnel Metrics
+        self.conversions_total = Counter(
+            'eris_conversions_total',
+            'Total conversion events',
+            ['type'],  # user_visit, signup_completed, payment_initiated, payment_completed, etc.
+            registry=self.registry
+        )
+        
+        self.conversion_rate = Gauge(
+            'eris_conversion_rate',
+            'Overall conversion rate',
+            registry=self.registry
+        )
+        
+        self.revenue_usd = Gauge(
+            'eris_revenue_usd',
+            'Total revenue in USD',
+            registry=self.registry
+        )
+        
+        self.conversion_funnel_stage_duration_seconds = Histogram(
+            'eris_conversion_funnel_stage_duration_seconds',
+            'Time spent in each conversion funnel stage',
+            ['stage'],  # visit_to_signup, signup_to_payment, payment_to_complete
+            registry=self.registry
+        )
+        
         # Update system info
         self._update_system_info()
     
@@ -348,6 +375,22 @@ class BusinessMetrics:
     def increment_error(self, error_type: str, severity: str):
         """Increment error counter"""
         self.errors_total.labels(type=error_type, severity=severity).inc()
+    
+    def increment_conversion(self, conversion_type: str):
+        """Increment conversion event counter"""
+        self.conversions_total.labels(type=conversion_type).inc()
+    
+    def update_conversion_rate(self, rate: float):
+        """Update overall conversion rate gauge"""
+        self.conversion_rate.set(rate)
+    
+    def update_revenue_usd(self, revenue: float):
+        """Update total revenue gauge"""
+        self.revenue_usd.set(revenue)
+    
+    def observe_conversion_funnel_stage_duration(self, stage: str, duration: float):
+        """Observe conversion funnel stage duration"""
+        self.conversion_funnel_stage_duration_seconds.labels(stage=stage).observe(duration)
 
 
 # Global metrics instance
