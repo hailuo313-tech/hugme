@@ -19,8 +19,8 @@ def _task_line(task_id: str) -> str:
     return match.group(0)
 
 
-def test_unverified_tasks_are_not_default_done() -> None:
-    for task_id in ("P1-01", "P1-06", "P1-16"):
+def test_open_tracking_tasks_are_not_default_done() -> None:
+    for task_id in ("C-12",):
         line = _task_line(task_id)
 
         assert "baseline:false" in line
@@ -28,7 +28,7 @@ def test_unverified_tasks_are_not_default_done() -> None:
 
 
 def test_completed_tasks_use_verified_field() -> None:
-    for task_id in ("H-03", "H-07", "P2-08", "P5-07"):
+    for task_id in ("P1-01", "P1-06", "P1-16", "H-03", "H-07", "P2-08", "P5-07"):
         line = _task_line(task_id)
 
         assert "baseline:true" in line
