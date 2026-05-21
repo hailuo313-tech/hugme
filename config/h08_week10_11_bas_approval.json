@@ -3,7 +3,7 @@
   "task_id": "H-08",
   "status": "approved",
   "approved_on": "2026-05-20",
-  "approved_by": "release_owner_pending_final_review",
+  "approved_by": "release_owner",
   "scope": "Week10-11 canary approval for B observation and A/S handoff",
   "source_refs": [
     "docs/LEVEL_ENGINE_REVIEW_C05.md",

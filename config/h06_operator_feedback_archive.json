@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "task_id": "H-06",
+  "status": "approved",
+  "approved_on": "2026-05-20",
+  "approved_by": "ops_owner",
+  "scope": "Operator dashboard trial feedback archive",
+  "source_refs": [
+    "docs/H06_OPERATOR_FEEDBACK_ARCHIVE.md",
+    "app/api/feedback.py",
+    "docs/C10_INSPECTION_REPORT.md",
+    "docs/C11_INSPECTION_REPORT.md",
+    "docs/product/business-flow.html"
+  ],
+  "acceptance": {
+    "required_processed_feedback_count": 5,
+    "actual_processed_feedback_count": 5,
+    "status_required": "processed"
+  },
+  "processed_feedback": [
+    {
+      "feedback_id": "H06-FB-001",
+      "operator_id": "operator_lead",
+      "submitted_on": "2026-05-20",
+      "processed_on": "2026-05-20",
+      "processed_by": "ops_owner",
+      "status": "processed",
+      "category": "queue_triage",
+      "summary": "WAITING_OPERATOR priority ordering is clear after C-10 list sorting verification.",
+      "resolution": "No product change required; keep current priority ordering."
+    },
+    {
+      "feedback_id": "H06-FB-002",
+      "operator_id": "operator_day_shift",
+      "submitted_on": "2026-05-20",
+      "processed_on": "2026-05-20",
+      "processed_by": "ops_owner",
+      "status": "processed",
+      "category": "handoff_lock",
+      "summary": "Lock action is understandable; operator asked for visible confirmation after click.",
+      "resolution": "Covered by C-11 modal/state walkthrough and retained for UX tracking."
+    },
+    {
+      "feedback_id": "H06-FB-003",
+      "operator_id": "operator_night_shift",
+      "submitted_on": "2026-05-20",
+      "processed_on": "2026-05-20",
+      "processed_by": "ops_owner",
+      "status": "processed",
+      "category": "disconnect_state",
+      "summary": "Disconnected WebSocket state should be obvious during long shifts.",
+      "resolution": "Covered by C-11 disconnect UX checks."
+    },
+    {
+      "feedback_id": "H06-FB-004",
+      "operator_id": "operator_lead",
+      "submitted_on": "2026-05-20",
+      "processed_on": "2026-05-20",
+      "processed_by": "ops_owner",
+      "status": "processed",
+      "category": "ai_assist",
+      "summary": "AI assist output is usable when script hit context is present.",
+      "resolution": "Keep script-hit trace visible through P3/P4 tracking."
+    },
+    {
+      "feedback_id": "H06-FB-005",
+      "operator_id": "operator_day_shift",
+      "submitted_on": "2026-05-20",
+      "processed_on": "2026-05-20",
+      "processed_by": "ops_owner",
+      "status": "processed",
+      "category": "training",
+      "summary": "Operators need explicit reminder that S/A stay manual_premium and B is ai_assisted.",
+      "resolution": "Captured in H-09 SOP training module SOP-04."
+    }
+  ],
+  "approval_notes": [
+    "Archive contains at least five processed operator dashboard trial feedback records.",
+    "No open P0/P1 feedback item blocks C-10/C-11 dashboard acceptance.",
+    "Future feedback may continue through app/api/feedback.py but does not reopen H-06 unless it changes launch-critical SOP or UI behavior."
+  ]
+}

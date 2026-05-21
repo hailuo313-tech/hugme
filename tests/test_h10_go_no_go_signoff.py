@@ -18,6 +18,8 @@ def test_h10_signoff_is_go() -> None:
     assert signoff["task_id"] == "H-10"
     assert signoff["status"] == "go"
     assert signoff["signed_on"] == "2026-05-20"
+    assert signoff["signed_by"] == "release_owner"
+    assert "pending_final_review" not in signoff["signed_by"]
     assert signoff["decision"]["result"] == "GO"
     assert signoff["decision"]["p0_blockers_open"] == 0
 

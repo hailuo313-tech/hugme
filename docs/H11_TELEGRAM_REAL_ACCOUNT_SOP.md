@@ -3,7 +3,7 @@
 Status: signed  
 Task: H-11 - 审定 Telegram 真人账号运营规范（频率/批量/ToS）  
 Signed on: 2026-05-20  
-Signed by: ops_owner_pending_final_review
+Signed by: ops_owner
 
 ## Scope
 

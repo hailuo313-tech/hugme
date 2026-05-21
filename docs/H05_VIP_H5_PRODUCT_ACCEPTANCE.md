@@ -3,7 +3,7 @@
 Status: approved  
 Task: H-05 - 确认 H5 VIP 弹窗文案与支付跳转路径  
 Approved on: 2026-05-20  
-Approved by: product_owner_pending_final_review
+Approved by: product_owner
 
 ## Scope
 

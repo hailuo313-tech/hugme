@@ -3,7 +3,7 @@
   "task_id": "H-11",
   "status": "signed",
   "signed_on": "2026-05-20",
-  "signed_by": "ops_owner_pending_final_review",
+  "signed_by": "ops_owner",
   "scope": "Telegram real-user MTProto account operating SOP, rate limits, batching, and ToS guardrails",
   "source_refs": [
     "docs/MTProto_ENV_SETUP.md",

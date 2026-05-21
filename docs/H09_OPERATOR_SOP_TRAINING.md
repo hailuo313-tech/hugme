@@ -3,7 +3,7 @@
 Status: approved  
 Task: H-09 - 坐席 SOP 培训与考核  
 Approved on: 2026-05-20  
-Approved by: ops_owner_pending_final_review
+Approved by: ops_owner
 
 ## Scope
 

@@ -3,7 +3,7 @@
   "task_id": "H-05",
   "status": "approved",
   "approved_on": "2026-05-20",
-  "approved_by": "product_owner_pending_final_review",
+  "approved_by": "product_owner",
   "scope": "H5 VIP modal copy and payment redirect path",
   "source_refs": [
     "app/api/payments.py",

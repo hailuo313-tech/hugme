@@ -18,6 +18,8 @@ def test_h11_policy_is_signed() -> None:
     assert policy["task_id"] == "H-11"
     assert policy["status"] == "signed"
     assert policy["signed_on"] == "2026-05-20"
+    assert policy["signed_by"] == "ops_owner"
+    assert "pending_final_review" not in policy["signed_by"]
 
 
 def test_production_session_plaintext_is_forbidden() -> None:
