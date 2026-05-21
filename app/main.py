@@ -32,7 +32,10 @@ from api.ops_ai import router as ops_ai_router
 from api.ab_experiments import router as ab_experiments_router
 from api.open_api import router as open_api_router
 from api.geoip import router as geoip_router
+from api.mtproto_sessions import router as mtproto_sessions_router
 from core.database import init_db
+from core.config import settings
+from services.mtproto.session_manager import session_manager
 from services.silent_reactivation_scheduler import (
     start_scheduler as start_silent_reactivation_scheduler,
     shutdown_scheduler as shutdown_silent_reactivation_scheduler,
@@ -79,6 +82,10 @@ async def lifespan(app: FastAPI):
     start_embedding_worker()
     start_profile_score_scheduler()
     start_notification_sender_worker()
+    # P1-18: Start session manager if enabled
+    if settings.SESSION_MANAGER_ENABLED:
+        await session_manager.start()
+        logger.info("Session manager started")
     try:
         yield
     finally:
@@ -86,6 +93,10 @@ async def lifespan(app: FastAPI):
         shutdown_notification_sender_worker()
         shutdown_embedding_worker()
         shutdown_silent_reactivation_scheduler()
+        # P1-18: Stop session manager
+        if settings.SESSION_MANAGER_ENABLED:
+            await session_manager.stop()
+            logger.info("Session manager stopped")
         logger.info("ERIS shutting down...")
 
 
@@ -165,6 +176,7 @@ app.include_router(payments_router, prefix="/api/v1", tags=["payments"])
 app.include_router(scripts_router, prefix="/api/v1/scripts", tags=["scripts"])
 app.include_router(telegram_router, tags=["telegram"])
 app.include_router(telegram_accounts_router, tags=["telegram-accounts"])
+app.include_router(mtproto_sessions_router, tags=["mtproto-sessions"])
 app.include_router(realtime_router, tags=["realtime"])
 app.include_router(llm_router, prefix="/api/v1", tags=["llm"])
 app.include_router(onboarding_router, prefix="/api/v1", tags=["onboarding"])

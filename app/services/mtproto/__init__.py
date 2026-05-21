@@ -35,3 +35,7 @@ from services.mtproto.account_pool import (
     AccountPoolSendResult,
     AccountRoute,
 )
+from services.mtproto.session_manager import (
+    SessionManager,
+    session_manager,
+)
