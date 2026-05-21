@@ -85,6 +85,12 @@ jobs:
           path: scripts/perf/reports/*.json
           retention-days: 30
 
+      - name: Validate archived P5-02 report
+        if: success()
+        run: |
+          latest_report=$(find scripts/perf/reports -name "p5_02_load_test_report_*.json" -type f -printf '%T@ %p\n' | sort -n | tail -1 | cut -d' ' -f2-)
+          python3 scripts/check_p5_02_load_report.py "$latest_report"
+
       - name: Upload API logs on failure
         if: failure()
         run: docker compose logs api --tail 200
