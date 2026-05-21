@@ -97,14 +97,14 @@ jobs:
       - name: Run Flyway migrations
         run: |
           export PATH="$PATH:$(pwd)/flyway-10.0.0"
-          flyway -configFiles=<(cat <<FLYWAY_CONF
+          cat > flyway-ci.conf <<'FLYWAY_CONF'
           flyway.url=jdbc:postgresql://localhost:5432/eris
           flyway.user=eris
           flyway.password=eris_secret_2026
           flyway.locations=filesystem:./db/migration
           flyway.baselineOnMigrate=true
           FLYWAY_CONF
-          ) migrate
+          flyway -configFiles=flyway-ci.conf migrate
 
       - name: Verify uuid-ossp extension
         run: |

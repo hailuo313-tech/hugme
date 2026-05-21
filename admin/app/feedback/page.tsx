@@ -141,7 +141,7 @@ export default function FeedbackManagementPage() {
   const processedCount = items.filter(f => f.status === "resolved").length;
 
   return (
-    <AuthGate>
+    <AuthGate>{() => (
       <div className="min-h-screen bg-slate-950">
         {/* Header */}
         <header className="bg-slate-800 border-b border-slate-700 px-6 py-3 flex items-center justify-between">
@@ -427,6 +427,7 @@ export default function FeedbackManagementPage() {
           </div>
         )}
       </div>
+    )}
     </AuthGate>
   );
 }
