@@ -19,7 +19,7 @@ SERVER_EVENT_TYPES = frozenset(
         "user.upgraded",
     }
 )
-CLIENT_EVENT_TYPES = frozenset({"ping", "task.ack"})
+CLIENT_EVENT_TYPES = frozenset({"ping", "task.ack", "message.ack"})
 
 TASK_REQUIRED_FIELDS = frozenset(
     {
@@ -108,6 +108,8 @@ def validate_client_event(msg: dict[str, Any]) -> list[str]:
         return [f"unknown client type: {t}"]
     if t == "task.ack" and not msg.get("task_id"):
         return ["task.ack missing task_id"]
+    if t == "message.ack" and not msg.get("message_id"):
+        return ["message.ack missing message_id"]
     return []
 
 

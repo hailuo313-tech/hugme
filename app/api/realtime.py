@@ -33,21 +33,193 @@ from services.ws_operator_task_delta import diff_tasks
 
 router = APIRouter()
 
-# ── WebSocket 连接管理器 (P2-11) ─────────────────────────────────
+# ── WebSocket 连接管理器 (P2-11 + P4-02) ─────────────────────────────────
+
+class PendingMessage:
+    """待确认的消息，支持重推机制 (P4-02)。"""
+    
+    def __init__(
+        self,
+        message_id: str,
+        message_type: str,
+        payload: dict[str, Any],
+        send_count: int = 0,
+        last_sent_at: float | None = None,
+    ):
+        self.message_id = message_id
+        self.message_type = message_type
+        self.payload = payload
+        self.send_count = send_count
+        self.last_sent_at = last_sent_at
+        self.acked = False
 
 class ConnectionManager:
-    """管理所有活跃的 WebSocket 连接，支持广播用户升级事件。"""
+    """管理所有活跃的 WebSocket 连接，支持广播用户升级事件和 ACK 重推机制 (P4-02)。"""
     
     def __init__(self):
         self.active_connections: list[WebSocket] = []
+        # 每个连接的待确认消息: {websocket: {message_id: PendingMessage}}
+        self.pending_messages: dict[WebSocket, dict[str, PendingMessage]] = {}
+        # 重推配置
+        self.max_retry_count = 3  # 最大重推次数
+        self.retry_interval_seconds = 5.0  # 重推间隔（秒）
+        self.message_timeout_seconds = 30.0  # 消息超时时间（秒）
     
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
+        self.pending_messages[websocket] = {}
     
     def disconnect(self, websocket: WebSocket):
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
+        if websocket in self.pending_messages:
+            del self.pending_messages[websocket]
+    
+    async def send_with_ack(
+        self,
+        websocket: WebSocket,
+        message_type: str,
+        payload: dict[str, Any],
+        message_id: str | None = None,
+    ) -> str:
+        """发送消息并启动 ACK 跟踪 (P4-02)。
+        
+        Args:
+            websocket: 目标 WebSocket 连接
+            message_type: 消息类型（如 "task.upsert", "task.removed"）
+            payload: 消息内容
+            message_id: 可选的消息 ID，如不提供则自动生成
+        
+        Returns:
+            消息 ID
+        """
+        if message_id is None:
+            import uuid
+            message_id = f"{message_type}-{uuid.uuid4().hex[:8]}"
+        
+        # 添加 message_id 到 payload
+        payload_with_id = {**payload, "message_id": message_id}
+        
+        try:
+            await websocket.send_json(payload_with_id)
+            
+            # 记录待确认消息
+            import time
+            pending_msg = PendingMessage(
+                message_id=message_id,
+                message_type=message_type,
+                payload=payload_with_id,
+                send_count=1,
+                last_sent_at=time.time(),
+            )
+            self.pending_messages[websocket][message_id] = pending_msg
+            
+            logger.bind(
+                component="ws",
+                message_id=message_id,
+                message_type=message_type,
+            ).info("ws.message_sent_with_ack")
+            
+            return message_id
+        except Exception as e:
+            logger.bind(
+                component="ws",
+                message_id=message_id,
+                error=str(e),
+            ).error("ws.message_send_failed")
+            raise
+    
+    async def handle_ack(self, websocket: WebSocket, message_id: str) -> bool:
+        """处理客户端的 ACK 确认 (P4-02)。
+        
+        Args:
+            websocket: WebSocket 连接
+            message_id: 被确认的消息 ID
+        
+        Returns:
+            是否成功确认（False 表示消息 ID 不存在或已确认）
+        """
+        if websocket not in self.pending_messages:
+            return False
+        
+        pending = self.pending_messages[websocket].get(message_id)
+        if not pending or pending.acked:
+            return False
+        
+        pending.acked = True
+        del self.pending_messages[websocket][message_id]
+        
+        logger.bind(
+            component="ws",
+            message_id=message_id,
+            message_type=pending.message_type,
+            send_count=pending.send_count,
+        ).info("ws.message_acknowledged")
+        
+        return True
+    
+    async def retry_pending_messages(self, websocket: WebSocket) -> None:
+        """重推待确认的消息 (P4-02)。
+        
+        对于超时未确认的消息，进行重推。超过最大重推次数则放弃。
+        """
+        import time
+        
+        if websocket not in self.pending_messages:
+            return
+        
+        current_time = time.time()
+        messages_to_retry = []
+        message_ids_to_remove = []
+        
+        for message_id, pending in self.pending_messages[websocket].items():
+            if pending.acked:
+                message_ids_to_remove.append(message_id)
+                continue
+            
+            # 检查是否需要重推
+            time_since_send = current_time - (pending.last_sent_at or 0)
+            if (
+                time_since_send >= self.retry_interval_seconds
+                and pending.send_count < self.max_retry_count
+            ):
+                messages_to_retry.append(pending)
+            elif time_since_send >= self.message_timeout_seconds:
+                # 超过超时时间，放弃重推
+                logger.bind(
+                    component="ws",
+                    message_id=message_id,
+                    message_type=pending.message_type,
+                    send_count=pending.send_count,
+                ).warning("ws.message_timeout_gave_up")
+                message_ids_to_remove.append(message_id)
+        
+        # 执行重推
+        for pending in messages_to_retry:
+            try:
+                await websocket.send_json(pending.payload)
+                pending.send_count += 1
+                pending.last_sent_at = current_time
+                
+                logger.bind(
+                    component="ws",
+                    message_id=pending.message_id,
+                    message_type=pending.message_type,
+                    send_count=pending.send_count,
+                ).info("ws.message_retried")
+            except Exception as e:
+                logger.bind(
+                    component="ws",
+                    message_id=pending.message_id,
+                    error=str(e),
+                ).error("ws.message_retry_failed")
+                message_ids_to_remove.append(pending.message_id)
+        
+        # 清理已确认或超时的消息
+        for message_id in message_ids_to_remove:
+            if message_id in self.pending_messages[websocket]:
+                del self.pending_messages[websocket][message_id]
     
     async def broadcast_user_upgrade(self, upgrade_data: dict[str, Any]) -> None:
         """向所有连接的坐席广播用户升级事件 (P2-11)。"""
@@ -57,13 +229,109 @@ class ConnectionManager:
         disconnected = []
         for connection in self.active_connections:
             try:
-                await connection.send_json(upgrade_data)
+                # 使用 send_with_ack 发送广播消息
+                await self.send_with_ack(
+                    connection,
+                    "user.upgraded",
+                    upgrade_data,
+                )
             except Exception:
                 disconnected.append(connection)
         
         # 清理断开的连接
         for conn in disconnected:
             self.disconnect(conn)
+    
+    async def broadcast(
+        self,
+        message_type: str,
+        payload: dict[str, Any],
+        message_id: str | None = None,
+    ) -> dict[str, Any]:
+        """通用广播方法，向所有连接发送消息 (P4-02)。
+        
+        Args:
+            message_type: 消息类型
+            payload: 消息内容
+            message_id: 可选的消息 ID，如不提供则为每个连接生成独立的 ID
+        
+        Returns:
+            广播统计信息：{total, success, failed, disconnected}
+        """
+        if not self.active_connections:
+            return {
+                "total": 0,
+                "success": 0,
+                "failed": 0,
+                "disconnected": 0,
+            }
+        
+        stats = {
+            "total": len(self.active_connections),
+            "success": 0,
+            "failed": 0,
+            "disconnected": 0,
+        }
+        
+        disconnected = []
+        for connection in self.active_connections:
+            try:
+                # 使用 send_with_ack 发送广播消息
+                await self.send_with_ack(
+                    connection,
+                    message_type,
+                    payload,
+                    message_id,  # 如果为 None，send_with_ack 会生成独立 ID
+                )
+                stats["success"] += 1
+            except Exception:
+                stats["failed"] += 1
+                disconnected.append(connection)
+        
+        # 清理断开的连接
+        for conn in disconnected:
+            self.disconnect(conn)
+            stats["disconnected"] += 1
+        
+        logger.bind(
+            component="ws",
+            message_type=message_type,
+            stats=stats,
+        ).info("ws.broadcast_completed")
+        
+        return stats
+    
+    async def get_pending_message_count(self, websocket: WebSocket) -> int:
+        """获取指定连接的待确认消息数量 (P4-02)。
+        
+        Args:
+            websocket: WebSocket 连接
+        
+        Returns:
+            待确认消息数量
+        """
+        if websocket not in self.pending_messages:
+            return 0
+        return len(self.pending_messages[websocket])
+    
+    async def get_connection_stats(self) -> dict[str, Any]:
+        """获取连接管理器的统计信息 (P4-02)。
+        
+        Returns:
+            统计信息字典
+        """
+        total_pending = sum(
+            len(pending)
+            for pending in self.pending_messages.values()
+        )
+        
+        return {
+            "active_connections": len(self.active_connections),
+            "total_pending_messages": total_pending,
+            "max_retry_count": self.max_retry_count,
+            "retry_interval_seconds": self.retry_interval_seconds,
+            "message_timeout_seconds": self.message_timeout_seconds,
+        }
 
 # 全局连接管理器实例
 manager = ConnectionManager()
@@ -202,7 +470,29 @@ async def _handle_client_message(
     if msg_type == "ping":
         await websocket.send_json({"type": "pong", "trace_id": trace_id})
     elif msg_type == "task.ack":
-        log.bind(task_id=msg.get("task_id")).info("ws.operator.task_ack")
+        # P4-02: 处理任务确认（兼容旧的 task_id 字段）
+        task_id = msg.get("task_id")
+        message_id = msg.get("message_id")
+        
+        if message_id:
+            # 新的 ACK 机制：使用 message_id
+            success = await manager.handle_ack(websocket, message_id)
+            if success:
+                log.bind(message_id=message_id).info("ws.operator.message_ack")
+            else:
+                log.bind(message_id=message_id).warning("ws.operator.message_ack_not_found")
+        elif task_id:
+            # 兼容旧的 ACK 机制：使用 task_id
+            log.bind(task_id=task_id).info("ws.operator.task_ack")
+    elif msg_type == "message.ack":
+        # P4-02: 新的通用消息确认机制
+        message_id = msg.get("message_id")
+        if message_id:
+            success = await manager.handle_ack(websocket, message_id)
+            if success:
+                log.bind(message_id=message_id).info("ws.operator.message_ack")
+            else:
+                log.bind(message_id=message_id).warning("ws.operator.message_ack_not_found")
 
 
 @router.websocket("/ws/operators/tasks")
@@ -247,6 +537,7 @@ async def operator_task_stream(websocket: WebSocket):
     state: dict[str, dict[str, Any]] = {t["task_id"]: t for t in initial_tasks}
 
     try:
+        retry_counter = 0
         while True:
             # 非阻塞收客户端消息
             try:
@@ -258,6 +549,12 @@ async def operator_task_stream(websocket: WebSocket):
                 client_msg = None
             if client_msg is not None:
                 await _handle_client_message(websocket, log, trace_id, client_msg)
+
+            # P4-02: 定期重推待确认的消息（每 5 秒检查一次）
+            retry_counter += 1
+            if retry_counter >= int(manager.retry_interval_seconds / POLL_INTERVAL_SECONDS):
+                await manager.retry_pending_messages(websocket)
+                retry_counter = 0
 
             # 拉最新任务、算 delta
             try:
@@ -271,21 +568,26 @@ async def operator_task_stream(websocket: WebSocket):
 
             upserts, removed_ids = diff_tasks(state, curr_tasks)
 
+            # P4-02: 使用 send_with_ack 发送任务更新消息
             for task in upserts:
-                await websocket.send_json(
+                await manager.send_with_ack(
+                    websocket,
+                    "task.upsert",
                     {
                         "type": "task.upsert",
                         "trace_id": trace_id,
                         "task": task,
-                    }
+                    },
                 )
             for tid in removed_ids:
-                await websocket.send_json(
+                await manager.send_with_ack(
+                    websocket,
+                    "task.removed",
                     {
                         "type": "task.removed",
                         "trace_id": trace_id,
                         "task_id": tid,
-                    }
+                    },
                 )
 
             if upserts or removed_ids:
@@ -346,6 +648,41 @@ async def test_user_upgrade(data: UserUpgradeTest):
         "previous_level": data.previous_level,
         "new_level": data.new_level,
     }
+
+
+# ── P4-02: 通用广播测试端点 ────────────────────────────────────────
+
+
+class BroadcastTest(BaseModel):
+    message_type: str
+    payload: dict[str, Any]
+
+
+@router.post("/test/broadcast")
+async def test_broadcast(data: BroadcastTest):
+    """测试端点：通用广播功能 (P4-02)。
+    
+    仅用于开发/测试环境，生产环境应移除此端点。
+    """
+    stats = await manager.broadcast(
+        message_type=data.message_type,
+        payload=data.payload,
+    )
+    
+    return {
+        "status": "success",
+        "message": f"Broadcast {data.message_type} to all connected operators",
+        "stats": stats,
+    }
+
+
+@router.get("/test/stats")
+async def test_stats():
+    """测试端点：获取连接管理器统计信息 (P4-02)。
+    
+    仅用于开发/测试环境，生产环境应移除此端点。
+    """
+    return await manager.get_connection_stats()
 
 
 # ── P1-07: 通用 WebSocket 端点 (ping/pong) ─────────────────────
