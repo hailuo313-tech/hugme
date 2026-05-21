@@ -1,6 +1,7 @@
-"""Archive service for P3-18: Async premium chat archiving."""
+"""Archive and premium chat trace service for P3-18/P3-19/P3-21."""
 
 import asyncio
+import json
 from datetime import datetime, timezone
 from typing import Any, Optional
 from uuid import UUID
@@ -25,6 +26,10 @@ JOB_ID = "archive_worker_tick"
 _scheduler: Optional[AsyncIOScheduler] = None
 
 
+def _json_dumps(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False)
+
+
 async def _claim_archive_task(session: AsyncSession) -> dict[str, Any] | None:
     """Claim one pending archive task."""
     row = (
@@ -32,10 +37,10 @@ async def _claim_archive_task(session: AsyncSession) -> dict[str, Any] | None:
             text(
                 """
                 WITH c AS (
-                    SELECT id, conversation_id, message_id, script_hit_id
+                    SELECT id, user_id, external_user_id, metadata
                     FROM message_schedules
                     WHERE status = 'sent'
-                      AND script_hit_id IS NOT NULL
+                      AND metadata->>'script_hit_id' IS NOT NULL
                       AND id NOT IN (
                           SELECT DISTINCT source_message_id::text::uuid
                           FROM conversation_script_hits
@@ -45,7 +50,7 @@ async def _claim_archive_task(session: AsyncSession) -> dict[str, Any] | None:
                     FOR UPDATE SKIP LOCKED
                     LIMIT 1
                 )
-                SELECT c.id, c.conversation_id, c.message_id, c.script_hit_id
+                SELECT c.id, c.user_id, c.external_user_id, c.metadata
                 FROM c
                 """
             )
@@ -65,6 +70,13 @@ async def _create_archive_record(
     hook: str = "archive",
     user_level: str = "C",
     platform: str = "telegram",
+    source_message_id: str | None = None,
+    script_ids: list[str] | None = None,
+    matched: bool = True,
+    degradation: str | None = None,
+    intent_id: str | None = None,
+    metadata: dict[str, Any] | None = None,
+    trace_id: str | None = None,
 ) -> str:
     """Create archive record in conversation_script_hits table."""
     result = await session.execute(
@@ -72,10 +84,13 @@ async def _create_archive_record(
             """
             INSERT INTO conversation_script_hits (
                 conversation_id, message_id, hook, script_hit_id,
-                matched, user_level, platform, created_at, updated_at
+                script_ids, matched, degradation, user_level, platform,
+                intent_id, source_message_id, metadata, trace_id, created_at, updated_at
             ) VALUES (
                 :conversation_id, :message_id, :hook, :script_hit_id,
-                true, :user_level, :platform, NOW(), NOW()
+                CAST(:script_ids AS jsonb), :matched, :degradation, :user_level, :platform,
+                :intent_id, CAST(:source_message_id AS uuid), CAST(:metadata AS jsonb),
+                :trace_id, NOW(), NOW()
             )
             RETURNING id
             """
@@ -85,8 +100,15 @@ async def _create_archive_record(
             "message_id": message_id,
             "hook": hook,
             "script_hit_id": script_hit_id,
+            "script_ids": _json_dumps(script_ids or ([script_hit_id] if script_hit_id else [])),
+            "matched": matched,
+            "degradation": degradation,
             "user_level": user_level,
             "platform": platform,
+            "intent_id": intent_id,
+            "source_message_id": source_message_id,
+            "metadata": _json_dumps(metadata or {}),
+            "trace_id": trace_id,
         }
     )
     archive_id = str(result.scalar())
@@ -139,6 +161,7 @@ async def archive_message(
     user_level: str = "C",
     platform: str = "telegram",
     trace_id: Optional[str] = None,
+    metadata: dict[str, Any] | None = None,
 ) -> str:
     """Archive a message with script hit record (async, non-blocking).
 
@@ -154,6 +177,8 @@ async def archive_message(
                 hook=hook,
                 user_level=user_level,
                 platform=platform,
+                metadata=metadata,
+                trace_id=trace_id,
             )
 
             logger.bind(
@@ -183,6 +208,7 @@ async def archive_message_async(
     user_level: str = "C",
     platform: str = "telegram",
     trace_id: Optional[str] = None,
+    metadata: dict[str, Any] | None = None,
 ) -> asyncio.Task:
     """Archive a message asynchronously without blocking.
 
@@ -198,6 +224,7 @@ async def archive_message_async(
                 user_level=user_level,
                 platform=platform,
                 trace_id=trace_id,
+                metadata=metadata,
             )
         except Exception as e:
             logger.bind(
@@ -245,22 +272,29 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
                     return stats
 
                 stats["claimed"] = 1
-                message_id = str(task["message_id"])
-                conversation_id = str(task["conversation_id"])
-                script_hit_id = str(task["script_hit_id"])
+                source_message_id = str(task["id"])
+                metadata = task.get("metadata") or {}
+                if isinstance(metadata, str):
+                    metadata = json.loads(metadata)
+                message_id = metadata.get("message_id")
+                conversation_id = metadata.get("conversation_id")
+                script_hit_id = str(metadata["script_hit_id"])
 
                 log.bind(
-                    message_id=message_id,
+                    source_message_id=source_message_id,
                     conversation_id=conversation_id,
                     script_hit_id=script_hit_id,
                 ).info("archive_service.tick.claimed")
 
                 # Get message details
-                message_details = await _get_message_details(session, message_id)
-                if not message_details:
-                    log.warning(f"archive_service.tick.message_not_found: {message_id}")
+                if not conversation_id:
+                    log.warning("archive_service.tick.no_conversation_id")
                     stats["failed"] = 1
                     return stats
+                message_details = (
+                    await _get_message_details(session, message_id)
+                    if message_id else {}
+                )
 
                 # Create archive record
                 archive_id = await _create_archive_record(
@@ -269,8 +303,13 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
                     message_id=message_id,
                     script_hit_id=script_hit_id,
                     hook="archive",
-                    user_level=message_details.get("user_level", "C"),
-                    platform=message_details.get("channel", "telegram"),
+                    user_level=metadata.get("user_level") or message_details.get("user_level", "C"),
+                    platform=metadata.get("platform") or message_details.get("channel", "telegram_real_user"),
+                    source_message_id=source_message_id,
+                    script_ids=metadata.get("script_ids") or [script_hit_id],
+                    matched=True,
+                    metadata=metadata,
+                    trace_id=trace_id,
                 )
 
                 stats["archived"] = 1
@@ -366,3 +405,98 @@ async def get_conversation_script_hits(
         )
         rows = result.mappings().all()
         return [dict(row) for row in rows]
+
+
+async def get_premium_chat_trace(
+    conversation_id: str,
+    limit: int = 100,
+    trace_id: Optional[str] = None,
+) -> dict[str, Any]:
+    """Return S/A premium conversation messages plus script-hit trajectory."""
+    async with AsyncSessionLocal() as session:
+        conv = (
+            await session.execute(
+                text(
+                    """
+                    SELECT
+                        c.id,
+                        c.user_id,
+                        c.channel,
+                        c.state,
+                        c.created_at,
+                        c.updated_at,
+                        u.level AS user_level,
+                        u.external_id,
+                        u.nickname
+                    FROM conversations c
+                    JOIN users u ON c.user_id = u.id
+                    WHERE c.id = :conversation_id
+                    """
+                ),
+                {"conversation_id": conversation_id},
+            )
+        ).mappings().first()
+        if not conv:
+            return {
+                "found": False,
+                "eligible": False,
+                "reason": "conversation_not_found",
+                "conversation_id": conversation_id,
+            }
+
+        user_level = str(conv.get("user_level") or "")
+        eligible = user_level in {"S", "A"}
+
+        messages = (
+            await session.execute(
+                text(
+                    """
+                    SELECT id, sender_type, sender_id, content, content_type, created_at
+                    FROM messages
+                    WHERE conversation_id = :conversation_id
+                    ORDER BY created_at ASC
+                    LIMIT :limit
+                    """
+                ),
+                {"conversation_id": conversation_id, "limit": limit},
+            )
+        ).mappings().all()
+
+        hits = await get_conversation_script_hits(
+            conversation_id=conversation_id,
+            limit=limit * 8,
+            trace_id=trace_id,
+        )
+        hooks_seen = {str(hit["hook"]) for hit in hits}
+        missing_hooks = [
+            hook for hook in (
+                "inbound",
+                "consumption",
+                "probe",
+                "grading",
+                "reply",
+                "operator",
+                "outbound",
+                "archive",
+            )
+            if hook not in hooks_seen
+        ]
+
+        return {
+            "found": True,
+            "eligible": eligible,
+            "reason": None if eligible else "user_level_not_s_or_a",
+            "conversation": dict(conv),
+            "messages": [dict(row) for row in messages],
+            "script_hits": hits,
+            "traceability": {
+                "total_hits": len(hits),
+                "hooks_seen": sorted(hooks_seen),
+                "missing_hooks": missing_hooks,
+                "complete_8_hooks": len(missing_hooks) == 0,
+                "all_steps_have_match_or_degradation": all(
+                    bool(hit.get("matched")) or bool(hit.get("degradation"))
+                    for hit in hits
+                ),
+            },
+        }

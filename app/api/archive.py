@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from services.archive_service import (
     archive_message_async,
     get_conversation_script_hits,
+    get_premium_chat_trace,
     get_scheduler_status,
     run_one_tick,
 )
@@ -129,6 +130,15 @@ class ConversationHitsResponse(BaseModel):
     message: str
 
 
+class PremiumChatTraceResponse(BaseModel):
+    status: str
+    conversation_id: str
+    eligible: bool
+    conversation: dict | None = None
+    messages: list = Field(default_factory=list)
+    script_hits: list = Field(default_factory=list)
+    traceability: dict = Field(default_factory=dict)
+    reason: str | None = None
 @router.get("/conversation/{conversation_id}/hits")
 async def get_conversation_hits(
     conversation_id: str,
@@ -160,4 +170,47 @@ async def get_conversation_hits(
         )
     except Exception as e:
         log.error(f"archive.api.get_hits.error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/premium-chat/{conversation_id}/trace")
+async def get_premium_chat_trace_endpoint(
+    conversation_id: str,
+    request: Request,
+    limit: int = 100,
+):
+    """P3-19: query S/A premium chat with every script_hit trajectory."""
+    trace_id = request.state.trace_id
+    log = logger.bind(trace_id=trace_id)
+
+    try:
+        trace = await get_premium_chat_trace(
+            conversation_id=conversation_id,
+            limit=limit,
+            trace_id=trace_id,
+        )
+        if not trace.get("found"):
+            raise HTTPException(status_code=404, detail=trace.get("reason"))
+        if not trace.get("eligible"):
+            raise HTTPException(status_code=403, detail=trace.get("reason"))
+
+        log.bind(
+            conversation_id=conversation_id,
+            hit_count=len(trace.get("script_hits", [])),
+            complete_8_hooks=trace.get("traceability", {}).get("complete_8_hooks"),
+        ).info("archive.api.premium_trace.success")
+
+        return PremiumChatTraceResponse(
+            status="success",
+            conversation_id=conversation_id,
+            eligible=True,
+            conversation=trace.get("conversation"),
+            messages=trace.get("messages", []),
+            script_hits=trace.get("script_hits", []),
+            traceability=trace.get("traceability", {}),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"archive.api.premium_trace.error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
