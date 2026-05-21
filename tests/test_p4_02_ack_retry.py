@@ -249,7 +249,6 @@ async def test_retry_on_websocket_error(manager, mock_websocket):
     await manager.connect(mock_websocket)
     
     # 设置发送失败
-    mock_websocket.send_json.side_effect = Exception("Connection lost")
     
     # 设置较短的重推间隔
     manager.retry_interval_seconds = 0.1
@@ -260,6 +259,7 @@ async def test_retry_on_websocket_error(manager, mock_websocket):
         "task.upsert",
         {"type": "task.upsert", "task": {"task_id": "t1"}},
     )
+    mock_websocket.send_json.side_effect = Exception("Connection lost")
     
     # 等待超过重推间隔
     await asyncio.sleep(0.15)
