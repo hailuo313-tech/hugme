@@ -6,8 +6,11 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 from uuid import uuid4
 
+from loguru import logger
+
 from services.inbound.adapter_protocol import ChannelAdapter, enqueue_standard_inbound
 from services.inbound.envelope import InboundMetadata, StandardInboundEnvelope
+from services.user_level_service import user_level_service
 
 INBOUND_QUEUE_STREAM = "inbound_queue"
 PLATFORM = "telegram_real_user"
@@ -175,5 +178,23 @@ async def enqueue_new_message(
     )
     if not claimed:
         return None, envelope
+
+    # P2-12: Integrate user level calculation into inbound pipeline
+    try:
+        envelope_dict = envelope.model_dump(mode="json")
+        enriched_envelope_dict = await user_level_service.enrich_inbound_envelope_with_level(
+            envelope_dict
+        )
+        # Update envelope with enriched metadata
+        envelope = StandardInboundEnvelope(**enriched_envelope_dict)
+        metadata = envelope.metadata.model_dump()
+        logger.info(
+            f"User level integrated for {envelope.external_user_id}: "
+            f"level={metadata.get('user_level')}, route={metadata.get('chat_route')}"
+        )
+    except Exception as e:
+        logger.error(f"Error integrating user level, using original envelope: {e}")
+        # Continue with original envelope if level calculation fails
+
     queue_id = await enqueue_standard_inbound(redis, stream, envelope, maxlen=maxlen)
     return queue_id, envelope
