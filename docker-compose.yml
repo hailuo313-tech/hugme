@@ -115,6 +115,64 @@ services:
       timeout: 10s
       retries: 3
 
+prometheus:
+    image: prom/prometheus:latest
+    container_name: eris-prometheus
+    restart: always
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    depends_on:
+      - api
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: eris-node-exporter
+    restart: always
+    ports:
+      - "127.0.0.1:9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: eris-postgres-exporter
+    restart: always
+    environment:
+      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:-eris}:${POSTGRES_PASSWORD:-eris_secret_2026}@postgres:5432/${POSTGRES_DB:-eris}?sslmode=disable
+    ports:
+      - "127.0.0.1:9187:9187"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: eris-redis-exporter
+    restart: always
+    environment:
+      REDIS_ADDR: redis://:${REDIS_PASSWORD:-redis_secret_2026}@redis:6379
+    ports:
+      - "127.0.0.1:9121:9121"
+    depends_on:
+      redis:
+        condition: service_healthy
+
 volumes:
   postgres_data:
   redis_data:
+  prometheus_data::

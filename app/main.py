@@ -41,6 +41,7 @@ from api.auto_delivery import router as auto_delivery_router
 from api.archive import router as archive_router
 from api.intents import router as intents_router
 from api.device_tokens import router as device_tokens_router
+from api.metrics import router as metrics_router
 from core.database import init_db
 from core.config import settings
 from services.mtproto.session_manager import session_manager
@@ -264,5 +265,6 @@ app.include_router(
 app.include_router(open_api_router, prefix="/api/v1/open", tags=["open-api"])
 app.include_router(geoip_router, prefix="/api/v1", tags=["geoip"])
 app.include_router(device_tokens_router, prefix="/api/v1/device-tokens", tags=["device-tokens"])
+app.include_router(metrics_router, tags=["metrics"])
 
 Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)

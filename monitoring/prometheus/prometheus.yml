@@ -1,0 +1,61 @@
+# Prometheus configuration for ERIS monitoring (P5-05)
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'eris-production'
+    replica: 'replica-1'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          # Add alertmanager URL here when available
+          # - alertmanager:9093
+
+# Rule files
+rule_files:
+  # - "alerting/*.yml"
+
+# Scrape configurations
+scrape_configs:
+  # ERIS API metrics
+  - job_name: 'eris-api'
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['api:8000']
+        labels:
+          service: 'eris-api'
+          environment: 'production'
+
+  # Node exporter (system metrics)
+  - job_name: 'node-exporter'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          service: 'node-exporter'
+          environment: 'production'
+  
+  # PostgreSQL exporter (database metrics)
+  - job_name: 'postgres-exporter'
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+        labels:
+          service: 'postgres-exporter'
+          environment: 'production'
+  
+  # Redis exporter (cache metrics)
+  - job_name: 'redis-exporter'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['redis-exporter:9121']
+        labels:
+          service: 'redis-exporter'
+          environment: 'production'
+
