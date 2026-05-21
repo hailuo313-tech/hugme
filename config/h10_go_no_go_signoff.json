@@ -3,7 +3,7 @@
   "task_id": "H-10",
   "status": "go",
   "signed_on": "2026-05-20",
-  "signed_by": "release_owner_pending_final_review",
+  "signed_by": "release_owner",
   "scope": "Full launch Go/No-Go final signoff",
   "source_refs": [
     "docs/C14_INSPECTION_REPORT.md",
@@ -117,8 +117,7 @@
     "Record production image refresh and deployment timestamp for PL-01.",
     "Attach Grafana production visual signoff evidence for PL-03.",
     "Confirm business-flow static copy is synced to nginx/static hosting for PL-04.",
-    "Run beta/full-launch metrics cadence at +1h, +4h, +24h, and daily for seven days."
-    ,
+    "Run beta/full-launch metrics cadence at +1h, +4h, +24h, and daily for seven days.",
     "Record C-12 scheduled nightly evidence until fixtures/c12_nightly_stability.json reaches stability_met true."
   ],
   "acceptance": [

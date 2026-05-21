@@ -3,7 +3,7 @@
   "task_id": "H-04",
   "status": "signed",
   "signed_on": "2026-05-20",
-  "signed_by": "human_owner_pending_final_review",
+  "signed_by": "human_owner",
   "language": "zh",
   "source_refs": [
     "docs/P3_PERSONA_PROMPTS.md",

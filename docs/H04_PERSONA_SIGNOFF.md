@@ -3,7 +3,7 @@
 Status: signed  
 Task: H-04 - 审定 AI 人设性格与禁用词表  
 Signed on: 2026-05-20  
-Signed by: human_owner_pending_final_review
+Signed by: human_owner
 
 ## Scope
 

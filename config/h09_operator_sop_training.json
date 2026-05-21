@@ -3,7 +3,7 @@
   "task_id": "H-09",
   "status": "approved",
   "approved_on": "2026-05-20",
-  "approved_by": "ops_owner_pending_final_review",
+  "approved_by": "ops_owner",
   "scope": "Operator SOP training and assessment with 100% attendance",
   "source_refs": [
     "docs/C11_UX_WALKTHROUGH.md",

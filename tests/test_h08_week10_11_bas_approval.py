@@ -18,6 +18,8 @@ def test_h08_approval_is_for_week10_11() -> None:
     assert approval["task_id"] == "H-08"
     assert approval["status"] == "approved"
     assert approval["approved_on"] == "2026-05-20"
+    assert approval["approved_by"] == "release_owner"
+    assert "pending_final_review" not in approval["approved_by"]
     assert approval["dependency"]["task_id"] == "H-07"
     assert approval["canary_window"]["weeks"] == ["Week10", "Week11"]
 

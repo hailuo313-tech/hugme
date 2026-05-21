@@ -3,7 +3,7 @@
 Status: approved  
 Task: H-08 - 批准灰度 Week10-11：B 级观察 + A/S 接管  
 Approved on: 2026-05-20  
-Approved by: release_owner_pending_final_review
+Approved by: release_owner
 
 ## Scope
 

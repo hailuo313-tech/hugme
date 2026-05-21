@@ -18,6 +18,8 @@ def test_h09_training_is_approved() -> None:
     assert training["task_id"] == "H-09"
     assert training["status"] == "approved"
     assert training["approved_on"] == "2026-05-20"
+    assert training["approved_by"] == "ops_owner"
+    assert "pending_final_review" not in training["approved_by"]
 
 
 def test_attendance_rate_is_100_percent() -> None:

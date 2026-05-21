@@ -18,6 +18,8 @@ def test_h05_approval_is_product_accepted() -> None:
     assert approval["task_id"] == "H-05"
     assert approval["status"] == "approved"
     assert approval["approved_on"] == "2026-05-20"
+    assert approval["approved_by"] == "product_owner"
+    assert "pending_final_review" not in approval["approved_by"]
 
 
 def test_vip_offer_matches_payment_api_contract() -> None:

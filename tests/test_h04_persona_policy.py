@@ -18,6 +18,8 @@ def test_h04_policy_is_signed() -> None:
     assert policy["task_id"] == "H-04"
     assert policy["status"] == "signed"
     assert policy["signed_on"] == "2026-05-20"
+    assert policy["signed_by"] == "human_owner"
+    assert "pending_final_review" not in policy["signed_by"]
 
 
 def test_required_personas_are_approved() -> None:

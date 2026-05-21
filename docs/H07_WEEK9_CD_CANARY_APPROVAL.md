@@ -3,7 +3,7 @@
 Status: approved  
 Task: H-07 - 批准灰度 Week9：仅 C/D 级切流  
 Approved on: 2026-05-20  
-Approved by: release_owner_pending_final_review
+Approved by: release_owner
 
 ## Scope
 

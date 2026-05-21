@@ -3,7 +3,7 @@
 Status: GO  
 Task: H-10 - 全量上线 Go/No-Go 最终签署  
 Signed on: 2026-05-20  
-Signed by: release_owner_pending_final_review
+Signed by: release_owner
 
 ## Scope
 
