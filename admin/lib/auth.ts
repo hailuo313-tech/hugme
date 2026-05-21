@@ -15,28 +15,33 @@ export interface Operator {
   role: string;
 }
 
+function getBrowserStorage(): Storage | null {
+  if (typeof window === "undefined" || !window.localStorage) return null;
+  return window.localStorage;
+}
+
 export function saveAuth(token: string, operator: Operator) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(TOKEN_KEY, token);
-  localStorage.setItem(OPERATOR_KEY, JSON.stringify(operator));
+  const storage = getBrowserStorage();
+  if (!storage) return;
+  storage.setItem(TOKEN_KEY, token);
+  storage.setItem(OPERATOR_KEY, JSON.stringify(operator));
 }
 
 export function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(TOKEN_KEY);
+  return getBrowserStorage()?.getItem(TOKEN_KEY) ?? null;
 }
 
 export function getOperator(): Operator | null {
-  if (typeof window === "undefined") return null;
-  const raw = localStorage.getItem(OPERATOR_KEY);
+  const raw = getBrowserStorage()?.getItem(OPERATOR_KEY);
   if (!raw) return null;
   try { return JSON.parse(raw); } catch { return null; }
 }
 
 export function clearAuth() {
-  if (typeof window === "undefined") return;
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(OPERATOR_KEY);
+  const storage = getBrowserStorage();
+  if (!storage) return;
+  storage.removeItem(TOKEN_KEY);
+  storage.removeItem(OPERATOR_KEY);
 }
 
 export function isLoggedIn(): boolean {
