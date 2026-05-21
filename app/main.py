@@ -39,6 +39,7 @@ from api.message_schedule import router as message_schedule_router
 from api.suspension import router as suspension_router
 from api.auto_delivery import router as auto_delivery_router
 from api.archive import router as archive_router
+from api.audit_logs import router as audit_logs_router
 from api.intents import router as intents_router
 from api.device_tokens import router as device_tokens_router
 from api.metrics import router as metrics_router
@@ -246,6 +247,7 @@ app.include_router(user_level_router, tags=["user-level"])
 app.include_router(message_schedule_router, prefix="/api/v1/message-schedule", tags=["message-schedule"])
 app.include_router(auto_delivery_router, prefix="/api/v1/auto-delivery", tags=["auto-delivery"])
 app.include_router(archive_router, prefix="/api/v1/archive", tags=["archive"])
+app.include_router(audit_logs_router, prefix="/api/v1", tags=["audit-logs"])
 app.include_router(intents_router, prefix="/api/v1/intents", tags=["intents"])
 app.include_router(realtime_router, tags=["realtime"])
 app.include_router(llm_router, prefix="/api/v1", tags=["llm"])
