@@ -1,0 +1,182 @@
+[
+  {
+    "case_id": "p5_03_level_001",
+    "description": "Incomplete profile always probes as D even for T1 high spend.",
+    "input": {"profile_complete": false, "country_code": "US", "lifetime_spend_usd": 9999, "vip_level": 9},
+    "expected_level": "D",
+    "expected_chat_route": "ai_auto",
+    "expected_reason": "profile_incomplete_probe",
+    "expected_country_tier": "T1"
+  },
+  {
+    "case_id": "p5_03_level_002",
+    "description": "Operator override promotes complete profile to S.",
+    "input": {"profile_complete": true, "country_code": "US", "operator_assigned_s": true},
+    "expected_level": "S",
+    "expected_chat_route": "manual_premium",
+    "expected_reason": "operator_assigned_s",
+    "expected_country_tier": "T1"
+  },
+  {
+    "case_id": "p5_03_level_003",
+    "description": "T1 spend at signed S threshold becomes S.",
+    "input": {"profile_complete": true, "country_code": "US", "lifetime_spend_usd": 200},
+    "expected_level": "S",
+    "expected_chat_route": "manual_premium",
+    "expected_reason": "t1_high_spend",
+    "expected_country_tier": "T1"
+  },
+  {
+    "case_id": "p5_03_level_004",
+    "description": "T1 spend just below S but above A becomes A.",
+    "input": {"profile_complete": true, "country_code": "US", "lifetime_spend_usd": 199.99},
+    "expected_level": "A",
+    "expected_chat_route": "manual_premium",
+    "expected_reason": "spend_or_vip_a",
+    "expected_country_tier": "T1"
+  },
+  {
+    "case_id": "p5_03_level_005",
+    "description": "T1 spend at A threshold becomes A.",
+    "input": {"profile_complete": true, "country_code": "SG", "lifetime_spend_usd": 99},
+    "expected_level": "A",
+    "expected_chat_route": "manual_premium",
+    "expected_reason": "spend_or_vip_a",
+    "expected_country_tier": "T1"
+  },
+  {
+    "case_id": "p5_03_level_006",
+    "description": "T1 spend below A defaults to B.",
+    "input": {"profile_complete": true, "country_code": "GB", "lifetime_spend_usd": 98.99},
+    "expected_level": "B",
+    "expected_chat_route": "ai_assisted",
+    "expected_reason": "t1_default_b",
+    "expected_country_tier": "T1"
+  },
+  {
+    "case_id": "p5_03_level_007",
+    "description": "T1 zero spend defaults to B.",
+    "input": {"profile_complete": true, "country_code": "JP", "lifetime_spend_usd": 0},
+    "expected_level": "B",
+    "expected_chat_route": "ai_assisted",
+    "expected_reason": "t1_default_b",
+    "expected_country_tier": "T1"
+  },
+  {
+    "case_id": "p5_03_level_008",
+    "description": "Lowercase T1 country is normalized.",
+    "input": {"profile_complete": true, "country_code": "us", "lifetime_spend_usd": 0},
+    "expected_level": "B",
+    "expected_chat_route": "ai_assisted",
+    "expected_reason": "t1_default_b",
+    "expected_country_tier": "T1"
+  },
+  {
+    "case_id": "p5_03_level_009",
+    "description": "VIP level promotes non-T1 to A without spend.",
+    "input": {"profile_complete": true, "country_code": "BR", "lifetime_spend_usd": 0, "vip_level": 1},
+    "expected_level": "A",
+    "expected_chat_route": "manual_premium",
+    "expected_reason": "spend_or_vip_a",
+    "expected_country_tier": "T2"
+  },
+  {
+    "case_id": "p5_03_level_010",
+    "description": "T2 spend at A threshold becomes A.",
+    "input": {"profile_complete": true, "country_code": "MX", "lifetime_spend_usd": 99},
+    "expected_level": "A",
+    "expected_chat_route": "manual_premium",
+    "expected_reason": "spend_or_vip_a",
+    "expected_country_tier": "T2"
+  },
+  {
+    "case_id": "p5_03_level_011",
+    "description": "T2 spend below A defaults to C.",
+    "input": {"profile_complete": true, "country_code": "IN", "lifetime_spend_usd": 98.99},
+    "expected_level": "C",
+    "expected_chat_route": "ai_auto",
+    "expected_reason": "tier_default_t2",
+    "expected_country_tier": "T2"
+  },
+  {
+    "case_id": "p5_03_level_012",
+    "description": "T3 high spend does not become S but can become A.",
+    "input": {"profile_complete": true, "country_code": "ZZ", "lifetime_spend_usd": 1000},
+    "expected_level": "A",
+    "expected_chat_route": "manual_premium",
+    "expected_reason": "spend_or_vip_a",
+    "expected_country_tier": "T3"
+  },
+  {
+    "case_id": "p5_03_level_013",
+    "description": "T3 no spend defaults to C.",
+    "input": {"profile_complete": true, "country_code": "ZZ", "lifetime_spend_usd": 0},
+    "expected_level": "C",
+    "expected_chat_route": "ai_auto",
+    "expected_reason": "tier_default_t3",
+    "expected_country_tier": "T3"
+  },
+  {
+    "case_id": "p5_03_level_014",
+    "description": "Unknown country no spend defaults to C.",
+    "input": {"profile_complete": true, "country_code": null, "lifetime_spend_usd": 0},
+    "expected_level": "C",
+    "expected_chat_route": "ai_auto",
+    "expected_reason": "tier_default_unknown",
+    "expected_country_tier": "unknown"
+  },
+  {
+    "case_id": "p5_03_level_015",
+    "description": "Blank country is unknown.",
+    "input": {"profile_complete": true, "country_code": "", "lifetime_spend_usd": 0},
+    "expected_level": "C",
+    "expected_chat_route": "ai_auto",
+    "expected_reason": "tier_default_unknown",
+    "expected_country_tier": "unknown"
+  },
+  {
+    "case_id": "p5_03_level_016",
+    "description": "Negative spend is clamped to zero.",
+    "input": {"profile_complete": true, "country_code": "US", "lifetime_spend_usd": -10},
+    "expected_level": "B",
+    "expected_chat_route": "ai_assisted",
+    "expected_reason": "t1_default_b",
+    "expected_country_tier": "T1"
+  },
+  {
+    "case_id": "p5_03_level_017",
+    "description": "VIP level below threshold does not promote.",
+    "input": {"profile_complete": true, "country_code": "BR", "lifetime_spend_usd": 0, "vip_level": 0},
+    "expected_level": "C",
+    "expected_chat_route": "ai_auto",
+    "expected_reason": "tier_default_t2",
+    "expected_country_tier": "T2"
+  },
+  {
+    "case_id": "p5_03_level_018",
+    "description": "A threshold is inclusive for unknown country.",
+    "input": {"profile_complete": true, "country_code": null, "lifetime_spend_usd": 99},
+    "expected_level": "A",
+    "expected_chat_route": "manual_premium",
+    "expected_reason": "spend_or_vip_a",
+    "expected_country_tier": "unknown"
+  },
+  {
+    "case_id": "p5_03_level_019",
+    "description": "S threshold requires T1.",
+    "input": {"profile_complete": true, "country_code": "BR", "lifetime_spend_usd": 200},
+    "expected_level": "A",
+    "expected_chat_route": "manual_premium",
+    "expected_reason": "spend_or_vip_a",
+    "expected_country_tier": "T2"
+  },
+  {
+    "case_id": "p5_03_level_020",
+    "description": "VIP level wins over T1 default B.",
+    "input": {"profile_complete": true, "country_code": "US", "lifetime_spend_usd": 0, "vip_level": 1},
+    "expected_level": "A",
+    "expected_chat_route": "manual_premium",
+    "expected_reason": "spend_or_vip_a",
+    "expected_country_tier": "T1"
+  }
+]
