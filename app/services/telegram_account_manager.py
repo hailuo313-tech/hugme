@@ -1,6 +1,7 @@
 """Telegram account manager for P1-09 multi-account StringSession management."""
 
 import asyncio
+import inspect
 from datetime import datetime
 from typing import Dict, List, Optional
 from uuid import UUID
@@ -55,7 +56,7 @@ class TelegramAccountManager:
         """Get account by ID from database."""
         session = await _next_session()
         result = await session.execute(select(TelegramAccount).where(TelegramAccount.id == account_id))
-        return result.scalar_one_or_none()
+        return await _maybe_await(result.scalar_one_or_none())
 
     async def get_active_accounts(self) -> List[TelegramAccount]:
         """Get all active accounts from database."""
@@ -63,7 +64,9 @@ class TelegramAccountManager:
         result = await session.execute(
             select(TelegramAccount).where(TelegramAccount.is_active == True)
         )
-        return list(result.scalars().all())
+        scalars = await _maybe_await(result.scalars())
+        accounts = await _maybe_await(scalars.all())
+        return list(accounts)
 
     async def connect_account(self, account_id: UUID) -> bool:
         """Connect a Telegram account."""
@@ -262,3 +265,9 @@ async def _next_session() -> AsyncSession:
     async for session in session_iter:
         return session
     raise RuntimeError("get_async_session produced no session")
+
+
+async def _maybe_await(value):
+    if inspect.isawaitable(value):
+        return await value
+    return value
