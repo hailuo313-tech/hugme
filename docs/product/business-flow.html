@@ -433,118 +433,118 @@ flowchart TB
 <script>
 const TASKS = [
   // ── Cursor：框架与检验（14 项 ≈ 12%）──
-  { id:"C-01", phase:"01", owner:"cursor", w:1, week:"W1", dep:"—", desc:"确认 ERIS 目录约定（app/admin/docker-compose/AGENTS.md）", acc:"与 docs/REPO_LAYOUT.md 一致；ERIS MVP 基线已满足", baseline:true },
-  { id:"C-02", phase:"01", owner:"cursor", w:1, week:"W1", dep:"C-01", desc:"配置 CI：admin lint/typecheck/build + backend ruff/mypy/pytest", acc:"pr-required-gates.yml 三项 job 全绿；分支保护勾选 required checks", baseline:true },
-  { id:"C-03", phase:"01", owner:"cursor", w:1, week:"W1", dep:"—", desc:"编写 .env.template（含 TELEGRAM_API_ID/HASH、SESSION 加密密钥）", acc:"新人可按文档配齐 MTProto 环境", baseline:true },
-  { id:"C-15", phase:"01", owner:"cursor", w:1, week:"W2", dep:"P1-18", desc:"审查 MTProto/Telethon：Session 存储、密钥与账号隔离", acc:"安全评审无阻塞项", baseline:true },
-  { id:"C-04", phase:"01", owner:"cursor", w:1, week:"W2", dep:"P1完成", desc:"审查 schema_spec.json 与适配器接口契约", acc:"契约评审记录归档", baseline:true },
-  { id:"C-05", phase:"02", owner:"cursor", w:1, week:"W4", dep:"P2-T02", desc:"检验 level_engine 单测覆盖率与边界 case 清单", acc:"≥20 case 且分支覆盖达标", baseline:true },
-  { id:"C-06", phase:"02", owner:"cursor", w:1, week:"W4", dep:"P2", desc:"执行 J-01 分级冒烟脚本并出具检验报告", acc:"10/10 fixture 通过", baseline:true },
-  { id:"C-07", phase:"03", owner:"cursor", w:1, week:"W6", dep:"P3-12,P3-20", desc:"审查话术全链路匹配覆盖率 + Prompt/安全红线", acc:"8 钩子均有用例且红线 100% 拦截", baseline:true },
-  { id:"C-08", phase:"03", owner:"cursor", w:1, week:"W7", dep:"P3", desc:"执行 J-02 AI 全链路冒烟并记录耗时", acc:"端到端 <8s（含延迟）", baseline:true },
-  { id:"C-09", phase:"04", owner:"cursor", w:1, week:"W7", dep:"—", desc:"审查 ws_protocol.md 与实现一致性", acc:"协议 conformance 通过", baseline:true },
-  { id:"C-10", phase:"04", owner:"cursor", w:1, week:"W9", dep:"P4", desc:"执行 J-03 看板联调检验（3s 接管）", acc:"录屏 + 检验清单签字", baseline:true },
-  { id:"C-11", phase:"04", owner:"cursor", w:1, week:"W9", dep:"P4-T01", desc:"坐席看板 UI/UX 走查（优先级、弹窗、断线提示）", acc:"走查问题单关闭", baseline:true },
+  { id:"C-01", phase:"01", owner:"cursor", w:1, week:"W1", dep:"—", desc:"确认 ERIS 目录约定（app/admin/docker-compose/AGENTS.md）", acc:"与 docs/REPO_LAYOUT.md 一致；ERIS MVP 基线已满足", baseline:true, verified:true },
+  { id:"C-02", phase:"01", owner:"cursor", w:1, week:"W1", dep:"C-01", desc:"配置 CI：admin lint/typecheck/build + backend ruff/mypy/pytest", acc:"pr-required-gates.yml 三项 job 全绿；分支保护勾选 required checks", baseline:true, verified:true },
+  { id:"C-03", phase:"01", owner:"cursor", w:1, week:"W1", dep:"—", desc:"编写 .env.template（含 TELEGRAM_API_ID/HASH、SESSION 加密密钥）", acc:"新人可按文档配齐 MTProto 环境", baseline:true, verified:true },
+  { id:"C-15", phase:"01", owner:"cursor", w:1, week:"W2", dep:"P1-18", desc:"审查 MTProto/Telethon：Session 存储、密钥与账号隔离", acc:"安全评审无阻塞项", baseline:true, verified:true },
+  { id:"C-04", phase:"01", owner:"cursor", w:1, week:"W2", dep:"P1完成", desc:"审查 schema_spec.json 与适配器接口契约", acc:"契约评审记录归档", baseline:true, verified:true },
+  { id:"C-05", phase:"02", owner:"cursor", w:1, week:"W4", dep:"P2-T02", desc:"检验 level_engine 单测覆盖率与边界 case 清单", acc:"≥20 case 且分支覆盖达标", baseline:true, verified:true },
+  { id:"C-06", phase:"02", owner:"cursor", w:1, week:"W4", dep:"P2", desc:"执行 J-01 分级冒烟脚本并出具检验报告", acc:"10/10 fixture 通过", baseline:true, verified:true },
+  { id:"C-07", phase:"03", owner:"cursor", w:1, week:"W6", dep:"P3-12,P3-20", desc:"审查话术全链路匹配覆盖率 + Prompt/安全红线", acc:"8 钩子均有用例且红线 100% 拦截", baseline:true, verified:true },
+  { id:"C-08", phase:"03", owner:"cursor", w:1, week:"W7", dep:"P3", desc:"执行 J-02 AI 全链路冒烟并记录耗时", acc:"端到端 <8s（含延迟）", baseline:true, verified:true },
+  { id:"C-09", phase:"04", owner:"cursor", w:1, week:"W7", dep:"—", desc:"审查 ws_protocol.md 与实现一致性", acc:"协议 conformance 通过", baseline:true, verified:true },
+  { id:"C-10", phase:"04", owner:"cursor", w:1, week:"W9", dep:"P4", desc:"执行 J-03 看板联调检验（3s 接管）", acc:"录屏 + 检验清单签字", baseline:true, verified:true },
+  { id:"C-11", phase:"04", owner:"cursor", w:1, week:"W9", dep:"P4-T01", desc:"坐席看板 UI/UX 走查（优先级、弹窗、断线提示）", acc:"走查问题单关闭", baseline:true, verified:true },
   { id:"C-12", phase:"05", owner:"cursor", w:1, week:"W10", dep:"P5-T01", desc:"审查 E2E/压测脚本与 CI nightly 配置", acc:"流水线稳定 3 天", baseline:false },
-  { id:"C-13", phase:"05", owner:"cursor", w:1, week:"W11", dep:"P5-T02", desc:"Grafana 大盘与告警规则走查", acc:"核心指标均有告警", baseline:true },
-  { id:"C-14", phase:"05", owner:"cursor", w:1, week:"W12", dep:"全部", desc:"全量上线前代码审查 + 架构一致性终检", acc:"终检报告无阻塞项", baseline:true },
+  { id:"C-13", phase:"05", owner:"cursor", w:1, week:"W11", dep:"P5-T02", desc:"Grafana 大盘与告警规则走查", acc:"核心指标均有告警", baseline:true, verified:true },
+  { id:"C-14", phase:"05", owner:"cursor", w:1, week:"W12", dep:"全部", desc:"全量上线前代码审查 + 架构一致性终检", acc:"终检报告无阻塞项", baseline:true, verified:true },
 
   // ── 人工：业务与决策（10 项 ≈ 8%）──
-  { id:"H-01", phase:"01", owner:"human", w:0.5, week:"W1", dep:"—", desc:"确认技术选型（FastAPI/PostgreSQL/Redis/WS）与部署环境", acc:"书面确认；与 REPO_LAYOUT 一致", baseline:true },
-  { id:"H-02", phase:"02", owner:"human", w:1, week:"W3", dep:"—", desc:"审定 T1 国家名单与分级金额阈值", acc:"配置文件签字版", baseline:true },
-  { id:"H-03", phase:"03", owner:"human", w:1, week:"W5", dep:"P3-T01", desc:"审核话术底料（问候/转化/拒绝等）业务合规", acc:"≥50 条底料批准", baseline:true },
-  { id:"H-04", phase:"03", owner:"human", w:1, week:"W6", dep:"P3-T03", desc:"审定 AI 人设性格与禁用词表", acc:"人设文档签字", baseline:true },
-  { id:"H-05", phase:"04", owner:"human", w:1, week:"W8", dep:"P4-T02", desc:"确认 H5 VIP 弹窗文案与支付跳转路径", acc:"产品验收通过", baseline:true },
-  { id:"H-06", phase:"04", owner:"human", w:1, week:"W9", dep:"P4-T01", desc:"坐席看板试用 + 收集操作反馈", acc:"反馈表 ≥5 条已处理", baseline:true },
-  { id:"H-07", phase:"05", owner:"human", w:1, week:"W10", dep:"C-08", desc:"批准灰度 Week9：仅 C/D 级切流", acc:"灰度审批单", baseline:true },
-  { id:"H-08", phase:"05", owner:"human", w:1, week:"W11", dep:"H-07", desc:"批准灰度 Week10–11：B 级观察 + A/S 接管", acc:"灰度审批单", baseline:true },
-  { id:"H-09", phase:"05", owner:"human", w:1, week:"W11", dep:"P5-T03", desc:"坐席 SOP 培训与考核", acc:"参训率 100%", baseline:true },
-  { id:"H-10", phase:"05", owner:"human", w:1, week:"W12", dep:"C-14", desc:"全量上线 Go/No-Go 最终签署", acc:"12 项检查全通过", baseline:true },
-  { id:"H-11", phase:"01", owner:"human", w:0.5, week:"W2", dep:"—", desc:"审定 Telegram 真人账号运营规范（频率/批量/ToS）", acc:"书面 SOP + 频率上限签字", baseline:true },
+  { id:"H-01", phase:"01", owner:"human", w:0.5, week:"W1", dep:"—", desc:"确认技术选型（FastAPI/PostgreSQL/Redis/WS）与部署环境", acc:"书面确认；与 REPO_LAYOUT 一致", baseline:true, verified:true },
+  { id:"H-02", phase:"02", owner:"human", w:1, week:"W3", dep:"—", desc:"审定 T1 国家名单与分级金额阈值", acc:"配置文件签字版", baseline:true, verified:true },
+  { id:"H-03", phase:"03", owner:"human", w:1, week:"W5", dep:"P3-T01", desc:"审核话术底料（问候/转化/拒绝等）业务合规", acc:"≥50 条底料批准", baseline:true, verified:true },
+  { id:"H-04", phase:"03", owner:"human", w:1, week:"W6", dep:"P3-T03", desc:"审定 AI 人设性格与禁用词表", acc:"人设文档签字", baseline:true, verified:true },
+  { id:"H-05", phase:"04", owner:"human", w:1, week:"W8", dep:"P4-T02", desc:"确认 H5 VIP 弹窗文案与支付跳转路径", acc:"产品验收通过", baseline:true, verified:true },
+  { id:"H-06", phase:"04", owner:"human", w:1, week:"W9", dep:"P4-T01", desc:"坐席看板试用 + 收集操作反馈", acc:"反馈表 ≥5 条已处理", baseline:true, verified:true },
+  { id:"H-07", phase:"05", owner:"human", w:1, week:"W10", dep:"C-08", desc:"批准灰度 Week9：仅 C/D 级切流", acc:"灰度审批单", baseline:true, verified:true },
+  { id:"H-08", phase:"05", owner:"human", w:1, week:"W11", dep:"H-07", desc:"批准灰度 Week10–11：B 级观察 + A/S 接管", acc:"灰度审批单", baseline:true, verified:true },
+  { id:"H-09", phase:"05", owner:"human", w:1, week:"W11", dep:"P5-T03", desc:"坐席 SOP 培训与考核", acc:"参训率 100%", baseline:true, verified:true },
+  { id:"H-10", phase:"05", owner:"human", w:1, week:"W12", dep:"C-14", desc:"全量上线 Go/No-Go 最终签署", acc:"12 项检查全通过", baseline:true, verified:true },
+  { id:"H-11", phase:"01", owner:"human", w:0.5, week:"W2", dep:"—", desc:"审定 Telegram 真人账号运营规范（频率/批量/ToS）", acc:"书面 SOP + 频率上限签字", baseline:true, verified:true },
 
   // ── 阶段 01 · Devin + Codex（含 MTProto 真人接入）──
-  { id:"P1-01", phase:"01", owner:"codex", w:1, week:"W1", dep:"C-01", desc:"设计 user_profiles / premium_chat_logs / audit_logs 表结构", acc:"db_schema_doc.md 通过", baseline:true },
-  { id:"P1-02", phase:"01", owner:"codex", w:1, week:"W1", dep:"P1-01", desc:"编写 Flyway V1__init.sql", acc:"空库 migrate 成功", baseline:true },
-  { id:"P1-03", phase:"01", owner:"devin", w:0.5, week:"W1", dep:"P1-02", desc:"uuid-ossp 扩展 + CI 迁移流水线", acc:"CI 自动 migrate", baseline:true },
-  { id:"P1-04", phase:"01", owner:"devin", w:0.5, week:"W1", dep:"P1-02", desc:"DB 角色分离（读写/迁移三账号）", acc:"应用账号无 DROP 权限", baseline:true },
-  { id:"P1-05", phase:"01", owner:"devin", w:1.5, week:"W1", dep:"C-01", desc:"FastAPI 应用：/health、结构化日志、CORS（app/main.py）", acc:"GET /health 200；线上 eris-api 已验证", baseline:true },
-  { id:"P1-06", phase:"01", owner:"devin", w:1, week:"W1", dep:"P1-05", desc:"Redis Stream inbound_queue 消费者骨架", acc:"入队出队 smoke 通过", baseline:true },
-  { id:"P1-07", phase:"01", owner:"devin", w:1, week:"W1", dep:"P1-05", desc:"WebSocket 路由 app/api/realtime.py + ping/pong", acc:"浏览器可连 /ws 并收 pong", baseline:true },
-  { id:"P1-08", phase:"01", owner:"devin", w:1, week:"W2", dep:"P1-05–07", desc:"docker-compose：postgres+redis+api 一键启动", acc:"compose up 全绿", baseline:true },
-  { id:"P1-09", phase:"01", owner:"devin", w:1, week:"W2", dep:"P1-05,P1-02", desc:"telegram_accounts 表 + Telethon 多账号 StringSession 连接", acc:"≥1 真人号 online", baseline:true },
-  { id:"P1-10", phase:"01", owner:"codex", w:1.5, week:"W2", dep:"P1-09", desc:"NewMessage 监听 → inbound_queue（platform=telegram_real_user）", acc:"text/photo/voice 入队单测通过", baseline:true },
-  { id:"P1-11", phase:"01", owner:"codex", w:1, week:"W2", dep:"P1-10", desc:"send_typing + send_human_like_message 拟人延迟出站", acc:"用户侧可见打字与延迟发送", baseline:true },
-  { id:"P1-12", phase:"01", owner:"codex", w:0.5, week:"W2", dep:"P1-10", desc:"Redis 去重 telegram_msg:{user_id}:{message_id} TTL 1h", acc:"重复消息不重复处理", baseline:true },
-  { id:"P1-13", phase:"01", owner:"codex", w:0.5, week:"W2", dep:"—", desc:"定义 schema_spec.json（含 account_id/sender_phone）", acc:"JSON Schema 校验通过", baseline:true },
-  { id:"P1-14", phase:"01", owner:"codex", w:1, week:"W2", dep:"P1-13,P1-10", desc:"MTProto 渠道适配器 → 标准入站格式", acc:"MTProto 消息成功入队", baseline:true },
-  { id:"P1-15", phase:"01", owner:"devin", w:0.5, week:"W2", dep:"P1-13", desc:"H5/APP 适配器 Mock 桩", acc:"Mock 可本地联调", baseline:true },
-  { id:"P1-16", phase:"01", owner:"devin", w:1, week:"W2", dep:"P1-06,P1-14,P1-19", desc:"写入 inbound_queue + audit_logs（预留 script_hit_id）", acc:"审计可查最近 100 条", baseline:true },
-  { id:"P1-17", phase:"01", owner:"codex", w:1.5, week:"W2", dep:"P1-09", desc:"AccountPool：user_id hash 分配账号 + send_message 路由", acc:"同用户固定账号收发", baseline:true },
-  { id:"P1-18", phase:"01", owner:"devin", w:1, week:"W2", dep:"P1-09", desc:"Session AES 加密存储 + 断线自动重连", acc:"✅ 重启后免手工扫码恢复", baseline:true },
-  { id:"P1-19", phase:"01", owner:"codex", w:0.5, week:"W2", dep:"P1-06", desc:"Redis conv:{user_id} 会话上下文 lrange/rpush（50 轮）", acc:"LLM 可读取最近对话", baseline:true },
-  { id:"P1-20", phase:"01", owner:"devin", w:1, week:"W3", dep:"P1-17,P1-18", desc:"账号在线率/发送成功率监控 + 封号预警埋点", acc:"✅ 指标可 scrape + 告警规则", baseline:true },
+  { id:"P1-01", phase:"01", owner:"codex", w:1, week:"W1", dep:"C-01", desc:"设计 user_profiles / premium_chat_logs / audit_logs 表结构", acc:"待 schema 文档/迁移复核", baseline:false },
+  { id:"P1-02", phase:"01", owner:"codex", w:1, week:"W1", dep:"P1-01", desc:"编写 Flyway V1__init.sql", acc:"空库 migrate 成功", baseline:true, verified:true },
+  { id:"P1-03", phase:"01", owner:"devin", w:0.5, week:"W1", dep:"P1-02", desc:"uuid-ossp 扩展 + CI 迁移流水线", acc:"CI 自动 migrate", baseline:true, verified:true },
+  { id:"P1-04", phase:"01", owner:"devin", w:0.5, week:"W1", dep:"P1-02", desc:"DB 角色分离（读写/迁移三账号）", acc:"应用账号无 DROP 权限", baseline:true, verified:true },
+  { id:"P1-05", phase:"01", owner:"devin", w:1.5, week:"W1", dep:"C-01", desc:"FastAPI 应用：/health、结构化日志、CORS（app/main.py）", acc:"GET /health 200；线上 eris-api 已验证", baseline:true, verified:true },
+  { id:"P1-06", phase:"01", owner:"devin", w:1, week:"W1", dep:"P1-05", desc:"Redis Stream inbound_queue 消费者骨架", acc:"待消费者 smoke 与评审文档复核", baseline:false },
+  { id:"P1-07", phase:"01", owner:"devin", w:1, week:"W1", dep:"P1-05", desc:"WebSocket 路由 app/api/realtime.py + ping/pong", acc:"浏览器可连 /ws 并收 pong", baseline:true, verified:true },
+  { id:"P1-08", phase:"01", owner:"devin", w:1, week:"W2", dep:"P1-05–07", desc:"docker-compose：postgres+redis+api 一键启动", acc:"compose up 全绿", baseline:true, verified:true },
+  { id:"P1-09", phase:"01", owner:"devin", w:1, week:"W2", dep:"P1-05,P1-02", desc:"telegram_accounts 表 + Telethon 多账号 StringSession 连接", acc:"≥1 真人号 online", baseline:true, verified:true },
+  { id:"P1-10", phase:"01", owner:"codex", w:1.5, week:"W2", dep:"P1-09", desc:"NewMessage 监听 → inbound_queue（platform=telegram_real_user）", acc:"text/photo/voice 入队单测通过", baseline:true, verified:true },
+  { id:"P1-11", phase:"01", owner:"codex", w:1, week:"W2", dep:"P1-10", desc:"send_typing + send_human_like_message 拟人延迟出站", acc:"用户侧可见打字与延迟发送", baseline:true, verified:true },
+  { id:"P1-12", phase:"01", owner:"codex", w:0.5, week:"W2", dep:"P1-10", desc:"Redis 去重 telegram_msg:{user_id}:{message_id} TTL 1h", acc:"重复消息不重复处理", baseline:true, verified:true },
+  { id:"P1-13", phase:"01", owner:"codex", w:0.5, week:"W2", dep:"—", desc:"定义 schema_spec.json（含 account_id/sender_phone）", acc:"JSON Schema 校验通过", baseline:true, verified:true },
+  { id:"P1-14", phase:"01", owner:"codex", w:1, week:"W2", dep:"P1-13,P1-10", desc:"MTProto 渠道适配器 → 标准入站格式", acc:"MTProto 消息成功入队", baseline:true, verified:true },
+  { id:"P1-15", phase:"01", owner:"devin", w:0.5, week:"W2", dep:"P1-13", desc:"H5/APP 适配器 Mock 桩", acc:"Mock 可本地联调", baseline:true, verified:true },
+  { id:"P1-16", phase:"01", owner:"devin", w:1, week:"W2", dep:"P1-06,P1-14,P1-19", desc:"写入 inbound_queue + audit_logs（预留 script_hit_id）", acc:"待 audit_logs 查询与消费者链路复核", baseline:false },
+  { id:"P1-17", phase:"01", owner:"codex", w:1.5, week:"W2", dep:"P1-09", desc:"AccountPool：user_id hash 分配账号 + send_message 路由", acc:"同用户固定账号收发", baseline:true, verified:true },
+  { id:"P1-18", phase:"01", owner:"devin", w:1, week:"W2", dep:"P1-09", desc:"Session AES 加密存储 + 断线自动重连", acc:"✅ 重启后免手工扫码恢复", baseline:true, verified:true },
+  { id:"P1-19", phase:"01", owner:"codex", w:0.5, week:"W2", dep:"P1-06", desc:"Redis conv:{user_id} 会话上下文 lrange/rpush（50 轮）", acc:"LLM 可读取最近对话", baseline:true, verified:true },
+  { id:"P1-20", phase:"01", owner:"devin", w:1, week:"W3", dep:"P1-17,P1-18", desc:"账号在线率/发送成功率监控 + 封号预警埋点", acc:"✅ 指标可 scrape + 告警规则", baseline:true, verified:true },
 
   // ── 阶段 02（13 项）──
-  { id:"P2-01", phase:"02", owner:"codex", w:0.5, week:"W3", dep:"H-02", desc:"t1_countries.json 热加载模块", acc:"改配置可生效", baseline:true },
-  { id:"P2-02", phase:"02", owner:"devin", w:1, week:"W3", dep:"—", desc:"GeoIP 服务封装（MaxMind/ip-api）", acc:"抽样准确率 ≥95%", baseline:true },
-  { id:"P2-03", phase:"02", owner:"codex", w:1, week:"W3", dep:"H-03", desc:"D 级探测触发器（预留③探测话术匹配接口）", acc:"3 轮内触发补全", baseline:true },
-  { id:"P2-04", phase:"02", owner:"codex", w:1.5, week:"W4", dep:"P3-12", desc:"AI 提取年龄 + 置信度写入", acc:"低置信不写入", baseline:true },
-  { id:"P2-05", phase:"02", owner:"codex", w:1, week:"W3", dep:"P2-01,H-02", desc:"calcUserLevel() 纯函数", acc:"正确返回 S/A/B/C/D", baseline:true },
-  { id:"P2-06", phase:"02", owner:"codex", w:0.5, week:"W3", dep:"P2-05", desc:"分级阈值外部化配置", acc:".env 改阈值即生效", baseline:true },
-  { id:"P2-07", phase:"02", owner:"codex", w:0.5, week:"W3", dep:"P1-02", desc:"level_change_logs 审计", acc:"每次变更有记录", baseline:true },
-  { id:"P2-08", phase:"02", owner:"codex", w:2, week:"W4", dep:"P2-05,06", desc:"level_engine.test.ts ≥20 case", acc:"CI 全绿", baseline:true },
-  { id:"P2-09", phase:"02", owner:"codex", w:0.5, week:"W4", dep:"P2-05", desc:"chat_route 路由映射", acc:"路由与 level 一致", baseline:true },
-  { id:"P2-10", phase:"02", owner:"codex", w:1, week:"W4", dep:"P2-09", desc:"付费 Webhook 分级重算（付费话术匹配由 P3-20 接入）", acc:"模拟付费升 S", baseline:true },
-  { id:"P2-11", phase:"02", owner:"devin", w:1, week:"W4", dep:"P1-07,P2-09", desc:"USER_UPGRADED WebSocket 推送", acc:"看板收到升级事件", baseline:true },
-  { id:"P2-12", phase:"02", owner:"devin", w:1, week:"W4", dep:"P2-05,P1-16", desc:"入站流水线集成 calcUserLevel", acc:"✅ MTProto 真人号实测分级正确", baseline:true },
+  { id:"P2-01", phase:"02", owner:"codex", w:0.5, week:"W3", dep:"H-02", desc:"t1_countries.json 热加载模块", acc:"改配置可生效", baseline:true, verified:true },
+  { id:"P2-02", phase:"02", owner:"devin", w:1, week:"W3", dep:"—", desc:"GeoIP 服务封装（MaxMind/ip-api）", acc:"抽样准确率 ≥95%", baseline:true, verified:true },
+  { id:"P2-03", phase:"02", owner:"codex", w:1, week:"W3", dep:"H-03", desc:"D 级探测触发器（预留③探测话术匹配接口）", acc:"3 轮内触发补全", baseline:true, verified:true },
+  { id:"P2-04", phase:"02", owner:"codex", w:1.5, week:"W4", dep:"P3-12", desc:"AI 提取年龄 + 置信度写入", acc:"低置信不写入", baseline:true, verified:true },
+  { id:"P2-05", phase:"02", owner:"codex", w:1, week:"W3", dep:"P2-01,H-02", desc:"calcUserLevel() 纯函数", acc:"正确返回 S/A/B/C/D", baseline:true, verified:true },
+  { id:"P2-06", phase:"02", owner:"codex", w:0.5, week:"W3", dep:"P2-05", desc:"分级阈值外部化配置", acc:".env 改阈值即生效", baseline:true, verified:true },
+  { id:"P2-07", phase:"02", owner:"codex", w:0.5, week:"W3", dep:"P1-02", desc:"level_change_logs 审计", acc:"每次变更有记录", baseline:true, verified:true },
+  { id:"P2-08", phase:"02", owner:"codex", w:2, week:"W4", dep:"P2-05,06", desc:"tests/test_level_engine.py ≥20 case", acc:"Python pytest CI 全绿", baseline:true, verified:true },
+  { id:"P2-09", phase:"02", owner:"codex", w:0.5, week:"W4", dep:"P2-05", desc:"chat_route 路由映射", acc:"路由与 level 一致", baseline:true, verified:true },
+  { id:"P2-10", phase:"02", owner:"codex", w:1, week:"W4", dep:"P2-09", desc:"付费 Webhook 分级重算（付费话术匹配由 P3-20 接入）", acc:"模拟付费升 S", baseline:true, verified:true },
+  { id:"P2-11", phase:"02", owner:"devin", w:1, week:"W4", dep:"P1-07,P2-09", desc:"USER_UPGRADED WebSocket 推送", acc:"看板收到升级事件", baseline:true, verified:true },
+  { id:"P2-12", phase:"02", owner:"devin", w:1, week:"W4", dep:"P2-05,P1-16", desc:"入站流水线集成 calcUserLevel", acc:"✅ MTProto 真人号实测分级正确", baseline:true, verified:true },
 
   // ── 阶段 03（19 项）──
-  { id:"P3-01", phase:"03", owner:"codex", w:0.5, week:"W4", dep:"P1-02", desc:"script_templates 表 + 话术类目 DDL", acc:"5 类目就绪", baseline:true },
-  { id:"P3-02", phase:"03", owner:"codex", w:1.5, week:"W5", dep:"H-03,P3-01", desc:"scripts_seed.sql 录入底料", acc:"每类 ≥10 条", baseline:true },
-  { id:"P3-03", phase:"03", owner:"codex", w:2, week:"W5", dep:"P3-02", desc:"向量化话术检索 API（全链路匹配引擎核心）", acc:"Top3 <100ms", baseline:true },
-  { id:"P3-04", phase:"03", owner:"codex", w:1, week:"W5", dep:"P3-03", desc:"按 platform/level/persona/场景 step 过滤", acc:"8 条过滤单测", baseline:true },
-  { id:"P3-05", phase:"03", owner:"codex", w:0.5, week:"W5", dep:"—", desc:"意图 taxonomy 文档", acc:"评审通过", baseline:true },
-  { id:"P3-06", phase:"03", owner:"codex", w:1, week:"W5", dep:"P3-05", desc:"关键词规则引擎", acc:"规则可热更新", baseline:true },
-  { id:"P3-07", phase:"03", owner:"codex", w:2.5, week:"W6", dep:"P3-03", desc:"intent_classifier 双路召回", acc:"输出 intent/confidence", baseline:true },
-  { id:"P3-08", phase:"03", owner:"codex", w:0.5, week:"W6", dep:"P3-07", desc:"低置信降级闲聊策略", acc:"<0.6 不胡答", baseline:true },
-  { id:"P3-09", phase:"03", owner:"codex", w:1, week:"W6", dep:"P3-07", desc:"意图模块 50 条标注回归", acc:"准确率 ≥95%", baseline:true },
-  { id:"P3-10", phase:"03", owner:"codex", w:1.5, week:"W5", dep:"H-04", desc:"persona_prompts 多人设 Prompt", acc:"≥3 人设", baseline:true },
-  { id:"P3-11", phase:"03", owner:"codex", w:2, week:"W6", dep:"P3-10,P3-07,P3-20", desc:"LLM 调用层（仅包装已命中话术底料）", acc:"无命中话术则降级/拒答", baseline:true },
-  { id:"P3-12", phase:"03", owner:"codex", w:1, week:"W6", dep:"P3-11,H-04", desc:"safety_filter 安全过滤", acc:"红线 100% 拦截", baseline:true },
-  { id:"P3-13", phase:"03", owner:"devin", w:1, week:"W6", dep:"P1-06", desc:"Redis 待发队列 + send_at", acc:"可按时间扫描", baseline:true },
-  { id:"P3-14", phase:"03", owner:"codex", w:0.5, week:"W6", dep:"—", desc:"拟人延迟计算器", acc:"单测边界通过", baseline:true },
-  { id:"P3-15", phase:"03", owner:"devin", w:1.5, week:"W6", dep:"P3-13,14,P1-17", desc:"B/C/D 自动投递 Worker（AccountPool 出站）", acc:"倒计时后经 MTProto 拟人发出", baseline:true },
-  { id:"P3-16", phase:"03", owner:"devin", w:1.5, week:"W7", dep:"P2-11,P3-13,P3-20", desc:"S/A 挂起 + 草稿含 Top3 话术与 script_ids", acc:"坐席见推荐话术+倒计时", baseline:true },
-  { id:"P3-17", phase:"03", owner:"codex", w:1, week:"W7", dep:"P3-16", desc:"120s 超时兜底投递（默认命中兜底话术）", acc:"超时投递带 script_hit_id", baseline:true },
-  { id:"P3-18", phase:"03", owner:"devin", w:1, week:"W7", dep:"P1-02", desc:"archive_service 异步精聊归档", acc:"不阻塞主链路", baseline:true },
-  { id:"P3-19", phase:"03", owner:"codex", w:1, week:"W7", dep:"P3-18,P3-21", desc:"精聊查询 API（含每步 script_hit 轨迹）", acc:"S/A 100% 可查且可追溯话术", baseline:true },
-  { id:"P3-20", phase:"03", owner:"codex", w:2, week:"W5", dep:"P3-04", desc:"script_match 全链路编排（8 钩子：入站/消费/探测/分级/回复/坐席/出站/归档）", acc:"每步必有 match 结果或明确降级", baseline:true },
-  { id:"P3-21", phase:"03", owner:"codex", w:1, week:"W5", dep:"P3-01", desc:"conversation_script_hits 表 + script_hit_id 写入审计", acc:"任一步可反查命中话术", baseline:true },
+  { id:"P3-01", phase:"03", owner:"codex", w:0.5, week:"W4", dep:"P1-02", desc:"script_templates 表 + 话术类目 DDL", acc:"5 类目就绪", baseline:true, verified:true },
+  { id:"P3-02", phase:"03", owner:"codex", w:1.5, week:"W5", dep:"H-03,P3-01", desc:"scripts_seed.sql 录入底料", acc:"每类 ≥10 条", baseline:true, verified:true },
+  { id:"P3-03", phase:"03", owner:"codex", w:2, week:"W5", dep:"P3-02", desc:"向量化话术检索 API（全链路匹配引擎核心）", acc:"Top3 <100ms", baseline:true, verified:true },
+  { id:"P3-04", phase:"03", owner:"codex", w:1, week:"W5", dep:"P3-03", desc:"按 platform/level/persona/场景 step 过滤", acc:"8 条过滤单测", baseline:true, verified:true },
+  { id:"P3-05", phase:"03", owner:"codex", w:0.5, week:"W5", dep:"—", desc:"意图 taxonomy 文档", acc:"评审通过", baseline:true, verified:true },
+  { id:"P3-06", phase:"03", owner:"codex", w:1, week:"W5", dep:"P3-05", desc:"关键词规则引擎", acc:"规则可热更新", baseline:true, verified:true },
+  { id:"P3-07", phase:"03", owner:"codex", w:2.5, week:"W6", dep:"P3-03", desc:"intent_classifier 双路召回", acc:"输出 intent/confidence", baseline:true, verified:true },
+  { id:"P3-08", phase:"03", owner:"codex", w:0.5, week:"W6", dep:"P3-07", desc:"低置信降级闲聊策略", acc:"<0.6 不胡答", baseline:true, verified:true },
+  { id:"P3-09", phase:"03", owner:"codex", w:1, week:"W6", dep:"P3-07", desc:"意图模块 50 条标注回归", acc:"准确率 ≥95%", baseline:true, verified:true },
+  { id:"P3-10", phase:"03", owner:"codex", w:1.5, week:"W5", dep:"H-04", desc:"persona_prompts 多人设 Prompt", acc:"≥3 人设", baseline:true, verified:true },
+  { id:"P3-11", phase:"03", owner:"codex", w:2, week:"W6", dep:"P3-10,P3-07,P3-20", desc:"LLM 调用层（仅包装已命中话术底料）", acc:"无命中话术则降级/拒答", baseline:true, verified:true },
+  { id:"P3-12", phase:"03", owner:"codex", w:1, week:"W6", dep:"P3-11,H-04", desc:"safety_filter 安全过滤", acc:"红线 100% 拦截", baseline:true, verified:true },
+  { id:"P3-13", phase:"03", owner:"devin", w:1, week:"W6", dep:"P1-06", desc:"Redis 待发队列 + send_at", acc:"可按时间扫描", baseline:true, verified:true },
+  { id:"P3-14", phase:"03", owner:"codex", w:0.5, week:"W6", dep:"—", desc:"拟人延迟计算器", acc:"单测边界通过", baseline:true, verified:true },
+  { id:"P3-15", phase:"03", owner:"devin", w:1.5, week:"W6", dep:"P3-13,14,P1-17", desc:"B/C/D 自动投递 Worker（AccountPool 出站）", acc:"倒计时后经 MTProto 拟人发出", baseline:true, verified:true },
+  { id:"P3-16", phase:"03", owner:"devin", w:1.5, week:"W7", dep:"P2-11,P3-13,P3-20", desc:"S/A 挂起 + 草稿含 Top3 话术与 script_ids", acc:"坐席见推荐话术+倒计时", baseline:true, verified:true },
+  { id:"P3-17", phase:"03", owner:"codex", w:1, week:"W7", dep:"P3-16", desc:"120s 超时兜底投递（默认命中兜底话术）", acc:"超时投递带 script_hit_id", baseline:true, verified:true },
+  { id:"P3-18", phase:"03", owner:"devin", w:1, week:"W7", dep:"P1-02", desc:"archive_service 异步精聊归档", acc:"不阻塞主链路", baseline:true, verified:true },
+  { id:"P3-19", phase:"03", owner:"codex", w:1, week:"W7", dep:"P3-18,P3-21", desc:"精聊查询 API（含每步 script_hit 轨迹）", acc:"S/A 100% 可查且可追溯话术", baseline:true, verified:true },
+  { id:"P3-20", phase:"03", owner:"codex", w:2, week:"W5", dep:"P3-04", desc:"script_match 全链路编排（8 钩子：入站/消费/探测/分级/回复/坐席/出站/归档）", acc:"每步必有 match 结果或明确降级", baseline:true, verified:true },
+  { id:"P3-21", phase:"03", owner:"codex", w:1, week:"W5", dep:"P3-01", desc:"conversation_script_hits 表 + script_hit_id 写入审计", acc:"任一步可反查命中话术", baseline:true, verified:true },
 
   // ── 阶段 04（11 项）──
-  { id:"P4-01", phase:"04", owner:"codex", w:1, week:"W7", dep:"—", desc:"ws_protocol.md 协议文档", acc:"前后端评审签字", baseline:true },
-  { id:"P4-02", phase:"04", owner:"devin", w:2, week:"W7", dep:"P4-01", desc:"WS 服务端广播 + ACK 重推", acc:"conformance 通过", baseline:true },
-  { id:"P4-03", phase:"04", owner:"devin", w:1, week:"W8", dep:"P4-02", desc:"坐席看板 React + 路由鉴权", acc:"可登录", baseline:true },
-  { id:"P4-04", phase:"04", owner:"devin", w:1.5, week:"W8", dep:"P2-11", desc:"用户列表 S→A→B 排序置顶", acc:"新 S 级 3s 置顶", baseline:true },
-  { id:"P4-05", phase:"04", owner:"devin", w:2, week:"W8", dep:"P3-16", desc:"对话区：推荐话术列表/一键插入/编辑发送", acc:"坐席可选用库内话术或改字", baseline:true },
-  { id:"P4-06", phase:"04", owner:"devin", w:1, week:"W8", dep:"P4-04", desc:"S/A 全屏弹窗 + 声音提醒", acc:"弹窗+ACK", baseline:true },
-  { id:"P4-07", phase:"04", owner:"codex", w:1, week:"W8", dep:"P4-02", desc:"WS 客户端断线重连", acc:"10s 内恢复", baseline:true },
-  { id:"P4-08", phase:"04", owner:"devin", w:1, week:"W8", dep:"P4-01", desc:"H5 WebSocket + 正在输入动效", acc:"H5 可见 typing", baseline:true },
-  { id:"P4-09", phase:"04", owner:"codex", w:1.5, week:"W8", dep:"H-05", desc:"H5 VIP 弹窗 + 支付跳转", acc:"CTA 可跳转", baseline:true },
-  { id:"P4-10", phase:"04", owner:"devin", w:2, week:"W9", dep:"—", desc:"移动端推送服务（后端 FCM/APNs + 前端管理界面）", acc:"真机收到推送；管理界面可用", baseline:true },
-  { id:"P4-11", phase:"04", owner:"devin", w:1.5, week:"W9", dep:"P4-10", desc:"App 音视频渲染 + 本地缓存", acc:"弱网可看历史", baseline:true },
+  { id:"P4-01", phase:"04", owner:"codex", w:1, week:"W7", dep:"—", desc:"ws_protocol.md 协议文档", acc:"前后端评审签字", baseline:true, verified:true },
+  { id:"P4-02", phase:"04", owner:"devin", w:2, week:"W7", dep:"P4-01", desc:"WS 服务端广播 + ACK 重推", acc:"conformance 通过", baseline:true, verified:true },
+  { id:"P4-03", phase:"04", owner:"devin", w:1, week:"W8", dep:"P4-02", desc:"坐席看板 React + 路由鉴权", acc:"可登录", baseline:true, verified:true },
+  { id:"P4-04", phase:"04", owner:"devin", w:1.5, week:"W8", dep:"P2-11", desc:"用户列表 S→A→B 排序置顶", acc:"新 S 级 3s 置顶", baseline:true, verified:true },
+  { id:"P4-05", phase:"04", owner:"devin", w:2, week:"W8", dep:"P3-16", desc:"对话区：推荐话术列表/一键插入/编辑发送", acc:"坐席可选用库内话术或改字", baseline:true, verified:true },
+  { id:"P4-06", phase:"04", owner:"devin", w:1, week:"W8", dep:"P4-04", desc:"S/A 全屏弹窗 + 声音提醒", acc:"弹窗+ACK", baseline:true, verified:true },
+  { id:"P4-07", phase:"04", owner:"codex", w:1, week:"W8", dep:"P4-02", desc:"WS 客户端断线重连", acc:"10s 内恢复", baseline:true, verified:true },
+  { id:"P4-08", phase:"04", owner:"devin", w:1, week:"W8", dep:"P4-01", desc:"H5 WebSocket + 正在输入动效", acc:"H5 可见 typing", baseline:true, verified:true },
+  { id:"P4-09", phase:"04", owner:"codex", w:1.5, week:"W8", dep:"H-05", desc:"H5 VIP 弹窗 + 支付跳转", acc:"CTA 可跳转", baseline:true, verified:true },
+  { id:"P4-10", phase:"04", owner:"devin", w:2, week:"W9", dep:"—", desc:"移动端推送服务（后端 FCM/APNs + 前端管理界面）", acc:"真机收到推送；管理界面可用", baseline:true, verified:true },
+  { id:"P4-11", phase:"04", owner:"devin", w:1.5, week:"W9", dep:"P4-10", desc:"App 音视频渲染 + 本地缓存", acc:"弱网可看历史", baseline:true, verified:true },
 
   // ── 阶段 05（9 项 Devin/Codex）──
-  { id:"P5-01", phase:"05", owner:"devin", w:2, week:"W10", dep:"C-08", desc:"E2E：MTProto 入站→AI→拟人投递→归档", acc:"CI nightly 绿", baseline:true },
-  { id:"P5-02", phase:"05", owner:"devin", w:1.5, week:"W10", dep:"P5-01", desc:"1000 并发压测 + P99 报告", acc:"P99<500ms", baseline:true },
-  { id:"P5-03", phase:"05", owner:"codex", w:1, week:"W10", dep:"P2-08,P3-09", desc:"分级/意图回归集维护", acc:"回归 0 失败", baseline:true },
-  { id:"P5-04", phase:"05", owner:"devin", w:1, week:"W10", dep:"P4-07", desc:"72h WebSocket 长稳压测", acc:"0 丢消息", baseline:true },
-  { id:"P5-05", phase:"05", owner:"devin", w:1.5, week:"W11", dep:"P3,P4", desc:"Prometheus 埋点", acc:"/metrics 可 scrape", baseline:true },
-  { id:"P5-06", phase:"05", owner:"devin", w:1, week:"W11", dep:"P5-05", desc:"Grafana 五大盘 + 告警", acc:"告警可用", baseline:true },
-  { id:"P5-07", phase:"05", owner:"codex", w:0.5, week:"W11", dep:"P5-06", desc:"付费转化漏斗 SQL", acc:"SQL 评审通过", baseline:true },
-  { id:"P5-08", phase:"05", owner:"devin", w:0.5, week:"W11", dep:"P5-07", desc:"Grafana 绑定转化面板", acc:"24h/72h 可见", baseline:true },
-  { id:"P5-09", phase:"05", owner:"devin", w:1, week:"W11", dep:"H-07", desc:"灰度 feature flag 按 level 切流", acc:"可按级开关", baseline:true },
-  { id:"P5-10", phase:"05", owner:"devin", w:1, week:"W11", dep:"H-09", desc:"runbook.md 运维手册", acc:"演练通过", baseline:true },
+  { id:"P5-01", phase:"05", owner:"devin", w:2, week:"W10", dep:"C-08", desc:"E2E：MTProto 入站→AI→拟人投递→归档", acc:"CI nightly 绿", baseline:true, verified:true },
+  { id:"P5-02", phase:"05", owner:"devin", w:1.5, week:"W10", dep:"P5-01", desc:"1000 并发压测 + P99 报告", acc:"P99<500ms", baseline:true, verified:true },
+  { id:"P5-03", phase:"05", owner:"codex", w:1, week:"W10", dep:"P2-08,P3-09", desc:"分级/意图回归集维护", acc:"回归 0 失败", baseline:true, verified:true },
+  { id:"P5-04", phase:"05", owner:"devin", w:1, week:"W10", dep:"P4-07", desc:"72h WebSocket 长稳压测", acc:"0 丢消息", baseline:true, verified:true },
+  { id:"P5-05", phase:"05", owner:"devin", w:1.5, week:"W11", dep:"P3,P4", desc:"Prometheus 埋点", acc:"/metrics 可 scrape", baseline:true, verified:true },
+  { id:"P5-06", phase:"05", owner:"devin", w:1, week:"W11", dep:"P5-05", desc:"Grafana 五大盘 + 告警", acc:"告警可用", baseline:true, verified:true },
+  { id:"P5-07", phase:"05", owner:"codex", w:0.5, week:"W11", dep:"P5-06", desc:"付费转化漏斗 SQL", acc:"SQL 评审通过", baseline:true, verified:true },
+  { id:"P5-08", phase:"05", owner:"devin", w:0.5, week:"W11", dep:"P5-07", desc:"Grafana 绑定转化面板", acc:"24h/72h 可见", baseline:true, verified:true },
+  { id:"P5-09", phase:"05", owner:"devin", w:1, week:"W11", dep:"H-07", desc:"灰度 feature flag 按 level 切流", acc:"可按级开关", baseline:true, verified:true },
+  { id:"P5-10", phase:"05", owner:"devin", w:1, week:"W11", dep:"H-09", desc:"runbook.md 运维手册", acc:"演练通过", baseline:true, verified:true },
 ];
 
 const OWNER_LABEL = {
@@ -668,10 +668,14 @@ const PARA_UI = {
 };
 
 function getParallel(id) {
-  return PARALLEL[id] || { t: 'wait', g: '—', n: '按依赖顺序执行' };
+  const p = PARALLEL[id] || { t: 'wait', g: '—', n: '按依赖顺序执行' };
+  const task = TASKS.find(t => t.id === id);
+  if (task && task.verified === true) return { ...p, t: 'done' };
+  return p;
 }
 
-const DONE_STORAGE_KEY = 'eris-business-flow-done-v2';
+const DONE_STORAGE_KEY = 'eris-business-flow-done-v3';
+const DEFAULT_DONE_IDS = new Set(TASKS.filter(t => t.verified === true).map(t => t.id));
 let currentFilter = 'all';
 
 function loadDoneSet() {
@@ -679,85 +683,13 @@ function loadDoneSet() {
     const raw = localStorage.getItem(DONE_STORAGE_KEY);
     const set = new Set(raw ? JSON.parse(raw) : []);
     let changed = false;
-    // 自动标记 baseline 任务为完成
-    TASKS.filter(t => t.baseline).forEach(t => {
-      if (!set.has(t.id)) { set.add(t.id); changed = true; }
-    });
-    // 自动标记 P1-03 到 P1-09 为已完成（Devin 已完成这些任务）
-    const p1Completed = ['P1-03', 'P1-04', 'P1-05', 'P1-06', 'P1-07', 'P1-08', 'P1-09'];
-    p1Completed.forEach(id => {
-      if (!set.has(id)) { set.add(id); changed = true; }
-    });
-    // 自动标记 P1-18 和 P1-20 为已完成（Devin 已完成这些任务）
-    const p1AdditionalCompleted = ['P1-18', 'P1-20'];
-    p1AdditionalCompleted.forEach(id => {
-      if (!set.has(id)) { set.add(id); changed = true; }
-    });
-    // 自动标记 P2-12 为已完成（Devin 已完成此任务）
-    const p2Completed = ['P2-12'];
-    p2Completed.forEach(id => {
-      if (!set.has(id)) { set.add(id); changed = true; }
-    });
-    // 自动标记 P3-13 为已完成（Devin 已完成此任务）
-    const p3Completed = ['P3-13'];
-    p3Completed.forEach(id => {
-      if (!set.has(id)) { set.add(id); changed = true; }
-    });
-    // 自动标记 P3-15 为已完成（Devin 已完成此任务）
-    const p3AdditionalCompleted = ['P3-15'];
-    p3AdditionalCompleted.forEach(id => {
-      if (!set.has(id)) { set.add(id); changed = true; }
-    });
-    // 自动标记 P3-16 为已完成（Devin 已完成此任务）
-    const p3MoreCompleted = ['P3-16'];
-    p3MoreCompleted.forEach(id => {
-      if (!set.has(id)) { set.add(id); changed = true; }
-    });
-    // 自动标记 P3-18 为已完成（Devin 已完成此任务）
-    const p3AdditionalCompleted2 = ['P3-18'];
-    p3AdditionalCompleted2.forEach(id => {
-      if (!set.has(id)) { set.add(id); changed = true; }
-    });
-    // 自动标记 P4-06 为已完成（Devin 已完成此任务）
-    const p4Completed = ['P4-06'];
-    p4Completed.forEach(id => {
-      if (!set.has(id)) { set.add(id); changed = true; }
-    });
-    // 自动标记 P4-08 为已完成（Devin 已完成此任务）
-    const p4AdditionalCompleted = ['P4-08'];
-    p4AdditionalCompleted.forEach(id => {
-      if (!set.has(id)) { set.add(id); changed = true; }
-    });
-    // 自动标记 P4-10 为已完成（Devin 已完成此任务）
-    const p4MoreCompleted = ['P4-10'];
-    p4MoreCompleted.forEach(id => {
+    DEFAULT_DONE_IDS.forEach(id => {
       if (!set.has(id)) { set.add(id); changed = true; }
     });
     if (changed) localStorage.setItem(DONE_STORAGE_KEY, JSON.stringify([...set]));
     return set;
   } catch {
-    const set = new Set(TASKS.filter(t => t.baseline).map(t => t.id));
-    const p1Completed = ['P1-03', 'P1-04', 'P1-05', 'P1-06', 'P1-07', 'P1-08', 'P1-09'];
-    p1Completed.forEach(id => set.add(id));
-    const p1AdditionalCompleted = ['P1-18', 'P1-20'];
-    p1AdditionalCompleted.forEach(id => set.add(id));
-    const p2Completed = ['P2-12'];
-    p2Completed.forEach(id => set.add(id));
-    const p3Completed = ['P3-13'];
-    p3Completed.forEach(id => set.add(id));
-    const p3AdditionalCompleted = ['P3-15'];
-    p3AdditionalCompleted.forEach(id => set.add(id));
-    const p3MoreCompleted = ['P3-16'];
-    p3MoreCompleted.forEach(id => set.add(id));
-    const p3AdditionalCompleted2 = ['P3-18'];
-    p3AdditionalCompleted2.forEach(id => set.add(id));
-    const p4Completed = ['P4-06'];
-    p4Completed.forEach(id => set.add(id));
-    const p4AdditionalCompleted = ['P4-08'];
-    p4AdditionalCompleted.forEach(id => set.add(id));
-    const p4MoreCompleted = ['P4-10'];
-    p4MoreCompleted.forEach(id => set.add(id));
-    return set;
+    return new Set(DEFAULT_DONE_IDS);
   }
 }
 
