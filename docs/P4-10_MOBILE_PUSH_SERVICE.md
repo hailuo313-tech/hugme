@@ -1,325 +1,367 @@
-# P4-10: 移动端推送服务（FCM/APNs）
+# P4-10: 移动端推送服务配置指南
 
-## 概述
+## 任务概述
 
-本文档描述了 ERIS 项目中移动端推送服务的实现，支持 Firebase Cloud Messaging（FCM）用于 Android 和 Apple Push Notification service（APNs）用于 iOS。
+**任务编号**: P4-10  
+**阶段**: 阶段04 看板前端  
+**负责人**: Devin  
+**验收标准**: 真机收到推送；管理界面可用  
+**依赖**: 无
 
-## 任务信息
+## 功能描述
 
-- **任务编号**: P4-10
-- **任务名称**: App FCM/APNs 推送集成
-- **阶段**: Phase 04
-- **周次**: Week 9
-- **负责人**: devin
-- **权重**: 2
-- **验收标准**: 真机收到推送
+实现完整的移动端推送服务，包括 FCM (Firebase Cloud Messaging) 用于 Android 和 APNs (Apple Push Notification service) 用于 iOS，以及完整的前端管理界面。
 
-## 实现概览
+## 环境配置
 
-### 1. 核心服务
+### FCM 配置 (Android)
 
-#### `app/services/mobile_push_service.py`
+#### 环境变量
 
-移动端推送服务的主要实现，包含：
-
-- **MobilePushService 类**: 管理移动端推送的核心服务
-  - `send_fcm_notification()`: 发送 FCM 推送（Android）
-  - `send_apns_notification()`: 发送 APNs 推送（iOS）
-  - `send_notification()`: 根据平台自动选择推送服务
-  - `_init_firebase()`: 初始化 Firebase Admin SDK
-
-- **PushResult 数据类**: 推送结果封装
-  - `success`: 是否成功
-  - `device_token`: 设备令牌
-  - `provider`: 推送提供商（"fcm" 或 "apns"）
-  - `error_message`: 错误信息（失败时）
-  - `message_id`: 消息ID（成功时）
-
-- **get_mobile_push_service()**: 获取全局单例
-
-### 2. 配置
-
-#### `app/core/config.py`
-
-新增配置项：
-
-```python
-# P4-10：移动端推送服务配置（FCM/APNs）
-FCM_ENABLED: bool = False  # 是否启用 FCM（Android）
-FCM_CREDENTIALS_PATH: Optional[str] = None  # Firebase 服务账号密钥文件路径
-APNS_ENABLED: bool = False  # 是否启用 APNs（iOS）
-APNS_TEAM_ID: Optional[str] = None  # Apple Team ID
-APNS_KEY_ID: Optional[str] = None  # APNs Key ID
-APNS_KEY_PATH: Optional[str] = None  # APNs 私钥文件路径（.p8）
-APNS_BUNDLE_ID: str = 'com.hugme.app'  # App Bundle ID
-APNS_PRODUCTION: bool = False  # 是否使用生产环境 APNs（False = 开发环境）
-```
-
-#### `.env.example`
-
-新增环境变量：
-
-```bash
-# P4-10：移动端推送服务配置（FCM/APNs）
-FCM_ENABLED=false
-FCM_CREDENTIALS_PATH=/path/to/firebase-service-account.json
-APNS_ENABLED=false
-APNS_TEAM_ID=YOUR_TEAM_ID
-APNS_KEY_ID=YOUR_KEY_ID
-APNS_KEY_PATH=/path/to/APNs_Auth_KEY_YOUR_KEY_ID.p8
-APNS_BUNDLE_ID=com.hugme.app
-APNS_PRODUCTION=false
-```
-
-### 3. 依赖
-
-#### `app/requirements.txt`
-
-新增依赖：
-
-```
-firebase-admin==6.5.0
-```
-
-注意：`httpx` 已存在于项目中，无需额外添加。
-
-### 4. API 集成
-
-#### `app/api/notifications.py`
-
-更新通知 API 以支持移动端推送：
-
-- **ALLOWED_CHANNELS**: 新增 `"android"` 和 `"ios"`
-- **NotificationSendNow 模型**: 新增移动端推送专用字段
-  - `device_token`: 设备令牌（移动端推送必需）
-  - `platform`: 平台类型（"android" 或 "ios"，移动端推送必需）
-- **send-now 端点**: 根据 channel 路由到不同的推送服务
-  - `telegram`: 原有的 Telegram 推送
-  - `android`: FCM 推送
-  - `ios`: APNs 推送
-
-## 使用方法
-
-### 1. 配置环境变量
-
-在 `.env` 文件中配置相应的环境变量：
-
-#### FCM 配置（Android）
+在 `.env` 文件中添加：
 
 ```bash
 FCM_ENABLED=true
-FCM_CREDENTIALS_PATH=/path/to/firebase-service-account.json
+FCM_CREDENTIALS_PATH=/path/to/firebase-credentials.json
 ```
 
-#### APNs 配置（iOS）
+#### 获取 Firebase 凭证
+
+1. 访问 [Firebase Console](https://console.firebase.google.com/)
+2. 创建新项目或选择现有项目
+3. 进入项目设置 > Service Accounts
+4. 生成新的私钥
+5. 下载 JSON 凭证文件
+6. 将文件保存到服务器安全位置
+7. 设置 `FCM_CREDENTIALS_PATH` 指向该文件
+
+#### 安装依赖
+
+```bash
+pip install firebase-admin
+```
+
+### APNs 配置 (iOS)
+
+#### 环境变量
+
+在 `.env` 文件中添加：
 
 ```bash
 APNS_ENABLED=true
 APNS_TEAM_ID=YOUR_TEAM_ID
 APNS_KEY_ID=YOUR_KEY_ID
-APNS_KEY_PATH=/path/to/APNs_Auth_KEY_YOUR_KEY_ID.p8
+APNS_KEY_PATH=/path/to/apns-auth-key.p8
 APNS_BUNDLE_ID=com.hugme.app
 APNS_PRODUCTION=false  # 开发环境设为 false，生产环境设为 true
 ```
 
-### 2. 发送推送通知
+#### 获取 APNs 凭证
 
-#### 通过 API 发送
+1. 访问 [Apple Developer Portal](https://developer.apple.com/)
+2. 进入 Certificates, Identifiers & Profiles
+3. 创建 APNs Auth Key
+4. 下载 .p8 格式的私钥文件
+5. 记录 Team ID 和 Key ID
+6. 将文件保存到服务器安全位置
+7. 设置相应的环境变量
 
-**Android 推送**：
+#### 安装依赖
 
 ```bash
-POST /api/v1/notifications/send-now
+pip install httpx
+```
+
+## 数据库迁移
+
+运行数据库迁移以创建设备令牌表：
+
+```bash
+# 使用 psql 直接运行
+psql -U your_user -d your_database -f db/migrations/V2__device_tokens.sql
+
+# 或使用 Flyway（如果配置了）
+python -m alembic upgrade head
+```
+
+## API 端点
+
+### 设备令牌管理
+
+#### 注册设备令牌
+
+```http
+POST /api/v1/device-tokens/devices/register
+Content-Type: application/json
+
 {
   "user_id": "user-uuid",
-  "channel": "android",
-  "notification_type": "user_upgrade",
-  "device_token": "firebase_device_token",
+  "device_token": "device-token-string",
   "platform": "android",
-  "payload": {
-    "title": "升级通知",
-    "body": "恭喜您升级到高级会员！",
-    "custom_data": "value"
+  "device_info": {
+    "model": "Pixel 6",
+    "os_version": "13"
   }
 }
 ```
 
-**iOS 推送**：
+#### 查询设备列表
 
-```bash
-POST /api/v1/notifications/send-now
+```http
+GET /api/v1/device-tokens/devices?user_id=user-uuid&platform=android&limit=50
+```
+
+#### 获取用户设备
+
+```http
+GET /api/v1/device-tokens/user/{user_id}/devices
+```
+
+#### 删除设备令牌
+
+```http
+DELETE /api/v1/device-tokens/devices/{device_token}
+```
+
+### 推送测试
+
+#### 发送测试推送
+
+```http
+POST /api/v1/device-tokens/test-push
+Content-Type: application/json
+
 {
-  "user_id": "user-uuid",
-  "channel": "ios",
-  "notification_type": "user_upgrade",
-  "device_token": "apns_device_token",
-  "platform": "ios",
-  "payload": {
-    "title": "升级通知",
-    "body": "恭喜您升级到高级会员！",
-    "custom_data": "value"
+  "device_token": "device-token-string",
+  "platform": "android",
+  "title": "测试推送",
+  "body": "这是一条测试消息",
+  "data": {
+    "custom_key": "custom_value"
   }
 }
 ```
 
-#### 通过代码调用
+## 前端管理界面
+
+### 访问地址
+
+```
+http://your-domain/admin/push
+```
+
+### 功能特性
+
+1. **设备列表管理**
+   - 查看所有已注册的设备令牌
+   - 按用户 ID 或平台筛选
+   - 删除设备令牌
+   - 实时刷新列表
+
+2. **推送测试**
+   - 选择设备进行测试推送
+   - 自定义推送标题和内容
+   - 实时显示推送结果
+   - 支持自定义数据
+
+3. **配置说明**
+   - 详细的配置指南
+   - 环境变量说明
+   - 依赖安装指导
+
+### 界面特点
+
+- 深色主题设计
+- 响应式布局
+- 实时状态反馈
+- 错误处理和提示
+- WebSocket 连接状态显示
+
+## 使用示例
+
+### 移动端注册设备令牌
+
+```typescript
+// React Native 示例
+import { Platform } from 'react-native';
+import messaging from '@react-native-firebase/messaging';
+
+const registerDeviceToken = async (userId: string) => {
+  try {
+    const token = await messaging().getToken();
+    
+    const response = await fetch('https://your-api.com/api/v1/device-tokens/devices/register', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        device_token: token,
+        platform: Platform.OS, // 'android' or 'ios'
+        device_info: {
+          model: DeviceInfo.getModel(),
+          os_version: DeviceInfo.getSystemVersion(),
+        },
+      }),
+    });
+    
+    const result = await response.json();
+    console.log('Device registered:', result);
+  } catch (error) {
+    console.error('Failed to register device:', error);
+  }
+};
+```
+
+### 发送推送通知
 
 ```python
 from services.mobile_push_service import get_mobile_push_service
 
 push_service = get_mobile_push_service()
 
-# Android 推送
-result = await push_service.send_fcm_notification(
-    device_token="firebase_device_token",
-    title="升级通知",
-    body="恭喜您升级到高级会员！",
-    data={"custom_key": "custom_value"}
-)
-
-# iOS 推送
-result = await push_service.send_apns_notification(
-    device_token="apns_device_token",
-    title="升级通知",
-    body="恭喜您升级到高级会员！",
-    data={"custom_key": "custom_value"}
-)
-
-# 自动选择平台
+# 发送 FCM 推送
 result = await push_service.send_notification(
-    device_token="device_token",
-    platform="android",  # 或 "ios"
-    title="升级通知",
-    body="恭喜您升级到高级会员！",
-    data={"custom_key": "custom_value"}
+    device_token="device-token-here",
+    platform="android",
+    title="新消息",
+    body="您有一条新消息",
+    data={"conversation_id": "123", "type": "new_message"}
 )
+
+if result.success:
+    print(f"Push sent successfully: {result.message_id}")
+else:
+    print(f"Push failed: {result.error_message}")
 ```
 
-### 3. 测试
+## 故障排除
 
-运行测试：
+### FCM 常见问题
 
-```bash
-pytest tests/test_mobile_push_service.py -v
-```
+1. **凭证文件路径错误**
+   - 检查 `FCM_CREDENTIALS_PATH` 是否正确
+   - 确保文件存在且可读
+   - 验证文件格式是否正确
 
-## 架构设计
+2. **权限不足**
+   - 检查 Firebase 项目权限
+   - 确认服务账号有 Cloud Messaging 权限
 
-### 推送流程
+3. **设备令牌无效**
+   - 设备令牌可能过期
+   - 应用重新安装后需要重新注册
+   - 检查设备是否正确配置了 Firebase
 
-```
-Client Request
-    ↓
-Notification API (/api/v1/notifications/send-now)
-    ↓
-Channel Routing (telegram/android/ios)
-    ↓
-MobilePushService
-    ↓
-├─ FCM (Android) → Firebase Admin SDK → FCM Server → Device
-└─ APNs (iOS) → HTTP Client → APNs Server → Device
-```
+### APNs 常见问题
 
-### 错误处理
+1. **证书配置错误**
+   - 确认 Team ID 和 Key ID 正确
+   - 检查 .p8 文件是否有效
+   - 验证 Bundle ID 是否匹配
 
-- 推送服务在禁用或依赖缺失时会优雅降级
-- 所有推送失败都会记录详细的错误日志
-- 推送结果通过 `PushResult` 对象返回，包含成功状态和错误信息
+2. **生产/开发环境混淆**
+   - 开发环境使用 `APNS_PRODUCTION=false`
+   - 生产环境使用 `APNS_PRODUCTION=true`
+   - 确保使用对应的证书
 
-### 日志记录
+3. **设备令牌格式错误**
+   - iOS 设备令牌是 64 字符的十六进制字符串
+   - 确保没有多余空格或换行符
+   - 验证令牌是否来自正确环境
 
-使用结构化日志记录推送操作：
+### 数据库问题
 
-- 成功：`notification.send_now.sent`
-- 失败：包含详细错误信息和错误类型
-- 包含 trace_id 用于追踪
+1. **表不存在**
+   - 运行数据库迁移脚本
+   - 检查 migration 是否成功执行
+   - 验证表结构是否正确
 
-## 安全考虑
+2. **权限问题**
+   - 确保数据库用户有创建表的权限
+   - 检查连接配置是否正确
 
-1. **密钥管理**:
-   - Firebase 服务账号密钥文件不应提交到版本控制
-   - APNs 私钥文件（.p8）不应提交到版本控制
-   - 使用环境变量或密钥管理系统存储敏感信息
+## 安全建议
 
-2. **设备令牌**:
-   - 设备令牌应安全存储在客户端
-   - 传输过程中使用 HTTPS
+1. **凭证文件安全**
+   - 不要将凭证文件提交到版本控制
+   - 使用 .gitignore 排除凭证文件
+   - 设置文件权限为 600 (仅所有者可读写)
 
-3. **权限控制**:
-   - 推送 API 需要适当的身份验证
-   - 遵循现有的用户权限和风控规则
+2. **API 访问控制**
+   - 设备令牌注册 API 需要用户认证
+   - 推送测试 API 仅限管理员访问
+   - 使用 HTTPS 加密传输
+
+3. **日志脱敏**
+   - 不要在日志中记录完整的设备令牌
+   - 记录令牌的前几个字符即可
+   - 敏感信息使用脱敏处理
 
 ## 性能优化
 
-1. **延迟初始化**: Firebase Admin SDK 在首次使用时才初始化
-2. **单例模式**: 推送服务使用全局单例，避免重复初始化
-3. **异步操作**: 所有推送操作都是异步的，不会阻塞主线程
+1. **批量推送**
+   - 使用批量 API 减少请求次数
+   - 实现推送队列处理
+   - 支持异步推送
 
-## 测试覆盖
+2. **缓存策略**
+   - 缓存用户设备列表
+   - 减少数据库查询频率
+   - 使用 Redis 存储临时数据
 
-测试文件：`tests/test_mobile_push_service.py`
+3. **错误重试**
+   - 实现指数退避重试机制
+   - 记录失败推送以便后续处理
+   - 监控推送成功率
 
-覆盖的场景：
-- 服务初始化
-- 单例模式
-- FCM 禁用时的行为
-- APNs 禁用时的行为
-- 不支持的平台
-- Firebase 初始化成功
-- FCM 发送成功
-- APNs 发送成功
-- APNs 发送失败
-- PushResult 数据类
+## 监控建议
 
-## 故障排查
+1. **推送成功率**
+   - 监控 FCM/APNs 响应状态
+   - 统计成功/失败比例
+   - 设置告警阈值
 
-### FCM 推送失败
+2. **设备令牌管理**
+   - 监控设备令牌注册/删除
+   - 清理过期或无效的令牌
+   - 统计活跃设备数量
 
-1. 检查 `FCM_ENABLED` 是否为 `true`
-2. 检查 `FCM_CREDENTIALS_PATH` 是否正确
-3. 检查 Firebase 服务账号密钥文件是否存在
-4. 检查设备令牌是否有效
-5. 查看日志中的详细错误信息
-
-### APNs 推送失败
-
-1. 检查 `APNS_ENABLED` 是否为 `true`
-2. 检查 `APNS_TEAM_ID` 和 `APNS_KEY_ID` 是否正确
-3. 检查 `APNS_KEY_PATH` 是否正确
-4. 检查 `APNS_BUNDLE_ID` 是否与 App 一致
-5. 检查 `APNS_PRODUCTION` 设置是否正确
-6. 检查设备令牌是否有效
-7. 查看日志中的详细错误信息
-
-### 依赖缺失
-
-如果看到 "firebase_admin not installed" 或 "httpx not installed" 警告：
-
-```bash
-pip install firebase-admin httpx
-```
-
-或更新 requirements：
-
-```bash
-pip install -r app/requirements.txt
-```
-
-## 未来扩展
-
-1. **推送模板**: 支持预定义的推送模板
-2. **批量推送**: 支持批量发送推送通知
-3. **推送统计**: 添加推送送达率和打开率统计
-4. **推送调度**: 支持定时推送
-5. **多语言**: 支持多语言推送内容
+3. **性能指标**
+   - 监控推送延迟
+   - 统计 API 响应时间
+   - 监控数据库查询性能
 
 ## 相关文档
 
 - [Firebase Cloud Messaging 文档](https://firebase.google.com/docs/cloud-messaging)
 - [Apple Push Notification Service 文档](https://developer.apple.com/documentation/usernotifications)
-- [项目 AGENTS.md](../AGENTS.md)
-- [通知 API 文档](../app/api/notifications.py)
+- [移动端推送服务实现](../app/services/mobile_push_service.py)
+- [设备令牌管理 API](../app/api/device_tokens.py)
+- [AGENTS.md](../AGENTS.md)
 
-## 变更历史
+## 提交信息
 
-- 2026-05-19: 初始实现（P4-10）
+```
+feat(p4-10): implement mobile push service with management interface
+
+- Add device token management API (register, list, delete)
+- Implement push test functionality
+- Create push management interface in admin panel
+- Add database migration for device_tokens table
+- Integrate with existing mobile push service
+- Support both FCM (Android) and APNs (iOS)
+- Add comprehensive configuration documentation
+- Mark P4-10 as completed in business-flow.html
+
+Files modified:
+- app/main.py
+- docs/product/business-flow.html
+
+Files created:
+- app/api/device_tokens.py
+- db/migrations/V2__device_tokens.sql
+- admin/app/push/page.tsx
+- docs/P4-10_MOBILE_PUSH_SERVICE.md
+```
