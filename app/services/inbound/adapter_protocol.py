@@ -38,6 +38,6 @@ async def enqueue_standard_inbound(
     *,
     maxlen: int = 100_000,
 ) -> str:
-    """XADD helper for P1-06 / P1-16 (reference; not wired in runtime yet)."""
+    """XADD helper for standard producers; P1-06 consumers read the same fields."""
     fields = envelope.to_queue_fields()
     return await redis.xadd(stream, fields, maxlen=maxlen)  # type: ignore[no-any-return]

@@ -63,7 +63,7 @@ raw_event  →  normalize()  →  StandardInboundEnvelope
 |------|----------|------|
 | HTTP 用 `channel` | 队列用 `platform` | `from_legacy_http_inbound()` 映射；HTTP 字段名暂不破坏 |
 | Bot 路径无 `account_id` | MTProto 必填 | Bot 保持 `platform=telegram`，无 account_id |
-| 无 `inbound_queue` 消费者 | XADD 字段见 `to_queue_fields()` | P1-06 实现时复用 |
+| `inbound_queue` 消费者已实现 | XADD 字段见 `to_queue_fields()` | P1-06 由 `services.inbound.queue_consumer` 消费，smoke 覆盖 XREADGROUP + XACK |
 | `ctx:{conversation_id}` | P1-19 规划 `conv:{user_id}` | 文档记录，合并时统一 |
 
 ---
