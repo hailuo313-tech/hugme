@@ -688,12 +688,19 @@ function loadDoneSet() {
     p1Completed.forEach(id => {
       if (!set.has(id)) { set.add(id); changed = true; }
     });
+    // 自动标记 P1-18 和 P1-20 为已完成（Devin 已完成这些任务）
+    const p1AdditionalCompleted = ['P1-18', 'P1-20'];
+    p1AdditionalCompleted.forEach(id => {
+      if (!set.has(id)) { set.add(id); changed = true; }
+    });
     if (changed) localStorage.setItem(DONE_STORAGE_KEY, JSON.stringify([...set]));
     return set;
   } catch {
     const set = new Set(TASKS.filter(t => t.baseline).map(t => t.id));
     const p1Completed = ['P1-03', 'P1-04', 'P1-05', 'P1-06', 'P1-07', 'P1-08', 'P1-09'];
     p1Completed.forEach(id => set.add(id));
+    const p1AdditionalCompleted = ['P1-18', 'P1-20'];
+    p1AdditionalCompleted.forEach(id => set.add(id));
     return set;
   }
 }
