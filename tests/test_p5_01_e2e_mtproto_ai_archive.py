@@ -10,16 +10,22 @@ This test validates the complete flow:
 
 import pytest
 import json
+import os
 import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List
 
 # Test configuration
-API_BASE = "http://127.0.0.1:8000"
-DB_CONTAINER = "eris-postgres"
-DB_USER = "eris"
-DB_NAME = "eris"
+API_BASE = os.environ.get("API_BASE", "http://127.0.0.1:8000")
+DB_CONTAINER = os.environ.get("DB_CONTAINER", "eris-postgres")
+DB_USER = os.environ.get("DB_USER", "eris")
+DB_NAME = os.environ.get("DB_NAME", "eris")
+
+pytestmark = pytest.mark.skipif(
+    os.environ.get("RUN_P5_01_E2E") != "1",
+    reason="P5-01 E2E requires a running API/database stack; run via scripts/e2e/run_p5_01.sh",
+)
 
 # Test data
 TEST_USER_ID = f"test_p5_01_{int(time.time())}"

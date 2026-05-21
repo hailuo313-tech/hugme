@@ -111,6 +111,7 @@ run_tests() {
     export DB_CONTAINER="$DB_CONTAINER"
     export DB_USER="$DB_USER"
     export DB_NAME="$DB_NAME"
+    export RUN_P5_01_E2E=1
     
     # Run pytest with P5-01 tests
     if $PYTHON_BIN -m pytest tests/test_p5_01_e2e_mtproto_ai_archive.py -v -s --tb=short; then
