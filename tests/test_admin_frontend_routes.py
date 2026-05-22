@@ -67,6 +67,16 @@ def test_business_flow_admin_pages_exist() -> None:
             assert needle in text
 
 
+def test_approvals_page_shows_confirmed_statuses() -> None:
+    page = read("admin/app/approvals/page.tsx")
+
+    assert "待人工确认" not in page
+    assert "2026-05-22 最终确认" in page
+    assert "已批准" in page
+    assert "已签字" in page
+    assert "GO" in page
+
+
 def test_legacy_admin_pages_are_removed() -> None:
     legacy_pages = [
         "admin/app/operator-dashboard/page.tsx",

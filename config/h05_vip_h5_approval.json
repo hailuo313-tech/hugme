@@ -80,5 +80,10 @@
     "Success and cancel redirects match STRIPE_SUCCESS_URL and STRIPE_CANCEL_URL.",
     "Age-unverified and suspected-minor accounts do not enter checkout.",
     "Payment failure keeps the user in chat and shows a retryable error message."
-  ]
+  ],
+  "final_confirmation": {
+    "confirmed_by": "human_owner",
+    "confirmed_on": "2026-05-22",
+    "confirmation_text": "H-01, H-02, H-05, H-07, H-08, H-09, H-10, H-11 all confirmed approved."
+  }
 }

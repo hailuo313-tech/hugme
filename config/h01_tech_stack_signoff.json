@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "task_id": "H-01",
+  "status": "signed",
+  "signed_on": "2026-05-22",
+  "signed_by": "human_owner",
+  "scope": "Confirm technical stack and deployment environment for ERIS MVP",
+  "source_refs": [
+    "AGENTS.md",
+    "docs/REPO_LAYOUT.md",
+    "docker-compose.yml",
+    "app/main.py",
+    "admin/package.json",
+    "docs/product/business-flow.html"
+  ],
+  "confirmed_stack": {
+    "backend": "FastAPI",
+    "database": "PostgreSQL with pgvector image in docker-compose",
+    "cache_queue": "Redis",
+    "realtime": "WebSocket routes under FastAPI",
+    "admin_frontend": "Next.js admin app served behind /admin",
+    "deployment_root": "/opt/eris on root@67.216.204.137:2222"
+  },
+  "repo_layout_alignment": [
+    "app/ contains FastAPI backend APIs, services, models, and core settings.",
+    "admin/ contains the Next.js operation admin.",
+    "db/migration/ contains database migration SQL.",
+    "config/ contains signed business and approval configuration.",
+    "docs/product/business-flow.html is the business-flow task source of truth.",
+    "docker-compose.yml defines PostgreSQL, Redis, API, and observability services."
+  ],
+  "final_confirmation": {
+    "confirmed_by": "human_owner",
+    "confirmed_on": "2026-05-22",
+    "confirmation_text": "H-01, H-02, H-05, H-07, H-08, H-09, H-10, H-11 all confirmed approved."
+  },
+  "acceptance": [
+    "Written confirmation exists.",
+    "FastAPI/PostgreSQL/Redis/WS stack is accepted.",
+    "Deployment environment is documented.",
+    "Repository layout is consistent with REPO_LAYOUT."
+  ]
+}
