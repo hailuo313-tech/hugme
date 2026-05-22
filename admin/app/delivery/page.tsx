@@ -24,6 +24,11 @@ const sections = [
     task: "P5-05 / P5-08",
     items: ["Prometheus 指标", "Grafana 五大盘", "付费漏斗 SQL", "feature flag 按 level 切流"],
   },
+  {
+    title: "链接与 App 归因",
+    task: "P3-22 / P4-12 / P5-11",
+    items: ["话术链接 tracking_id", "点击国家与年龄分布", "App 下载注册回传", "付费订单归因"],
+  },
 ];
 
 export default function DeliveryPage() {
@@ -34,7 +39,7 @@ export default function DeliveryPage() {
           operator={operator}
           active="delivery"
           title="推送监控与 H5"
-          subtitle="覆盖 P4/P5 的用户侧触达、H5 验收、推送、媒体缓存、监控告警和灰度切流。"
+          subtitle="覆盖 P4/P5 的用户侧触达、H5 验收、推送、媒体缓存、链接归因、监控告警和灰度切流。"
         >
           <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {sections.map((section) => (

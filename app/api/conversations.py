@@ -20,6 +20,7 @@ from services.llm_orchestrator import (
     LLMOrchestratorError,
     generate_reply,
 )
+from services.link_attribution import wrap_text_links_with_tracking
 from services.reply_consistency import (
     evaluate_reply_consistency,
     load_reply_consistency_context,
@@ -154,6 +155,21 @@ async def ai_reply(
     log.bind(**consistency.as_log_dict()).info("conversation.reply.consistency_checked")
 
     bot_msg_id = str(uuid.uuid4())
+    try:
+        reply_text = await wrap_text_links_with_tracking(
+            db,
+            text_value=reply_text,
+            base_url=str(request.base_url).rstrip("/"),
+            user_id=user_id,
+            conversation_id=conv_id,
+            message_id=bot_msg_id,
+            platform="h5",
+            metadata={"source": "conversation_reply", "trace_id": trace_id},
+        )
+    except Exception as exc:
+        log.bind(error_type=type(exc).__name__).warning(
+            "conversation.reply.link_attribution_failed"
+        )
     await db.execute(
         text(
             "INSERT INTO messages "

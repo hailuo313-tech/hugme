@@ -6,6 +6,7 @@ const navItems = [
   { key: "home", label: "总后台", href: "/admin" },
   { key: "conversations", label: "会话流控", href: "/admin/conversations" },
   { key: "telegram", label: "TG账号", href: "/admin/telegram-accounts" },
+  { key: "data", label: "数据总览", href: "/admin/data" },
   { key: "ai", label: "AI话术", href: "/admin/ai-ops" },
   { key: "approvals", label: "运营审批", href: "/admin/approvals" },
   { key: "delivery", label: "推送监控", href: "/admin/delivery" },

@@ -173,6 +173,45 @@ async def test_handle_event_checkout_completed_recalculates_paid_user_to_s():
     )
 
 
+async def test_handle_event_checkout_completed_records_payment_attribution():
+    session = _make_session_mock(
+        execute_results=[
+            ("user-uuid", "trk_1", 9900, "USD"),
+            (True, False),
+            None,
+            (9900,),
+            (1, {"country_code": "US"}, "A", None),
+            None,
+            None,
+            None,
+        ]
+    )
+    event = {
+        "id": "evt_paid_attr",
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "id": "cs_attr",
+                "metadata": {"order_id": "ord-uuid", "attribution_tracking_id": "trk_1"},
+            }
+        },
+    }
+
+    out = await sw.handle_event(session, event)
+
+    assert out == "processed"
+    attribution_calls = [
+        call
+        for call in session.execute.await_args_list
+        if "INSERT INTO attribution_events" in str(call.args[0])
+    ]
+    assert attribution_calls
+    params = attribution_calls[0].args[1]
+    assert params["event_type"] == "payment"
+    assert params["tracking_id"] == "trk_1"
+    assert params["amount_cents"] == 9900
+
+
 async def test_handle_event_checkout_completed_falls_back_to_session_id():
     """metadata 里没 order_id 时按 provider_order_id 反查 orders。"""
     # 1) SELECT id FROM orders WHERE provider_order_id → ("ord-uuid",)
