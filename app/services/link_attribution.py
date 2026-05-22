@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 TRACKING_ID_BYTES = 12
 ALLOWED_EVENT_TYPES = {
+    "link_exposed",
     "click",
     "download_page",
     "download",
@@ -39,6 +40,10 @@ async def create_attribution_link(
     platform: str | None = None,
     persona_slug: str | None = None,
     intent: str | None = None,
+    sender_account_id: str | None = None,
+    scene_step: str | None = None,
+    script_category: str | None = None,
+    is_t1_country: bool | None = None,
     country_code: str | None = None,
     age: int | None = None,
     user_level: str | None = None,
@@ -51,12 +56,14 @@ async def create_attribution_link(
             INSERT INTO attribution_links (
                 tracking_id, destination_url, user_id, conversation_id, message_id,
                 script_hit_id, script_template_id, campaign_id, platform,
-                persona_slug, intent, country_code, age, user_level, metadata
+                persona_slug, intent, sender_account_id, scene_step, script_category,
+                is_t1_country, country_code, age, user_level, metadata
             )
             VALUES (
                 :tracking_id, :destination_url, :user_id, :conversation_id, :message_id,
                 :script_hit_id, :script_template_id, :campaign_id, :platform,
-                :persona_slug, :intent, :country_code, :age, :user_level,
+                :persona_slug, :intent, :sender_account_id, :scene_step, :script_category,
+                :is_t1_country, :country_code, :age, :user_level,
                 CAST(:metadata AS JSONB)
             )
             """
@@ -73,6 +80,10 @@ async def create_attribution_link(
             "platform": platform,
             "persona_slug": persona_slug,
             "intent": intent,
+            "sender_account_id": sender_account_id,
+            "scene_step": scene_step,
+            "script_category": script_category,
+            "is_t1_country": is_t1_country,
             "country_code": country_code.upper() if country_code else None,
             "age": age,
             "user_level": user_level.upper() if user_level else None,
@@ -93,6 +104,15 @@ async def wrap_text_links_with_tracking(
     script_hit_id: str | None = None,
     campaign_id: str | None = None,
     platform: str | None = None,
+    sender_account_id: str | None = None,
+    scene_step: str | None = None,
+    script_category: str | None = None,
+    persona_slug: str | None = None,
+    intent: str | None = None,
+    country_code: str | None = None,
+    age: int | None = None,
+    user_level: str | None = None,
+    is_t1_country: bool | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> str:
     """Replace http(s) links in outgoing text with /r/{tracking_id} links."""
@@ -118,7 +138,35 @@ async def wrap_text_links_with_tracking(
                 script_hit_id=script_hit_id,
                 campaign_id=campaign_id,
                 platform=platform,
+                sender_account_id=sender_account_id,
+                scene_step=scene_step,
+                script_category=script_category,
+                persona_slug=persona_slug,
+                intent=intent,
+                country_code=country_code,
+                age=age,
+                user_level=user_level,
+                is_t1_country=is_t1_country,
                 metadata=metadata,
+            )
+            await record_attribution_event(
+                db,
+                tracking_id=tracking_id,
+                event_type="link_exposed",
+                user_id=user_id,
+                country_code=country_code,
+                age=age,
+                user_level=user_level,
+                metadata_json=json.dumps(
+                    {
+                        "source": "outbound_link_wrap",
+                        "message_id": str(message_id) if message_id else None,
+                        "script_hit_id": script_hit_id,
+                        "campaign_id": campaign_id,
+                        **(metadata or {}),
+                    },
+                    ensure_ascii=False,
+                ),
             )
             output.append(tracking_url(base_url, tracking_id))
             output.append(suffix)

@@ -520,7 +520,7 @@ const TASKS = [
   { id:"P3-19", phase:"03", owner:"codex", w:1, week:"W7", dep:"P3-18,P3-21", desc:"精聊查询 API（含每步 script_hit 轨迹）", acc:"S/A 100% 可查且可追溯话术", baseline:true, verified:true },
   { id:"P3-20", phase:"03", owner:"codex", w:2, week:"W5", dep:"P3-04", desc:"script_match 全链路编排（8 钩子：入站/消费/探测/分级/回复/坐席/出站/归档）", acc:"每步必有 match 结果或明确降级", baseline:true, verified:true },
   { id:"P3-21", phase:"03", owner:"codex", w:1, week:"W5", dep:"P3-01", desc:"conversation_script_hits 表 + script_hit_id 写入审计", acc:"任一步可反查命中话术", baseline:true, verified:true },
-  { id:"P3-22", phase:"03", owner:"codex", w:1, week:"W7", dep:"P3-21", desc:"话术链接追踪参数注入", acc:"含 tracking_id / script_hit_id / user_id / campaign_id", baseline:true, verified:true },
+  { id:"P3-22", phase:"03", owner:"codex", w:1, week:"W7", dep:"P3-21", desc:"话术链接追踪参数注入", acc:"含 tracking_id/script_hit_id/user_id/campaign_id/曝光事件", baseline:true, verified:true },
 
   // ── 阶段 04（12 项）──
   { id:"P4-01", phase:"04", owner:"codex", w:1, week:"W7", dep:"—", desc:"ws_protocol.md 协议文档", acc:"前后端评审签字", baseline:true, verified:true },
@@ -534,7 +534,7 @@ const TASKS = [
   { id:"P4-09", phase:"04", owner:"codex", w:1.5, week:"W8", dep:"H-05", desc:"H5 VIP 弹窗 + 支付跳转", acc:"CTA 可跳转", baseline:true, verified:true },
   { id:"P4-10", phase:"04", owner:"devin", w:2, week:"W9", dep:"—", desc:"移动端推送服务（后端 FCM/APNs + 前端管理界面）", acc:"真机收到推送；管理界面可用", baseline:true, verified:true },
   { id:"P4-11", phase:"04", owner:"devin", w:1.5, week:"W9", dep:"P4-10", desc:"App 音视频渲染 + 本地缓存", acc:"弱网可看历史", baseline:true, verified:true },
-  { id:"P4-12", phase:"04", owner:"codex", w:1, week:"W9", dep:"P3-22", desc:"链接点击与 App 转化数据看板", acc:"点击/下载/注册/付费漏斗可查看", baseline:true, verified:true },
+  { id:"P4-12", phase:"04", owner:"codex", w:1, week:"W9", dep:"P3-22", desc:"链接点击与 App 转化数据看板", acc:"发送/曝光/点击/下载/注册/付费/升 A/S 全漏斗可查看", baseline:true, verified:true },
 
   // ── 阶段 05（12 项 Devin/Codex）──
   { id:"P5-01", phase:"05", owner:"devin", w:2, week:"W10", dep:"C-08", desc:"E2E：MTProto 入站→AI→拟人投递→归档", acc:"CI nightly 绿", baseline:true, verified:true },
@@ -547,8 +547,8 @@ const TASKS = [
   { id:"P5-08", phase:"05", owner:"devin", w:0.5, week:"W11", dep:"P5-07", desc:"Grafana 绑定转化面板", acc:"24h/72h 可见", baseline:true, verified:true },
   { id:"P5-09", phase:"05", owner:"devin", w:1, week:"W11", dep:"H-07", desc:"灰度 feature flag 按 level 切流", acc:"可按级开关", baseline:true, verified:true },
   { id:"P5-10", phase:"05", owner:"devin", w:1, week:"W11", dep:"H-09", desc:"runbook.md 运维手册", acc:"演练通过", baseline:true, verified:true },
-  { id:"P5-11", phase:"05", owner:"codex", w:1, week:"W11", dep:"P4-12", desc:"App 下载/注册/付费归因 SQL", acc:"可按话术、国家、年龄、等级聚合", baseline:true, verified:true },
-  { id:"P5-12", phase:"05", owner:"codex", w:1, week:"W11", dep:"P5-11", desc:"Top 转化话术优化报表", acc:"可输出点击/注册/付费 Top 话术", baseline:true, verified:true },
+  { id:"P5-11", phase:"05", owner:"codex", w:1, week:"W11", dep:"P4-12", desc:"App 下载/注册/付费归因 SQL", acc:"可按国家/年龄/等级/persona/intent/类目/TG账号/设备聚合", baseline:true, verified:true },
+  { id:"P5-12", phase:"05", owner:"codex", w:1, week:"W11", dep:"P5-11", desc:"Top 转化话术优化报表", acc:"可输出点击/下载/注册/付费 Top 话术与平均耗时", baseline:true, verified:true },
 ];
 
 const OWNER_LABEL = {
@@ -640,7 +640,7 @@ const PARALLEL = {
   "P3-19":{t:"wait",g:"—",n:"须归档 worker + script_hit 表就绪"},
   "P3-20":{t:"wait",g:"—",n:"须 P3-04 过滤规则完成"},
   "P3-21":{t:"group",g:"W4-①",n:"与 P3-01 同批，解锁全链路 script_hit 审计"},
-  "P3-22":{t:"done",g:"W7-①",n:"链接追踪已与 script_hit / campaign / 用户上下文打通"},
+  "P3-22":{t:"done",g:"W7-①",n:"链接追踪已与 script_hit / campaign / 用户上下文和曝光事件打通"},
   "P4-01":{t:"group",g:"W4-①",n:"与 P2-08、P3-01 三轨并行"},
   "P4-02":{t:"done",g:"W7-①",n:"WS 服务端广播 + ACK 重推已完成，conformance 测试通过"},
   "P4-03":{t:"done",g:"W8-①",n:"坐席看板 React + 路由鉴权已完成，可正常登录"},
@@ -652,7 +652,7 @@ const PARALLEL = {
   "P4-09":{t:"group",g:"W8-②",n:"P4-01 后，与 P4-08 可并行"},
   "P4-10":{t:"done",g:"W9-①",n:"移动端推送服务已完成，真机可收到推送，管理界面可用"},
   "P4-11":{t:"done",g:"W9-①",n:"P4-10 完成，已实现音视频渲染与本地缓存"},
-  "P4-12":{t:"done",g:"W9-①",n:"数据总览可查看链接点击、下载、注册、付费漏斗"},
+  "P4-12":{t:"done",g:"W9-①",n:"数据总览可查看发送、曝光、点击、下载、注册、付费、升 A/S 全漏斗"},
   "P5-01":{t:"done",g:"W10-关",n:"E2E 测试已完成，CI nightly 集成通过"},
   "P5-02":{t:"done",g:"W10-①",n:"1000 并发压测已完成，P99 报告生成，CI 集成完成"},
   "P5-03":{t:"group",g:"W10-①",n:"C-08 后，与 P5-04 并行"},
@@ -663,8 +663,8 @@ const PARALLEL = {
   "P5-08":{t:"wait",g:"—",n:"须 SQL 评审通过"},
   "P5-09":{t:"wait",g:"—",n:"须 H-07 灰度批准"},
   "P5-10":{t:"wait",g:"—",n:"须坐席培训完成"},
-  "P5-11":{t:"done",g:"W11-①",n:"归因聚合支持按话术、国家、年龄、等级查看"},
-  "P5-12":{t:"done",g:"W11-①",n:"Top 转化话术报表已进入数据总览"},
+  "P5-11":{t:"done",g:"W11-①",n:"归因聚合支持按话术、国家、年龄、等级、persona、intent、类目、TG账号、设备查看"},
+  "P5-12":{t:"done",g:"W11-①",n:"Top 点击/下载/注册/付费话术与耗时报表已进入数据总览"},
 };
 
 const PARA_UI = {

@@ -8,6 +8,7 @@ import pytest
 
 from api.attribution import (
     AttributionLinkCreate,
+    admin_attribution_summary,
     create_attribution_link,
     redirect_tracking_link,
 )
@@ -53,6 +54,16 @@ def test_v9_migration_defines_attribution_storage() -> None:
     assert "country_code" in sql
     assert "ALTER TABLE orders" in sql
     assert "ADD COLUMN IF NOT EXISTS attribution_tracking_id" in sql
+
+
+def test_v10_migration_adds_complete_analytics_dimensions() -> None:
+    sql = (ROOT / "db" / "migration" / "V10__link_attribution_analytics.sql").read_text(encoding="utf-8")
+
+    assert "sender_account_id" in sql
+    assert "scene_step" in sql
+    assert "script_category" in sql
+    assert "is_t1_country" in sql
+    assert "CREATE TABLE IF NOT EXISTS app_user_attribution_bindings" in sql
 
 
 def test_tracking_id_and_url_are_url_safe() -> None:
@@ -115,10 +126,13 @@ async def test_wrap_text_links_with_tracking_replaces_outbound_url() -> None:
         )
 
     assert wrapped == "Install here: https://hugme2.com/r/trk_reply."
-    params = db.execute.await_args.args[1]
+    params = db.execute.await_args_list[0].args[1]
     assert params["destination_url"] == "https://app.example/download"
     assert params["script_hit_id"] == "hit-1"
     assert params["message_id"] == "msg-1"
+    event_params = db.execute.await_args_list[1].args[1]
+    assert event_params["event_type"] == "link_exposed"
+    assert event_params["tracking_id"] == "trk_reply"
 
 
 async def test_redirect_tracking_link_records_click_then_redirects() -> None:
@@ -143,3 +157,33 @@ async def test_redirect_tracking_link_records_click_then_redirects() -> None:
     assert event_params["tracking_id"] == "trk_test"
     assert event_params["user_id"] == "user-1"
     db.commit.assert_awaited_once()
+
+
+async def test_admin_attribution_summary_returns_complete_dashboard_shape() -> None:
+    overview = (
+        3, 2, 3, 2, 2, 2, 4, 2, 1, 1, 1, 9900, 1, 2, 30.0, 120.0, 300.0
+    )
+    dimension = ("US", 3, 4, 2, 1, 1, 1, 9900, True)
+    generic_dimension = ("A", 1, 2, 1, 1, 1, 1, 9900)
+    script = ("hit-1", "tpl-1", "hit-1", "purchase_intent", "warm", "vip_cta", "tg-1", 4, 1, 1, 1, 9900)
+    link = ("trk-1", "https://app.example/download", "hit-1", None, "tg-1", "telegram", 4, 2, None, 30.0)
+    db = FakeSession(
+        results=[
+            FakeResult(overview),
+            FakeResult(rows=[dimension]),
+            *[FakeResult(rows=[generic_dimension]) for _ in range(8)],
+            *[FakeResult(rows=[script]) for _ in range(4)],
+            FakeResult(rows=[link]),
+        ]
+    )
+
+    out = await admin_attribution_summary(days=7, _={}, db=db)
+
+    assert out["overview"]["today_click_users"] == 2
+    assert out["overview"]["click_rate"] == 1.0
+    assert out["overview"]["avg_click_to_register_seconds"] == 120.0
+    assert out["countries"][0]["is_t1_country"] is True
+    assert out["funnel"][0]["step"] == "话术发送"
+    assert out["top_click_scripts"][0]["intent"] == "purchase_intent"
+    assert out["top_payment_scripts"][0]["revenue_cents"] == 9900
+    assert out["links"][0]["tracking_id"] == "trk-1"
