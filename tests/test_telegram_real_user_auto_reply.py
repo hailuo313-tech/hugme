@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from services.telegram_real_user_auto_reply import _is_managed_telegram_account
+from services.telegram_real_user_auto_reply import _is_managed_telegram_account, _mark_read
 
 
 class _Result:
@@ -36,3 +36,37 @@ async def test_unmanaged_telegram_sender_is_not_skipped():
     assert await _is_managed_telegram_account(_Db(None), "tg_7058432267") is False
     assert await _is_managed_telegram_account(_Db(SimpleNamespace()), "web_7058432267") is False
     assert await _is_managed_telegram_account(_Db(SimpleNamespace()), "tg_not_numeric") is False
+
+
+class _ReadClient:
+    def __init__(self):
+        self.calls = []
+
+    async def send_read_acknowledge(self, peer, message=None):
+        self.calls.append((peer, message))
+
+
+class _Log:
+    def __init__(self):
+        self.events = []
+
+    def info(self, event):
+        self.events.append(("info", event))
+
+    def warning(self, event):
+        self.events.append(("warning", event))
+
+    def bind(self, **kwargs):
+        return self
+
+
+@pytest.mark.asyncio
+async def test_mark_read_acknowledges_before_reply_generation():
+    client = _ReadClient()
+    log = _Log()
+    message = SimpleNamespace(id=99)
+
+    await _mark_read(client, SimpleNamespace(message=message), 12345, log)
+
+    assert client.calls == [(12345, message)]
+    assert ("info", "mtproto_auto_reply.read_ack") in log.events

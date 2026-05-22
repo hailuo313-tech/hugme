@@ -152,6 +152,20 @@ async def _is_managed_telegram_account(db, external_user_id: str) -> bool:
     return row is not None
 
 
+async def _mark_read(client: Any, raw_event: Any, peer: Any, log: Any) -> None:
+    """Mark an inbound Telegram message as read before AI reply generation."""
+    send_read_acknowledge = getattr(client, "send_read_acknowledge", None)
+    if send_read_acknowledge is None:
+        log.info("mtproto_auto_reply.read_unsupported")
+        return
+
+    try:
+        await send_read_acknowledge(peer, message=getattr(raw_event, "message", None))
+        log.info("mtproto_auto_reply.read_ack")
+    except Exception as exc:
+        log.bind(error_type=type(exc).__name__).warning("mtproto_auto_reply.read_ack_failed")
+
+
 async def handle_mtproto_inbound_auto_reply(
     *,
     client: Any,
@@ -182,11 +196,14 @@ async def handle_mtproto_inbound_auto_reply(
         log.info("mtproto_auto_reply.non_text_skip")
         return
 
+    peer = getattr(raw_event, "chat_id", None) or envelope.metadata.telegram_chat_id or envelope.external_user_id[3:]
     channel = "telegram_real_user"
     async with AsyncSessionLocal() as db:
         if await _is_managed_telegram_account(db, envelope.external_user_id):
             log.info("mtproto_auto_reply.managed_account_skip")
             return
+
+        await _mark_read(client, raw_event, int(peer), log)
 
         user_id = await _get_or_create_user(db, channel=channel, external_id=envelope.external_user_id)
         conv_id = await _get_or_create_conversation(db, user_id=user_id, channel=channel)
@@ -216,8 +233,12 @@ async def handle_mtproto_inbound_auto_reply(
             log.bind(reason=str(exc)).warning("mtproto_auto_reply.orchestrator_failed")
             reply_text = "现在有点忙，稍后再聊好吗？"
 
-        peer = getattr(raw_event, "chat_id", None) or envelope.metadata.telegram_chat_id or envelope.external_user_id[3:]
-        sent = await send_human_like_message(client, int(peer), reply_text, sleep=asyncio.sleep)
+        try:
+            sent = await send_human_like_message(client, int(peer), reply_text, sleep=asyncio.sleep)
+        except Exception as exc:
+            log.bind(error_type=type(exc).__name__).error("mtproto_auto_reply.send_failed")
+            return
+
         outbound_msg_id = await _persist_message(
             db,
             conversation_id=conv_id,
