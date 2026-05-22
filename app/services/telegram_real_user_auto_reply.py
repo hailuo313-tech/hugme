@@ -154,13 +154,24 @@ async def _is_managed_telegram_account(db, external_user_id: str) -> bool:
 
 async def _mark_read(client: Any, raw_event: Any, peer: Any, log: Any) -> None:
     """Mark an inbound Telegram message as read before AI reply generation."""
+    mark_read = getattr(raw_event, "mark_read", None)
+    if mark_read is not None:
+        try:
+            await mark_read()
+            log.info("mtproto_auto_reply.read_ack")
+            return
+        except Exception as exc:
+            log.bind(error_type=type(exc).__name__).warning("mtproto_auto_reply.event_read_ack_failed")
+
     send_read_acknowledge = getattr(client, "send_read_acknowledge", None)
     if send_read_acknowledge is None:
         log.info("mtproto_auto_reply.read_unsupported")
         return
 
+    message = getattr(raw_event, "message", None)
+    message_id = getattr(message, "id", None)
     try:
-        await send_read_acknowledge(peer, message=getattr(raw_event, "message", None))
+        await send_read_acknowledge(peer, message=message, max_id=message_id or 0)
         log.info("mtproto_auto_reply.read_ack")
     except Exception as exc:
         log.bind(error_type=type(exc).__name__).warning("mtproto_auto_reply.read_ack_failed")

@@ -18,11 +18,12 @@ ClockFn = Callable[[], float]
 class HumanLikeSendPolicy:
     """Timing policy shared by MTProto real-user outbound delivery."""
 
-    short_text_seconds: float = 4.0
-    medium_text_seconds: float = 7.0
-    long_text_seconds: float = 11.0
-    very_long_text_seconds: float = 18.0
-    minimum_typing_seconds: float = 2.0
+    short_text_seconds: float = 3.0
+    medium_text_seconds: float = 6.0
+    long_text_seconds: float = 10.0
+    extended_text_seconds: float = 15.0
+    very_long_text_seconds: float = 25.0
+    minimum_typing_seconds: float = 3.0
     minimum_inter_message_seconds: float = 8.0
 
 
@@ -42,6 +43,8 @@ def human_typing_delay_seconds(
         delay = policy.medium_text_seconds
     elif size <= 50:
         delay = policy.long_text_seconds
+    elif size <= 100:
+        delay = policy.extended_text_seconds
     else:
         delay = policy.very_long_text_seconds
     return max(policy.minimum_typing_seconds, delay)
