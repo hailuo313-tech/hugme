@@ -128,6 +128,30 @@ async def _persist_message(
     return msg_id
 
 
+async def _is_managed_telegram_account(db, external_user_id: str) -> bool:
+    """Return True when the sender is one of our own managed Telegram accounts."""
+    if not external_user_id.startswith("tg_"):
+        return False
+    raw_user_id = external_user_id[3:]
+    if not raw_user_id.isdigit():
+        return False
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT 1
+                FROM telegram_accounts
+                WHERE is_active = TRUE
+                  AND user_id = :telegram_user_id
+                LIMIT 1
+                """
+            ),
+            {"telegram_user_id": int(raw_user_id)},
+        )
+    ).fetchone()
+    return row is not None
+
+
 async def handle_mtproto_inbound_auto_reply(
     *,
     client: Any,
@@ -160,6 +184,10 @@ async def handle_mtproto_inbound_auto_reply(
 
     channel = "telegram_real_user"
     async with AsyncSessionLocal() as db:
+        if await _is_managed_telegram_account(db, envelope.external_user_id):
+            log.info("mtproto_auto_reply.managed_account_skip")
+            return
+
         user_id = await _get_or_create_user(db, channel=channel, external_id=envelope.external_user_id)
         conv_id = await _get_or_create_conversation(db, user_id=user_id, channel=channel)
         inbound_msg_id = await _persist_message(
