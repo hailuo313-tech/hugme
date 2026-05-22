@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Literal, Optional
 
@@ -67,7 +68,20 @@ class StandardInboundEnvelope(BaseModel):
 
 
 def schema_spec_path() -> Path:
-    return Path(__file__).resolve().parents[3] / "docs" / "schema_spec.json"
+    candidates = []
+    if os.environ.get("SCHEMA_SPEC_PATH"):
+        candidates.append(Path(os.environ["SCHEMA_SPEC_PATH"]))
+    candidates.extend(
+        [
+            Path("/srv/ops-docs/schema_spec.json"),
+            Path(__file__).resolve().parents[2] / "docs" / "schema_spec.json",
+            Path(__file__).resolve().parents[3] / "docs" / "schema_spec.json",
+        ]
+    )
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return candidates[0]
 
 
 def load_schema_spec() -> dict[str, Any]:
