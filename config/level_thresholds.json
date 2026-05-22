@@ -28,5 +28,10 @@
       "T2, T3, and unknown countries default to C."
     ],
     "notes": "Amounts are gross lifetime spend in USD. Changes require a new signed config revision."
+  },
+  "final_confirmation": {
+    "confirmed_by": "human_owner",
+    "confirmed_on": "2026-05-22",
+    "confirmation_text": "H-01, H-02, H-05, H-07, H-08, H-09, H-10, H-11 all confirmed approved."
   }
 }

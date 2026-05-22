@@ -126,5 +126,10 @@
     "No P0 blocker is open.",
     "Rollback and pause plan is documented.",
     "Decision is GO."
-  ]
+  ],
+  "final_confirmation": {
+    "confirmed_by": "human_owner",
+    "confirmed_on": "2026-05-22",
+    "confirmation_text": "H-01, H-02, H-05, H-07, H-08, H-09, H-10, H-11 all confirmed approved."
+  }
 }
