@@ -594,28 +594,10 @@ function DashboardContent({ operator }: { operator: Operator }) {
               会话
             </span>
             <a
-              href="/admin/memories"
+              href="/admin/telegram-accounts"
               className="text-sm text-slate-400 hover:text-white px-3 py-1 rounded-md hover:bg-slate-700 transition"
             >
-              记忆
-            </a>
-            <a
-              href="/admin/scripts"
-              className="text-sm text-slate-400 hover:text-white px-3 py-1 rounded-md hover:bg-slate-700 transition"
-            >
-              话术库
-            </a>
-            <a
-              href="/admin/characters"
-              className="text-sm text-slate-400 hover:text-white px-3 py-1 rounded-md hover:bg-slate-700 transition"
-            >
-              角色
-            </a>
-            <a
-              href="/admin/push"
-              className="text-sm text-slate-400 hover:text-white px-3 py-1 rounded-md hover:bg-slate-700 transition"
-            >
-              推送
+              TG账号
             </a>
           </nav>
         </div>
@@ -726,14 +708,6 @@ function DashboardContent({ operator }: { operator: Operator }) {
             <p className="text-slate-400 text-sm">
               共 {total} 条会话 · 第 {page} / {totalPages} 页
             </p>
-          </div>
-          <div>
-            <a
-              href="/admin/operator-dashboard"
-              className="px-4 py-2 bg-violet-600 hover:bg-violet-500 rounded-lg text-sm font-medium transition"
-            >
-              坐席看板
-            </a>
           </div>
         </div>
 
@@ -1050,12 +1024,6 @@ function DashboardContent({ operator }: { operator: Operator }) {
                         className="text-sm text-sky-400 hover:text-sky-300 transition"
                       >
                         查看画像
-                      </a>
-                      <a
-                        href={`/admin/memories?user_id=${detail.conversation.user_id}`}
-                        className="text-sm text-violet-400 hover:text-violet-300 transition"
-                      >
-                        查看记忆
                       </a>
                     </div>
                   )}

@@ -13,18 +13,16 @@ interface ModuleItem {
   desc: string;
   href: string;
   metric?: string;
-  status: "online" | "review" | "config";
+  status: "online" | "config";
 }
 
 const statusClass = {
   online: "border-emerald-500/30 text-emerald-300 bg-emerald-500/10",
-  review: "border-amber-500/30 text-amber-300 bg-amber-500/10",
   config: "border-sky-500/30 text-sky-300 bg-sky-500/10",
 };
 
 const statusText = {
   online: "在线",
-  review: "待处理",
   config: "配置",
 };
 
@@ -63,70 +61,21 @@ function AdminHome({ operator }: { operator: Operator }) {
     () => [
       {
         title: "会话总览",
-        desc: "筛选、检索、查看用户对话与精聊轨迹",
+        desc: "筛选、检索、查看用户对话与精聊轨迹。",
         href: "/admin/conversations",
         metric: conversationTotal === null ? "加载中" : `${conversationTotal} 条`,
         status: "online",
       },
       {
-        title: "坐席看板",
-        desc: "接管任务、处理 WAITING_OPERATOR 队列",
-        href: "/admin/operator-dashboard",
-        metric: "实时 WS",
-        status: "review",
-      },
-      {
-        title: "话术库",
-        desc: "维护底料、场景、级别与 persona 过滤",
-        href: "/admin/scripts",
-        metric: "Prompt",
-        status: "config",
-      },
-      {
-        title: "角色",
-        desc: "管理 persona 档案、性格与提示词约束",
-        href: "/admin/characters",
-        metric: "Persona",
-        status: "config",
-      },
-      {
-        title: "记忆",
-        desc: "查询与修正用户画像、长期记忆",
-        href: "/admin/memories",
-        metric: "Profile",
-        status: "online",
-      },
-      {
-        title: "推送",
-        desc: "配置召回、触达与运营通知任务",
-        href: "/admin/push",
-        metric: "Campaign",
-        status: "config",
-      },
-      {
-        title: "TG账号",
-        desc: "管理真人 Telegram 账号、连接状态与会话凭证",
+        title: "TG 账号",
+        desc: "添加真人 Telegram 账号、发送验证码、生成 StringSession 并查看连接状态。",
         href: "/admin/telegram-accounts",
         metric: "Telegram",
         status: "config",
       },
       {
-        title: "反馈",
-        desc: "处理运营反馈、问题归档与验收记录",
-        href: "/admin/feedback",
-        metric: "Review",
-        status: "review",
-      },
-      {
-        title: "媒体",
-        desc: "检查图片、语音、缓存与渲染资源",
-        href: "/admin/media",
-        metric: "Assets",
-        status: "online",
-      },
-      {
         title: "H5 聊天",
-        desc: "验证用户侧聊天、VIP 弹窗与支付跳转",
+        desc: "验证用户侧聊天、VIP 弹窗和支付跳转。",
         href: "/admin/h5/chat",
         metric: "H5",
         status: "online",
@@ -158,28 +107,10 @@ function AdminHome({ operator }: { operator: Operator }) {
                 会话
               </a>
               <a
-                href="/admin/operator-dashboard"
-                className="rounded-md px-3 py-1 text-sm text-slate-400 transition hover:bg-slate-800 hover:text-white"
-              >
-                坐席
-              </a>
-              <a
-                href="/admin/scripts"
-                className="rounded-md px-3 py-1 text-sm text-slate-400 transition hover:bg-slate-800 hover:text-white"
-              >
-                话术库
-              </a>
-              <a
-                href="/admin/characters"
-                className="rounded-md px-3 py-1 text-sm text-slate-400 transition hover:bg-slate-800 hover:text-white"
-              >
-                角色
-              </a>
-              <a
                 href="/admin/telegram-accounts"
                 className="rounded-md px-3 py-1 text-sm text-slate-400 transition hover:bg-slate-800 hover:text-white"
               >
-                TG账号
+                TG 账号
               </a>
             </nav>
           </div>
@@ -201,19 +132,11 @@ function AdminHome({ operator }: { operator: Operator }) {
       </header>
 
       <main className="mx-auto max-w-7xl px-8 py-8">
-        <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <h1 className="mb-2 text-2xl font-semibold">总后台</h1>
-            <p className="text-sm text-slate-400">
-              从这里进入会话、坐席、话术、角色、记忆、推送、TG账号和验收模块。
-            </p>
-          </div>
-          <a
-            href="/admin/operator-dashboard"
-            className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium transition hover:bg-violet-500"
-          >
-            打开坐席看板
-          </a>
+        <div className="mb-6">
+          <h1 className="mb-2 text-2xl font-semibold">总后台</h1>
+          <p className="text-sm text-slate-400">
+            只保留当前项目正在使用的入口，旧版独立页面已下线。
+          </p>
         </div>
 
         {loadError && (
@@ -223,7 +146,7 @@ function AdminHome({ operator }: { operator: Operator }) {
         )}
 
         <section className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-3">
-          <SummaryBlock label="核心入口" value="10 个模块" />
+          <SummaryBlock label="保留模块" value={`${modules.length} 个入口`} />
           <SummaryBlock label="会话数据" value={conversationTotal === null ? "加载中" : `${conversationTotal} 条`} />
           <SummaryBlock label="当前身份" value={operator.role} />
         </section>
