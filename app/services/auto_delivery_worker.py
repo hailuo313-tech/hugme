@@ -550,11 +550,11 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
 def start_scheduler() -> None:
     """Start the auto-delivery worker scheduler."""
     global _scheduler
-    if _scheduler is None:
+    if AsyncIOScheduler is None or IntervalTrigger is None:
         logger.warning("APScheduler not available, auto-delivery worker scheduler not started")
         return
 
-    if _scheduler.running:
+    if _scheduler is not None and _scheduler.running:
         logger.warning("Auto-delivery worker scheduler already running")
         return
 

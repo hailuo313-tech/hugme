@@ -118,7 +118,8 @@ async def test_connect_account_success(account_manager):
     account_id = uuid4()
 
     with patch("app.services.telegram_account_manager.get_async_session") as mock_session_gen, \
-         patch("app.services.telegram_account_manager.TelegramClient") as mock_client_class:
+         patch("app.services.telegram_account_manager.TelegramClient") as mock_client_class, \
+         patch.object(account_manager, "_register_inbound_handler", new_callable=AsyncMock) as register_handler:
 
         # Mock database session
         mock_session = AsyncMock()
@@ -152,6 +153,7 @@ async def test_connect_account_success(account_manager):
         assert success is True
         mock_client.connect.assert_called_once()
         assert account_id in account_manager.clients
+        register_handler.assert_awaited_once()
 
 
 @pytest.mark.asyncio

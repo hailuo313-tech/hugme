@@ -84,6 +84,37 @@ def test_p3_15_timeout_fallback_message_detection():
     assert not worker._is_timeout_fallback_message({"message_type": "text", "metadata": {}})
 
 
+def test_p3_15_start_scheduler_initializes_scheduler(monkeypatch):
+    class _FakeScheduler:
+        def __init__(self):
+            self.running = False
+            self.jobs = []
+
+        def add_job(self, *args, **kwargs):
+            self.jobs.append((args, kwargs))
+
+        def start(self):
+            self.running = True
+
+    created_tasks = []
+
+    monkeypatch.setattr(worker, "_scheduler", None)
+    monkeypatch.setattr(worker, "AsyncIOScheduler", _FakeScheduler)
+    monkeypatch.setattr(worker, "IntervalTrigger", lambda **kwargs: ("interval", kwargs))
+    def _capture_task(coro):
+        created_tasks.append(coro)
+        coro.close()
+
+    monkeypatch.setattr(worker.asyncio, "create_task", _capture_task)
+
+    worker.start_scheduler()
+
+    assert worker._scheduler is not None
+    assert worker._scheduler.running is True
+    assert worker._scheduler.jobs
+    assert created_tasks
+
+
 @pytest.mark.asyncio
 async def test_p3_15_send_via_account_pool_uses_human_delay(monkeypatch):
     fake_pool = _FakePool()
