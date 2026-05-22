@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+from pathlib import Path
 
 import pytest
 
@@ -108,3 +109,13 @@ def test_p3_19_traceability_contract_requires_all_steps_have_evidence():
 
     assert missing_hooks == []
     assert all(hit["matched"] or hit["degradation"] for hit in hits)
+
+
+def test_p3_19_premium_trace_uses_user_profiles_level_column():
+    source = (Path(__file__).resolve().parents[1] / "app" / "services" / "archive_service.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "COALESCE(p.user_level, 'C') AS user_level" in source
+    assert "LEFT JOIN user_profiles p ON p.user_id = u.id" in source
+    assert "u.level AS user_level" not in source

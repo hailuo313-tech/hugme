@@ -129,11 +129,12 @@ async def _get_message_details(
                 m.conversation_id,
                 m.sender_type,
                 m.content,
-                u.level,
+                COALESCE(p.user_level, 'C') AS user_level,
                 u.channel,
                 m.created_at
             FROM messages m
             JOIN users u ON m.user_id = u.id
+            LEFT JOIN user_profiles p ON p.user_id = u.id
             WHERE m.id = :message_id
             """
         ),
@@ -425,11 +426,12 @@ async def get_premium_chat_trace(
                         c.state,
                         c.created_at,
                         c.updated_at,
-                        u.level AS user_level,
+                        COALESCE(p.user_level, 'C') AS user_level,
                         u.external_id,
                         u.nickname
                     FROM conversations c
                     JOIN users u ON c.user_id = u.id
+                    LEFT JOIN user_profiles p ON p.user_id = u.id
                     WHERE c.id = :conversation_id
                     """
                 ),
