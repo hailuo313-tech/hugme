@@ -31,4 +31,6 @@ def test_conversation_dashboard_keeps_business_api_integrations() -> None:
     assert 'apiFetch<DetailResponse>(`/admin/conversations/${conversationId}`)' in page
     assert 'apiFetch<{ items: ScriptSuggestion[] }>("/scripts/suggest"' in page
     assert 'apiFetch<ScriptTraceResponse>(`/archive/premium-chat/${conversationId}/trace`)' in page
+    assert "if (isPremium(response.conversation))" in page
+    assert "精聊话术轨迹仅对 S/A 用户启用" in page
     assert "`/ops-ai/conversations/${detail.conversation.conversation_id}/assist`" in page
