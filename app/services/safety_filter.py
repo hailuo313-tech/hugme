@@ -22,6 +22,7 @@ class SafetyRedline:
     category: str
     reason: str
     patterns: tuple[re.Pattern[str], ...] = field(default_factory=tuple)
+    enabled: bool = True
 
 
 @dataclass(frozen=True)
@@ -74,6 +75,8 @@ class SafetyFilter:
     def _evaluate_redlines(self, text: str) -> SafetyFilterResult:
         value = text or ""
         for redline in self.load_if_changed():
+            if not redline.enabled:
+                continue
             if any(pattern.search(value) for pattern in redline.patterns):
                 return SafetyFilterResult(
                     blocked=True,
@@ -95,6 +98,7 @@ def _redline_from_dict(data: dict[str, Any]) -> SafetyRedline:
         category=str(data["category"]),
         reason=str(data["reason"]),
         patterns=tuple(re.compile(str(p), re.I | re.U) for p in data.get("patterns", [])),
+        enabled=bool(data.get("enabled", True)),
     )
 
 
