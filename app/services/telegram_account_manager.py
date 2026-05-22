@@ -5,6 +5,7 @@ import inspect
 from datetime import datetime
 from typing import Dict, List, Optional
 from uuid import UUID
+from uuid import uuid4
 
 from cryptography.fernet import Fernet
 from loguru import logger
@@ -191,6 +192,7 @@ class TelegramAccountManager:
 
         session = await _next_session()
         account = TelegramAccount(
+            id=uuid4(),
             phone=phone,
             session_string=encrypted_session,
             is_bot=is_bot,

@@ -2,10 +2,11 @@
 
 from datetime import datetime
 from typing import Optional
-from uuid import UUID
+from uuid import UUID as PyUUID
+from uuid import uuid4
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, Column, DateTime, Index, String, Text, event
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Index, String, Text
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -17,7 +18,7 @@ class TelegramAccount(Base):
 
     __tablename__ = "telegram_accounts"
 
-    id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    id: Mapped[PyUUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     phone: Mapped[str] = mapped_column(String(20), unique=True, nullable=False, index=True)
     session_string: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(
