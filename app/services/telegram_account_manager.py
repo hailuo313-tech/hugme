@@ -82,13 +82,8 @@ class TelegramAccountManager:
                 return True
 
             try:
-                # Update status to connecting
-                session = await _next_session()
-                account.status = "connecting"
-                session.add(account)
-                await session.commit()
+                await self._update_account_status(account_id, "connecting")
 
-                # Decrypt session string
                 session_string = self._decrypt_session(account.session_string)
 
                 # Create Telegram client
@@ -114,16 +109,7 @@ class TelegramAccountManager:
                 me = await client.get_me()
                 logger.info(f"Connected to Telegram account: {me.first_name} (@{me.username or 'no username'})")
 
-                # Update account info
-                session = await _next_session()
-                account.status = "connected"
-                account.display_name = me.first_name or ""
-                account.username = me.username
-                account.user_id = me.id
-                account.last_connected_at = datetime.utcnow()
-                account.error_message = None
-                session.add(account)
-                await session.commit()
+                await self._mark_account_connected(account_id, me)
 
                 # Store client
                 self.clients[account_id] = client
@@ -218,6 +204,20 @@ class TelegramAccountManager:
             account.error_message = error_message
             if status == "error":
                 account.last_error_at = datetime.utcnow()
+            session.add(account)
+            await session.commit()
+
+    async def _mark_account_connected(self, account_id: UUID, me) -> None:
+        """Persist connected account metadata using the current database session."""
+        session = await _next_session()
+        account = await session.get(TelegramAccount, account_id)
+        if account:
+            account.status = "connected"
+            account.display_name = getattr(me, "first_name", None) or ""
+            account.username = getattr(me, "username", None)
+            account.user_id = getattr(me, "id", None)
+            account.last_connected_at = datetime.utcnow()
+            account.error_message = None
             session.add(account)
             await session.commit()
 
