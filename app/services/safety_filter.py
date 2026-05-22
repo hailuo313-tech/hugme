@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -13,7 +14,27 @@ from loguru import logger
 from services.content_safety import evaluate_inbound_content_safety
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_REDLINES_PATH = _REPO_ROOT / "config" / "safety_filter_redlines.json"
+
+
+def _default_redlines_path() -> Path:
+    env_dir = os.environ.get("ERIS_CONFIG_DIR")
+    candidates = []
+    if env_dir:
+        candidates.append(Path(env_dir) / "safety_filter_redlines.json")
+    candidates.extend(
+        [
+            _REPO_ROOT / "config" / "safety_filter_redlines.json",
+            Path(__file__).resolve().parents[1] / "config" / "safety_filter_redlines.json",
+            Path("/app/config/safety_filter_redlines.json"),
+        ]
+    )
+    for path in candidates:
+        if path.exists():
+            return path
+    return candidates[0]
+
+
+DEFAULT_REDLINES_PATH = _default_redlines_path()
 
 
 @dataclass(frozen=True)

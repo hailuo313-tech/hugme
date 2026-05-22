@@ -19,8 +19,28 @@ from core.database import get_db
 router = APIRouter()
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-INTENT_RULES_PATH = REPO_ROOT / "config" / "intent_keyword_rules.json"
-SAFETY_REDLINES_PATH = REPO_ROOT / "config" / "safety_filter_redlines.json"
+
+
+def _config_path(filename: str) -> Path:
+    env_dir = os.environ.get("ERIS_CONFIG_DIR")
+    candidates = []
+    if env_dir:
+        candidates.append(Path(env_dir) / filename)
+    candidates.extend(
+        [
+            REPO_ROOT / "config" / filename,
+            Path(__file__).resolve().parents[1] / "config" / filename,
+            Path("/app/config") / filename,
+        ]
+    )
+    for path in candidates:
+        if path.exists():
+            return path
+    return candidates[0]
+
+
+INTENT_RULES_PATH = _config_path("intent_keyword_rules.json")
+SAFETY_REDLINES_PATH = _config_path("safety_filter_redlines.json")
 
 SCRIPT_STATUSES = {"draft", "approved", "archived"}
 PERSONA_STATUSES = {"draft", "active", "inactive", "archived"}
