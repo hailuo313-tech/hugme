@@ -58,7 +58,7 @@ def test_business_flow_admin_pages_exist() -> None:
         "admin/app/ai-ops/page.tsx": ["script_match", "H-03", "H-04", "P3-21"],
         "admin/app/approvals/page.tsx": ["H-01", "H-07", "H-10", "H-11"],
         "admin/app/delivery/page.tsx": ["P4-09", "P4-10", "P5-08"],
-        "admin/app/data/page.tsx": ["链接到 App 转化漏斗", "/admin/attribution/summary", "高转化话术"],
+        "admin/app/data/page.tsx": ["链接与 App 转化", "/admin/attribution/summary", "Top 点击话术"],
     }
 
     for path, needles in pages.items():
@@ -75,6 +75,29 @@ def test_approvals_page_shows_confirmed_statuses() -> None:
     assert "已批准" in page
     assert "已签字" in page
     assert "GO" in page
+
+
+def test_data_page_covers_full_attribution_dashboard() -> None:
+    page = read("admin/app/data/page.tsx")
+
+    for needle in [
+        "今日链接点击人数",
+        "点击率",
+        "下载转化率",
+        "注册转化率",
+        "付费转化率",
+        "点击到注册平均耗时",
+        "点击到首付平均耗时",
+        "Top 下载话术",
+        "Top 注册话术",
+        "Top 付费话术",
+        "年龄段点击排行",
+        "各等级点击与付费",
+        "国家 / T1",
+        "TG 账号转化",
+        "单条链接明细",
+    ]:
+        assert needle in page
 
 
 def test_legacy_admin_pages_are_removed() -> None:

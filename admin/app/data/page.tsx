@@ -5,34 +5,106 @@ import AuthGate from "@/components/AuthGate";
 import AdminFrame from "@/components/AdminFrame";
 import { apiFetch, Operator } from "@/lib/auth";
 
+interface Overview {
+  sent_links: number;
+  sent_users: number;
+  exposed_users: number;
+  clicked_links: number;
+  click_events: number;
+  click_users: number;
+  unique_click_users: number;
+  today_click_users: number;
+  download_page_users: number;
+  download_users: number;
+  register_users: number;
+  paid_users: number;
+  upgraded_paid_users: number;
+  revenue_cents: number;
+  click_rate: number;
+  click_to_download_page_rate: number;
+  click_to_download_rate: number;
+  download_to_register_rate: number;
+  click_to_register_rate: number;
+  register_to_pay_rate: number;
+  click_to_pay_rate: number;
+  avg_sent_to_click_seconds: number;
+  avg_click_to_register_seconds: number;
+  avg_click_to_payment_seconds: number;
+}
+
+interface DimensionRow {
+  key: string;
+  country_code?: string;
+  is_t1_country?: boolean;
+  exposures: number;
+  clicks: number;
+  click_users: number;
+  downloads: number;
+  registrations: number;
+  payments: number;
+  revenue_cents: number;
+}
+
+interface ScriptRow {
+  script_key: string;
+  script_template_id?: string | null;
+  script_hit_id?: string | null;
+  intent?: string | null;
+  persona?: string | null;
+  scene_step?: string | null;
+  sender_account_id?: string | null;
+  clicks: number;
+  downloads: number;
+  registrations: number;
+  payments: number;
+  revenue_cents: number;
+}
+
+interface LinkRow {
+  tracking_id: string;
+  destination_url: string;
+  script_key: string;
+  sent_at?: string | null;
+  sender_account_id?: string | null;
+  platform?: string | null;
+  clicks: number;
+  click_users: number;
+  first_click_at?: string | null;
+  avg_seconds_to_click: number;
+}
+
 interface AttributionSummary {
   days: number;
-  overview: {
-    clicked_links: number;
-    click_users: number;
-    download_users: number;
-    register_users: number;
-    paid_users: number;
-    revenue_cents: number;
-    click_to_download_rate: number;
-    download_to_register_rate: number;
-    register_to_pay_rate: number;
-  };
-  by_country: Array<{ country_code: string; clicks: number; payments: number }>;
-  top_scripts: Array<{
-    script_key: string;
-    clicks: number;
-    downloads: number;
-    registrations: number;
-    payments: number;
-    revenue_cents: number;
-  }>;
+  overview: Overview;
+  funnel: Array<{ step: string; users: number; events: number }>;
+  countries: DimensionRow[];
+  age_bands: DimensionRow[];
+  levels: DimensionRow[];
+  personas: DimensionRow[];
+  intents: DimensionRow[];
+  platforms: DimensionRow[];
+  devices: DimensionRow[];
+  sender_accounts: DimensionRow[];
+  script_categories: DimensionRow[];
+  top_click_scripts: ScriptRow[];
+  top_download_scripts: ScriptRow[];
+  top_register_scripts: ScriptRow[];
+  top_payment_scripts: ScriptRow[];
+  links: LinkRow[];
 }
 
 const formatUsd = (cents: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format((cents || 0) / 100);
 
 const formatRate = (value: number) => `${((value || 0) * 100).toFixed(1)}%`;
+
+function formatDuration(seconds: number) {
+  if (!seconds) return "-";
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+  if (seconds < 86400) return `${(seconds / 3600).toFixed(1)}h`;
+  return `${(seconds / 86400).toFixed(1)}d`;
+}
 
 export default function DataPage() {
   return (
@@ -70,26 +142,18 @@ function DataDashboard({ operator }: { operator: Operator }) {
   }, [days]);
 
   const overview = summary?.overview;
-  const funnel = useMemo(
-    () => [
-      { label: "链接点击用户", value: overview?.click_users ?? 0 },
-      { label: "下载用户", value: overview?.download_users ?? 0, rate: formatRate(overview?.click_to_download_rate ?? 0) },
-      { label: "注册用户", value: overview?.register_users ?? 0, rate: formatRate(overview?.download_to_register_rate ?? 0) },
-      { label: "付费用户", value: overview?.paid_users ?? 0, rate: formatRate(overview?.register_to_pay_rate ?? 0) },
-    ],
-    [overview]
-  );
+  const funnel = useMemo(() => summary?.funnel ?? [], [summary]);
 
   return (
     <AdminFrame
       operator={operator}
       active="data"
-      title="数据总览"
-      subtitle="监控话术链接点击、国家/年龄分布、App 下载注册与付费归因，帮助判断哪些话术真正带来转化。"
+      title="链接与 App 转化"
+      subtitle="追踪话术发送、链接曝光、点击、下载、注册、付费和升 A/S 的完整归因链路。"
     >
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex rounded-lg border border-slate-800 bg-slate-900 p-1">
-          {[7, 14, 30, 90].map((value) => (
+          {[1, 7, 14, 30, 90].map((value) => (
             <button
               key={value}
               onClick={() => setDays(value)}
@@ -111,48 +175,51 @@ function DataDashboard({ operator }: { operator: Operator }) {
       )}
 
       <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-4">
-        <MetricCard label="被点击链接" value={overview?.clicked_links ?? 0} />
-        <MetricCard label="点击用户" value={overview?.click_users ?? 0} />
-        <MetricCard label="付费用户" value={overview?.paid_users ?? 0} />
-        <MetricCard label="归因收入" value={formatUsd(overview?.revenue_cents ?? 0)} />
+        <MetricCard label="今日链接点击人数" value={overview?.today_click_users ?? 0} />
+        <MetricCard label="点击率" value={formatRate(overview?.click_rate ?? 0)} />
+        <MetricCard label="下载转化率" value={formatRate(overview?.click_to_download_rate ?? 0)} />
+        <MetricCard label="点击后付费金额" value={formatUsd(overview?.revenue_cents ?? 0)} />
+        <MetricCard label="注册转化率" value={formatRate(overview?.click_to_register_rate ?? 0)} />
+        <MetricCard label="付费转化率" value={formatRate(overview?.click_to_pay_rate ?? 0)} />
+        <MetricCard label="点击到注册平均耗时" value={formatDuration(overview?.avg_click_to_register_seconds ?? 0)} />
+        <MetricCard label="点击到首付平均耗时" value={formatDuration(overview?.avg_click_to_payment_seconds ?? 0)} />
       </section>
 
       <section className="mb-6 rounded-lg border border-slate-800 bg-slate-900">
         <div className="border-b border-slate-800 px-5 py-4">
-          <h2 className="text-lg font-semibold">链接到 App 转化漏斗</h2>
+          <h2 className="text-lg font-semibold">完整转化漏斗</h2>
         </div>
-        <div className="grid grid-cols-1 divide-y divide-slate-800 md:grid-cols-4 md:divide-x md:divide-y-0">
+        <div className="grid grid-cols-1 divide-y divide-slate-800 md:grid-cols-4 md:divide-x md:divide-y-0 xl:grid-cols-8">
           {funnel.map((step) => (
-            <div key={step.label} className="px-5 py-5">
-              <div className="text-sm text-slate-500">{step.label}</div>
-              <div className="mt-2 text-2xl font-semibold text-white">{step.value}</div>
-              {step.rate && <div className="mt-2 text-sm text-emerald-300">上一步转化 {step.rate}</div>}
+            <div key={step.step} className="px-5 py-5">
+              <div className="text-sm text-slate-500">{step.step}</div>
+              <div className="mt-2 text-2xl font-semibold text-white">{step.users}</div>
+              <div className="mt-2 text-xs text-slate-500">事件 {step.events}</div>
             </div>
           ))}
         </div>
       </section>
 
-      <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <TablePanel
-          title="国家点击与付费"
-          empty="暂无国家数据"
-          headers={["国家", "点击", "付费"]}
-          rows={(summary?.by_country ?? []).map((row) => [row.country_code, row.clicks, row.payments])}
-        />
-        <TablePanel
-          title="高转化话术"
-          empty="暂无话术归因"
-          headers={["话术/命中", "点击", "下载", "注册", "付费", "收入"]}
-          rows={(summary?.top_scripts ?? []).map((row) => [
-            row.script_key,
-            row.clicks,
-            row.downloads,
-            row.registrations,
-            row.payments,
-            formatUsd(row.revenue_cents),
-          ])}
-        />
+      <section className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <ScriptPanel title="Top 点击话术" rows={summary?.top_click_scripts ?? []} metric="clicks" />
+        <ScriptPanel title="Top 下载话术" rows={summary?.top_download_scripts ?? []} metric="downloads" />
+        <ScriptPanel title="Top 注册话术" rows={summary?.top_register_scripts ?? []} metric="registrations" />
+        <ScriptPanel title="Top 付费话术" rows={summary?.top_payment_scripts ?? []} metric="payments" />
       </section>
+
+      <section className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <DimensionPanel title="国家点击排行" rows={summary?.countries ?? []} label="国家 / T1" />
+        <DimensionPanel title="年龄段点击排行" rows={summary?.age_bands ?? []} label="年龄段" />
+        <DimensionPanel title="各等级点击与付费" rows={summary?.levels ?? []} label="等级" />
+        <DimensionPanel title="persona 转化" rows={summary?.personas ?? []} label="persona" />
+        <DimensionPanel title="intent 转化" rows={summary?.intents ?? []} label="intent" />
+        <DimensionPanel title="话术类目转化" rows={summary?.script_categories ?? []} label="类目" />
+        <DimensionPanel title="TG 账号转化" rows={summary?.sender_accounts ?? []} label="账号" />
+        <DimensionPanel title="渠道转化" rows={summary?.platforms ?? []} label="渠道" />
+        <DimensionPanel title="设备系统转化" rows={summary?.devices ?? []} label="设备" />
+      </section>
+
+      <LinkPanel rows={summary?.links ?? []} />
     </AdminFrame>
   );
 }
@@ -166,50 +233,109 @@ function MetricCard({ label, value }: { label: string; value: number | string })
   );
 }
 
-function TablePanel({
-  title,
-  empty,
-  headers,
-  rows,
-}: {
-  title: string;
-  empty: string;
-  headers: string[];
-  rows: Array<Array<string | number>>;
-}) {
+function ScriptPanel({ title, rows, metric }: { title: string; rows: ScriptRow[]; metric: keyof ScriptRow }) {
+  return (
+    <Panel title={title} empty="暂无话术归因">
+      <table className="min-w-full text-left text-sm">
+        <thead className="bg-slate-950/50 text-slate-500">
+          <tr>
+            <th className="px-5 py-3 font-medium">话术</th>
+            <th className="px-5 py-3 font-medium">intent / persona</th>
+            <th className="px-5 py-3 font-medium">指标</th>
+            <th className="px-5 py-3 font-medium">收入</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-800">
+          {rows.map((row) => (
+            <tr key={`${title}-${row.script_key}`}>
+              <td className="px-5 py-4 text-slate-300">
+                <div className="font-mono text-xs text-sky-300">{row.script_key}</div>
+                <div className="mt-1 text-xs text-slate-500">{row.scene_step || "-"} · {row.sender_account_id || "-"}</div>
+              </td>
+              <td className="px-5 py-4 text-slate-400">{row.intent || "-"} / {row.persona || "-"}</td>
+              <td className="px-5 py-4 text-slate-100">{String(row[metric] ?? 0)}</td>
+              <td className="px-5 py-4 text-slate-300">{formatUsd(row.revenue_cents)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Panel>
+  );
+}
+
+function DimensionPanel({ title, rows, label }: { title: string; rows: DimensionRow[]; label: string }) {
+  return (
+    <Panel title={title} empty="暂无维度数据">
+      <table className="min-w-full text-left text-sm">
+        <thead className="bg-slate-950/50 text-slate-500">
+          <tr>
+            <th className="px-5 py-3 font-medium">{label}</th>
+            <th className="px-5 py-3 font-medium">点击</th>
+            <th className="px-5 py-3 font-medium">下载</th>
+            <th className="px-5 py-3 font-medium">注册</th>
+            <th className="px-5 py-3 font-medium">付费</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-800">
+          {rows.map((row) => (
+            <tr key={`${title}-${row.country_code || row.key}`}>
+              <td className="px-5 py-4 text-slate-300">
+                {row.country_code || row.key}
+                {row.is_t1_country && <span className="ml-2 rounded-full bg-sky-500/10 px-2 py-0.5 text-xs text-sky-300">T1</span>}
+              </td>
+              <td className="px-5 py-4 text-slate-300">{row.clicks}</td>
+              <td className="px-5 py-4 text-slate-300">{row.downloads}</td>
+              <td className="px-5 py-4 text-slate-300">{row.registrations}</td>
+              <td className="px-5 py-4 text-slate-300">{row.payments}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Panel>
+  );
+}
+
+function LinkPanel({ rows }: { rows: LinkRow[] }) {
+  return (
+    <Panel title="单条链接明细" empty="暂无链接数据">
+      <table className="min-w-full text-left text-sm">
+        <thead className="bg-slate-950/50 text-slate-500">
+          <tr>
+            <th className="px-5 py-3 font-medium">tracking_id</th>
+            <th className="px-5 py-3 font-medium">话术</th>
+            <th className="px-5 py-3 font-medium">渠道/账号</th>
+            <th className="px-5 py-3 font-medium">点击</th>
+            <th className="px-5 py-3 font-medium">首点时间</th>
+            <th className="px-5 py-3 font-medium">平均点击耗时</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-800">
+          {rows.map((row) => (
+            <tr key={row.tracking_id}>
+              <td className="px-5 py-4 font-mono text-xs text-sky-300">{row.tracking_id}</td>
+              <td className="px-5 py-4 text-slate-300">{row.script_key}</td>
+              <td className="px-5 py-4 text-slate-400">{row.platform || "-"} / {row.sender_account_id || "-"}</td>
+              <td className="px-5 py-4 text-slate-300">{row.clicks} / {row.click_users}</td>
+              <td className="px-5 py-4 text-slate-400">{row.first_click_at || "-"}</td>
+              <td className="px-5 py-4 text-slate-300">{formatDuration(row.avg_seconds_to_click)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Panel>
+  );
+}
+
+function Panel({ title, empty, children }: { title: string; empty: string; children: React.ReactNode }) {
+  const hasRows = String(children).length > 0;
   return (
     <div className="overflow-hidden rounded-lg border border-slate-800 bg-slate-900">
       <div className="border-b border-slate-800 px-5 py-4">
         <h2 className="text-lg font-semibold">{title}</h2>
       </div>
-      {rows.length === 0 ? (
-        <div className="px-5 py-8 text-sm text-slate-500">{empty}</div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-sm">
-            <thead className="bg-slate-950/50 text-slate-500">
-              <tr>
-                {headers.map((header) => (
-                  <th key={header} className="whitespace-nowrap px-5 py-3 font-medium">
-                    {header}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800">
-              {rows.map((row, rowIndex) => (
-                <tr key={rowIndex}>
-                  {row.map((cell, cellIndex) => (
-                    <td key={cellIndex} className="whitespace-nowrap px-5 py-4 text-slate-300">
-                      {cell}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <div className="overflow-x-auto">
+        {hasRows ? children : <div className="px-5 py-8 text-sm text-slate-500">{empty}</div>}
+      </div>
     </div>
   );
 }

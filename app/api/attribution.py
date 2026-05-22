@@ -33,6 +33,10 @@ class AttributionLinkCreate(BaseModel):
     platform: str | None = None
     persona_slug: str | None = None
     intent: str | None = None
+    sender_account_id: str | None = None
+    scene_step: str | None = None
+    script_category: str | None = None
+    is_t1_country: bool | None = None
     country_code: str | None = None
     age: int | None = Field(default=None, ge=0, le=120)
     user_level: str | None = None
@@ -67,7 +71,7 @@ class AttributionEventCreate(BaseModel):
     @field_validator("event_type")
     @classmethod
     def _event_type(cls, value: str) -> str:
-        if value not in ALLOWED_EVENT_TYPES - {"click", "payment"}:
+        if value not in ALLOWED_EVENT_TYPES - {"link_exposed", "click", "payment"}:
             raise ValueError("event_type must be download_page, download, or app_register")
         return value
 
@@ -102,6 +106,10 @@ async def create_attribution_link(
         platform=data.platform,
         persona_slug=data.persona_slug,
         intent=data.intent,
+        sender_account_id=data.sender_account_id,
+        scene_step=data.scene_step,
+        script_category=data.script_category,
+        is_t1_country=data.is_t1_country,
         country_code=data.country_code,
         age=data.age,
         user_level=data.user_level,
@@ -175,6 +183,30 @@ async def record_app_attribution_event(
         referrer=request.headers.get("referer"),
         metadata_json=json.dumps(data.metadata, ensure_ascii=False),
     )
+    if data.event_type == "app_register" and data.app_user_id:
+        await db.execute(
+            text(
+                """
+                INSERT INTO app_user_attribution_bindings (
+                    app_user_id, telegram_user_id, tracking_id, registered_at, metadata
+                )
+                VALUES (
+                    :app_user_id, :telegram_user_id, :tracking_id, NOW(), CAST(:metadata AS JSONB)
+                )
+                ON CONFLICT (app_user_id) DO UPDATE
+                SET telegram_user_id = COALESCE(app_user_attribution_bindings.telegram_user_id, EXCLUDED.telegram_user_id),
+                    tracking_id = COALESCE(app_user_attribution_bindings.tracking_id, EXCLUDED.tracking_id),
+                    registered_at = COALESCE(app_user_attribution_bindings.registered_at, EXCLUDED.registered_at),
+                    metadata = app_user_attribution_bindings.metadata || EXCLUDED.metadata
+                """
+            ),
+            {
+                "app_user_id": data.app_user_id,
+                "telegram_user_id": data.user_id,
+                "tracking_id": data.tracking_id,
+                "metadata": json.dumps(data.metadata, ensure_ascii=False),
+            },
+        )
     await db.commit()
     return {"status": "accepted", "tracking_id": data.tracking_id}
 
@@ -190,63 +222,192 @@ async def admin_attribution_summary(
         await db.execute(
             text(
                 """
-                WITH events AS (
+                WITH links AS (
                     SELECT *
+                    FROM attribution_links
+                    WHERE sent_at >= NOW() - (:days || ' days')::interval
+                       OR created_at >= NOW() - (:days || ' days')::interval
+                ),
+                events AS (
+                    SELECT e.*
+                    FROM attribution_events e
+                    WHERE e.created_at >= NOW() - (:days || ' days')::interval
+                ),
+                first_events AS (
+                    SELECT
+                        tracking_id,
+                        MIN(created_at) FILTER (WHERE event_type = 'click') AS first_click_at,
+                        MIN(created_at) FILTER (WHERE event_type = 'download_page') AS first_download_page_at,
+                        MIN(created_at) FILTER (WHERE event_type = 'download') AS first_download_at,
+                        MIN(created_at) FILTER (WHERE event_type = 'app_register') AS first_register_at,
+                        MIN(created_at) FILTER (WHERE event_type = 'payment') AS first_payment_at
                     FROM attribution_events
-                    WHERE created_at >= NOW() - (:days || ' days')::interval
+                    GROUP BY tracking_id
                 )
                 SELECT
-                    COUNT(DISTINCT tracking_id) FILTER (WHERE event_type = 'click') AS clicked_links,
-                    COUNT(DISTINCT user_id) FILTER (WHERE event_type = 'click') AS click_users,
-                    COUNT(DISTINCT user_id) FILTER (WHERE event_type = 'download') AS download_users,
-                    COUNT(DISTINCT COALESCE(app_user_id, user_id::text)) FILTER (WHERE event_type = 'app_register') AS register_users,
-                    COUNT(DISTINCT user_id) FILTER (WHERE event_type = 'payment') AS paid_users,
-                    COALESCE(SUM(amount_cents) FILTER (WHERE event_type = 'payment'), 0) AS revenue_cents
-                FROM events
+                    COUNT(DISTINCT l.tracking_id) AS sent_links,
+                    COUNT(DISTINCT l.user_id) AS sent_users,
+                    COUNT(DISTINCT e.tracking_id) FILTER (WHERE e.event_type = 'link_exposed') AS exposed_links,
+                    COUNT(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'link_exposed') AS exposed_users,
+                    COUNT(DISTINCT e.tracking_id) FILTER (WHERE e.event_type = 'click') AS clicked_links,
+                    COUNT(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'click') AS click_users,
+                    COUNT(*) FILTER (WHERE e.event_type = 'click') AS click_events,
+                    COUNT(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'download_page') AS download_page_users,
+                    COUNT(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'download') AS download_users,
+                    COUNT(DISTINCT COALESCE(e.app_user_id, e.user_id::text)) FILTER (WHERE e.event_type = 'app_register') AS register_users,
+                    COUNT(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'payment') AS paid_users,
+                    COALESCE(SUM(e.amount_cents) FILTER (WHERE e.event_type = 'payment'), 0) AS revenue_cents,
+                    COUNT(DISTINCT e.user_id) FILTER (
+                        WHERE e.event_type = 'payment' AND e.user_level IN ('A', 'S')
+                    ) AS upgraded_paid_users,
+                    COUNT(DISTINCT e.user_id) FILTER (
+                        WHERE e.event_type = 'click' AND e.created_at::date = CURRENT_DATE
+                    ) AS today_click_users,
+                    COALESCE(AVG(EXTRACT(EPOCH FROM (f.first_click_at - COALESCE(l.sent_at, l.created_at)))) FILTER (
+                        WHERE f.first_click_at IS NOT NULL
+                    ), 0) AS avg_sent_to_click_seconds,
+                    COALESCE(AVG(EXTRACT(EPOCH FROM (f.first_register_at - f.first_click_at))) FILTER (
+                        WHERE f.first_click_at IS NOT NULL AND f.first_register_at IS NOT NULL
+                    ), 0) AS avg_click_to_register_seconds,
+                    COALESCE(AVG(EXTRACT(EPOCH FROM (f.first_payment_at - f.first_click_at))) FILTER (
+                        WHERE f.first_click_at IS NOT NULL AND f.first_payment_at IS NOT NULL
+                    ), 0) AS avg_click_to_payment_seconds
+                FROM links l
+                LEFT JOIN events e ON e.tracking_id = l.tracking_id
+                LEFT JOIN first_events f ON f.tracking_id = l.tracking_id
                 """
             ),
             params,
         )
     ).fetchone()
-    country_rows = (
-        await db.execute(
-            text(
-                """
-                SELECT COALESCE(country_code, 'UNKNOWN') AS country_code,
-                       COUNT(*) FILTER (WHERE event_type = 'click') AS clicks,
-                       COUNT(*) FILTER (WHERE event_type = 'payment') AS payments
-                FROM attribution_events
-                WHERE created_at >= NOW() - (:days || ' days')::interval
-                GROUP BY 1
-                ORDER BY clicks DESC, payments DESC
-                LIMIT 10
-                """
+
+    async def fetch_rows(sql: str) -> list[Any]:
+        return list((await db.execute(text(sql), params)).fetchall())
+
+    dimension_sql = """
+        SELECT
+            {key_expr} AS key,
+            COUNT(*) FILTER (WHERE e.event_type = 'link_exposed') AS exposures,
+            COUNT(*) FILTER (WHERE e.event_type = 'click') AS clicks,
+            COUNT(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'click') AS click_users,
+            COUNT(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'download') AS downloads,
+            COUNT(DISTINCT COALESCE(e.app_user_id, e.user_id::text)) FILTER (WHERE e.event_type = 'app_register') AS registrations,
+            COUNT(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'payment') AS payments,
+            COALESCE(SUM(e.amount_cents) FILTER (WHERE e.event_type = 'payment'), 0) AS revenue_cents
+        FROM attribution_events e
+        LEFT JOIN attribution_links l ON l.tracking_id = e.tracking_id
+        WHERE e.created_at >= NOW() - (:days || ' days')::interval
+        GROUP BY 1
+        ORDER BY {order_expr} DESC, clicks DESC
+        LIMIT 10
+    """
+    country_rows = await fetch_rows(
+        """
+        SELECT
+            COALESCE(e.country_code, l.country_code, 'UNKNOWN') AS key,
+            COUNT(*) FILTER (WHERE e.event_type = 'link_exposed') AS exposures,
+            COUNT(*) FILTER (WHERE e.event_type = 'click') AS clicks,
+            COUNT(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'click') AS click_users,
+            COUNT(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'download') AS downloads,
+            COUNT(DISTINCT COALESCE(e.app_user_id, e.user_id::text)) FILTER (WHERE e.event_type = 'app_register') AS registrations,
+            COUNT(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'payment') AS payments,
+            COALESCE(SUM(e.amount_cents) FILTER (WHERE e.event_type = 'payment'), 0) AS revenue_cents,
+            BOOL_OR(COALESCE(l.is_t1_country, false)) AS is_t1_country
+        FROM attribution_events e
+        LEFT JOIN attribution_links l ON l.tracking_id = e.tracking_id
+        WHERE e.created_at >= NOW() - (:days || ' days')::interval
+        GROUP BY 1
+        ORDER BY clicks DESC, payments DESC
+        LIMIT 10
+        """
+    )
+    age_rows = await fetch_rows(
+        dimension_sql.format(
+            key_expr=(
+                "CASE "
+                "WHEN COALESCE(e.age, l.age) IS NULL THEN 'unknown' "
+                "WHEN COALESCE(e.age, l.age) < 18 THEN '<18' "
+                "WHEN COALESCE(e.age, l.age) BETWEEN 18 AND 24 THEN '18-24' "
+                "WHEN COALESCE(e.age, l.age) BETWEEN 25 AND 34 THEN '25-34' "
+                "WHEN COALESCE(e.age, l.age) BETWEEN 35 AND 44 THEN '35-44' "
+                "ELSE '45+' END"
             ),
-            params,
+            order_expr="clicks",
         )
-    ).fetchall()
-    script_rows = (
-        await db.execute(
-            text(
-                """
-                SELECT
-                    COALESCE(l.script_hit_id, l.script_template_id::text, 'unknown') AS script_key,
-                    COUNT(*) FILTER (WHERE e.event_type = 'click') AS clicks,
-                    COUNT(*) FILTER (WHERE e.event_type = 'download') AS downloads,
-                    COUNT(*) FILTER (WHERE e.event_type = 'app_register') AS registrations,
-                    COUNT(*) FILTER (WHERE e.event_type = 'payment') AS payments,
-                    COALESCE(SUM(e.amount_cents) FILTER (WHERE e.event_type = 'payment'), 0) AS revenue_cents
-                FROM attribution_events e
-                LEFT JOIN attribution_links l ON l.tracking_id = e.tracking_id
-                WHERE e.created_at >= NOW() - (:days || ' days')::interval
-                GROUP BY 1
-                ORDER BY payments DESC, registrations DESC, clicks DESC
-                LIMIT 10
-                """
-            ),
-            params,
+    )
+    level_rows = await fetch_rows(
+        dimension_sql.format(
+            key_expr="COALESCE(e.user_level, l.user_level, 'UNKNOWN')",
+            order_expr="payments",
         )
-    ).fetchall()
+    )
+    persona_rows = await fetch_rows(
+        dimension_sql.format(key_expr="COALESCE(l.persona_slug, 'unknown')", order_expr="payments")
+    )
+    intent_rows = await fetch_rows(
+        dimension_sql.format(key_expr="COALESCE(l.intent, 'unknown')", order_expr="payments")
+    )
+    platform_rows = await fetch_rows(
+        dimension_sql.format(key_expr="COALESCE(l.platform, 'unknown')", order_expr="clicks")
+    )
+    device_rows = await fetch_rows(
+        dimension_sql.format(key_expr="COALESCE(e.device_os, 'unknown')", order_expr="clicks")
+    )
+    account_rows = await fetch_rows(
+        dimension_sql.format(key_expr="COALESCE(l.sender_account_id, 'unknown')", order_expr="clicks")
+    )
+    category_rows = await fetch_rows(
+        dimension_sql.format(key_expr="COALESCE(l.script_category, 'unknown')", order_expr="payments")
+    )
+
+    script_sql = """
+        SELECT
+            COALESCE(l.script_hit_id, l.script_template_id::text, 'unknown') AS script_key,
+            MIN(l.script_template_id::text) AS script_template_id,
+            MIN(l.script_hit_id) AS script_hit_id,
+            MIN(l.intent) AS intent,
+            MIN(l.persona_slug) AS persona,
+            MIN(l.scene_step) AS scene_step,
+            MIN(l.sender_account_id) AS sender_account_id,
+            COUNT(*) FILTER (WHERE e.event_type = 'click') AS clicks,
+            COUNT(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'download') AS downloads,
+            COUNT(DISTINCT COALESCE(e.app_user_id, e.user_id::text)) FILTER (WHERE e.event_type = 'app_register') AS registrations,
+            COUNT(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'payment') AS payments,
+            COALESCE(SUM(e.amount_cents) FILTER (WHERE e.event_type = 'payment'), 0) AS revenue_cents
+        FROM attribution_events e
+        LEFT JOIN attribution_links l ON l.tracking_id = e.tracking_id
+        WHERE e.created_at >= NOW() - (:days || ' days')::interval
+        GROUP BY 1
+        ORDER BY {order_expr} DESC, clicks DESC
+        LIMIT 10
+    """
+    top_click_scripts = await fetch_rows(script_sql.format(order_expr="clicks"))
+    top_download_scripts = await fetch_rows(script_sql.format(order_expr="downloads"))
+    top_register_scripts = await fetch_rows(script_sql.format(order_expr="registrations"))
+    top_payment_scripts = await fetch_rows(script_sql.format(order_expr="payments"))
+    link_rows = await fetch_rows(
+        """
+        SELECT
+            l.tracking_id,
+            l.destination_url,
+            COALESCE(l.script_hit_id, l.script_template_id::text, 'unknown') AS script_key,
+            l.sent_at,
+            l.sender_account_id,
+            l.platform,
+            COUNT(*) FILTER (WHERE e.event_type = 'click') AS clicks,
+            COUNT(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'click') AS click_users,
+            MIN(e.created_at) FILTER (WHERE e.event_type = 'click') AS first_click_at,
+            COALESCE(AVG(EXTRACT(EPOCH FROM (e.created_at - COALESCE(l.sent_at, l.created_at)))) FILTER (
+                WHERE e.event_type = 'click'
+            ), 0) AS avg_seconds_to_click
+        FROM attribution_links l
+        LEFT JOIN attribution_events e ON e.tracking_id = l.tracking_id
+        WHERE COALESCE(l.sent_at, l.created_at) >= NOW() - (:days || ' days')::interval
+        GROUP BY l.tracking_id, l.destination_url, script_key, l.sent_at, l.sender_account_id, l.platform
+        ORDER BY clicks DESC, click_users DESC
+        LIMIT 20
+        """
+    )
 
     def value(row: Any, idx: int, default: Any = 0) -> Any:
         try:
@@ -254,36 +415,124 @@ async def admin_attribution_summary(
         except Exception:
             return default
 
-    clicks = int(value(overview, 1) or 0)
-    downloads = int(value(overview, 2) or 0)
-    registrations = int(value(overview, 3) or 0)
-    payments = int(value(overview, 4) or 0)
+    def rate(numerator: int, denominator: int) -> float:
+        return numerator / denominator if denominator else 0
+
+    def dimension(row: Any) -> dict[str, Any]:
+        return {
+            "key": value(row, 0, "unknown"),
+            "exposures": int(value(row, 1) or 0),
+            "clicks": int(value(row, 2) or 0),
+            "click_users": int(value(row, 3) or 0),
+            "downloads": int(value(row, 4) or 0),
+            "registrations": int(value(row, 5) or 0),
+            "payments": int(value(row, 6) or 0),
+            "revenue_cents": int(value(row, 7) or 0),
+        }
+
+    def script(row: Any) -> dict[str, Any]:
+        return {
+            "script_key": value(row, 0, "unknown"),
+            "script_template_id": value(row, 1, None),
+            "script_hit_id": value(row, 2, None),
+            "intent": value(row, 3, None),
+            "persona": value(row, 4, None),
+            "scene_step": value(row, 5, None),
+            "sender_account_id": value(row, 6, None),
+            "clicks": int(value(row, 7) or 0),
+            "downloads": int(value(row, 8) or 0),
+            "registrations": int(value(row, 9) or 0),
+            "payments": int(value(row, 10) or 0),
+            "revenue_cents": int(value(row, 11) or 0),
+        }
+
+    sent_links = int(value(overview, 0) or 0)
+    sent_users = int(value(overview, 1) or 0)
+    exposed_links = int(value(overview, 2) or 0)
+    exposed_users = int(value(overview, 3) or 0)
+    clicked_links = int(value(overview, 4) or 0)
+    click_users = int(value(overview, 5) or 0)
+    click_events = int(value(overview, 6) or 0)
+    download_page_users = int(value(overview, 7) or 0)
+    downloads = int(value(overview, 8) or 0)
+    registrations = int(value(overview, 9) or 0)
+    payments = int(value(overview, 10) or 0)
+    revenue_cents = int(value(overview, 11) or 0)
+    upgraded_paid_users = int(value(overview, 12) or 0)
+    today_click_users = int(value(overview, 13) or 0)
     return {
         "days": days,
         "overview": {
-            "clicked_links": int(value(overview, 0) or 0),
-            "click_users": clicks,
+            "sent_links": sent_links,
+            "sent_users": sent_users,
+            "exposed_links": exposed_links,
+            "exposed_users": exposed_users,
+            "clicked_links": clicked_links,
+            "click_events": click_events,
+            "click_users": click_users,
+            "unique_click_users": click_users,
+            "today_click_users": today_click_users,
+            "download_page_users": download_page_users,
             "download_users": downloads,
             "register_users": registrations,
             "paid_users": payments,
-            "revenue_cents": int(value(overview, 5) or 0),
-            "download_rate": downloads / clicks if clicks else 0,
-            "register_rate": registrations / clicks if clicks else 0,
-            "payment_rate": payments / clicks if clicks else 0,
+            "upgraded_paid_users": upgraded_paid_users,
+            "revenue_cents": revenue_cents,
+            "click_rate": rate(click_users, sent_users or exposed_users),
+            "click_to_download_page_rate": rate(download_page_users, click_users),
+            "click_to_download_rate": rate(downloads, click_users),
+            "download_to_register_rate": rate(registrations, downloads),
+            "click_to_register_rate": rate(registrations, click_users),
+            "register_to_pay_rate": rate(payments, registrations),
+            "click_to_pay_rate": rate(payments, click_users),
+            "avg_sent_to_click_seconds": float(value(overview, 14) or 0),
+            "avg_click_to_register_seconds": float(value(overview, 15) or 0),
+            "avg_click_to_payment_seconds": float(value(overview, 16) or 0),
         },
+        "funnel": [
+            {"step": "话术发送", "users": sent_users, "events": sent_links},
+            {"step": "链接曝光", "users": exposed_users, "events": exposed_links},
+            {"step": "链接点击", "users": click_users, "events": click_events},
+            {"step": "下载页访问", "users": download_page_users, "events": download_page_users},
+            {"step": "App 下载", "users": downloads, "events": downloads},
+            {"step": "App 注册", "users": registrations, "events": registrations},
+            {"step": "首次付费", "users": payments, "events": payments},
+            {"step": "累计付费升 A/S", "users": upgraded_paid_users, "events": upgraded_paid_users},
+        ],
         "countries": [
-            {"country_code": r[0], "clicks": int(r[1] or 0), "payments": int(r[2] or 0)}
+            {
+                **dimension(r),
+                "country_code": value(r, 0, "UNKNOWN"),
+                "is_t1_country": bool(value(r, 8, False)),
+            }
             for r in country_rows
         ],
-        "top_scripts": [
+        "age_bands": [dimension(r) for r in age_rows],
+        "levels": [dimension(r) for r in level_rows],
+        "personas": [dimension(r) for r in persona_rows],
+        "intents": [dimension(r) for r in intent_rows],
+        "platforms": [dimension(r) for r in platform_rows],
+        "devices": [dimension(r) for r in device_rows],
+        "sender_accounts": [dimension(r) for r in account_rows],
+        "script_categories": [dimension(r) for r in category_rows],
+        "top_click_scripts": [script(r) for r in top_click_scripts],
+        "top_download_scripts": [script(r) for r in top_download_scripts],
+        "top_register_scripts": [script(r) for r in top_register_scripts],
+        "top_payment_scripts": [script(r) for r in top_payment_scripts],
+        "top_scripts": [script(r) for r in top_payment_scripts],
+        "links": [
             {
-                "script_key": r[0],
-                "clicks": int(r[1] or 0),
-                "downloads": int(r[2] or 0),
-                "registrations": int(r[3] or 0),
-                "payments": int(r[4] or 0),
-                "revenue_cents": int(r[5] or 0),
+                "tracking_id": value(r, 0, ""),
+                "destination_url": value(r, 1, ""),
+                "script_key": value(r, 2, "unknown"),
+                "sent_at": value(r, 3, None).isoformat() if value(r, 3, None) else None,
+                "sender_account_id": value(r, 4, None),
+                "platform": value(r, 5, None),
+                "clicks": int(value(r, 6) or 0),
+                "click_users": int(value(r, 7) or 0),
+                "first_click_at": value(r, 8, None).isoformat() if value(r, 8, None) else None,
+                "avg_seconds_to_click": float(value(r, 9) or 0),
             }
-            for r in script_rows
+            for r in link_rows
         ],
     }
