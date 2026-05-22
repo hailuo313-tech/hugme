@@ -185,13 +185,14 @@ async def schedule_expired_timeout_fallbacks(
                     ht.user_id::text AS user_id,
                     ht.conversation_id::text AS conversation_id,
                     u.external_id AS external_user_id,
-                    u.level AS user_level,
+                    COALESCE(p.user_level, 'C') AS user_level,
                     COALESCE(NULLIF(u.channel, ''), 'telegram_real_user') AS platform,
                     ht.draft_expires_at
                 FROM handoff_tasks ht
                 JOIN users u ON ht.user_id = u.id
+                LEFT JOIN user_profiles p ON p.user_id = u.id
                 WHERE ht.status IN ('pending', 'HUMAN_LOCKED')
-                  AND u.level IN ('S', 'A')
+                  AND COALESCE(p.user_level, 'C') IN ('S', 'A')
                   AND ht.draft_expires_at IS NOT NULL
                   AND ht.draft_expires_at <= NOW()
                   AND NOT EXISTS (
@@ -301,11 +302,12 @@ async def _claim_bcd_message(session: AsyncSession) -> dict[str, Any] | None:
                     SELECT ms.id
                     FROM message_schedules ms
                     JOIN users u ON ms.user_id = u.id::text
+                    LEFT JOIN user_profiles p ON p.user_id = u.id
                     WHERE ms.status = 'pending'
                       AND (ms.send_at IS NULL OR ms.send_at <= NOW())
                       AND ms.retry_count < ms.max_retries
                       AND (
-                          u.level IN ('B', 'C', 'D')
+                          COALESCE(p.user_level, 'C') IN ('B', 'C', 'D')
                           OR ms.metadata->>'delivery_mode' = :delivery_mode
                           OR ms.message_type = :timeout_message_type
                       )

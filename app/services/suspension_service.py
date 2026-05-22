@@ -100,9 +100,10 @@ async def create_handoff_draft(
         # Get task information
         result = await db.execute(
             text("""
-                SELECT ht.id, ht.user_id, u.level, u.channel
+                SELECT ht.id, ht.user_id, COALESCE(p.user_level, 'C') AS user_level, u.channel
                 FROM handoff_tasks ht
                 JOIN users u ON ht.user_id = u.id
+                LEFT JOIN user_profiles p ON p.user_id = u.id
                 WHERE ht.id = :task_id
             """),
             {"task_id": task_id}
@@ -343,9 +344,10 @@ async def suspend_sa_message(
         # Get conversation and user information
         result = await db.execute(
             text("""
-                SELECT c.id, c.user_id, u.level, u.channel
+                SELECT c.id, c.user_id, COALESCE(p.user_level, 'C') AS user_level, u.channel
                 FROM conversations c
                 JOIN users u ON c.user_id = u.id
+                LEFT JOIN user_profiles p ON p.user_id = u.id
                 WHERE c.id = :conversation_id
             """),
             {"conversation_id": conversation_id}
