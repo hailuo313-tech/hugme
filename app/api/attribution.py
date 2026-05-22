@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date as date_type, timedelta
 import json
 from typing import Any
 from urllib.parse import urlparse
@@ -214,24 +215,37 @@ async def record_app_attribution_event(
 @router.get("/api/v1/admin/attribution/summary")
 async def admin_attribution_summary(
     days: int = Query(7, ge=1, le=90),
+    selected_date: date_type | None = Query(default=None, alias="date"),
     _: dict = Depends(require_operator),
     db: AsyncSession = Depends(get_db),
 ):
-    params = {"days": days}
+    if selected_date:
+        params = {
+            "days": days,
+            "start_at": selected_date,
+            "end_at": selected_date + timedelta(days=1),
+        }
+        link_window = "COALESCE(sent_at, created_at) >= :start_at AND COALESCE(sent_at, created_at) < :end_at"
+        event_window = "created_at >= :start_at AND created_at < :end_at"
+        event_window_alias = "e.created_at >= :start_at AND e.created_at < :end_at"
+    else:
+        params = {"days": days}
+        link_window = "COALESCE(sent_at, created_at) >= NOW() - (:days || ' days')::interval"
+        event_window = "created_at >= NOW() - (:days || ' days')::interval"
+        event_window_alias = "e.created_at >= NOW() - (:days || ' days')::interval"
     overview = (
         await db.execute(
             text(
-                """
+                f"""
                 WITH links AS (
                     SELECT *
                     FROM attribution_links
-                    WHERE sent_at >= NOW() - (:days || ' days')::interval
-                       OR created_at >= NOW() - (:days || ' days')::interval
+                    WHERE {link_window}
                 ),
                 events AS (
                     SELECT e.*
                     FROM attribution_events e
-                    WHERE e.created_at >= NOW() - (:days || ' days')::interval
+                    WHERE {event_window_alias}
                 ),
                 first_events AS (
                     SELECT
@@ -242,6 +256,7 @@ async def admin_attribution_summary(
                         MIN(created_at) FILTER (WHERE event_type = 'app_register') AS first_register_at,
                         MIN(created_at) FILTER (WHERE event_type = 'payment') AS first_payment_at
                     FROM attribution_events
+                    WHERE {event_window}
                     GROUP BY tracking_id
                 )
                 SELECT
@@ -284,9 +299,9 @@ async def admin_attribution_summary(
     async def fetch_rows(sql: str) -> list[Any]:
         return list((await db.execute(text(sql), params)).fetchall())
 
-    dimension_sql = """
+    dimension_sql = f"""
         SELECT
-            {key_expr} AS key,
+            {{key_expr}} AS key,
             COUNT(*) FILTER (WHERE e.event_type = 'link_exposed') AS exposures,
             COUNT(*) FILTER (WHERE e.event_type = 'click') AS clicks,
             COUNT(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'click') AS click_users,
@@ -296,13 +311,13 @@ async def admin_attribution_summary(
             COALESCE(SUM(e.amount_cents) FILTER (WHERE e.event_type = 'payment'), 0) AS revenue_cents
         FROM attribution_events e
         LEFT JOIN attribution_links l ON l.tracking_id = e.tracking_id
-        WHERE e.created_at >= NOW() - (:days || ' days')::interval
+        WHERE {event_window_alias}
         GROUP BY 1
-        ORDER BY {order_expr} DESC, clicks DESC
+        ORDER BY {{order_expr}} DESC, clicks DESC
         LIMIT 10
     """
     country_rows = await fetch_rows(
-        """
+        f"""
         SELECT
             COALESCE(e.country_code, l.country_code, 'UNKNOWN') AS key,
             COUNT(*) FILTER (WHERE e.event_type = 'link_exposed') AS exposures,
@@ -315,7 +330,7 @@ async def admin_attribution_summary(
             BOOL_OR(COALESCE(l.is_t1_country, false)) AS is_t1_country
         FROM attribution_events e
         LEFT JOIN attribution_links l ON l.tracking_id = e.tracking_id
-        WHERE e.created_at >= NOW() - (:days || ' days')::interval
+        WHERE {event_window_alias}
         GROUP BY 1
         ORDER BY clicks DESC, payments DESC
         LIMIT 10
@@ -360,7 +375,7 @@ async def admin_attribution_summary(
         dimension_sql.format(key_expr="COALESCE(l.script_category, 'unknown')", order_expr="payments")
     )
 
-    script_sql = """
+    script_sql = f"""
         SELECT
             COALESCE(l.script_hit_id, l.script_template_id::text, 'unknown') AS script_key,
             MIN(l.script_template_id::text) AS script_template_id,
@@ -376,9 +391,9 @@ async def admin_attribution_summary(
             COALESCE(SUM(e.amount_cents) FILTER (WHERE e.event_type = 'payment'), 0) AS revenue_cents
         FROM attribution_events e
         LEFT JOIN attribution_links l ON l.tracking_id = e.tracking_id
-        WHERE e.created_at >= NOW() - (:days || ' days')::interval
+        WHERE {event_window_alias}
         GROUP BY 1
-        ORDER BY {order_expr} DESC, clicks DESC
+        ORDER BY {{order_expr}} DESC, clicks DESC
         LIMIT 10
     """
     top_click_scripts = await fetch_rows(script_sql.format(order_expr="clicks"))
@@ -386,7 +401,7 @@ async def admin_attribution_summary(
     top_register_scripts = await fetch_rows(script_sql.format(order_expr="registrations"))
     top_payment_scripts = await fetch_rows(script_sql.format(order_expr="payments"))
     link_rows = await fetch_rows(
-        """
+        f"""
         SELECT
             l.tracking_id,
             l.destination_url,
@@ -402,7 +417,7 @@ async def admin_attribution_summary(
             ), 0) AS avg_seconds_to_click
         FROM attribution_links l
         LEFT JOIN attribution_events e ON e.tracking_id = l.tracking_id
-        WHERE COALESCE(l.sent_at, l.created_at) >= NOW() - (:days || ' days')::interval
+        WHERE {link_window}
         GROUP BY l.tracking_id, l.destination_url, script_key, l.sent_at, l.sender_account_id, l.platform
         ORDER BY clicks DESC, click_users DESC
         LIMIT 20
@@ -462,6 +477,8 @@ async def admin_attribution_summary(
     today_click_users = int(value(overview, 13) or 0)
     return {
         "days": days,
+        "date": selected_date.isoformat() if selected_date else None,
+        "mode": "daily" if selected_date else "range",
         "overview": {
             "sent_links": sent_links,
             "sent_users": sent_users,

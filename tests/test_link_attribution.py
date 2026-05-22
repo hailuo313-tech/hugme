@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -177,8 +178,10 @@ async def test_admin_attribution_summary_returns_complete_dashboard_shape() -> N
         ]
     )
 
-    out = await admin_attribution_summary(days=7, _={}, db=db)
+    out = await admin_attribution_summary(days=7, selected_date=date(2026, 5, 22), _={}, db=db)
 
+    assert out["mode"] == "daily"
+    assert out["date"] == "2026-05-22"
     assert out["overview"]["today_click_users"] == 2
     assert out["overview"]["click_rate"] == 1.0
     assert out["overview"]["avg_click_to_register_seconds"] == 120.0
@@ -187,3 +190,4 @@ async def test_admin_attribution_summary_returns_complete_dashboard_shape() -> N
     assert out["top_click_scripts"][0]["intent"] == "purchase_intent"
     assert out["top_payment_scripts"][0]["revenue_cents"] == 9900
     assert out["links"][0]["tracking_id"] == "trk-1"
+    assert db.execute.await_args_list[0].args[1]["start_at"] == date(2026, 5, 22)
