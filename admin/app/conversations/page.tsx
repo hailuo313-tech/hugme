@@ -294,7 +294,9 @@ function ConversationsContent({ operator }: { operator: Operator }) {
       const response = await apiFetch<DetailResponse>(`/admin/conversations/${conversationId}`);
       setDetail(response);
       void loadSuggestions(response.conversation);
-      void loadTrace(conversationId);
+      if (isPremium(response.conversation)) {
+        void loadTrace(conversationId);
+      }
     } catch (err) {
       setDetailError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -325,8 +327,15 @@ function ConversationsContent({ operator }: { operator: Operator }) {
     try {
       const response = await apiFetch<ScriptTraceResponse>(`/archive/premium-chat/${conversationId}/trace`);
       setTrace(response);
+      setTraceError(null);
     } catch (err) {
-      setTraceError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes("user_level_not_s_or_a")) {
+        setTrace(null);
+        setTraceError(null);
+        return;
+      }
+      setTraceError(message);
     }
   }
 
@@ -644,17 +653,23 @@ function DetailDrawer({
               </Panel>
               <Panel title="话术命中轨迹">
                 {traceError && <div className="mb-3 text-sm text-amber-300">{traceError}</div>}
-                <div className="grid grid-cols-4 gap-2">
-                  {SCRIPT_HOOKS.map((hook) => {
-                    const hit = trace?.script_hits?.find((item) => item.hook?.includes(hook) || item.hook === hook);
-                    return (
-                      <div key={hook} className={`rounded-md border px-3 py-3 ${hit ? "border-emerald-700 bg-emerald-500/10" : "border-slate-800 bg-slate-950"}`}>
-                        <div className="text-sm font-medium text-slate-200">{hook}</div>
-                        <div className="mt-1 truncate text-xs text-slate-500">{hit?.script_hit_id || hit?.degradation || "待记录"}</div>
-                      </div>
-                    );
-                  })}
-                </div>
+                {!isPremium(detail.conversation) ? (
+                  <div className="rounded-md border border-slate-800 bg-slate-950 px-3 py-3 text-sm text-slate-400">
+                    当前用户为 {levelOf(detail.conversation)} 级，精聊话术轨迹仅对 S/A 用户启用。
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-4 gap-2">
+                    {SCRIPT_HOOKS.map((hook) => {
+                      const hit = trace?.script_hits?.find((item) => item.hook?.includes(hook) || item.hook === hook);
+                      return (
+                        <div key={hook} className={`rounded-md border px-3 py-3 ${hit ? "border-emerald-700 bg-emerald-500/10" : "border-slate-800 bg-slate-950"}`}>
+                          <div className="text-sm font-medium text-slate-200">{hook}</div>
+                          <div className="mt-1 truncate text-xs text-slate-500">{hit?.script_hit_id || hit?.degradation || "待记录"}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </Panel>
               <Panel title="推荐话术 Top3">
                 <div className="space-y-3">
