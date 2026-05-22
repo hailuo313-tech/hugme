@@ -42,8 +42,16 @@ class _ReadClient:
     def __init__(self):
         self.calls = []
 
-    async def send_read_acknowledge(self, peer, message=None):
-        self.calls.append((peer, message))
+    async def send_read_acknowledge(self, peer, message=None, max_id=None):
+        self.calls.append((peer, message, max_id))
+
+
+class _MarkReadEvent:
+    def __init__(self):
+        self.marked = False
+
+    async def mark_read(self):
+        self.marked = True
 
 
 class _Log:
@@ -68,5 +76,18 @@ async def test_mark_read_acknowledges_before_reply_generation():
 
     await _mark_read(client, SimpleNamespace(message=message), 12345, log)
 
-    assert client.calls == [(12345, message)]
+    assert client.calls == [(12345, message, 99)]
+    assert ("info", "mtproto_auto_reply.read_ack") in log.events
+
+
+@pytest.mark.asyncio
+async def test_mark_read_prefers_event_mark_read():
+    client = _ReadClient()
+    event = _MarkReadEvent()
+    log = _Log()
+
+    await _mark_read(client, event, 12345, log)
+
+    assert event.marked is True
+    assert client.calls == []
     assert ("info", "mtproto_auto_reply.read_ack") in log.events

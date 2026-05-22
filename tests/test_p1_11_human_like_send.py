@@ -62,10 +62,16 @@ class FakeSleeper:
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
-        ("hi", 4.0),
-        ("hello, this is a medium text", 7.0),
-        ("x" * 50, 11.0),
-        ("x" * 51, 18.0),
+        ("hi", 3.0),
+        ("x" * 10, 3.0),
+        ("x" * 11, 6.0),
+        ("x" * 30, 6.0),
+        ("x" * 31, 10.0),
+        ("x" * 50, 10.0),
+        ("x" * 51, 15.0),
+        ("x" * 100, 15.0),
+        ("x" * 101, 25.0),
+        ("x" * 200, 25.0),
     ],
 )
 def test_human_typing_delay_seconds_uses_text_length_buckets(text: str, expected: float) -> None:
@@ -79,7 +85,7 @@ async def test_send_typing_shows_telethon_typing_action() -> None:
 
     await send_typing(client, "tg_99", sleep=sleeper)
 
-    assert sleeper.delays == [2.0]
+    assert sleeper.delays == [3.0]
     assert client.events == [
         ("action", "tg_99", "typing"),
         ("typing.start", "tg_99", "typing"),
@@ -101,7 +107,7 @@ async def test_send_human_like_message_types_waits_then_sends() -> None:
     )
 
     assert result["id"] == 123
-    assert sleeper.delays == [7.0]
+    assert sleeper.delays == [6.0]
     assert client.events == [
         ("action", "tg_99", "typing"),
         ("typing.start", "tg_99", "typing"),
@@ -126,7 +132,7 @@ async def test_send_human_like_message_enforces_inter_message_gap_before_typing(
         sleep=sleeper,
     )
 
-    assert sleeper.delays == [5.0, 4.0]
+    assert sleeper.delays == [5.0, 3.0]
     assert client.events[0] == ("action", "tg_99", "typing")
 
 
