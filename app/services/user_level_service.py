@@ -122,10 +122,10 @@ class UserLevelService:
                     text(
                         """
                         SELECT
-                            p.country_code,
+                            p.preferences->>'country_code' AS country_code,
                             COALESCE(p.vip_level, 0) AS vip_level,
                             COALESCE(p.preferences, '{}'::jsonb) AS preferences,
-                            COALESCE(p.user_level, 'C') AS user_level,
+                            COALESCE(p.preferences->>'user_level', 'C') AS user_level,
                             COALESCE((
                                 SELECT SUM(o.amount)
                                 FROM orders o
