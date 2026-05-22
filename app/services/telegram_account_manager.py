@@ -10,15 +10,18 @@ from uuid import uuid4
 
 from cryptography.fernet import Fernet
 from loguru import logger
+import redis.asyncio as aioredis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from telethon import TelegramClient
+from telethon import events
 from telethon.errors import SessionPasswordNeededError
 from telethon.sessions import StringSession
 
 from core.config import settings
 from core.database import AsyncSessionLocal, get_async_session
 from models.telegram_accounts import TelegramAccount
+from services.telegram_real_user_auto_reply import handle_mtproto_inbound_auto_reply
 
 
 class TelegramAccountManager:
@@ -26,9 +29,11 @@ class TelegramAccountManager:
 
     def __init__(self):
         self.clients: Dict[UUID, TelegramClient] = {}
+        self._inbound_handlers: Dict[UUID, object] = {}
         self.fernet = Fernet(settings.TELEGRAM_SESSION_FERNET_KEY.encode()) if settings.TELEGRAM_SESSION_FERNET_KEY else None
         self._encrypted_session_cache: Dict[str, str] = {}
         self._lock = asyncio.Lock()
+        self._redis = None
 
     def _decrypt_session(self, encrypted_session: str) -> str:
         """Decrypt encrypted StringSession."""
@@ -114,6 +119,7 @@ class TelegramAccountManager:
 
                 # Store client
                 self.clients[account_id] = client
+                await self._register_inbound_handler(account_id, client)
 
                 return True
 
@@ -130,8 +136,11 @@ class TelegramAccountManager:
         """Disconnect a Telegram account."""
         async with self._lock:
             client = self.clients.pop(account_id, None)
+            handler = self._inbound_handlers.pop(account_id, None)
             if client:
                 try:
+                    if handler is not None:
+                        client.remove_event_handler(handler)
                     await client.disconnect()
                     logger.info(f"Disconnected account {account_id}")
                 except Exception as e:
@@ -165,6 +174,35 @@ class TelegramAccountManager:
         if not self.clients:
             return None
         return next(iter(self.clients.values()))
+
+    async def _register_inbound_handler(self, account_id: UUID, client: TelegramClient) -> None:
+        if account_id in self._inbound_handlers:
+            return
+
+        redis = await self._get_redis()
+        account_id_text = str(account_id)
+
+        async def _handler(raw_event):
+            try:
+                await handle_mtproto_inbound_auto_reply(
+                    client=client,
+                    raw_event=raw_event,
+                    redis=redis,
+                    account_id=account_id_text,
+                )
+            except Exception as exc:
+                logger.bind(account_id=account_id_text, error_type=type(exc).__name__).error(
+                    f"mtproto_auto_reply.handler_error: {exc}"
+                )
+
+        client.add_event_handler(_handler, events.NewMessage(incoming=True))
+        self._inbound_handlers[account_id] = _handler
+        logger.bind(account_id=account_id_text).info("telegram_account.inbound_handler_registered")
+
+    async def _get_redis(self):
+        if self._redis is None:
+            self._redis = aioredis.from_url(settings.REDIS_URL, encoding="utf-8", decode_responses=True)
+        return self._redis
 
     async def add_account(
         self,
