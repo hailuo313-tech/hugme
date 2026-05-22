@@ -10,25 +10,33 @@ def read(path: str) -> str:
 
 def test_admin_root_is_current_home_dashboard() -> None:
     page = read("admin/app/page.tsx")
+    frame = read("admin/components/AdminFrame.tsx")
 
-    assert '<h1 className="mb-2 text-2xl font-semibold">总后台</h1>' in page
-    assert 'href="/admin/conversations"' in page
-    assert 'href="/admin/telegram-accounts"' in page
-    assert 'title: "会话总览"' in page
-    assert 'title: "TG 账号"' in page
-    assert 'title: "H5 聊天"' in page
+    assert 'title="总后台"' in page
+    assert 'href: "/admin/conversations"' in frame
+    assert 'href: "/admin/telegram-accounts"' in frame
+    assert 'href: "/admin/ai-ops"' in frame
+    assert 'href: "/admin/approvals"' in frame
+    assert 'href: "/admin/delivery"' in frame
+    assert 'title: "会话流控"' in page
+    assert 'title: "TG 真人账号"' in page
+    assert 'title: "AI 话术与人设"' in page
+    assert 'title: "运营审批"' in page
+    assert 'title: "推送监控与 H5"' in page
 
 
 def test_admin_home_no_longer_links_legacy_pages() -> None:
     page = read("admin/app/page.tsx")
+    frame = read("admin/components/AdminFrame.tsx")
+    text = page + frame
 
-    assert 'href="/admin/operator-dashboard"' not in page
-    assert 'href="/admin/scripts"' not in page
-    assert 'href="/admin/characters"' not in page
-    assert 'href="/admin/memories"' not in page
-    assert 'href="/admin/push"' not in page
-    assert 'href="/admin/feedback"' not in page
-    assert 'href="/admin/media"' not in page
+    assert "/admin/operator-dashboard" not in text
+    assert "/admin/scripts" not in text
+    assert "/admin/characters" not in text
+    assert "/admin/memories" not in text
+    assert "/admin/push" not in text
+    assert "/admin/feedback" not in text
+    assert "/admin/media" not in text
 
 
 def test_conversation_overview_has_dedicated_route() -> None:
@@ -37,7 +45,23 @@ def test_conversation_overview_has_dedicated_route() -> None:
     assert "会话总览" in page
     assert 'href="/admin"' in page
     assert 'href="/admin/telegram-accounts"' in page
+    assert 'href="/admin/ai-ops"' in page
+    assert 'href="/admin/approvals"' in page
+    assert 'href="/admin/delivery"' in page
     assert "/admin/conversations?" in page
+
+
+def test_business_flow_admin_pages_exist() -> None:
+    pages = {
+        "admin/app/ai-ops/page.tsx": ["script_match", "H-03", "H-04", "P3-21"],
+        "admin/app/approvals/page.tsx": ["H-01", "H-07", "H-10", "H-11"],
+        "admin/app/delivery/page.tsx": ["P4-09", "P4-10", "P5-08"],
+    }
+
+    for path, needles in pages.items():
+        text = read(path)
+        for needle in needles:
+            assert needle in text
 
 
 def test_legacy_admin_pages_are_removed() -> None:

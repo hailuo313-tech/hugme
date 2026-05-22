@@ -293,6 +293,24 @@ function UserProfileContent({ operator }: { operator: Operator }) {
             >
               TG账号
             </a>
+            <a
+              href="/admin/ai-ops"
+              className="text-sm text-slate-400 hover:text-white px-3 py-1 rounded-md hover:bg-slate-700 transition"
+            >
+              AI话术
+            </a>
+            <a
+              href="/admin/approvals"
+              className="text-sm text-slate-400 hover:text-white px-3 py-1 rounded-md hover:bg-slate-700 transition"
+            >
+              运营审批
+            </a>
+            <a
+              href="/admin/delivery"
+              className="text-sm text-slate-400 hover:text-white px-3 py-1 rounded-md hover:bg-slate-700 transition"
+            >
+              推送监控
+            </a>
           </nav>
         </div>
         <div className="flex items-center gap-4">
