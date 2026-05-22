@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from time import monotonic
 from typing import Any, Awaitable, Callable, Optional
 
+from loguru import logger
+
 
 SleepFn = Callable[[float], Awaitable[None]]
 ClockFn = Callable[[], float]
@@ -59,10 +61,14 @@ async def send_typing(
         raise TypeError("MTProto client does not expose Telethon-style action()")
 
     maybe_context = action(peer, "typing")
-    async with maybe_context:
-        duration = policy.minimum_typing_seconds if duration_seconds is None else duration_seconds
-        if duration > 0:
-            await sleep(duration)
+    try:
+        async with maybe_context:
+            duration = policy.minimum_typing_seconds if duration_seconds is None else duration_seconds
+            if duration > 0:
+                await sleep(duration)
+            return None
+    except Exception as exc:
+        logger.bind(peer=str(peer), error_type=type(exc).__name__).warning("mtproto.typing_failed")
         return None
 
 
@@ -104,7 +110,10 @@ async def send_human_like_message(
     if action is None:
         raise TypeError("MTProto client does not expose Telethon-style action()")
 
-    async with action(peer, "typing"):
-        await sleep(typing_delay)
+    try:
+        async with action(peer, "typing"):
+            await sleep(typing_delay)
+    except Exception as exc:
+        logger.bind(peer=str(peer), error_type=type(exc).__name__).warning("mtproto.typing_failed")
 
     return await client.send_message(peer, text, **send_kwargs)

@@ -37,6 +37,20 @@ class FakeTelethonClient:
         return {"id": 123, "peer": peer, "text": text}
 
 
+class FailingTypingAction:
+    async def __aenter__(self) -> None:
+        raise RuntimeError("typing forbidden")
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return None
+
+
+class FailingTypingClient(FakeTelethonClient):
+    def action(self, peer: str, action: str) -> FailingTypingAction:
+        self.events.append(("action", peer, action))
+        return FailingTypingAction()
+
+
 class FakeSleeper:
     def __init__(self) -> None:
         self.delays: list[float] = []
@@ -114,6 +128,32 @@ async def test_send_human_like_message_enforces_inter_message_gap_before_typing(
 
     assert sleeper.delays == [5.0, 4.0]
     assert client.events[0] == ("action", "tg_99", "typing")
+
+
+@pytest.mark.asyncio
+async def test_send_human_like_message_sends_when_typing_is_forbidden() -> None:
+    client = FailingTypingClient()
+    sleeper = FakeSleeper()
+
+    result = await send_human_like_message(client, "tg_99", "hello", sleep=sleeper)
+
+    assert result["id"] == 123
+    assert sleeper.delays == []
+    assert client.events == [
+        ("action", "tg_99", "typing"),
+        ("send_message", "tg_99", "hello", {}),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_send_typing_noops_when_typing_is_forbidden() -> None:
+    client = FailingTypingClient()
+    sleeper = FakeSleeper()
+
+    await send_typing(client, "tg_99", sleep=sleeper)
+
+    assert sleeper.delays == []
+    assert client.events == [("action", "tg_99", "typing")]
 
 
 @pytest.mark.asyncio
