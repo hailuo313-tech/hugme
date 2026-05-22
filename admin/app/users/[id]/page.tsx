@@ -284,27 +284,15 @@ function UserProfileContent({ operator }: { operator: Operator }) {
             >
               会话
             </a>
-            <a
-              href="/admin/memories"
-              className="text-sm text-slate-400 hover:text-white px-3 py-1 rounded-md hover:bg-slate-700 transition"
-            >
-              记忆
-            </a>
-            <a
-              href="/admin/scripts"
-              className="text-sm text-slate-400 hover:text-white px-3 py-1 rounded-md hover:bg-slate-700 transition"
-            >
-              话术库
-            </a>
-            <a
-              href="/admin/characters"
-              className="text-sm text-slate-400 hover:text-white px-3 py-1 rounded-md hover:bg-slate-700 transition"
-            >
-              角色
-            </a>
             <span className="text-sm text-sky-300 bg-slate-700 px-3 py-1 rounded-md font-medium">
               用户画像
             </span>
+            <a
+              href="/admin/telegram-accounts"
+              className="text-sm text-slate-400 hover:text-white px-3 py-1 rounded-md hover:bg-slate-700 transition"
+            >
+              TG账号
+            </a>
           </nav>
         </div>
         <div className="flex items-center gap-4">
@@ -375,12 +363,6 @@ function UserProfileContent({ operator }: { operator: Operator }) {
                     VIP {profile.vip_level}
                   </span>
                 )}
-                <a
-                  href={`/admin/memories?user_id=${userId}`}
-                  className="text-sm text-violet-400 hover:text-violet-300 transition"
-                >
-                  查看记忆 →
-                </a>
               </div>
             </div>
 
@@ -626,7 +608,7 @@ function UserProfileContent({ operator }: { operator: Operator }) {
               </MetaGrid>
             </Section>
 
-            {/* 最近记忆（前 5 条，完整记忆在 /memories 页） */}
+            {/* 最近记忆（前 5 条） */}
             <Section title={`记忆摘要（共 ${memories.length} 条，仅展示前 5）`}>
               {memories.length === 0 ? (
                 <p className="text-slate-500 text-sm">暂无记忆记录</p>
@@ -655,16 +637,6 @@ function UserProfileContent({ operator }: { operator: Operator }) {
                       </div>
                     ))}
                   </div>
-                  {memories.length > 5 && (
-                    <div className="mt-3 text-right">
-                      <a
-                        href={`/admin/memories?user_id=${userId}`}
-                        className="text-xs text-violet-400 hover:text-violet-300 transition"
-                      >
-                        查看全部 {memories.length} 条记忆 →
-                      </a>
-                    </div>
-                  )}
                 </>
               )}
             </Section>
