@@ -1,8 +1,9 @@
 """Unit tests for P1-09 Telegram accounts multi-account management."""
 
+from pathlib import Path
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from app.models.telegram_accounts import TelegramAccount
 from app.services.telegram_account_manager import TelegramAccountManager
@@ -67,7 +68,17 @@ async def test_add_account(account_manager):
 
         assert account_id is not None
         mock_session.add.assert_called_once()
+        created_account = mock_session.add.call_args.args[0]
+        assert isinstance(created_account.id, UUID)
+        assert account_id == created_account.id
         mock_session.commit.assert_called_once()
+
+
+def test_api_container_defaults_to_single_worker_for_session_login():
+    """Telegram session-login state is process-local until it is moved to Redis/DB."""
+    dockerfile = (Path(__file__).resolve().parents[1] / "app" / "Dockerfile").read_text(encoding="utf-8")
+
+    assert "${API_WORKERS:-1}" in dockerfile
 
 
 @pytest.mark.asyncio
