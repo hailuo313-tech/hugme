@@ -91,6 +91,13 @@ function AdminHome({ operator }: { operator: Operator }) {
         status: "review",
       },
       {
+        title: "角色与语气",
+        desc: "创建 AI 角色，调整语气、温柔度、主动度、调情度、幽默度和边界感。",
+        href: "/admin/characters",
+        metric: "Tone",
+        status: "config",
+      },
+      {
         title: "运营审批",
         desc: "H-01 到 H-11 的配置签字、SOP、灰度审批和 Go/No-Go。",
         href: "/admin/approvals",
