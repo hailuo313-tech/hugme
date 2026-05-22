@@ -75,6 +75,8 @@ interface LinkRow {
 
 interface AttributionSummary {
   days: number;
+  date?: string | null;
+  mode?: "range" | "daily";
   overview: Overview;
   funnel: Array<{ step: string; users: number; events: number }>;
   countries: DimensionRow[];
@@ -116,6 +118,7 @@ export default function DataPage() {
 
 function DataDashboard({ operator }: { operator: Operator }) {
   const [days, setDays] = useState(7);
+  const [selectedDate, setSelectedDate] = useState("");
   const [summary, setSummary] = useState<AttributionSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -123,7 +126,10 @@ function DataDashboard({ operator }: { operator: Operator }) {
   useEffect(() => {
     let mounted = true;
     setLoading(true);
-    apiFetch<AttributionSummary>(`/admin/attribution/summary?days=${days}`)
+    const query = selectedDate
+      ? `/admin/attribution/summary?date=${selectedDate}`
+      : `/admin/attribution/summary?days=${days}`;
+    apiFetch<AttributionSummary>(query)
       .then((data) => {
         if (!mounted) return;
         setSummary(data);
@@ -139,7 +145,7 @@ function DataDashboard({ operator }: { operator: Operator }) {
     return () => {
       mounted = false;
     };
-  }, [days]);
+  }, [days, selectedDate]);
 
   const overview = summary?.overview;
   const funnel = useMemo(() => summary?.funnel ?? [], [summary]);
@@ -156,7 +162,10 @@ function DataDashboard({ operator }: { operator: Operator }) {
           {[1, 7, 14, 30, 90].map((value) => (
             <button
               key={value}
-              onClick={() => setDays(value)}
+              onClick={() => {
+                setDays(value);
+                setSelectedDate("");
+              }}
               className={`rounded-md px-3 py-1.5 text-sm transition ${
                 days === value ? "bg-violet-600 text-white" : "text-slate-400 hover:bg-slate-800 hover:text-white"
               }`}
@@ -165,7 +174,26 @@ function DataDashboard({ operator }: { operator: Operator }) {
             </button>
           ))}
         </div>
-        <span className="text-sm text-slate-500">{loading ? "加载中" : `最近 ${summary?.days ?? days} 天`}</span>
+        <div className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900 px-3 py-2">
+          <span className="text-sm text-slate-500">按天查询</span>
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(event) => setSelectedDate(event.target.value)}
+            className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-200 outline-none focus:border-violet-500"
+          />
+          {selectedDate && (
+            <button
+              onClick={() => setSelectedDate("")}
+              className="rounded-md px-2 py-1 text-sm text-slate-400 transition hover:bg-slate-800 hover:text-white"
+            >
+              清除
+            </button>
+          )}
+        </div>
+        <span className="text-sm text-slate-500">
+          {loading ? "加载中" : summary?.date ? `${summary.date} 当日` : `最近 ${summary?.days ?? days} 天`}
+        </span>
       </div>
 
       {error && (

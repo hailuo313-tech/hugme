@@ -82,6 +82,8 @@ def test_data_page_covers_full_attribution_dashboard() -> None:
 
     for needle in [
         "今日链接点击人数",
+        "按天查询",
+        'type="date"',
         "点击率",
         "下载转化率",
         "注册转化率",
