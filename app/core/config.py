@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     REDIS_URL: str = 'redis://:redis_secret_2026@redis:6379/0'
     SECRET_KEY: str = 'change_this_secret_key_in_production'
     OPENROUTER_API_KEY: Optional[str] = None
+    NOVITA_API_KEY: Optional[str] = None
+    LLM_PROVIDER: str = "openrouter"
+    LLM_API_BASE_URL: str = "https://api.novita.ai/openai/v1"
+    LLM_PRIMARY_MODEL: str = "deepseek/deepseek-v3-0324"
+    LLM_FALLBACK_MODEL: str = "openai/gpt-4o-mini"
+    OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
     TELEGRAM_BOT_TOKEN: Optional[str] = None
     # C-03 / W2 MTProto（Telethon Userbot）；W2 前可不启用运行时，但须在 .env 配齐占位
     TELEGRAM_API_ID: Optional[int] = None
