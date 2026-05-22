@@ -2,6 +2,7 @@
 
 import asyncio
 import inspect
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Dict, List, Optional
 from uuid import UUID
@@ -16,7 +17,7 @@ from telethon.errors import SessionPasswordNeededError
 from telethon.sessions import StringSession
 
 from core.config import settings
-from core.database import get_async_session
+from core.database import AsyncSessionLocal, get_async_session
 from models.telegram_accounts import TelegramAccount
 
 
@@ -55,19 +56,19 @@ class TelegramAccountManager:
 
     async def get_account(self, account_id: UUID) -> Optional[TelegramAccount]:
         """Get account by ID from database."""
-        session = await _next_session()
-        result = await session.execute(select(TelegramAccount).where(TelegramAccount.id == account_id))
-        return await _maybe_await(result.scalar_one_or_none())
+        async with _session_scope() as session:
+            result = await session.execute(select(TelegramAccount).where(TelegramAccount.id == account_id))
+            return await _maybe_await(result.scalar_one_or_none())
 
     async def get_active_accounts(self) -> List[TelegramAccount]:
         """Get all active accounts from database."""
-        session = await _next_session()
-        result = await session.execute(
-            select(TelegramAccount).where(TelegramAccount.is_active == True)
-        )
-        scalars = await _maybe_await(result.scalars())
-        accounts = await _maybe_await(scalars.all())
-        return list(accounts)
+        async with _session_scope() as session:
+            result = await session.execute(
+                select(TelegramAccount).where(TelegramAccount.is_active == True)
+            )
+            scalars = await _maybe_await(result.scalars())
+            accounts = await _maybe_await(scalars.all())
+            return list(accounts)
 
     async def connect_account(self, account_id: UUID) -> bool:
         """Connect a Telegram account."""
@@ -176,19 +177,19 @@ class TelegramAccountManager:
         """Add a new Telegram account."""
         encrypted_session = self._encrypt_session(session_string)
 
-        session = await _next_session()
-        account = TelegramAccount(
-            id=uuid4(),
-            phone=phone,
-            session_string=encrypted_session,
-            is_bot=is_bot,
-            display_name=display_name,
-            metadata_json=metadata or {},
-        )
-        session.add(account)
-        await session.commit()
-        await session.refresh(account)
-        return account.id
+        async with _session_scope() as session:
+            account = TelegramAccount(
+                id=uuid4(),
+                phone=phone,
+                session_string=encrypted_session,
+                is_bot=is_bot,
+                display_name=display_name,
+                metadata_json=metadata or {},
+            )
+            session.add(account)
+            await session.commit()
+            await session.refresh(account)
+            return account.id
 
     async def _update_account_status(
         self,
@@ -197,29 +198,29 @@ class TelegramAccountManager:
         error_message: Optional[str] = None,
     ) -> None:
         """Update account status in database."""
-        session = await _next_session()
-        account = await session.get(TelegramAccount, account_id)
-        if account:
-            account.status = status
-            account.error_message = error_message
-            if status == "error":
-                account.last_error_at = datetime.utcnow()
-            session.add(account)
-            await session.commit()
+        async with _session_scope() as session:
+            account = await session.get(TelegramAccount, account_id)
+            if account:
+                account.status = status
+                account.error_message = error_message
+                if status == "error":
+                    account.last_error_at = datetime.utcnow()
+                session.add(account)
+                await session.commit()
 
     async def _mark_account_connected(self, account_id: UUID, me) -> None:
         """Persist connected account metadata using the current database session."""
-        session = await _next_session()
-        account = await session.get(TelegramAccount, account_id)
-        if account:
-            account.status = "connected"
-            account.display_name = getattr(me, "first_name", None) or ""
-            account.username = getattr(me, "username", None)
-            account.user_id = getattr(me, "id", None)
-            account.last_connected_at = datetime.utcnow()
-            account.error_message = None
-            session.add(account)
-            await session.commit()
+        async with _session_scope() as session:
+            account = await session.get(TelegramAccount, account_id)
+            if account:
+                account.status = "connected"
+                account.display_name = getattr(me, "first_name", None) or ""
+                account.username = getattr(me, "username", None)
+                account.user_id = getattr(me, "id", None)
+                account.last_connected_at = datetime.utcnow()
+                account.error_message = None
+                session.add(account)
+                await session.commit()
 
     async def get_account_status(self, account_id: UUID) -> Optional[dict]:
         """Get account status."""
@@ -241,6 +242,17 @@ class TelegramAccountManager:
 
 # Global instance
 telegram_account_manager = TelegramAccountManager()
+
+
+@asynccontextmanager
+async def _session_scope():
+    if getattr(get_async_session, "__module__", None) == "core.database":
+        async with AsyncSessionLocal() as session:
+            yield session
+        return
+
+    session = await _next_session()
+    yield session
 
 
 async def _next_session() -> AsyncSession:
