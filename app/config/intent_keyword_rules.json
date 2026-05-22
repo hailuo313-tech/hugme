@@ -1,0 +1,308 @@
+{
+  "version": 1,
+  "confidence_floor": 0.6,
+  "rules": [
+    {
+      "id": "smalltalk.greeting.basic",
+      "intent": "smalltalk.greeting",
+      "priority": 90,
+      "confidence": 0.82,
+      "keywords": ["hello", "hi", "hey", "good morning", "good evening", "你好", "嗨"],
+      "patterns": ["\\b(hello|hi|hey)\\b"]
+    },
+    {
+      "id": "smalltalk.check_in.presence",
+      "intent": "smalltalk.check_in",
+      "priority": 89,
+      "confidence": 0.8,
+      "keywords": ["how are you", "are you there", "miss you", "你在吗", "想你"]
+    },
+    {
+      "id": "smalltalk.humor.play",
+      "intent": "smalltalk.humor_play",
+      "priority": 88,
+      "confidence": 0.8,
+      "keywords": ["joke", "make me laugh", "funny", "tease me", "讲个笑话"]
+    },
+    {
+      "id": "smalltalk.goodbye.pause",
+      "intent": "smalltalk.goodbye",
+      "priority": 88,
+      "confidence": 0.82,
+      "keywords": ["bye", "good night", "talk later", "sleep now", "晚安", "回头聊"]
+    },
+    {
+      "id": "emotional_support.lonely.core",
+      "intent": "emotional_support.lonely",
+      "priority": 70,
+      "confidence": 0.9,
+      "keywords": ["lonely", "alone", "no one understands", "nobody cares", "孤独", "没人懂"]
+    },
+    {
+      "id": "emotional_support.sadness.core",
+      "intent": "emotional_support.sadness",
+      "priority": 70,
+      "confidence": 0.88,
+      "keywords": ["sad", "crying", "down today", "heart hurts", "难过", "想哭"]
+    },
+    {
+      "id": "emotional_support.stress.core",
+      "intent": "emotional_support.stress",
+      "priority": 70,
+      "confidence": 0.87,
+      "keywords": ["stressed", "overwhelmed", "exhausted", "pressure", "压力", "太累"]
+    },
+    {
+      "id": "emotional_support.reassurance.core",
+      "intent": "emotional_support.reassurance",
+      "priority": 70,
+      "confidence": 0.86,
+      "keywords": ["comfort me", "tell me it is okay", "reassure me", "抱抱我", "安慰我"]
+    },
+    {
+      "id": "emotional_support.celebration.core",
+      "intent": "emotional_support.celebration",
+      "priority": 71,
+      "confidence": 0.84,
+      "keywords": ["i did it", "good news", "celebrate", "happy news", "我成功了", "好消息"]
+    },
+    {
+      "id": "relationship.affection.core",
+      "intent": "relationship.affection",
+      "priority": 60,
+      "confidence": 0.86,
+      "keywords": ["i like you", "hug me", "miss you so much", "you are sweet", "喜欢你", "抱抱"]
+    },
+    {
+      "id": "relationship.flirt_light.core",
+      "intent": "relationship.flirt_light",
+      "priority": 60,
+      "confidence": 0.82,
+      "keywords": ["cute", "date vibe", "flirt", "sweet teasing", "撩我", "可爱"]
+    },
+    {
+      "id": "relationship.jealousy.core",
+      "intent": "relationship.jealousy",
+      "priority": 62,
+      "confidence": 0.84,
+      "keywords": ["jealous", "talking to others", "do you like someone else", "吃醋"]
+    },
+    {
+      "id": "relationship.repair.core",
+      "intent": "relationship.repair",
+      "priority": 63,
+      "confidence": 0.83,
+      "keywords": ["sorry", "did i upset you", "forgive me", "对不起", "原谅我"]
+    },
+    {
+      "id": "relationship.dependency.core",
+      "intent": "relationship.dependency",
+      "priority": 64,
+      "confidence": 0.86,
+      "keywords": ["need only you", "cannot be without you", "only person i have", "离不开你"]
+    },
+    {
+      "id": "onboarding.nickname.core",
+      "intent": "onboarding.nickname",
+      "priority": 75,
+      "confidence": 0.83,
+      "keywords": ["call me", "my name is", "nickname", "叫我", "我的名字"]
+    },
+    {
+      "id": "onboarding.interests.core",
+      "intent": "onboarding.interests",
+      "priority": 75,
+      "confidence": 0.8,
+      "keywords": ["i like music", "i love games", "my hobbies", "喜欢旅行", "爱好"]
+    },
+    {
+      "id": "onboarding.chat_style.core",
+      "intent": "onboarding.chat_style",
+      "priority": 75,
+      "confidence": 0.82,
+      "keywords": ["be gentle", "be casual", "talk smarter", "温柔一点", "轻松一点"]
+    },
+    {
+      "id": "onboarding.boundaries.core",
+      "intent": "onboarding.boundaries",
+      "priority": 76,
+      "confidence": 0.84,
+      "keywords": ["avoid talking about", "do not mention", "forbidden topic", "别提", "不要聊"]
+    },
+    {
+      "id": "onboarding.current_intent.core",
+      "intent": "onboarding.current_intent",
+      "priority": 75,
+      "confidence": 0.81,
+      "keywords": ["i want someone to talk to", "here to chat", "need a companion", "想找人聊天"]
+    },
+    {
+      "id": "conversion.price_question.core",
+      "intent": "conversion.price_question",
+      "priority": 50,
+      "confidence": 0.86,
+      "keywords": ["how much", "price", "vip cost", "subscription cost", "多少钱", "价格"]
+    },
+    {
+      "id": "conversion.benefit_question.core",
+      "intent": "conversion.benefit_question",
+      "priority": 50,
+      "confidence": 0.84,
+      "keywords": ["what do i get", "premium benefits", "vip unlocks", "会员有什么", "权益"]
+    },
+    {
+      "id": "conversion.purchase_intent.core",
+      "intent": "conversion.purchase_intent",
+      "priority": 51,
+      "confidence": 0.88,
+      "keywords": ["i want vip", "subscribe", "buy premium", "upgrade now", "开通会员", "购买"]
+    },
+    {
+      "id": "conversion.objection.core",
+      "intent": "conversion.objection",
+      "priority": 52,
+      "confidence": 0.82,
+      "keywords": ["too expensive", "why pay", "not worth it", "太贵", "为什么付费"]
+    },
+    {
+      "id": "conversion.post_payment.core",
+      "intent": "conversion.post_payment",
+      "priority": 53,
+      "confidence": 0.88,
+      "keywords": ["i paid", "payment done", "just upgraded", "付完了", "已经付款"]
+    },
+    {
+      "id": "support.payment_failed.core",
+      "intent": "support.payment_failed",
+      "priority": 80,
+      "confidence": 0.88,
+      "keywords": ["card failed", "cannot pay", "payment failed", "付款失败", "支付不了"]
+    },
+    {
+      "id": "support.refund.core",
+      "intent": "support.refund",
+      "priority": 80,
+      "confidence": 0.9,
+      "keywords": ["refund", "cancel payment", "money back", "退款", "取消付款"]
+    },
+    {
+      "id": "support.account_access.core",
+      "intent": "support.account_access",
+      "priority": 80,
+      "confidence": 0.86,
+      "keywords": ["cannot login", "lost account", "account access", "登录不了", "账号丢了"]
+    },
+    {
+      "id": "support.delivery_issue.core",
+      "intent": "support.delivery_issue",
+      "priority": 80,
+      "confidence": 0.84,
+      "keywords": ["did not get", "not loading", "message missing", "没收到", "加载不了"]
+    },
+    {
+      "id": "support.operator_request.core",
+      "intent": "support.operator_request",
+      "priority": 82,
+      "confidence": 0.88,
+      "keywords": ["human support", "real agent", "operator", "customer service", "人工客服", "真人客服"]
+    },
+    {
+      "id": "content_request.photo.core",
+      "intent": "content_request.photo",
+      "priority": 45,
+      "confidence": 0.84,
+      "keywords": ["send pic", "photo", "selfie", "picture", "照片", "自拍"]
+    },
+    {
+      "id": "content_request.voice.core",
+      "intent": "content_request.voice",
+      "priority": 45,
+      "confidence": 0.84,
+      "keywords": ["voice note", "call me", "send audio", "语音", "打电话"]
+    },
+    {
+      "id": "content_request.roleplay.core",
+      "intent": "content_request.roleplay",
+      "priority": 45,
+      "confidence": 0.82,
+      "keywords": ["pretend", "roleplay", "scenario", "story scene", "角色扮演", "假装"]
+    },
+    {
+      "id": "content_request.advice.core",
+      "intent": "content_request.advice",
+      "priority": 45,
+      "confidence": 0.82,
+      "keywords": ["what should i do", "help me decide", "need advice", "怎么办", "给我建议"]
+    },
+    {
+      "id": "content_request.memory_recall.core",
+      "intent": "content_request.memory_recall",
+      "priority": 45,
+      "confidence": 0.84,
+      "keywords": ["do you remember", "what did i tell you", "remember about me", "你还记得"]
+    },
+    {
+      "id": "boundary.topic_refusal.core",
+      "intent": "boundary.topic_refusal",
+      "priority": 95,
+      "confidence": 0.88,
+      "keywords": ["stop talking about", "do not mention", "change topic", "别说这个", "换个话题"]
+    },
+    {
+      "id": "boundary.marketing_opt_out.core",
+      "intent": "boundary.marketing_opt_out",
+      "priority": 95,
+      "confidence": 0.9,
+      "keywords": ["stop ads", "don't sell me vip", "no marketing", "别推销", "不要广告"]
+    },
+    {
+      "id": "boundary.break_from_chat.core",
+      "intent": "boundary.break_from_chat",
+      "priority": 95,
+      "confidence": 0.86,
+      "keywords": ["leave me alone", "not now", "need space", "别烦我", "现在不想聊"]
+    },
+    {
+      "id": "boundary.data_privacy.core",
+      "intent": "boundary.data_privacy",
+      "priority": 96,
+      "confidence": 0.9,
+      "keywords": ["delete my data", "what do you store", "privacy", "删除数据", "隐私"]
+    },
+    {
+      "id": "safety.self_harm_ideation.core",
+      "intent": "safety.self_harm_ideation",
+      "priority": 100,
+      "confidence": 0.98,
+      "keywords": ["kill myself", "end it all", "suicide", "不想活", "自杀"]
+    },
+    {
+      "id": "safety.minor_signal.core",
+      "intent": "safety.minor_signal",
+      "priority": 100,
+      "confidence": 0.94,
+      "keywords": ["i am 15", "i'm 16", "under 18", "我15岁", "未成年"]
+    },
+    {
+      "id": "safety.sexual_explicit.core",
+      "intent": "safety.sexual_explicit",
+      "priority": 100,
+      "confidence": 0.92,
+      "keywords": ["explicit sexual", "nude", "sex chat", "露骨", "裸照"]
+    },
+    {
+      "id": "safety.abuse_threat.core",
+      "intent": "safety.abuse_threat",
+      "priority": 100,
+      "confidence": 0.94,
+      "keywords": ["hurt you", "blackmail", "forced me", "威胁", "伤害你"]
+    },
+    {
+      "id": "safety.illegal_request.core",
+      "intent": "safety.illegal_request",
+      "priority": 100,
+      "confidence": 0.92,
+      "keywords": ["fraud", "hacking", "buy drugs", "诈骗", "黑客"]
+    }
+  ]
+}

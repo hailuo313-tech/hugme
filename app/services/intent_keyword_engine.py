@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -11,7 +12,27 @@ from typing import Any
 from loguru import logger
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_RULES_PATH = _REPO_ROOT / "config" / "intent_keyword_rules.json"
+
+
+def _default_rules_path() -> Path:
+    env_dir = os.environ.get("ERIS_CONFIG_DIR")
+    candidates = []
+    if env_dir:
+        candidates.append(Path(env_dir) / "intent_keyword_rules.json")
+    candidates.extend(
+        [
+            _REPO_ROOT / "config" / "intent_keyword_rules.json",
+            Path(__file__).resolve().parents[1] / "config" / "intent_keyword_rules.json",
+            Path("/app/config/intent_keyword_rules.json"),
+        ]
+    )
+    for path in candidates:
+        if path.exists():
+            return path
+    return candidates[0]
+
+
+DEFAULT_RULES_PATH = _default_rules_path()
 
 
 @dataclass(frozen=True)
