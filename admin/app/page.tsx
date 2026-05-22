@@ -77,6 +77,13 @@ function AdminHome({ operator }: { operator: Operator }) {
         status: "config",
       },
       {
+        title: "数据总览",
+        desc: "话术链接点击、国家/年龄分布、App 下载注册和付费归因。",
+        href: "/admin/data",
+        metric: "Attribution",
+        status: "online",
+      },
+      {
         title: "AI 话术与人设",
         desc: "话术底料、意图 taxonomy、persona prompt、安全过滤、script_hit 审计。",
         href: "/admin/ai-ops",

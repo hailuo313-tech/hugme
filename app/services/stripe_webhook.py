@@ -8,6 +8,7 @@ Stripe retries do not amplify transient business errors.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
 from typing import Any, Optional
 
 import stripe
@@ -17,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from services.level_engine import UserLevelInput, calc_user_level
+from services.link_attribution import record_attribution_event
 from services.minor_protection import should_block_consumption
 
 try:
@@ -144,12 +146,16 @@ async def _handle_checkout_completed(db: AsyncSession, event: dict[str, Any]) ->
         text(
             """
             UPDATE orders
-            SET status = 'paid', paid_at = NOW()
+            SET status = 'paid', paid_at = NOW(),
+                attribution_tracking_id = COALESCE(NULLIF(:metadata_tracking_id, ''), attribution_tracking_id)
             WHERE id = :oid AND status <> 'paid'
-            RETURNING user_id
+            RETURNING user_id, attribution_tracking_id, amount, currency
             """
         ),
-        {"oid": order_id},
+        {
+            "oid": order_id,
+            "metadata_tracking_id": metadata.get("attribution_tracking_id") or metadata.get("tracking_id") or "",
+        },
     )
     paid_row = res.fetchone()
     if paid_row is None:
@@ -165,6 +171,9 @@ async def _handle_checkout_completed(db: AsyncSession, event: dict[str, Any]) ->
         return
 
     user_id = paid_row[0]
+    attribution_tracking_id = _row_value(paid_row, 1, None)
+    amount_cents = _row_value(paid_row, 2, None)
+    currency = _row_value(paid_row, 3, None)
     if user_id is None:
         await db.commit()
         return
@@ -228,6 +237,24 @@ async def _handle_checkout_completed(db: AsyncSession, event: dict[str, Any]) ->
             user_id=str(user_id),
             error_type=type(upgrade_exc).__name__,
         ).warning("stripe_webhook.user_level_recalc_failed")
+
+    if attribution_tracking_id:
+        await record_attribution_event(
+            db,
+            tracking_id=str(attribution_tracking_id),
+            event_type="payment",
+            user_id=user_id,
+            order_id=order_id,
+            amount_cents=int(amount_cents or 0),
+            currency=str(currency or "USD"),
+            metadata_json=json.dumps(
+                {
+                    "stripe_event_id": event.get("id"),
+                    "checkout_session_id": session.get("id"),
+                },
+                ensure_ascii=False,
+            ),
+        )
 
     await db.commit()
 

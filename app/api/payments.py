@@ -40,8 +40,9 @@ router = APIRouter()
 class OrderCreate(BaseModel):
     user_id: str
     product_id: str
-    amount: int          # 单位：分（cents）
+    amount: int
     currency: str = "USD"
+    attribution_tracking_id: str | None = None
 
 
 class OrderResponse(BaseModel):
@@ -103,8 +104,8 @@ async def create_order(
     await db.execute(
         text(
             "INSERT INTO orders "
-            "(id, user_id, product_id, amount, currency, status, payment_provider) "
-            "VALUES (:id, :user_id, :product_id, :amount, :currency, 'pending', 'stripe')"
+            "(id, user_id, product_id, amount, currency, status, payment_provider, attribution_tracking_id) "
+            "VALUES (:id, :user_id, :product_id, :amount, :currency, 'pending', 'stripe', :attribution_tracking_id)"
         ),
         {
             "id": order_id,
@@ -112,6 +113,7 @@ async def create_order(
             "product_id": data.product_id,
             "amount": data.amount,
             "currency": data.currency,
+            "attribution_tracking_id": data.attribution_tracking_id,
         },
     )
     await db.commit()
@@ -143,6 +145,7 @@ async def create_order(
             metadata={
                 "order_id": order_id,
                 "user_id": data.user_id,
+                "attribution_tracking_id": data.attribution_tracking_id or "",
             },
             success_url=settings.STRIPE_SUCCESS_URL,
             cancel_url=settings.STRIPE_CANCEL_URL,
@@ -199,7 +202,7 @@ async def get_order(
         await db.execute(
             text(
                 "SELECT id, user_id, product_id, amount, currency, status, "
-                "payment_provider, provider_order_id, created_at "
+                "payment_provider, provider_order_id, created_at, attribution_tracking_id "
                 "FROM orders WHERE id = :oid"
             ),
             {"oid": order_id},
@@ -222,6 +225,7 @@ async def get_order(
         "payment_provider":  row[6],
         "provider_order_id": row[7],
         "created_at":        row[8].isoformat() if row[8] else None,
+        "attribution_tracking_id": row[9] if len(row) > 9 else None,
     }
 
 

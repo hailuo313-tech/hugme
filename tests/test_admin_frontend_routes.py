@@ -15,11 +15,13 @@ def test_admin_root_is_current_home_dashboard() -> None:
     assert 'title="总后台"' in page
     assert 'href: "/admin/conversations"' in frame
     assert 'href: "/admin/telegram-accounts"' in frame
+    assert 'href: "/admin/data"' in frame
     assert 'href: "/admin/ai-ops"' in frame
     assert 'href: "/admin/approvals"' in frame
     assert 'href: "/admin/delivery"' in frame
     assert 'title: "会话流控"' in page
     assert 'title: "TG 真人账号"' in page
+    assert 'title: "数据总览"' in page
     assert 'title: "AI 话术与人设"' in page
     assert 'title: "运营审批"' in page
     assert 'title: "推送监控与 H5"' in page
@@ -56,6 +58,7 @@ def test_business_flow_admin_pages_exist() -> None:
         "admin/app/ai-ops/page.tsx": ["script_match", "H-03", "H-04", "P3-21"],
         "admin/app/approvals/page.tsx": ["H-01", "H-07", "H-10", "H-11"],
         "admin/app/delivery/page.tsx": ["P4-09", "P4-10", "P5-08"],
+        "admin/app/data/page.tsx": ["链接到 App 转化漏斗", "/admin/attribution/summary", "高转化话术"],
     }
 
     for path, needles in pages.items():

@@ -1,0 +1,145 @@
+from __future__ import annotations
+
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from api.attribution import (
+    AttributionLinkCreate,
+    create_attribution_link,
+    redirect_tracking_link,
+)
+from services.link_attribution import (
+    new_tracking_id,
+    record_attribution_event,
+    tracking_url,
+    wrap_text_links_with_tracking,
+)
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class FakeResult:
+    def __init__(self, row=None, rows=None):
+        self.row = row
+        self.rows = rows or []
+
+    def fetchone(self):
+        return self.row
+
+    def fetchall(self):
+        return self.rows
+
+
+class FakeSession:
+    def __init__(self, results=None):
+        self.results = list(results or [])
+        self.execute = AsyncMock(side_effect=self._execute)
+        self.commit = AsyncMock(return_value=None)
+
+    async def _execute(self, *args, **kwargs):
+        return self.results.pop(0) if self.results else FakeResult()
+
+
+def test_v9_migration_defines_attribution_storage() -> None:
+    sql = (ROOT / "db" / "migration" / "V9__link_attribution.sql").read_text(encoding="utf-8")
+
+    assert "CREATE TABLE IF NOT EXISTS attribution_links" in sql
+    assert "CREATE TABLE IF NOT EXISTS attribution_events" in sql
+    assert "script_hit_id" in sql
+    assert "country_code" in sql
+    assert "ALTER TABLE orders" in sql
+    assert "ADD COLUMN IF NOT EXISTS attribution_tracking_id" in sql
+
+
+def test_tracking_id_and_url_are_url_safe() -> None:
+    tracking_id = new_tracking_id()
+
+    assert len(tracking_id) >= 12
+    assert "/" not in tracking_id
+    assert tracking_url("https://hugme2.com/", "trk_1") == "https://hugme2.com/r/trk_1"
+
+
+async def test_record_attribution_event_rejects_unknown_type() -> None:
+    with pytest.raises(ValueError, match="unsupported attribution event_type"):
+        await record_attribution_event(FakeSession(), tracking_id="trk", event_type="unknown")
+
+
+async def test_create_attribution_link_persists_context_and_returns_redirect_url() -> None:
+    db = FakeSession()
+    request = SimpleNamespace(base_url="https://hugme2.com/")
+
+    with patch("services.link_attribution.new_tracking_id", return_value="trk_test"):
+        response = await create_attribution_link(
+            AttributionLinkCreate(
+                destination_url="https://app.example/download",
+                user_id="user-1",
+                script_hit_id="hit-1",
+                campaign_id="spring",
+                platform="telegram",
+                country_code="us",
+                age=29,
+                user_level="a",
+            ),
+            request,
+            {},
+            db,
+        )
+
+    assert response.tracking_id == "trk_test"
+    assert response.tracking_url == "https://hugme2.com/r/trk_test"
+    params = db.execute.await_args.args[1]
+    assert params["script_hit_id"] == "hit-1"
+    assert params["country_code"] == "US"
+    assert params["user_level"] == "A"
+    db.commit.assert_awaited_once()
+
+
+async def test_wrap_text_links_with_tracking_replaces_outbound_url() -> None:
+    db = FakeSession()
+
+    with patch("services.link_attribution.new_tracking_id", return_value="trk_reply"):
+        wrapped = await wrap_text_links_with_tracking(
+            db,
+            text_value="Install here: https://app.example/download.",
+            base_url="https://hugme2.com",
+            user_id="user-1",
+            conversation_id="conv-1",
+            message_id="msg-1",
+            script_hit_id="hit-1",
+            campaign_id="spring",
+            platform="telegram",
+        )
+
+    assert wrapped == "Install here: https://hugme2.com/r/trk_reply."
+    params = db.execute.await_args.args[1]
+    assert params["destination_url"] == "https://app.example/download"
+    assert params["script_hit_id"] == "hit-1"
+    assert params["message_id"] == "msg-1"
+
+
+async def test_redirect_tracking_link_records_click_then_redirects() -> None:
+    db = FakeSession(
+        results=[
+            FakeResult(("https://app.example/download", "user-1", "US", 29, "A")),
+            FakeResult(),
+        ]
+    )
+    request = SimpleNamespace(
+        headers={"user-agent": "pytest", "referer": "https://hugme2.com/chat"},
+        client=SimpleNamespace(host="127.0.0.1"),
+    )
+
+    response = await redirect_tracking_link("trk_test", request, db)
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "https://app.example/download"
+    assert db.execute.await_count == 2
+    event_params = db.execute.await_args_list[1].args[1]
+    assert event_params["event_type"] == "click"
+    assert event_params["tracking_id"] == "trk_test"
+    assert event_params["user_id"] == "user-1"
+    db.commit.assert_awaited_once()
