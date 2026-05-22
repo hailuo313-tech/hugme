@@ -23,6 +23,7 @@ class IntentKeywordRule:
     keywords: tuple[str, ...] = ()
     patterns: tuple[str, ...] = ()
     excludes: tuple[str, ...] = ()
+    enabled: bool = True
 
 
 @dataclass(frozen=True)
@@ -74,6 +75,8 @@ class IntentKeywordEngine:
 
         matches: list[IntentKeywordMatch] = []
         for rule in ruleset.rules:
+            if not rule.enabled:
+                continue
             if _excluded(normalized, rule.excludes):
                 continue
             keyword_hits = tuple(k for k in rule.keywords if _keyword_in_text(normalized, k))
@@ -113,6 +116,7 @@ def _rule_from_dict(data: dict[str, Any]) -> IntentKeywordRule:
         keywords=tuple(str(k).lower() for k in data.get("keywords", [])),
         patterns=tuple(str(p) for p in data.get("patterns", [])),
         excludes=tuple(str(k).lower() for k in data.get("excludes", [])),
+        enabled=bool(data.get("enabled", True)),
     )
 
 
