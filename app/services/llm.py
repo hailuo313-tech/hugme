@@ -1,15 +1,9 @@
-"""
-D2-1: OpenRouter LLM 客户端
-- 异步 httpx 直接调用 OpenRouter（/chat/completions，OpenAI 兼容接口）
-- 主模型：deepseek/deepseek-chat-v3-0324（便宜、快、支持中文）
-- 备用模型：openai/gpt-4o-mini（稳定兜底）
-- 降级策略：主模型超时（PRIMARY_TIMEOUT=25s）或 5xx 错误 → 自动切备用模型
-- 支持流式（stream=False 当前阶段，D2-2 Orchestrator 可扩展）
-- 结构化返回：LLMResult（content, model_used, usage, latency_ms, fallback_used）
-"""
+"""OpenAI-compatible LLM client with Novita/OpenRouter routing."""
+
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -19,184 +13,201 @@ from pydantic import BaseModel
 from core.config import settings
 
 
-# ── 模型常量 ──────────────────────────────────────────
-PRIMARY_MODEL   = "deepseek/deepseek-chat-v3-0324"
-FALLBACK_MODEL  = "openai/gpt-4o-mini"
-OPENROUTER_BASE = "https://openrouter.ai/api/v1"
-
-PRIMARY_TIMEOUT_S  = 25.0   # 主模型超时：25s
-FALLBACK_TIMEOUT_S = 20.0   # 备用模型超时：20s
+PRIMARY_TIMEOUT_S = 25.0
+FALLBACK_TIMEOUT_S = 20.0
 
 HTTP_REFERER = "https://hugme2.com"
-APP_TITLE    = "ERIS Emotional Companion"
+APP_TITLE = "ERIS Emotional Companion"
+DEFAULT_FALLBACK_REPLY = "现在有点忙，稍后再聊好吗？"
 
 
-# ── 返回结构 ──────────────────────────────────────────
 class LLMResult(BaseModel):
-    content:       str
-    model_used:    str
-    usage:         dict[str, Any] = {}
-    latency_ms:    float
+    content: str
+    model_used: str
+    usage: dict[str, Any] = {}
+    latency_ms: float
     fallback_used: bool = False
-    error:         str | None = None
+    error: str | None = None
 
 
-# ── 内部工具 ──────────────────────────────────────────
+@dataclass(frozen=True)
+class LLMProvider:
+    name: str
+    base_url: str
+    api_key: str | None
+    model: str
 
-def _headers() -> dict[str, str]:
+
+def _clean_base_url(base_url: str) -> str:
+    return (base_url or "").rstrip("/")
+
+
+def _provider_for(name: str, *, model: str | None = None) -> LLMProvider:
+    provider = (name or "openrouter").strip().lower()
+    if provider == "novita":
+        return LLMProvider(
+            name="novita",
+            base_url=_clean_base_url(settings.LLM_API_BASE_URL),
+            api_key=settings.NOVITA_API_KEY,
+            model=model or settings.LLM_PRIMARY_MODEL,
+        )
+    return LLMProvider(
+        name="openrouter",
+        base_url=_clean_base_url(settings.OPENROUTER_BASE_URL),
+        api_key=settings.OPENROUTER_API_KEY,
+        model=model or settings.LLM_FALLBACK_MODEL,
+    )
+
+
+def _primary_provider(*, force_model: str | None = None) -> LLMProvider:
+    return _provider_for(settings.LLM_PROVIDER, model=force_model)
+
+
+def _fallback_provider() -> LLMProvider | None:
+    primary = (settings.LLM_PROVIDER or "openrouter").strip().lower()
+    if primary == "novita" and settings.OPENROUTER_API_KEY:
+        return _provider_for("openrouter", model=settings.LLM_FALLBACK_MODEL)
+    if primary != "novita" and settings.NOVITA_API_KEY:
+        return _provider_for("novita", model=settings.LLM_PRIMARY_MODEL)
+    return None
+
+
+def _headers(provider: LLMProvider) -> dict[str, str]:
     return {
-        "Authorization":  f"Bearer {settings.OPENROUTER_API_KEY}",
-        "HTTP-Referer":   HTTP_REFERER,
-        "X-Title":        APP_TITLE,
-        "Content-Type":   "application/json",
+        "Authorization": f"Bearer {provider.api_key}",
+        "HTTP-Referer": HTTP_REFERER,
+        "X-Title": APP_TITLE,
+        "Content-Type": "application/json",
     }
 
 
 def _build_body(
     messages: list[dict],
-    model:    str,
+    model: str,
     temperature: float = 0.85,
-    max_tokens:  int   = 800,
-) -> dict:
+    max_tokens: int = 800,
+) -> dict[str, Any]:
     return {
-        "model":       model,
-        "messages":    messages,
+        "model": model,
+        "messages": messages,
         "temperature": temperature,
-        "max_tokens":  max_tokens,
-        "stream":      False,
+        "max_tokens": max_tokens,
+        "stream": False,
     }
 
 
 async def _call_once(
-    messages:    list[dict],
-    model:       str,
-    timeout_s:   float,
-    trace_id:    str,
-) -> tuple[str, dict]:
-    """
-    单次调用 OpenRouter。
-    返回 (content, usage_dict)。
-    抛出 httpx.TimeoutException 或 RuntimeError（非 2xx）。
-    """
-    body = _build_body(messages, model)
-    url  = f"{OPENROUTER_BASE}/chat/completions"
+    messages: list[dict],
+    provider: LLMProvider,
+    timeout_s: float,
+    trace_id: str,
+    *,
+    temperature: float,
+    max_tokens: int,
+) -> tuple[str, dict[str, Any]]:
+    if not provider.api_key:
+        raise RuntimeError(f"{provider.name.upper()}_API_KEY_MISSING")
+    if not provider.base_url:
+        raise RuntimeError(f"{provider.name.upper()}_BASE_URL_MISSING")
 
-    logger.info(f"[{trace_id}] llm.call.start model={model} timeout={timeout_s}s")
+    body = _build_body(messages, provider.model, temperature=temperature, max_tokens=max_tokens)
+    url = f"{provider.base_url}/chat/completions"
+
+    logger.bind(provider=provider.name, model=provider.model).info(f"[{trace_id}] llm.call.start")
     t0 = time.time()
 
     async with httpx.AsyncClient(timeout=timeout_s) as client:
-        resp = await client.post(url, json=body, headers=_headers())
+        resp = await client.post(url, json=body, headers=_headers(provider))
 
     latency = (time.time() - t0) * 1000
-    logger.info(f"[{trace_id}] llm.call.response model={model} status={resp.status_code} latency={latency:.0f}ms")
+    logger.bind(provider=provider.name, model=provider.model, status_code=resp.status_code, latency_ms=latency).info(
+        f"[{trace_id}] llm.call.response"
+    )
 
     if resp.status_code >= 500:
-        raise RuntimeError(f"OpenRouter 5xx: {resp.status_code} {resp.text[:200]}")
+        raise RuntimeError(f"{provider.name} 5xx: {resp.status_code} {resp.text[:200]}")
     if resp.status_code >= 400:
-        raise RuntimeError(f"OpenRouter 4xx: {resp.status_code} {resp.text[:200]}")
+        raise RuntimeError(f"{provider.name} 4xx: {resp.status_code} {resp.text[:200]}")
 
-    data    = resp.json()
+    data = resp.json()
     content = data["choices"][0]["message"]["content"]
-    usage   = data.get("usage", {})
+    usage = data.get("usage", {})
     return content, usage
 
 
-# ── 公开接口 ──────────────────────────────────────────
-
 async def chat(
-    messages:    list[dict],
-    trace_id:    str,
+    messages: list[dict],
+    trace_id: str,
     temperature: float = 0.85,
-    max_tokens:  int   = 800,
+    max_tokens: int = 800,
     force_model: str | None = None,
 ) -> LLMResult:
-    """
-    主入口：发送消息列表，返回 LLMResult。
-    自动降级：PRIMARY 超时或 5xx → FALLBACK。
-    force_model 可跳过路由（A/B 实验 / 测试用）。
-    """
-    if not settings.OPENROUTER_API_KEY:
-        logger.error(f"[{trace_id}] OPENROUTER_API_KEY not configured")
-        return LLMResult(
-            content="现在有点忙，稍后再聊好吗？",
-            model_used="none",
-            latency_ms=0,
-            error="API_KEY_MISSING",
-        )
-
+    """Send chat messages to the configured OpenAI-compatible provider."""
     start_ts = time.time()
+    primary = _primary_provider(force_model=force_model)
 
-    # ── 强制指定模型（跳过路由）──────────────────────
-    if force_model:
-        try:
-            content, usage = await _call_once(messages, force_model, PRIMARY_TIMEOUT_S, trace_id)
-            return LLMResult(
-                content=content,
-                model_used=force_model,
-                usage=usage,
-                latency_ms=(time.time() - start_ts) * 1000,
-                fallback_used=False,
-            )
-        except Exception as e:
-            logger.warning(f"[{trace_id}] llm.force_model.fail model={force_model} err={e}")
-            return LLMResult(
-                content="现在有点忙，稍后再聊好吗？",
-                model_used=force_model,
-                latency_ms=(time.time() - start_ts) * 1000,
-                error=str(e),
-            )
-
-    # ── 主模型 ────────────────────────────────────────
-    primary_err: str | None = None
     try:
-        content, usage = await _call_once(messages, PRIMARY_MODEL, PRIMARY_TIMEOUT_S, trace_id)
+        content, usage = await _call_once(
+            messages,
+            primary,
+            PRIMARY_TIMEOUT_S,
+            trace_id,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
         return LLMResult(
             content=content,
-            model_used=PRIMARY_MODEL,
+            model_used=f"{primary.name}:{primary.model}",
             usage=usage,
             latency_ms=(time.time() - start_ts) * 1000,
             fallback_used=False,
         )
-    except httpx.TimeoutException as e:
-        primary_err = f"timeout: {e}"
-        logger.warning(f"[{trace_id}] llm.primary.timeout model={PRIMARY_MODEL} → fallback")
-    except RuntimeError as e:
-        primary_err = str(e)
-        if "5xx" in primary_err:
-            logger.warning(f"[{trace_id}] llm.primary.5xx model={PRIMARY_MODEL} → fallback")
-        else:
-            # 4xx（如余额不足）不降级，直接返回错误
-            logger.error(f"[{trace_id}] llm.primary.4xx model={PRIMARY_MODEL} err={primary_err}")
-            return LLMResult(
-                content="现在有点忙，稍后再聊好吗？",
-                model_used=PRIMARY_MODEL,
-                latency_ms=(time.time() - start_ts) * 1000,
-                error=primary_err,
-            )
-    except Exception as e:
-        primary_err = str(e)
-        logger.warning(f"[{trace_id}] llm.primary.error model={PRIMARY_MODEL} err={e} → fallback")
+    except httpx.TimeoutException as exc:
+        primary_err = f"timeout: {exc}"
+        logger.bind(provider=primary.name, model=primary.model).warning(f"[{trace_id}] llm.primary.timeout")
+    except RuntimeError as exc:
+        primary_err = str(exc)
+        logger.bind(provider=primary.name, model=primary.model).warning(f"[{trace_id}] llm.primary.error")
+    except Exception as exc:
+        primary_err = str(exc)
+        logger.bind(provider=primary.name, model=primary.model, error_type=type(exc).__name__).warning(
+            f"[{trace_id}] llm.primary.error"
+        )
 
-    # ── 备用模型 ──────────────────────────────────────
-    logger.info(f"[{trace_id}] llm.fallback.start model={FALLBACK_MODEL} primary_err={primary_err}")
+    fallback = None if force_model else _fallback_provider()
+    if fallback is None:
+        logger.error(f"[{trace_id}] llm.no_fallback primary_err={primary_err}")
+        return LLMResult(
+            content=DEFAULT_FALLBACK_REPLY,
+            model_used=f"{primary.name}:{primary.model}",
+            latency_ms=(time.time() - start_ts) * 1000,
+            error=primary_err,
+        )
+
     try:
-        content, usage = await _call_once(messages, FALLBACK_MODEL, FALLBACK_TIMEOUT_S, trace_id)
+        content, usage = await _call_once(
+            messages,
+            fallback,
+            FALLBACK_TIMEOUT_S,
+            trace_id,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
         return LLMResult(
             content=content,
-            model_used=FALLBACK_MODEL,
+            model_used=f"{fallback.name}:{fallback.model}",
             usage=usage,
             latency_ms=(time.time() - start_ts) * 1000,
             fallback_used=True,
         )
-    except Exception as e:
-        fallback_err = str(e)
+    except Exception as exc:
+        fallback_err = str(exc)
         logger.error(
-            f"[{trace_id}] llm.fallback.error model={FALLBACK_MODEL} "
-            f"primary_err={primary_err} fallback_err={fallback_err}"
+            f"[{trace_id}] llm.fallback.error primary_err={primary_err} fallback_err={fallback_err}"
         )
         return LLMResult(
-            content="现在有点忙，稍后再聊好吗？",
-            model_used=FALLBACK_MODEL,
+            content=DEFAULT_FALLBACK_REPLY,
+            model_used=f"{fallback.name}:{fallback.model}",
             latency_ms=(time.time() - start_ts) * 1000,
             fallback_used=True,
             error=f"primary={primary_err}; fallback={fallback_err}",
