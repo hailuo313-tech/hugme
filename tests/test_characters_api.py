@@ -135,6 +135,34 @@ def test_patch_character_updates_only_provided_fields():
     db.commit.assert_awaited_once()
 
 
+def test_create_character_accepts_descriptive_tone_phrase():
+    db = MagicMock()
+    db.execute = AsyncMock(
+        return_value=_result(
+            one=_row({"id": CHAR_ID, "name": "Claire", "status": "draft"})
+        )
+    )
+    db.commit = AsyncMock()
+    client = TestClient(_app(db))
+
+    r = client.post(
+        "/api/v1/characters",
+        json={
+            "name": "Claire",
+            "status": "draft",
+            "tone": "natural, warm, lightly playful",
+            "supported_languages": ["en"],
+            "reply_length": "medium",
+            "emoji_frequency": "low",
+        },
+    )
+
+    assert r.status_code == 201, r.text
+    params = db.execute.await_args.args[1]
+    assert params["tone"] == "natural, warm, lightly playful"
+    db.commit.assert_awaited_once()
+
+
 def test_patch_character_casts_profile_details_jsonb():
     db = MagicMock()
     db.execute = AsyncMock(
