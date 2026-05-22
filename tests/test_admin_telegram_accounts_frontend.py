@@ -9,8 +9,8 @@ def test_telegram_accounts_admin_uses_api_fetch_relative_paths() -> None:
         encoding="utf-8"
     )
 
-    assert 'href="/admin/telegram-accounts"' in (
-        ROOT / "admin" / "app" / "page.tsx"
+    assert 'href: "/admin/telegram-accounts"' in (
+        ROOT / "admin" / "components" / "AdminFrame.tsx"
     ).read_text(encoding="utf-8")
     assert 'apiFetch<TelegramAccountsResponse>("/telegram/accounts")' in page
     assert 'apiFetch<SessionLoginStartResponse>("/telegram/session-login/start"' in page
