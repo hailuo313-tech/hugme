@@ -69,8 +69,24 @@ export async function apiFetch<T>(
     throw new Error("Unauthorized");
   }
   if (!res.ok) {
-    const err = await res.json().catch(() => ({})) as { detail?: string };
-    throw new Error(err.detail || res.statusText);
+    const err = await res.json().catch(() => ({})) as { detail?: unknown };
+    const detail = err.detail;
+    const message =
+      typeof detail === "string"
+        ? detail
+        : Array.isArray(detail)
+          ? detail
+              .map((item) => {
+                if (!item || typeof item !== "object") return String(item);
+                const record = item as { loc?: unknown[]; msg?: unknown };
+                const field = Array.isArray(record.loc)
+                  ? record.loc.filter((part) => part !== "body").join(".")
+                  : "";
+                return [field, record.msg].filter(Boolean).join(": ");
+              })
+              .join("; ")
+          : res.statusText;
+    throw new Error(message || res.statusText);
   }
   return res.json() as Promise<T>;
 }

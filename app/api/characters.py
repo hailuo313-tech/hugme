@@ -40,7 +40,7 @@ class CharacterBase(BaseModel):
     emotional_depth_score: int = Field(default=60, ge=0, le=100)
     boundary_score: int = Field(default=70, ge=0, le=100)
     reply_length: str = Field(default="medium", min_length=1, max_length=10)
-    tone: str = Field(default="warm", min_length=1, max_length=20)
+    tone: str = Field(default="warm", min_length=1, max_length=100)
     emoji_frequency: str = Field(default="low", min_length=1, max_length=10)
     prompt_en: Optional[str] = None
     prompt_es: Optional[str] = None
@@ -70,7 +70,7 @@ class CharacterUpdate(BaseModel):
     emotional_depth_score: Optional[int] = Field(default=None, ge=0, le=100)
     boundary_score: Optional[int] = Field(default=None, ge=0, le=100)
     reply_length: Optional[str] = Field(default=None, min_length=1, max_length=10)
-    tone: Optional[str] = Field(default=None, min_length=1, max_length=20)
+    tone: Optional[str] = Field(default=None, min_length=1, max_length=100)
     emoji_frequency: Optional[str] = Field(default=None, min_length=1, max_length=10)
     prompt_en: Optional[str] = None
     prompt_es: Optional[str] = None
