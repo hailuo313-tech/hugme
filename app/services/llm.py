@@ -20,8 +20,8 @@ from core.config import settings
 
 
 # ── 模型常量 ──────────────────────────────────────────
-PRIMARY_MODEL   = "chat2"
-FALLBACK_MODEL  = "chat2"
+PRIMARY_MODEL   = "deepseek/deepseek-v4-flash"
+FALLBACK_MODEL  = "deepseek/deepseek-v4-flash"
 NOVITA_BASE     = "https://api.novita.ai/openai/v1"
 
 PRIMARY_TIMEOUT_S  = 25.0   # 主模型超时：25s
