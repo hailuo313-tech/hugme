@@ -105,6 +105,29 @@ app = FastAPI(
 )
 
 
+@app.on_event("startup")
+async def start_runtime_workers():
+    if getattr(settings, "MTProto_ENABLED", 0):
+        try:
+            await session_manager.start()
+            logger.info("mtproto.session_manager.started")
+        except Exception as exc:
+            logger.bind(error_type=type(exc).__name__).error(
+                "mtproto.session_manager.start_failed"
+            )
+
+
+@app.on_event("shutdown")
+async def stop_runtime_workers():
+    try:
+        await session_manager.stop()
+        logger.info("mtproto.session_manager.stopped")
+    except Exception as exc:
+        logger.bind(error_type=type(exc).__name__).warning(
+            "mtproto.session_manager.stop_failed"
+        )
+
+
 # Database initialization flag
 _db_initialized = False
 

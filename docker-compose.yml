@@ -115,7 +115,7 @@ services:
       timeout: 10s
       retries: 3
 
-prometheus:
+  prometheus:
     image: prom/prometheus:latest
     container_name: eris-prometheus
     restart: always
