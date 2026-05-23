@@ -232,6 +232,39 @@ async def disconnect_telegram_account(account_id: str):
         )
 
 
+@router.delete("/api/v1/telegram/accounts/{account_id}", response_model=dict)
+async def delete_telegram_account(account_id: str):
+    """Delete a Telegram account after disconnecting any active client."""
+    try:
+        account_uuid = UUID(account_id)
+        success = await telegram_account_manager.delete_account(account_uuid)
+
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Account not found",
+            )
+
+        return {
+            "account_id": account_id,
+            "status": "deleted",
+            "message": "Account deleted successfully",
+        }
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid account ID format",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete Telegram account {account_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="删除 Telegram 账号失败，请稍后重试或联系管理员。",
+        )
+
+
 @router.get("/api/v1/telegram/accounts/{account_id}", response_model=TelegramAccountResponse)
 async def get_telegram_account(account_id: str):
     """Get status of a specific Telegram account."""

@@ -187,6 +187,25 @@ function TelegramAccountsManager() {
     }
   };
 
+  // 删除账号
+  const handleDeleteAccount = async (account: TelegramAccount) => {
+    const label = account.display_name || account.username || account.phone;
+    if (!confirm(`确定要删除 Telegram 账号「${label}」吗？删除后需要重新发送验证码才能接入。`)) return;
+
+    setLoading(true);
+    setError(null);
+    try {
+      await apiFetch(`/telegram/accounts/${account.id}`, {
+        method: "DELETE",
+      });
+      await loadAccounts();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "删除账号失败");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // 连接所有账号
   const handleConnectAll = async () => {
     setLoading(true);
@@ -383,6 +402,13 @@ function TelegramAccountsManager() {
                           连接
                         </button>
                       )}
+                      <button
+                        onClick={() => handleDeleteAccount(account)}
+                        disabled={loading}
+                        className="px-3 py-1.5 border border-red-500/70 text-red-300 hover:bg-red-500/10 disabled:opacity-50 rounded text-sm transition"
+                      >
+                        删除
+                      </button>
                     </div>
                   </div>
                 </div>
