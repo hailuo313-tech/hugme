@@ -17,7 +17,7 @@ def test_h04_policy_is_signed() -> None:
 
     assert policy["task_id"] == "H-04"
     assert policy["status"] == "signed"
-    assert policy["signed_on"] == "2026-05-20"
+    assert policy["signed_on"] == "2026-05-22"
     assert policy["signed_by"] == "human_owner"
     assert "pending_final_review" not in policy["signed_by"]
 
@@ -49,6 +49,7 @@ def test_required_forbidden_categories_are_present() -> None:
 
     assert set(categories) >= {
         "system_disclosure",
+        "adult_topic_refusal_templates",
         "performative_style",
         "unsafe_minors",
         "self_harm_enabling",
@@ -68,3 +69,19 @@ def test_guardrails_keep_safety_above_persona() -> None:
     assert "stage directions" in guardrails
     assert "match the user's language" in guardrails
     assert "do not upsell" in guardrails
+    assert "verified us adults" in guardrails
+    assert "consensual adult sexual topics" in guardrails
+    assert "not privacy violations" in guardrails
+
+
+def test_h04_policy_matches_adult_companion_rules() -> None:
+    policy = _load_policy()
+    body = json.dumps(policy, ensure_ascii=False).lower()
+
+    assert "mild and non-explicit" not in body
+    assert "sexual escalation" not in body
+    assert "safe flirtation only" not in body
+    assert "adult nude/body topic continuation" in body
+    assert "ordinary consensual adult sexual chat" in body
+    assert "too personal" in body
+    assert "keep our chat light and friendly" in body
