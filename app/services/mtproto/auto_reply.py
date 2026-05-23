@@ -29,6 +29,7 @@ MTProtoReplyPolicy = HumanLikeSendPolicy(
     very_long_text_seconds=15.0,
     minimum_typing_seconds=3.0,
     minimum_inter_message_seconds=0.0,
+    typing_start_delay_seconds=5.0,
 )
 
 
@@ -67,6 +68,7 @@ def _reply_delay_policy(reply_text: str) -> HumanLikeSendPolicy:
         very_long_text_seconds=delay,
         minimum_typing_seconds=delay,
         minimum_inter_message_seconds=0.0,
+        typing_start_delay_seconds=5.0,
     )
 
 
