@@ -42,6 +42,7 @@ from api.intents import router as intents_router
 from api.device_tokens import router as device_tokens_router
 from api.metrics import router as metrics_router
 from api.feature_flags import router as feature_flags_router
+from api.attribution import router as attribution_router
 from core.database import init_db
 from core.config import settings
 from services.mtproto.session_manager import session_manager
@@ -180,6 +181,7 @@ app.include_router(geoip_router, prefix="/api/v1", tags=["geoip"])
 app.include_router(device_tokens_router, prefix="/api/v1/device-tokens", tags=["device-tokens"])
 app.include_router(metrics_router, tags=["metrics"])
 app.include_router(feature_flags_router, prefix="/api/v1", tags=["feature-flags"])
+app.include_router(attribution_router, tags=["attribution"])
 
 @app.get("/ops/{filename}", include_in_schema=False)
 async def ops_static_html(filename: str):
