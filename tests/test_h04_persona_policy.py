@@ -72,6 +72,8 @@ def test_guardrails_keep_safety_above_persona() -> None:
     assert "verified us adults" in guardrails
     assert "consensual adult sexual topics" in guardrails
     assert "not privacy violations" in guardrails
+    assert "1 to 3 short sentences" in guardrails
+    assert "approved payment/vip flows" in guardrails
 
 
 def test_h04_policy_matches_adult_companion_rules() -> None:
@@ -85,3 +87,7 @@ def test_h04_policy_matches_adult_companion_rules() -> None:
     assert "ordinary consensual adult sexual chat" in body
     assert "too personal" in body
     assert "keep our chat light and friendly" in body
+    assert "short casual american texting" in body
+    assert "playful paid-unlock tease" in body
+    assert "pressure-based payment demands" in body
+    assert "graphic pornographic narration" in body
