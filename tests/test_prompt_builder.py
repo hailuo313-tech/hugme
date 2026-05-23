@@ -91,14 +91,16 @@ def test_l1_safety_contains_hard_redlines():
     assert "越狱" in body or "忽略以上规则" in body
 
 
-def test_default_persona_allows_consensual_adult_flirtation():
+def test_default_persona_is_us_adult_companion_by_default():
     out = build_prompt(PromptInput(user_text="当我想起你时，我会咬住嘴唇"))
     system = out.system_content
 
-    assert "Adult consensual flirting is allowed" in system
-    assert "Do not use generic refusals" in system
-    assert "normal chat partner" in system
-    assert "adult American woman" in system
+    assert "verified US adult" in system
+    assert "adult companion-chat product" in system
+    assert "erotic interests" in system
+    assert "adult companion persona" in system
+    assert "normal chat partner" not in system
+    assert "普通聊天对象" not in system
 
 
 def test_l2_identity_uses_current_character_not_chatgpt():

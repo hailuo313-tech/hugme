@@ -49,6 +49,15 @@ async def test_moderation_blocks_sexual_minors():
 
 
 @pytest.mark.asyncio
+async def test_moderation_allows_verified_adult_sexual_flag():
+    cats = {"sexual": True, "sexual/minors": False}
+    scores = {"sexual": 0.99, "sexual/minors": 0.0}
+    block, reason = _moderation_should_block(cats, scores, flagged=True)
+    assert block is False
+    assert reason is None
+
+
+@pytest.mark.asyncio
 async def test_disabled_short_circuit():
     with patch.object(settings, "CONTENT_SAFETY_ENABLED", False):
         out = await evaluate_inbound_content_safety("anything", trace_id="t2")
