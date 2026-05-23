@@ -1,0 +1,61 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: eris-postgres
+    restart: always
+    environment:
+      POSTGRES_DB: eris
+      POSTGRES_USER: eris
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eris -d eris"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: eris-redis
+    restart: always
+    command: redis-server --requirepass redis_secret_2026
+    volumes:
+      - redis_data:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "--pass", "redis_secret_2026", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: eris-api
+    restart: always
+    volumes:
+      - ./app:/app
+      - ./config:/app/config
+      - ./docs:/srv/ops-docs:ro
+    environment:
+      DATABASE_URL: postgresql+asyncpg://eris:eris_secret_2026@postgres:5432/eris
+      REDIS_URL: redis://:redis_secret_2026@redis:6379/0
+      NOVITA_API_KEY: ${NOVITA_API_KEY:-}
+      NOVITA_BASE_URL: https://api.novita.ai/openai
+      NOVITA_CHAT_MODEL: chat2
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:

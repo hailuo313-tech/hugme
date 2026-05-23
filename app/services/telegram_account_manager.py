@@ -1,27 +1,21 @@
 """Telegram account manager for P1-09 multi-account StringSession management."""
 
 import asyncio
-import inspect
-from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Dict, List, Optional
 from uuid import UUID
-from uuid import uuid4
 
 from cryptography.fernet import Fernet
 from loguru import logger
-import redis.asyncio as aioredis
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 from telethon import TelegramClient
-from telethon import events
 from telethon.errors import SessionPasswordNeededError
 from telethon.sessions import StringSession
 
 from core.config import settings
-from core.database import AsyncSessionLocal, get_async_session
+from core.database import AsyncSessionLocal
 from models.telegram_accounts import TelegramAccount
-from services.telegram_real_user_auto_reply import handle_mtproto_inbound_auto_reply
 
 
 class TelegramAccountManager:
@@ -33,7 +27,6 @@ class TelegramAccountManager:
         self.fernet = Fernet(settings.TELEGRAM_SESSION_FERNET_KEY.encode()) if settings.TELEGRAM_SESSION_FERNET_KEY else None
         self._encrypted_session_cache: Dict[str, str] = {}
         self._lock = asyncio.Lock()
-        self._redis = None
 
     def _decrypt_session(self, encrypted_session: str) -> str:
         """Decrypt encrypted StringSession."""
@@ -61,19 +54,17 @@ class TelegramAccountManager:
 
     async def get_account(self, account_id: UUID) -> Optional[TelegramAccount]:
         """Get account by ID from database."""
-        async with _session_scope() as session:
+        async with AsyncSessionLocal() as session:
             result = await session.execute(select(TelegramAccount).where(TelegramAccount.id == account_id))
-            return await _maybe_await(result.scalar_one_or_none())
+            return result.scalar_one_or_none()
 
     async def get_active_accounts(self) -> List[TelegramAccount]:
         """Get all active accounts from database."""
-        async with _session_scope() as session:
+        async with AsyncSessionLocal() as session:
             result = await session.execute(
                 select(TelegramAccount).where(TelegramAccount.is_active == True)
             )
-            scalars = await _maybe_await(result.scalars())
-            accounts = await _maybe_await(scalars.all())
-            return list(accounts)
+            return list(result.scalars().all())
 
     async def connect_account(self, account_id: UUID) -> bool:
         """Connect a Telegram account."""
@@ -88,8 +79,11 @@ class TelegramAccountManager:
                 return True
 
             try:
+                # Update status to connecting without reusing the ORM object
+                # across AsyncSession instances.
                 await self._update_account_status(account_id, "connecting")
 
+                # Decrypt session string
                 session_string = self._decrypt_session(account.session_string)
 
                 # Create Telegram client
@@ -115,11 +109,23 @@ class TelegramAccountManager:
                 me = await client.get_me()
                 logger.info(f"Connected to Telegram account: {me.first_name} (@{me.username or 'no username'})")
 
-                await self._mark_account_connected(account_id, me)
+                # Update account info on a fresh ORM instance bound to this
+                # session. Reusing the object from get_account() can attach it
+                # to two sessions and break reconnect/delete flows.
+                async with AsyncSessionLocal() as session:
+                    connected_account = await session.get(TelegramAccount, account_id)
+                    if connected_account:
+                        connected_account.status = "connected"
+                        connected_account.display_name = me.first_name or ""
+                        connected_account.username = me.username
+                        connected_account.user_id = me.id
+                        connected_account.last_connected_at = datetime.utcnow()
+                        connected_account.error_message = None
+                        await session.commit()
 
                 # Store client
+                self._register_inbound_handler(account_id, client)
                 self.clients[account_id] = client
-                await self._register_inbound_handler(account_id, client)
 
                 return True
 
@@ -136,11 +142,9 @@ class TelegramAccountManager:
         """Disconnect a Telegram account."""
         async with self._lock:
             client = self.clients.pop(account_id, None)
-            handler = self._inbound_handlers.pop(account_id, None)
             if client:
                 try:
-                    if handler is not None:
-                        client.remove_event_handler(handler)
+                    self._remove_inbound_handler(account_id, client)
                     await client.disconnect()
                     logger.info(f"Disconnected account {account_id}")
                 except Exception as e:
@@ -153,24 +157,52 @@ class TelegramAccountManager:
         """Disconnect and permanently delete a Telegram account."""
         async with self._lock:
             client = self.clients.pop(account_id, None)
-            handler = self._inbound_handlers.pop(account_id, None)
             if client:
                 try:
-                    if handler is not None:
-                        client.remove_event_handler(handler)
+                    self._remove_inbound_handler(account_id, client)
                     await client.disconnect()
                     logger.info(f"Disconnected account {account_id} before delete")
                 except Exception as e:
                     logger.error(f"Error disconnecting account {account_id} before delete: {e}")
 
-            async with _session_scope() as session:
+            async with AsyncSessionLocal() as session:
                 account = await session.get(TelegramAccount, account_id)
                 if not account:
+                    logger.warning(f"Telegram account {account_id} not found for delete")
                     return False
 
                 await session.delete(account)
-                logger.info(f"Deleted Telegram account {account_id}")
-                return True
+                await session.commit()
+            logger.info(f"Deleted Telegram account {account_id}")
+            return True
+
+    def _register_inbound_handler(self, account_id: UUID, client: TelegramClient) -> None:
+        """Register runtime MTProto NewMessage auto-reply handler."""
+        if account_id in self._inbound_handlers:
+            return
+        try:
+            from telethon import events
+            from services.mtproto.auto_reply import handle_mtproto_new_message
+
+            async def _handler(event):
+                await handle_mtproto_new_message(client, account_id, event)
+
+            client.add_event_handler(_handler, events.NewMessage(incoming=True))
+            self._inbound_handlers[account_id] = _handler
+            logger.info(f"Registered Telegram inbound handler for account {account_id}")
+        except Exception as e:
+            logger.error(f"Failed to register Telegram inbound handler for {account_id}: {e}")
+            raise
+
+    def _remove_inbound_handler(self, account_id: UUID, client: TelegramClient) -> None:
+        """Remove runtime MTProto NewMessage handler if it was registered."""
+        handler = self._inbound_handlers.pop(account_id, None)
+        if handler is None:
+            return
+        try:
+            client.remove_event_handler(handler)
+        except Exception as e:
+            logger.warning(f"Failed to remove Telegram inbound handler for {account_id}: {e}")
 
     async def connect_all_active_accounts(self) -> Dict[UUID, bool]:
         """Connect all active accounts."""
@@ -198,35 +230,6 @@ class TelegramAccountManager:
             return None
         return next(iter(self.clients.values()))
 
-    async def _register_inbound_handler(self, account_id: UUID, client: TelegramClient) -> None:
-        if account_id in self._inbound_handlers:
-            return
-
-        redis = await self._get_redis()
-        account_id_text = str(account_id)
-
-        async def _handler(raw_event):
-            try:
-                await handle_mtproto_inbound_auto_reply(
-                    client=client,
-                    raw_event=raw_event,
-                    redis=redis,
-                    account_id=account_id_text,
-                )
-            except Exception as exc:
-                logger.bind(account_id=account_id_text, error_type=type(exc).__name__).error(
-                    f"mtproto_auto_reply.handler_error: {exc}"
-                )
-
-        client.add_event_handler(_handler, events.NewMessage(incoming=True))
-        self._inbound_handlers[account_id] = _handler
-        logger.bind(account_id=account_id_text).info("telegram_account.inbound_handler_registered")
-
-    async def _get_redis(self):
-        if self._redis is None:
-            self._redis = aioredis.from_url(settings.REDIS_URL, encoding="utf-8", decode_responses=True)
-        return self._redis
-
     async def add_account(
         self,
         phone: str,
@@ -238,9 +241,8 @@ class TelegramAccountManager:
         """Add a new Telegram account."""
         encrypted_session = self._encrypt_session(session_string)
 
-        async with _session_scope() as session:
+        async with AsyncSessionLocal() as session:
             account = TelegramAccount(
-                id=uuid4(),
                 phone=phone,
                 session_string=encrypted_session,
                 is_bot=is_bot,
@@ -252,6 +254,60 @@ class TelegramAccountManager:
             await session.refresh(account)
             return account.id
 
+    async def upsert_account(
+        self,
+        phone: str,
+        session_string: str,
+        is_bot: bool = False,
+        display_name: Optional[str] = None,
+        metadata: Optional[dict] = None,
+    ) -> UUID:
+        """Create or update an account by phone with a fresh StringSession."""
+        encrypted_session = self._encrypt_session(session_string)
+
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(
+                select(TelegramAccount).where(TelegramAccount.phone == phone)
+            )
+            account = result.scalar_one_or_none()
+            if account:
+                account.session_string = encrypted_session
+                account.is_bot = is_bot
+                account.is_active = True
+                account.display_name = display_name or account.display_name
+                account.metadata_json = metadata or account.metadata_json or {}
+                account.status = "disconnected"
+                account.error_message = None
+                account.updated_at = datetime.utcnow()
+                await session.commit()
+                return account.id
+
+            account = TelegramAccount(
+                phone=phone,
+                session_string=encrypted_session,
+                is_bot=is_bot,
+                display_name=display_name,
+                metadata_json=metadata or {},
+            )
+            session.add(account)
+            try:
+                await session.commit()
+            except IntegrityError:
+                await session.rollback()
+                result = await session.execute(
+                    select(TelegramAccount).where(TelegramAccount.phone == phone)
+                )
+                account = result.scalar_one()
+                account.session_string = encrypted_session
+                account.is_active = True
+                account.display_name = display_name or account.display_name
+                account.status = "disconnected"
+                account.error_message = None
+                account.updated_at = datetime.utcnow()
+                await session.commit()
+            await session.refresh(account)
+            return account.id
+
     async def _update_account_status(
         self,
         account_id: UUID,
@@ -259,28 +315,13 @@ class TelegramAccountManager:
         error_message: Optional[str] = None,
     ) -> None:
         """Update account status in database."""
-        async with _session_scope() as session:
+        async with AsyncSessionLocal() as session:
             account = await session.get(TelegramAccount, account_id)
             if account:
                 account.status = status
                 account.error_message = error_message
                 if status == "error":
                     account.last_error_at = datetime.utcnow()
-                session.add(account)
-                await session.commit()
-
-    async def _mark_account_connected(self, account_id: UUID, me) -> None:
-        """Persist connected account metadata using the current database session."""
-        async with _session_scope() as session:
-            account = await session.get(TelegramAccount, account_id)
-            if account:
-                account.status = "connected"
-                account.display_name = getattr(me, "first_name", None) or ""
-                account.username = getattr(me, "username", None)
-                account.user_id = getattr(me, "id", None)
-                account.last_connected_at = datetime.utcnow()
-                account.error_message = None
-                session.add(account)
                 await session.commit()
 
     async def get_account_status(self, account_id: UUID) -> Optional[dict]:
@@ -303,35 +344,6 @@ class TelegramAccountManager:
 
 # Global instance
 telegram_account_manager = TelegramAccountManager()
-
-
-@asynccontextmanager
-async def _session_scope():
-    if getattr(get_async_session, "__module__", None) == "core.database":
-        async with AsyncSessionLocal() as session:
-            yield session
-        return
-
-    session = await _next_session()
-    yield session
-
-
-async def _next_session() -> AsyncSession:
-    source = get_async_session
-    if hasattr(source, "__anext__"):
-        return await source.__anext__()
-    session_iter = source()
-    if hasattr(session_iter, "__anext__"):
-        return await session_iter.__anext__()
-    async for session in session_iter:
-        return session
-    raise RuntimeError("get_async_session produced no session")
-
-
-async def _maybe_await(value):
-    if inspect.isawaitable(value):
-        return await value
-    return value
 
 
 def _build_string_session(session_string: str) -> StringSession:

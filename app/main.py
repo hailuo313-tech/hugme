@@ -4,7 +4,6 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from contextlib import asynccontextmanager
 from loguru import logger
 from prometheus_fastapi_instrumentator import Instrumentator
 import sys
@@ -39,12 +38,10 @@ from api.message_schedule import router as message_schedule_router
 from api.suspension import router as suspension_router
 from api.auto_delivery import router as auto_delivery_router
 from api.archive import router as archive_router
-from api.audit_logs import router as audit_logs_router
 from api.intents import router as intents_router
 from api.device_tokens import router as device_tokens_router
 from api.metrics import router as metrics_router
-from api.attribution import router as attribution_router
-from api.ai_ops_admin import router as ai_ops_admin_router
+from api.feature_flags import router as feature_flags_router
 from core.database import init_db
 from core.config import settings
 from services.mtproto.session_manager import session_manager
@@ -99,81 +96,90 @@ def request_trace_id(request: Request) -> str:
     return trace_id or str(uuid.uuid4())
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    logger.info("ERIS starting up...")
-    await init_db()
-    logger.info("Database connected")
-    start_silent_reactivation_scheduler()
-    start_embedding_worker()
-    start_profile_score_scheduler()
-    start_notification_sender_worker()
-    # P1-18: Start session manager if enabled
-    if settings.SESSION_MANAGER_ENABLED:
-        await session_manager.start()
-        logger.info("Session manager started")
-    # P1-20: Start account monitor if enabled
-    if settings.ACCOUNT_MONITOR_ENABLED:
-        await account_monitor.start()
-        logger.info("Account monitor started")
-    # P1-20: Start alert scheduler if enabled
-    if settings.ALERT_SCHEDULER_ENABLED:
-        await alert_scheduler.start()
-        logger.info("Alert scheduler started")
-    # P3-13: Start message schedule scheduler if enabled
-    if settings.MESSAGE_SCHEDULE_ENABLED:
-        start_message_schedule_scheduler()
-        logger.info("Message schedule scheduler started")
-    # P3-15: Start auto-delivery worker if enabled
-    if settings.AUTO_DELIVERY_ENABLED:
-        start_auto_delivery_worker()
-        logger.info("Auto-delivery worker started")
-    # P3-18: Start archive worker if enabled
-    if settings.ARCHIVE_WORKER_ENABLED:
-        start_archive_worker()
-        logger.info("Archive worker started")
-    try:
-        yield
-    finally:
-        shutdown_profile_score_scheduler()
-        shutdown_notification_sender_worker()
-        shutdown_embedding_worker()
-        shutdown_silent_reactivation_scheduler()
-        # P1-18: Stop session manager
-        if settings.SESSION_MANAGER_ENABLED:
-            await session_manager.stop()
-            logger.info("Session manager stopped")
-        # P1-20: Stop alert scheduler
-        if settings.ALERT_SCHEDULER_ENABLED:
-            await alert_scheduler.stop()
-            logger.info("Alert scheduler stopped")
-        # P1-20: Stop account monitor
-        if settings.ACCOUNT_MONITOR_ENABLED:
-            await account_monitor.stop()
-            logger.info("Account monitor stopped")
-        # P3-13: Stop message schedule scheduler
-        if settings.MESSAGE_SCHEDULE_ENABLED:
-            shutdown_message_schedule_scheduler()
-            logger.info("Message schedule scheduler stopped")
-        # P3-15: Stop auto-delivery worker
-        if settings.AUTO_DELIVERY_ENABLED:
-            shutdown_auto_delivery_worker()
-            logger.info("Auto-delivery worker stopped")
-        # P3-18: Stop archive worker
-        if settings.ARCHIVE_WORKER_ENABLED:
-            shutdown_archive_worker()
-            logger.info("Archive worker stopped")
-        logger.info("ERIS shutting down...")
-
-
 app = FastAPI(
     title="ERIS API",
     description="Emotional Relationship Intelligence System",
     version="0.1.0",
-    lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+
+@app.on_event("startup")
+async def start_runtime_workers():
+    if getattr(settings, "MTProto_ENABLED", 0):
+        try:
+            await session_manager.start()
+            logger.info("mtproto.session_manager.started")
+        except Exception as exc:
+            logger.bind(error_type=type(exc).__name__).error(
+                "mtproto.session_manager.start_failed"
+            )
+
+
+@app.on_event("shutdown")
+async def stop_runtime_workers():
+    try:
+        await session_manager.stop()
+        logger.info("mtproto.session_manager.stopped")
+    except Exception as exc:
+        logger.bind(error_type=type(exc).__name__).warning(
+            "mtproto.session_manager.stop_failed"
+        )
+
+
+# Database initialization flag
+_db_initialized = False
+
+
+async def ensure_db_initialized():
+    global _db_initialized
+    if not _db_initialized:
+        await init_db()
+        _db_initialized = True
+        logger.info("Database initialized")
+
+
+app.include_router(health_router, tags=["health"])
+app.include_router(users_router, prefix="/api/v1/users", tags=["users"])
+app.include_router(messages_router, prefix="/api/v1/messages", tags=["messages"])
+app.include_router(conversations_router, prefix="/api/v1/conversations", tags=["conversations"])
+app.include_router(memories_router, prefix="/api/v1", tags=["memories"])
+app.include_router(characters_router, prefix="/api/v1/characters", tags=["characters"])
+app.include_router(handoff_router, prefix="/api/v1/handoff", tags=["handoff"])
+app.include_router(suspension_router, prefix="/api/v1/suspension", tags=["suspension"])
+app.include_router(notifications_router, prefix="/api/v1/notifications", tags=["notifications"])
+app.include_router(payments_router, prefix="/api/v1", tags=["payments"])
+app.include_router(scripts_router, prefix="/api/v1/scripts", tags=["scripts"])
+app.include_router(telegram_router, tags=["telegram"])
+app.include_router(telegram_accounts_router, tags=["telegram-accounts"])
+app.include_router(mtproto_sessions_router, tags=["mtproto-sessions"])
+app.include_router(monitoring_router, tags=["monitoring"])
+app.include_router(user_level_router, tags=["user-level"])
+app.include_router(message_schedule_router, prefix="/api/v1/message-schedule", tags=["message-schedule"])
+app.include_router(auto_delivery_router, prefix="/api/v1/auto-delivery", tags=["auto-delivery"])
+app.include_router(archive_router, prefix="/api/v1/archive", tags=["archive"])
+app.include_router(intents_router, prefix="/api/v1/intents", tags=["intents"])
+app.include_router(realtime_router, tags=["realtime"])
+app.include_router(llm_router, prefix="/api/v1", tags=["llm"])
+app.include_router(onboarding_router, prefix="/api/v1", tags=["onboarding"])
+app.include_router(admin_router, prefix="/api/v1", tags=["admin"])
+app.include_router(
+    operator_quality_router,
+    prefix="/api/v1/operator-quality",
+    tags=["operator-quality"],
+)
+app.include_router(ops_ai_router, prefix="/api/v1/ops-ai", tags=["ops-ai"])
+app.include_router(
+    ab_experiments_router,
+    prefix="/api/v1/ab-experiments",
+    tags=["ab-experiments"],
+)
+app.include_router(open_api_router, prefix="/api/v1/open", tags=["open-api"])
+app.include_router(geoip_router, prefix="/api/v1", tags=["geoip"])
+app.include_router(device_tokens_router, prefix="/api/v1/device-tokens", tags=["device-tokens"])
+app.include_router(metrics_router, tags=["metrics"])
+app.include_router(feature_flags_router, prefix="/api/v1", tags=["feature-flags"])
 
 @app.get("/ops/{filename}", include_in_schema=False)
 async def ops_static_html(filename: str):
@@ -204,6 +210,9 @@ app.add_middleware(
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
+    # Ensure database is initialized on first request
+    await ensure_db_initialized()
+
     start = time.time()
     trace_id = request_trace_id(request)
     request.state.trace_id = trace_id
@@ -229,52 +238,5 @@ async def log_requests(request: Request, call_next):
     ).info("http.request.complete")
     return response
 
-
-app.include_router(health_router, tags=["health"])
-app.include_router(users_router, prefix="/api/v1/users", tags=["users"])
-app.include_router(messages_router, prefix="/api/v1/messages", tags=["messages"])
-app.include_router(conversations_router, prefix="/api/v1/conversations", tags=["conversations"])
-app.include_router(memories_router, prefix="/api/v1", tags=["memories"])
-app.include_router(characters_router, prefix="/api/v1/characters", tags=["characters"])
-app.include_router(handoff_router, prefix="/api/v1/handoff", tags=["handoff"])
-app.include_router(suspension_router, prefix="/api/v1/suspension", tags=["suspension"])
-app.include_router(notifications_router, prefix="/api/v1/notifications", tags=["notifications"])
-app.include_router(payments_router, prefix="/api/v1", tags=["payments"])
-app.include_router(scripts_router, prefix="/api/v1/scripts", tags=["scripts"])
-app.include_router(telegram_router, tags=["telegram"])
-app.include_router(telegram_accounts_router, tags=["telegram-accounts"])
-app.include_router(mtproto_sessions_router, tags=["mtproto-sessions"])
-app.include_router(monitoring_router, tags=["monitoring"])
-app.include_router(user_level_router, tags=["user-level"])
-app.include_router(message_schedule_router, prefix="/api/v1/message-schedule", tags=["message-schedule"])
-app.include_router(auto_delivery_router, prefix="/api/v1/auto-delivery", tags=["auto-delivery"])
-app.include_router(archive_router, prefix="/api/v1/archive", tags=["archive"])
-app.include_router(audit_logs_router, prefix="/api/v1", tags=["audit-logs"])
-app.include_router(intents_router, prefix="/api/v1/intents", tags=["intents"])
-app.include_router(realtime_router, tags=["realtime"])
-app.include_router(llm_router, prefix="/api/v1", tags=["llm"])
-app.include_router(onboarding_router, prefix="/api/v1", tags=["onboarding"])
-app.include_router(admin_router, prefix="/api/v1", tags=["admin"])
-app.include_router(
-    operator_quality_router,
-    prefix="/api/v1/operator-quality",
-    tags=["operator-quality"],
-)
-app.include_router(ops_ai_router, prefix="/api/v1/ops-ai", tags=["ops-ai"])
-app.include_router(
-    ab_experiments_router,
-    prefix="/api/v1/ab-experiments",
-    tags=["ab-experiments"],
-)
-app.include_router(open_api_router, prefix="/api/v1/open", tags=["open-api"])
-app.include_router(geoip_router, prefix="/api/v1", tags=["geoip"])
-app.include_router(device_tokens_router, prefix="/api/v1/device-tokens", tags=["device-tokens"])
-app.include_router(metrics_router, tags=["metrics"])
-app.include_router(attribution_router, tags=["attribution"])
-app.include_router(
-    ai_ops_admin_router,
-    prefix="/api/v1/ai-ops/admin",
-    tags=["ai-ops-admin"],
-)
 
 Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
