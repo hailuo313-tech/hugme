@@ -146,3 +146,17 @@ def test_english_appropriate_refusal_is_repaired():
     assert result.output_text == ADULT_FLIRT_FALLBACK_REPLY
     assert "right person" not in result.output_text
     assert result.fallback_used is True
+
+
+def test_english_personal_matter_refusal_is_repaired():
+    result = evaluate_reply_consistency(
+        reply_text=(
+            "I'm not comfortable discussing personal matters like that. "
+            "Let's talk about something else."
+        ),
+        character={"reply_length": "medium", "emoji_frequency": "low"},
+    )
+
+    assert result.output_text == ADULT_FLIRT_FALLBACK_REPLY
+    assert "personal matters" not in result.output_text
+    assert result.fallback_used is True

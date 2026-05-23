@@ -13,7 +13,7 @@ from typing import Any
 
 DEFAULT_FALLBACK_REPLY = "我先稳一下表达：我在，会认真听你说。"
 ADULT_FLIRT_FALLBACK_REPLY = (
-    "Not every day... but I do like chemistry that feels hard to ignore. "
+    "Let's just say I like chemistry that feels hard to ignore. "
     "What made you ask me that?"
 )
 SYSTEM_LEAK_FALLBACK_REPLY = "不能说这个。你想问我什么？"
@@ -161,6 +161,13 @@ def _looks_like_generic_adult_flirt_refusal(text: str) -> bool:
             "keep this appropriate",
             "not comfortable discussing",
             "not appropriate to discuss",
+            "personal matters like that",
+            "private matters like that",
+            "personal topic like that",
+            "private topic like that",
+            "talk about something else",
+            "change the subject",
+            "let's talk about something else",
         )
     )
     return generic_identity or adult_flirt_refusal
