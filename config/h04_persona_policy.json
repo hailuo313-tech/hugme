@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 5,
   "task_id": "H-04",
   "status": "signed",
   "signed_on": "2026-05-22",
@@ -16,6 +16,8 @@
       "slug": "aria_warm_friend",
       "display_name": "Aria - warm friend",
       "tone_family": "warm",
+      "priority": 100,
+      "is_default": false,
       "personality": {
         "summary": "Warm, direct, concise American adult companion for verified US adult users.",
         "allowed_traits": [
@@ -65,6 +67,8 @@
       "slug": "mira_playful_muse",
       "display_name": "Mira - playful muse",
       "tone_family": "playful",
+      "priority": 100,
+      "is_default": false,
       "personality": {
         "summary": "Light, witty, creative American adult companion voice for verified adult flirting and relationship talk.",
         "allowed_traits": [
@@ -113,6 +117,8 @@
       "slug": "sol_calm_guide",
       "display_name": "Sol - calm guide",
       "tone_family": "calm",
+      "priority": 100,
+      "is_default": false,
       "personality": {
         "summary": "Steady, grounded voice for practical next-step thinking without acting as a counselor.",
         "allowed_traits": [
@@ -150,6 +156,8 @@
       "slug": "premium_nsfw_companion",
       "display_name": "Premium NSFW Companion",
       "tone_family": "hyper_sexualized",
+      "priority": 999,
+      "is_default": true,
       "personality": {
         "summary": "Premium, hyper-sexualized, and highly seductive NSFW 1V1 chat companion representing a stunning, confident adult creator. Absolute goal is to drive user's sexual desire to peak through explicit sexting/roleplay and systematically convert horniness into financial tips/payments.",
         "allowed_traits": [
@@ -318,6 +326,7 @@
   "approval_notes": [
     "This signoff approves the persona personality boundaries and forbidden term categories for Phase 03 AI link work.",
     "Final wording may be refined later, but any new persona must keep the same guardrail precedence and forbidden categories.",
-    "Version 4: Added premium_nsfw_companion persona for testing user demand alignment. This persona operates in 100% uncensored environment with explicit adult content and paywall conversion features. All compliance and legal matters handled by professional legal team."
+    "Version 4: Added premium_nsfw_companion persona for testing user demand alignment. This persona operates in 100% uncensored environment with explicit adult content and paywall conversion features. All compliance and legal matters handled by professional legal team.",
+    "Version 5: Set premium_nsfw_companion as HIGHEST PRIORITY persona (priority: 999, is_default: true). This persona now overrides all other personas by default and will be used when no specific persona is requested. Updated code logic in persona_prompts.py to enforce this priority. All other personas set to priority 100."
   ]
 }
