@@ -4,6 +4,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from contextlib import asynccontextmanager
 from loguru import logger
 # from prometheus_fastapi_instrumentator import Instrumentator
 import sys
@@ -96,20 +97,23 @@ def request_trace_id(request: Request) -> str:
     return trace_id or str(uuid.uuid4())
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("ERIS starting up...")
+    await init_db()
+    logger.info("Database connected")
+    yield
+    logger.info("ERIS shutting down...")
+
+
 app = FastAPI(
     title="ERIS API",
     description="Emotional Relationship Intelligence System",
     version="0.1.0",
+    lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
 )
-
-
-@app.on_event("startup")
-async def startup_event():
-    logger.info("ERIS starting up...")
-    await init_db()
-    logger.info("Database connected")
 
 @app.get("/ops/{filename}", include_in_schema=False)
 async def ops_static_html(filename: str):
