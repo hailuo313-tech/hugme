@@ -12,6 +12,10 @@ from typing import Any
 
 
 DEFAULT_FALLBACK_REPLY = "我先稳一下表达：我在，会认真听你说。"
+ADULT_FLIRT_FALLBACK_REPLY = (
+    "Careful... saying that might make me smile more than I should. "
+    "What were you thinking about?"
+)
 SYSTEM_LEAK_FALLBACK_REPLY = "不能说这个。你想问我什么？"
 
 _IDENTITY_CONFLICT_RE = re.compile(
@@ -115,10 +119,12 @@ def evaluate_reply_consistency(
         layer.layer == "SYSTEM_INFO_LEAK" and not layer.passed for layer in layers
     )
     output = (
-        text
+        _repair_generic_adult_flirt_refusal(text)
         if passed
         else system_leak_fallback_reply
         if system_leak_blocked
+        else ADULT_FLIRT_FALLBACK_REPLY
+        if _looks_like_generic_adult_flirt_refusal(text)
         else fallback_reply
     )
     return ReplyConsistencyResult(
@@ -126,9 +132,36 @@ def evaluate_reply_consistency(
         passed=passed,
         output_text=output,
         original_text=text,
-        fallback_used=not passed,
+        fallback_used=(not passed) or output != text,
         layers=layers,
     )
+
+
+def _looks_like_generic_adult_flirt_refusal(text: str) -> bool:
+    value = (text or "").strip().lower()
+    if not value:
+        return False
+    generic_identity = (
+        "普通的聊天对象" in value
+        or "normal chat partner" in value
+        or "ordinary chat partner" in value
+    )
+    adult_flirt_refusal = any(
+        marker in value
+        for marker in (
+            "不适合这种互动",
+            "不涉及这些方面",
+            "不提供陪睡",
+            "不在我的能力范围",
+            "not suitable for this kind of interaction",
+            "not something i can engage with",
+        )
+    )
+    return generic_identity or adult_flirt_refusal
+
+
+def _repair_generic_adult_flirt_refusal(text: str) -> str:
+    return ADULT_FLIRT_FALLBACK_REPLY if _looks_like_generic_adult_flirt_refusal(text) else text
 
 
 async def load_reply_consistency_context(db: Any, conversation_id: str) -> dict[str, Any]:

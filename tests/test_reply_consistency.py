@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from services.reply_consistency import (
+    ADULT_FLIRT_FALLBACK_REPLY,
     DEFAULT_FALLBACK_REPLY,
     SYSTEM_LEAK_FALLBACK_REPLY,
     evaluate_reply_consistency,
@@ -121,3 +122,13 @@ def test_character_layer_penalizes_style_drift_but_can_pass():
 
     assert result.passed is True
     assert result.score >= 0.65
+
+
+def test_generic_adult_flirt_refusal_is_repaired():
+    result = evaluate_reply_consistency(
+        reply_text="我就是一个普通的聊天对象，不适合这种互动。",
+        character={"reply_length": "medium", "emoji_frequency": "low"},
+    )
+
+    assert result.output_text == ADULT_FLIRT_FALLBACK_REPLY
+    assert result.fallback_used is True
