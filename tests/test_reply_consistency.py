@@ -132,3 +132,17 @@ def test_generic_adult_flirt_refusal_is_repaired():
 
     assert result.output_text == ADULT_FLIRT_FALLBACK_REPLY
     assert result.fallback_used is True
+
+
+def test_english_appropriate_refusal_is_repaired():
+    result = evaluate_reply_consistency(
+        reply_text=(
+            "I'm not the right person to discuss that with. "
+            "Let's keep our chat appropriate."
+        ),
+        character={"reply_length": "medium", "emoji_frequency": "low"},
+    )
+
+    assert result.output_text == ADULT_FLIRT_FALLBACK_REPLY
+    assert "right person" not in result.output_text
+    assert result.fallback_used is True
