@@ -226,12 +226,14 @@ async def admin_attribution_summary(
             "end_at": selected_date + timedelta(days=1),
         }
         link_window = "COALESCE(sent_at, created_at) >= :start_at AND COALESCE(sent_at, created_at) < :end_at"
+        link_window_alias = "COALESCE(l.sent_at, l.created_at) >= :start_at AND COALESCE(l.sent_at, l.created_at) < :end_at"
         event_window = "created_at >= :start_at AND created_at < :end_at"
         event_window_alias = "e.created_at >= :start_at AND e.created_at < :end_at"
         user_window = "u.created_at >= :start_at AND u.created_at < :end_at"
     else:
         params = {"days": days}
         link_window = "COALESCE(sent_at, created_at) >= NOW() - (:days * INTERVAL '1 day')"
+        link_window_alias = "COALESCE(l.sent_at, l.created_at) >= NOW() - (:days * INTERVAL '1 day')"
         event_window = "created_at >= NOW() - (:days * INTERVAL '1 day')"
         event_window_alias = "e.created_at >= NOW() - (:days * INTERVAL '1 day')"
         user_window = "u.created_at >= NOW() - (:days * INTERVAL '1 day')"
@@ -419,7 +421,7 @@ async def admin_attribution_summary(
             ), 0) AS avg_seconds_to_click
         FROM attribution_links l
         LEFT JOIN attribution_events e ON e.tracking_id = l.tracking_id
-        WHERE {link_window}
+        WHERE {link_window_alias}
         GROUP BY l.tracking_id, l.destination_url, script_key, l.sent_at, l.sender_account_id, l.platform
         ORDER BY clicks DESC, click_users DESC
         LIMIT 20
