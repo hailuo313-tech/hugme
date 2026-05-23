@@ -9,6 +9,13 @@ from app.models.telegram_accounts import TelegramAccount
 from app.services.telegram_account_manager import TelegramAccountManager
 
 
+def _mock_session_context(mock_session):
+    context = MagicMock()
+    context.__aenter__ = AsyncMock(return_value=mock_session)
+    context.__aexit__ = AsyncMock(return_value=None)
+    return context
+
+
 @pytest.fixture
 def mock_fernet():
     """Mock Fernet encryption."""
@@ -56,18 +63,17 @@ async def test_encrypt_decrypt_session(account_manager):
 @pytest.mark.asyncio
 async def test_add_account(account_manager):
     """Test adding a new Telegram account."""
-    with patch("app.services.telegram_account_manager.get_async_session") as mock_session_gen:
+    with patch("app.services.telegram_account_manager.AsyncSessionLocal") as mock_session_factory:
         mock_session = AsyncMock()
         mock_session.add = MagicMock()
         mock_session.commit = AsyncMock()
         mock_session.refresh = AsyncMock()
+        mock_session_factory.return_value = _mock_session_context(mock_session)
 
         # Mock the account object
         mock_account = MagicMock()
         mock_account.id = uuid4()
         mock_session.refresh.side_effect = lambda obj: setattr(obj, "id", mock_account.id)
-
-        mock_session_gen.__anext__ = AsyncMock(return_value=mock_session)
 
         account_id = await account_manager.add_account(
             phone="+1234567890",
@@ -96,8 +102,7 @@ async def test_get_account_status(account_manager):
     """Test getting account status."""
     account_id = uuid4()
 
-    with patch("app.services.telegram_account_manager.get_async_session") as mock_session_gen:
-        mock_session = AsyncMock()
+    with patch.object(account_manager, "get_account", new=AsyncMock()) as mock_get_account:
         mock_account = TelegramAccount(
             id=account_id,
             phone="+1234567890",
@@ -108,10 +113,7 @@ async def test_get_account_status(account_manager):
             username="testuser",
             user_id=123456789,
         )
-        mock_session.execute = AsyncMock()
-        mock_session.execute.return_value.scalar_one_or_none.return_value = mock_account
-
-        mock_session_gen.__anext__ = AsyncMock(return_value=mock_session)
+        mock_get_account.return_value = mock_account
 
         status = await account_manager.get_account_status(account_id)
 
@@ -127,9 +129,11 @@ async def test_connect_account_success(account_manager):
     """Test successful account connection."""
     account_id = uuid4()
 
-    with patch("app.services.telegram_account_manager.get_async_session") as mock_session_gen, \
+    with patch.object(account_manager, "get_account", new=AsyncMock()) as mock_get_account, \
+         patch.object(account_manager, "_update_account_status", new=AsyncMock()) as mock_update_status, \
+         patch("app.services.telegram_account_manager.AsyncSessionLocal") as mock_session_factory, \
          patch("app.services.telegram_account_manager.TelegramClient") as mock_client_class, \
-         patch.object(account_manager, "_register_inbound_handler", new_callable=AsyncMock) as register_handler:
+         patch.object(account_manager, "_register_inbound_handler") as register_handler:
 
         # Mock database session
         mock_session = AsyncMock()
@@ -140,12 +144,10 @@ async def test_connect_account_success(account_manager):
             status="disconnected",
             is_active=True,
         )
-        mock_session.execute = AsyncMock()
-        mock_session.execute.return_value.scalar_one_or_none.return_value = mock_account
-        mock_session.add = MagicMock()
+        mock_get_account.return_value = mock_account
+        mock_session.get = AsyncMock(return_value=mock_account)
         mock_session.commit = AsyncMock()
-
-        mock_session_gen.__anext__ = AsyncMock(return_value=mock_session)
+        mock_session_factory.return_value = _mock_session_context(mock_session)
 
         # Mock Telegram client
         mock_client = AsyncMock()
@@ -162,8 +164,9 @@ async def test_connect_account_success(account_manager):
 
         assert success is True
         mock_client.connect.assert_called_once()
+        assert mock_update_status.await_count >= 1
         assert account_id in account_manager.clients
-        register_handler.assert_awaited_once()
+        register_handler.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -171,11 +174,10 @@ async def test_connect_account_not_authorized(account_manager):
     """Test account connection when session is not authorized."""
     account_id = uuid4()
 
-    with patch("app.services.telegram_account_manager.get_async_session") as mock_session_gen, \
+    with patch.object(account_manager, "get_account", new=AsyncMock()) as mock_get_account, \
+         patch.object(account_manager, "_update_account_status", new=AsyncMock()) as mock_update_status, \
          patch("app.services.telegram_account_manager.TelegramClient") as mock_client_class:
 
-        # Mock database session
-        mock_session = AsyncMock()
         mock_account = TelegramAccount(
             id=account_id,
             phone="+1234567890",
@@ -183,12 +185,7 @@ async def test_connect_account_not_authorized(account_manager):
             status="disconnected",
             is_active=True,
         )
-        mock_session.execute = AsyncMock()
-        mock_session.execute.return_value.scalar_one_or_none.return_value = mock_account
-        mock_session.add = MagicMock()
-        mock_session.commit = AsyncMock()
-
-        mock_session_gen.__anext__ = AsyncMock(return_value=mock_session)
+        mock_get_account.return_value = mock_account
 
         # Mock Telegram client
         mock_client = AsyncMock()
@@ -201,6 +198,7 @@ async def test_connect_account_not_authorized(account_manager):
 
         assert success is False
         mock_client.disconnect.assert_called_once()
+        assert mock_update_status.await_count >= 2
         assert account_id not in account_manager.clients
 
 
@@ -214,17 +212,12 @@ async def test_disconnect_account(account_manager):
     mock_client.disconnect = AsyncMock()
     account_manager.clients[account_id] = mock_client
 
-    with patch("app.services.telegram_account_manager.get_async_session") as mock_session_gen:
-        mock_session = AsyncMock()
-        mock_session.add = MagicMock()
-        mock_session.commit = AsyncMock()
-
-        mock_session_gen.__anext__ = AsyncMock(return_value=mock_session)
-
+    with patch.object(account_manager, "_update_account_status", new=AsyncMock()) as mock_update_status:
         success = await account_manager.disconnect_account(account_id)
 
         assert success is True
         mock_client.disconnect.assert_called_once()
+        mock_update_status.assert_awaited_once_with(account_id, "disconnected")
         assert account_id not in account_manager.clients
 
 
@@ -248,8 +241,7 @@ async def test_get_any_connected_client(account_manager):
 @pytest.mark.asyncio
 async def test_get_all_accounts_status(account_manager):
     """Test getting all accounts status."""
-    with patch("app.services.telegram_account_manager.get_async_session") as mock_session_gen:
-        mock_session = AsyncMock()
+    with patch.object(account_manager, "get_active_accounts", new=AsyncMock()) as mock_get_active_accounts:
         account1 = TelegramAccount(
             id=uuid4(),
             phone="+1234567890",
@@ -264,10 +256,7 @@ async def test_get_all_accounts_status(account_manager):
             status="disconnected",
             is_active=True,
         )
-        mock_session.execute = AsyncMock()
-        mock_session.execute.return_value.scalars.return_value.all.return_value = [account1, account2]
-
-        mock_session_gen.__anext__ = AsyncMock(return_value=mock_session)
+        mock_get_active_accounts.return_value = [account1, account2]
 
         statuses = await account_manager.get_all_accounts_status()
 
