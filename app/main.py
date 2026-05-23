@@ -106,101 +106,16 @@ app = FastAPI(
 )
 
 
-# Temporarily disable all routers to isolate the issue
-# app.include_router(health_router, tags=["health"])
-# app.include_router(users_router, prefix="/api/v1/users", tags=["users"])
-# app.include_router(messages_router, prefix="/api/v1/messages", tags=["messages"])
-# app.include_router(conversations_router, prefix="/api/v1/conversations", tags=["conversations"])
-# app.include_router(memories_router, prefix="/api/v1", tags=["memories"])
-# app.include_router(characters_router, prefix="/api/v1/characters", tags=["characters"])
-# app.include_router(handoff_router, prefix="/api/v1/handoff", tags=["handoff"])
-# app.include_router(suspension_router, prefix="/api/v1/suspension", tags=["suspension"])
-# app.include_router(notifications_router, prefix="/api/v1/notifications", tags=["notifications"])
-# app.include_router(payments_router, prefix="/api/v1", tags=["payments"])
-# app.include_router(scripts_router, prefix="/api/v1/scripts", tags=["scripts"])
-# app.include_router(telegram_router, tags=["telegram"])
-# app.include_router(telegram_accounts_router, tags=["telegram-accounts"])
-# app.include_router(mtproto_sessions_router, tags=["mtproto-sessions"])
-# app.include_router(monitoring_router, tags=["monitoring"])
-# app.include_router(user_level_router, tags=["user-level"])
-# app.include_router(message_schedule_router, prefix="/api/v1/message-schedule", tags=["message-schedule"])
-# app.include_router(auto_delivery_router, prefix="/api/v1/auto-delivery", tags=["auto-delivery"])
-# app.include_router(archive_router, prefix="/api/v1/archive", tags=["archive"])
-# app.include_router(intents_router, prefix="/api/v1/intents", tags=["intents"])
-# app.include_router(realtime_router, tags=["realtime"])
-# app.include_router(llm_router, prefix="/api/v1", tags=["llm"])
-# app.include_router(onboarding_router, prefix="/api/v1", tags=["onboarding"])
-# app.include_router(admin_router, prefix="/api/v1", tags=["admin"])
-# app.include_router(
-#     operator_quality_router,
-#     prefix="/api/v1/operator-quality",
-#     tags=["operator-quality"],
-# )
-# app.include_router(ops_ai_router, prefix="/api/v1/ops-ai", tags=["ops-ai"])
-# app.include_router(
-#     ab_experiments_router,
-#     prefix="/api/v1/ab-experiments",
-#     tags=["ab-experiments"],
-# )
-# app.include_router(open_api_router, prefix="/api/v1/open", tags=["open-api"])
-# app.include_router(geoip_router, prefix="/api/v1", tags=["geoip"])
-# app.include_router(device_tokens_router, prefix="/api/v1/device-tokens", tags=["device-tokens"])
-# app.include_router(metrics_router, tags=["metrics"])
-# app.include_router(feature_flags_router, prefix="/api/v1", tags=["feature-flags"])
-
-@app.get("/ops/{filename}", include_in_schema=False)
-async def ops_static_html(filename: str):
-    """只读提供仓库 ``docs/`` 下已审核的 HTML（与 Swagger ``/docs`` 路径区分）。"""
-    if ".." in filename or "/" in filename or "\\" in filename:
-        raise HTTPException(status_code=400, detail="invalid path")
-    if not filename.endswith(".html"):
-        raise HTTPException(status_code=404, detail="未找到")
-    base = Path(os.environ.get("OPS_DOCS_DIR", "/srv/ops-docs")).resolve()
-    path = (base / filename).resolve()
-    try:
-        path.relative_to(base)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="invalid path")
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="未找到")
-    return FileResponse(path, media_type="text/html; charset=utf-8")
+# Database initialization flag
+_db_initialized = False
 
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    start = time.time()
-    trace_id = request_trace_id(request)
-    request.state.trace_id = trace_id
-    request.state.log_context = {
-        "trace_id": trace_id,
-        "method": request.method,
-        "path": request.url.path,
-        "client_ip": request.client.host if request.client else None,
-    }
-    logger.bind(**request.state.log_context).info("http.request.start")
-    try:
-        response = await call_next(request)
-    except Exception:
-        duration_ms = round((time.time() - start) * 1000, 2)
-        logger.bind(**request.state.log_context, duration_ms=duration_ms).exception("http.request.error")
-        raise
-    duration_ms = round((time.time() - start) * 1000, 2)
-    response.headers["X-Trace-Id"] = trace_id
-    logger.bind(
-        **request.state.log_context,
-        status_code=response.status_code,
-        duration_ms=duration_ms,
-    ).info("http.request.complete")
-    return response
+async def ensure_db_initialized():
+    global _db_initialized
+    if not _db_initialized:
+        await init_db()
+        _db_initialized = True
+        logger.info("Database initialized")
 
 
 app.include_router(health_router, tags=["health"])
@@ -243,5 +158,63 @@ app.include_router(geoip_router, prefix="/api/v1", tags=["geoip"])
 app.include_router(device_tokens_router, prefix="/api/v1/device-tokens", tags=["device-tokens"])
 app.include_router(metrics_router, tags=["metrics"])
 app.include_router(feature_flags_router, prefix="/api/v1", tags=["feature-flags"])
+
+@app.get("/ops/{filename}", include_in_schema=False)
+async def ops_static_html(filename: str):
+    """只读提供仓库 ``docs/`` 下已审核的 HTML（与 Swagger ``/docs`` 路径区分）。"""
+    if ".." in filename or "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=400, detail="invalid path")
+    if not filename.endswith(".html"):
+        raise HTTPException(status_code=404, detail="未找到")
+    base = Path(os.environ.get("OPS_DOCS_DIR", "/srv/ops-docs")).resolve()
+    path = (base / filename).resolve()
+    try:
+        path.relative_to(base)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid path")
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="未找到")
+    return FileResponse(path, media_type="text/html; charset=utf-8")
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    # Ensure database is initialized on first request
+    await ensure_db_initialized()
+    
+    start = time.time()
+    trace_id = request_trace_id(request)
+    request.state.trace_id = trace_id
+    request.state.log_context = {
+        "trace_id": trace_id,
+        "method": request.method,
+        "path": request.url.path,
+        "client_ip": request.client.host if request.client else None,
+    }
+    logger.bind(**request.state.log_context).info("http.request.start")
+    try:
+        response = await call_next(request)
+    except Exception:
+        duration_ms = round((time.time() - start) * 1000, 2)
+        logger.bind(**request.state.log_context, duration_ms=duration_ms).exception("http.request.error")
+        raise
+    duration_ms = round((time.time() - start) * 1000, 2)
+    response.headers["X-Trace-Id"] = trace_id
+    logger.bind(
+        **request.state.log_context,
+        status_code=response.status_code,
+        duration_ms=duration_ms,
+    ).info("http.request.complete")
+    return response
+
 
 # Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
