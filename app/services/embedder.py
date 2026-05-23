@@ -1,16 +1,13 @@
 """D3-4: Embedding provider wrapper.
 
-封装 OpenAI text-embedding-3-small（1536 维，与 ``memories.embedding`` 对齐）。
+封装 Novita AI embedding（1536 维，与 ``memories.embedding`` 对齐）。
 
-为什么直连 OpenAI 而不复用 OpenRouter？
-- OpenRouter 当前对 ``/embeddings`` 路由的兼容性不稳定（404 / 模型未列入路由）。
-- D2 系列已经在用 OpenRouter chat，新加一个 OpenAI key 不增加架构复杂度，
-  调用面也小（仅 D3-4 + D4-1 retrieve 阶段会用到）。
+使用 Novita AI 作为统一的 AI 提供商，提供 embedding 服务。
 
 接口
 ====
 ``async embed(texts: list[str], trace_id: str) -> EmbedResult``
-- 单次最多 N 条（OpenAI 限 8191 token / 输入，本模块默认 batch=64）
+- 单次最多 N 条（Novita AI 限 8191 token / 输入，本模块默认 batch=64）
 - 超时 / 5xx → 一次重试，仍失败 → ``EmbedResult.error`` 非空
 - 返回向量与输入同序，长度严格 == len(texts)
 
@@ -28,7 +25,7 @@ from loguru import logger
 from core.config import settings
 
 
-OPENAI_BASE = "https://api.openai.com/v1"
+NOVITA_BASE = "https://api.novita.ai/openai/v1"
 RETRY_COUNT = 1  # 失败后再试 1 次
 
 
@@ -60,18 +57,18 @@ async def embed(texts: list[str], trace_id: str) -> EmbedResult:
     if not texts:
         return EmbedResult()
 
-    if not settings.OPENAI_API_KEY:
-        return EmbedResult(error="OPENAI_API_KEY_MISSING")
+    if not settings.NOVITA_API_KEY:
+        return EmbedResult(error="NOVITA_API_KEY_MISSING")
 
     model = settings.EMBEDDING_MODEL or "text-embedding-3-small"
     cleaned = [(t if t and t.strip() else " ") for t in texts]
 
     body = {"model": model, "input": cleaned}
     headers = {
-        "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
+        "Authorization": f"Bearer {settings.NOVITA_API_KEY}",
         "Content-Type": "application/json",
     }
-    url = f"{OPENAI_BASE}/embeddings"
+    url = f"{NOVITA_BASE}/embeddings"
 
     log = logger.bind(
         trace_id=trace_id,
@@ -153,7 +150,7 @@ async def embed(texts: list[str], trace_id: str) -> EmbedResult:
 
 
 def _extract_vectors(data: dict, expected_len: int) -> Optional[list[list[float]]]:
-    """从 OpenAI 风格响应中提取 ``data[*].embedding``，按 ``index`` 排序。"""
+    """从 Novita AI 风格响应中提取 ``data[*].embedding``，按 ``index`` 排序。"""
     if not isinstance(data, dict):
         return None
     items = data.get("data")

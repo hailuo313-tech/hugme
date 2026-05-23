@@ -13,6 +13,12 @@ class Settings(BaseSettings):
     SECRET_KEY: str = 'change_this_secret_key_in_production'
     OPENROUTER_API_KEY: Optional[str] = None
     TELEGRAM_BOT_TOKEN: Optional[str] = None
+    # Novita AI 配置（核心 AI 提供商）
+    NOVITA_API_KEY: str = 'sk_HRGPuh2L602D5Hila5CMFvMKWtz42qEnGfAccpHCwds'
+    NOVITA_BASE_URL: str = 'https://api.novita.ai/openai'
+    NOVITA_CHAT_MODEL: str = 'chat2'
+    NOVITA_TIMEOUT_S: float = 25.0
+
     # C-03 / W2 MTProto（Telethon Userbot）；W2 前可不启用运行时，但须在 .env 配齐占位
     TELEGRAM_API_ID: Optional[int] = None
     TELEGRAM_API_HASH: Optional[str] = None
@@ -46,13 +52,13 @@ class Settings(BaseSettings):
     # D3-3: 记忆写入开关 + LLM 评分模型 + importance 阈值。
     # MEMORY_WRITE_ENABLED=False 时 maybe_write_memory() 直接 noop（用于演示 / 降级）。
     MEMORY_WRITE_ENABLED: bool = True
-    # 使用 fallback 模型（gpt-4o-mini）做结构化 JSON 评分，比主模型稳定；
+    # 使用 Novita AI 模型做结构化 JSON 评分，比主模型稳定；
     # 留空时 llm.chat 自走主备路由。
-    LLM_MEMORY_MODEL: str = 'openai/gpt-4o-mini'
+    LLM_MEMORY_MODEL: str = 'chat2'
     # 评分 ≥ 此阈值才入 memories 表；默认 5（preference/goal 起步）。
     MEMORY_IMPORTANCE_THRESHOLD: int = 5
     # D4-2：是否在 generate_reply 主路径调用 memory_retriever 填充 L6_MEMORY。
-    # 关闭时与旧行为一致（不占 embed / SQL）；生产需 OPENAI_API_KEY 才能语义检索。
+    # 关闭时与旧行为一致（不占 embed / SQL）；生产需 NOVITA_API_KEY 才能语义检索。
     MEMORY_RETRIEVE_IN_PROMPT: bool = False
     # D4-2：注入条数与候选池，与 app/api/memories.py MemoryRetrieveRequest 默认对齐。
     MEMORY_RETRIEVE_TOP_K: int = 10
@@ -61,8 +67,8 @@ class Settings(BaseSettings):
     MEMORY_CONSISTENCY_ENABLED: bool = True
     # >0 时预留「轻量 LLM 二次校验」上限（当前未实现，保持 0 即零额外 completion）。
     MEMORY_CONSISTENCY_LLM_MAX_OUTPUT_TOKENS: int = 0
-    # V001-P0-5：入站双层内容安全（关键词 + OpenAI moderation）与 messages.safety_result
-    # 默认关，避免本地/CI 无 OPENAI_API_KEY 时误拦；生产在 compose / .env 显式打开。
+    # V001-P0-5：入站双层内容安全（关键词 + Novita AI LLM）与 messages.safety_result
+    # 默认关，避免本地/CI 无 NOVITA_API_KEY 时误拦；生产在 compose / .env 显式打开。
     CONTENT_SAFETY_ENABLED: bool = False
     CONTENT_SAFETY_MODERATION_ENABLED: bool = True
     CONTENT_SAFETY_MODERATION_TIMEOUT_S: float = 12.0
@@ -90,17 +96,15 @@ class Settings(BaseSettings):
     TRIGGER_THRESHOLD_FLOOR: float = 50.0
     TRIGGER_THRESHOLD_CEIL: float = 82.0
     # D3-4: 异步 embedding worker，把 memories.embedding 从 NULL 填满。
-    # 关闭时 worker scheduler 不启动；OPENAI_API_KEY 没配也会自动跳过。
+    # 关闭时 worker scheduler 不启动；NOVITA_API_KEY 没配也会自动跳过。
     EMBEDDING_WORKER_ENABLED: bool = True
-    # 直连 OpenAI（而不是 OpenRouter）的 API key；专给 embeddings 用。
-    OPENAI_API_KEY: Optional[str] = None
-    # OpenAI embedding 模型；1536 维需与 memories.embedding vector(1536) 对齐。
+    # Novita AI embedding 模型；1536 维需与 memories.embedding vector(1536) 对齐。
     EMBEDDING_MODEL: str = 'text-embedding-3-small'
-    # 一次 tick 拉多少条 NULL embedding 行（OpenAI 单次最多 ~2048，但越大越容易超时）。
+    # 一次 tick 拉多少条 NULL embedding 行（Novita AI 单次最多 ~2048，但越大越容易超时）。
     EMBEDDING_BATCH_SIZE: int = 32
     # 多久跑一次 tick；最低 5 秒。
     EMBEDDING_POLL_SECONDS: int = 30
-    # D8-2b：OpenAI embeddings HTTP 超时（秒）；过大拉长单次 tick 占用 advisory lock 时间。
+    # D8-2b：Novita AI embeddings HTTP 超时（秒）；过大拉长单次 tick 占用 advisory lock 时间。
     EMBEDDING_HTTP_TIMEOUT_SECONDS: float = 20.0
     # D8-2b：APScheduler 单进程内 embedding tick 最大并发实例；>1 会叠多个 tick，仍受 DB advisory lock 串行，通常无收益且徒增日志噪声。默认 1。
     EMBEDDING_SCHEDULER_MAX_INSTANCES: int = 1

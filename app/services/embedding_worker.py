@@ -160,7 +160,7 @@ def start_scheduler() -> Optional[AsyncIOScheduler]:
 
     短路条件：
       - settings.EMBEDDING_WORKER_ENABLED=False → no-op
-      - settings.OPENAI_API_KEY 未配置 → no-op + warning
+      - settings.NOVITA_API_KEY 未配置 → no-op + warning
     """
     global _scheduler
     if not settings.EMBEDDING_WORKER_ENABLED:
@@ -168,7 +168,7 @@ def start_scheduler() -> Optional[AsyncIOScheduler]:
             "embedding_worker.scheduler.disabled"
         )
         return None
-    if not settings.OPENAI_API_KEY:
+    if not settings.NOVITA_API_KEY:
         logger.bind(component="embedding_worker").warning(
             "embedding_worker.scheduler.no_api_key"
         )

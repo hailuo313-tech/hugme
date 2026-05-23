@@ -1,9 +1,9 @@
 """
-D2-1: OpenRouter LLM 客户端
-- 异步 httpx 直接调用 OpenRouter（/chat/completions，OpenAI 兼容接口）
-- 主模型：deepseek/deepseek-chat-v3-0324（便宜、快、支持中文）
-- 备用模型：openai/gpt-4o-mini（稳定兜底）
-- 降级策略：主模型超时（PRIMARY_TIMEOUT=25s）或 5xx 错误 → 自动切备用模型
+D2-1: Novita AI LLM 客户端
+- 异步 httpx 直接调用 Novita AI（/chat/completions，OpenAI 兼容接口）
+- 主模型：chat2（Novita AI 核心模型）
+- 备用模型：chat2（同一模型，仅超时重试）
+- 降级策略：主模型超时（PRIMARY_TIMEOUT=25s）或 5xx 错误 → 自动重试
 - 支持流式（stream=False 当前阶段，D2-2 Orchestrator 可扩展）
 - 结构化返回：LLMResult（content, model_used, usage, latency_ms, fallback_used）
 """
@@ -20,15 +20,12 @@ from core.config import settings
 
 
 # ── 模型常量 ──────────────────────────────────────────
-PRIMARY_MODEL   = "deepseek/deepseek-chat-v3-0324"
-FALLBACK_MODEL  = "openai/gpt-4o-mini"
-OPENROUTER_BASE = "https://openrouter.ai/api/v1"
+PRIMARY_MODEL   = "chat2"
+FALLBACK_MODEL  = "chat2"
+NOVITA_BASE     = "https://api.novita.ai/openai/v1"
 
 PRIMARY_TIMEOUT_S  = 25.0   # 主模型超时：25s
 FALLBACK_TIMEOUT_S = 20.0   # 备用模型超时：20s
-
-HTTP_REFERER = "https://hugme2.com"
-APP_TITLE    = "ERIS Emotional Companion"
 
 
 # ── 返回结构 ──────────────────────────────────────────
@@ -45,9 +42,7 @@ class LLMResult(BaseModel):
 
 def _headers() -> dict[str, str]:
     return {
-        "Authorization":  f"Bearer {settings.OPENROUTER_API_KEY}",
-        "HTTP-Referer":   HTTP_REFERER,
-        "X-Title":        APP_TITLE,
+        "Authorization":  f"Bearer {settings.NOVITA_API_KEY}",
         "Content-Type":   "application/json",
     }
 
@@ -74,12 +69,12 @@ async def _call_once(
     trace_id:    str,
 ) -> tuple[str, dict]:
     """
-    单次调用 OpenRouter。
+    单次调用 Novita AI。
     返回 (content, usage_dict)。
     抛出 httpx.TimeoutException 或 RuntimeError（非 2xx）。
     """
     body = _build_body(messages, model)
-    url  = f"{OPENROUTER_BASE}/chat/completions"
+    url  = f"{NOVITA_BASE}/chat/completions"
 
     logger.info(f"[{trace_id}] llm.call.start model={model} timeout={timeout_s}s")
     t0 = time.time()
@@ -91,9 +86,9 @@ async def _call_once(
     logger.info(f"[{trace_id}] llm.call.response model={model} status={resp.status_code} latency={latency:.0f}ms")
 
     if resp.status_code >= 500:
-        raise RuntimeError(f"OpenRouter 5xx: {resp.status_code} {resp.text[:200]}")
+        raise RuntimeError(f"Novita AI 5xx: {resp.status_code} {resp.text[:200]}")
     if resp.status_code >= 400:
-        raise RuntimeError(f"OpenRouter 4xx: {resp.status_code} {resp.text[:200]}")
+        raise RuntimeError(f"Novita AI 4xx: {resp.status_code} {resp.text[:200]}")
 
     data    = resp.json()
     content = data["choices"][0]["message"]["content"]
@@ -115,8 +110,8 @@ async def chat(
     自动降级：PRIMARY 超时或 5xx → FALLBACK。
     force_model 可跳过路由（A/B 实验 / 测试用）。
     """
-    if not settings.OPENROUTER_API_KEY:
-        logger.error(f"[{trace_id}] OPENROUTER_API_KEY not configured")
+    if not settings.NOVITA_API_KEY:
+        logger.error(f"[{trace_id}] NOVITA_API_KEY not configured")
         return LLMResult(
             content="现在有点忙，稍后再聊好吗？",
             model_used="none",

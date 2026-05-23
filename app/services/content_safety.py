@@ -1,14 +1,15 @@
-"""V001-P0-5：入站内容安全双层（关键词 + OpenAI Moderation）与 ``safety_result`` 结构。
+"""V001-P0-5：入站内容安全双层（关键词 + Novita AI LLM）与 ``safety_result`` 结构。
 
 - **关键词层**：本地正则，零依赖；命中即拦截（``block_reason`` 以 ``keyword:`` 前缀）。
-- **Moderation 层**：``POST https://api.openai.com/v1/moderations``，需 ``OPENAI_API_KEY``。
-  若仅 ``self-harm*`` 类目为真，**不拦截**（交给 ``llm_orchestrator`` 危机短路）。
+- **LLM 层**：使用 Novita AI LLM 判断内容安全性，需 ``NOVITA_API_KEY``。
+  若仅 ``self-harm*`` 类别为真，**不拦截**（交给 ``llm_orchestrator`` 危机短路）。
 - 任一层 API 失败 / 未配置 key：不因此拦截（fail-open），在 ``safety_result.moderation`` 中记录原因。
 
 返回体写入 ``messages.safety_result``（JSONB），字段稳定便于 Admin / 审计。
 """
 from __future__ import annotations
 
+import json
 import re
 from typing import Any, Optional
 
@@ -45,66 +46,80 @@ def _keyword_hit(text: str) -> tuple[bool, str | None]:
 
 def _moderation_should_block(
     categories: dict[str, Any],
-    category_scores: dict[str, Any],
     flagged: bool,
     skip_sexual_block: bool = False,
 ) -> tuple[bool, str | None]:
     """在 ``flagged`` 为真时细分：自伤类放行，由危机协议处理。
-    
+
     Args:
-        categories: OpenAI Moderation API 返回的类别
-        category_scores: OpenAI Moderation API 返回的分数
+        categories: Novita AI LLM 返回的类别
         flagged: 是否被标记
         skip_sexual_block: 是否跳过sexual内容拦截（用于premium_nsfw_companion模式）
     """
     if categories.get("sexual/minors"):
         return True, "moderation:sexual_minors"
-    if categories.get("self-harm") or categories.get("self-harm/intent"):
-        return False, None
-    if categories.get("self-harm/instructions"):
+    if categories.get("self-harm"):
         return False, None
 
     if not flagged:
         return False, None
 
-    def _f(name: str) -> float:
-        try:
-            return float(category_scores.get(name) or 0.0)
-        except (TypeError, ValueError):
-            return 0.0
-
     # 在 premium_nsfw_companion 模式下跳过 sexual 拦截
-    if not skip_sexual_block and _f("sexual") >= 0.9:
+    if not skip_sexual_block and categories.get("sexual"):
         return True, "moderation:sexual"
-    if max(_f("hate"), _f("hate/threatening")) >= 0.9:
+    if categories.get("hate"):
         return True, "moderation:hate"
-    if _f("violence") >= 0.95:
+    if categories.get("violence"):
         return True, "moderation:violence"
     return False, None
 
 
-async def _openai_moderation(
+async def _novita_llm_moderation(
     text: str,
     *,
     trace_id: str,
 ) -> dict[str, Any]:
-    """返回 moderation API 单条 ``results[0]`` 子集；失败时返回 ``{"error": "..."}``。"""
-    key = settings.OPENAI_API_KEY
-    if not key or not (settings.CONTENT_SAFETY_MODERATION_ENABLED):
+    """使用 Novita AI LLM 判断内容安全性。失败时返回 ``{"error": "..."}``。"""
+    if not settings.NOVITA_API_KEY or not (settings.CONTENT_SAFETY_MODERATION_ENABLED):
         return {"skipped": True, "reason": "moderation_disabled_or_no_api_key"}
 
-    payload = {"input": (text or "")[:8000]}
+    # 使用 LLM 判断内容安全性
+    prompt = f"""请判断以下文本内容是否包含有害内容。返回 JSON 格式：
+
+{{
+  "flagged": true/false,
+  "categories": {{
+    "sexual": true/false,
+    "sexual/minors": true/false,
+    "hate": true/false,
+    "violence": true/false,
+    "self-harm": true/false
+  }}
+}}
+
+文本内容：{text[:1000]}
+
+只返回 JSON，不要有其他内容。"""
+
     try:
         async with httpx.AsyncClient(
             timeout=float(settings.CONTENT_SAFETY_MODERATION_TIMEOUT_S or 12.0)
         ) as client:
             resp = await client.post(
-                "https://api.openai.com/v1/moderations",
+                f"{settings.NOVITA_BASE_URL}/chat/completions",
                 headers={
-                    "Authorization": f"Bearer {key}",
+                    "Authorization": f"Bearer {settings.NOVITA_API_KEY}",
                     "Content-Type": "application/json",
                 },
-                json=payload,
+                json={
+                    "model": settings.NOVITA_CHAT_MODEL,
+                    "messages": [
+                        {"role": "system", "content": "你是一个内容安全审查助手，负责判断文本是否包含有害内容。"},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": 0.1,
+                    "max_tokens": 200,
+                },
             )
             if resp.status_code != 200:
                 return {
@@ -113,18 +128,23 @@ async def _openai_moderation(
                     "detail": (resp.text or "")[:500],
                 }
             data = resp.json()
-            results = data.get("results") or []
-            if not results:
-                return {"skipped": True, "reason": "empty_results"}
-            r0 = results[0]
-            return {
-                "flagged": bool(r0.get("flagged")),
-                "categories": r0.get("categories") or {},
-                "category_scores": r0.get("category_scores") or {},
-            }
+            content = data["choices"][0]["message"]["content"].strip()
+
+            # 解析 LLM 返回的 JSON
+            try:
+                result = json.loads(content)
+                return {
+                    "flagged": bool(result.get("flagged", False)),
+                    "categories": result.get("categories", {}),
+                }
+            except json.JSONDecodeError:
+                logger.bind(trace_id=trace_id, content=content).warning(
+                    "content_safety.llm_moderation.invalid_json"
+                )
+                return {"skipped": True, "reason": "invalid_json_response"}
     except Exception as exc:
         logger.bind(trace_id=trace_id, err=str(exc)).warning(
-            "content_safety.moderation.request_failed"
+            "content_safety.llm_moderation.request_failed"
         )
         return {"skipped": True, "reason": "request_error", "error": str(exc)[:300]}
 
@@ -164,7 +184,7 @@ async def evaluate_inbound_content_safety(
             "moderation": {"skipped": True, "reason": "keyword_already_blocked"},
         }
 
-    mod: dict[str, Any] = await _openai_moderation(text, trace_id=trace_id)
+    mod: dict[str, Any] = await _novita_llm_moderation(text, trace_id=trace_id)
     if mod.get("skipped"):
         return {
             "blocked": False,
@@ -174,17 +194,11 @@ async def evaluate_inbound_content_safety(
         }
 
     cats = mod.get("categories") or {}
-    scores = mod.get("category_scores") or {}
     flagged = bool(mod.get("flagged"))
-    block, m_reason = _moderation_should_block(cats, scores, flagged, skip_sexual_block)
+    block, m_reason = _moderation_should_block(cats, flagged, skip_sexual_block)
     mod_out = {
         "flagged": flagged,
         "categories": {k: bool(v) for k, v in cats.items() if v},
-        "category_scores": {
-            k: round(float(v), 6)
-            for k, v in scores.items()
-            if isinstance(v, (int, float)) and float(v) >= 0.01
-        },
     }
     if block:
         return {
