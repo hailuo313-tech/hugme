@@ -160,3 +160,18 @@ def test_english_personal_matter_refusal_is_repaired():
     assert result.output_text == ADULT_FLIRT_FALLBACK_REPLY
     assert "personal matters" not in result.output_text
     assert result.fallback_used is True
+
+
+def test_english_private_matter_appropriate_refusal_is_repaired():
+    result = evaluate_reply_consistency(
+        reply_text=(
+            "I'm not going to discuss private matters like that. "
+            "Let's keep our conversation appropriate and respectful."
+        ),
+        character={"reply_length": "medium", "emoji_frequency": "low"},
+    )
+
+    assert result.output_text == ADULT_FLIRT_FALLBACK_REPLY
+    assert "private matters" not in result.output_text
+    assert "appropriate" not in result.output_text
+    assert result.fallback_used is True
