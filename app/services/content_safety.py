@@ -65,8 +65,10 @@ def _moderation_should_block(
         except (TypeError, ValueError):
             return 0.0
 
+    # Product traffic is verified adult companion chat. Adult sexual/erotic
+    # moderation flags alone should not block; minors and non-consent still do.
     if _f("sexual") >= 0.9:
-        return True, "moderation:sexual"
+        return False, None
     if max(_f("hate"), _f("hate/threatening")) >= 0.9:
         return True, "moderation:hate"
     if _f("violence") >= 0.95:
