@@ -615,7 +615,19 @@ async def _load_db_context(
         try:
             row = (
                 await db.execute(
-                    _sql_text("SELECT * FROM characters WHERE id = :cid"),
+                    _sql_text(
+                        """
+                        SELECT ch.*, 
+                               pp.slug as persona_prompt_slug,
+                               pp.display_name as persona_prompt_name,
+                               pp.prompt_text as persona_prompt_text,
+                               pp.tone_family as persona_prompt_tone_family,
+                               pp.safety_notes as persona_prompt_safety_notes
+                        FROM characters ch
+                        LEFT JOIN persona_prompts pp ON pp.id = ch.persona_prompt_id
+                        WHERE ch.id = :cid
+                        """
+                    ),
                     {"cid": profile_row.get("current_character_id")},
                 )
             ).fetchone()
@@ -634,9 +646,18 @@ async def _load_db_context(
             row = (
                 await db.execute(
                     _sql_text(
-                        "SELECT ch.* FROM conversations c "
-                        "LEFT JOIN characters ch ON ch.id = c.character_id "
-                        "WHERE c.id = :cid"
+                        """
+                        SELECT ch.*, 
+                               pp.slug as persona_prompt_slug,
+                               pp.display_name as persona_prompt_name,
+                               pp.prompt_text as persona_prompt_text,
+                               pp.tone_family as persona_prompt_tone_family,
+                               pp.safety_notes as persona_prompt_safety_notes
+                        FROM conversations c 
+                        LEFT JOIN characters ch ON ch.id = c.character_id 
+                        LEFT JOIN persona_prompts pp ON pp.id = ch.persona_prompt_id
+                        WHERE c.id = :cid
+                        """
                     ),
                     {"cid": conversation_id},
                 )
