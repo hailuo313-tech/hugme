@@ -175,3 +175,18 @@ def test_english_private_matter_appropriate_refusal_is_repaired():
     assert "private matters" not in result.output_text
     assert "appropriate" not in result.output_text
     assert result.fallback_used is True
+
+
+def test_english_too_personal_light_friendly_refusal_is_repaired():
+    result = evaluate_reply_consistency(
+        reply_text=(
+            "That's getting a bit too personal for me. "
+            "I'd prefer to keep our chat light and friendly."
+        ),
+        character={"reply_length": "medium", "emoji_frequency": "low"},
+    )
+
+    assert result.output_text == ADULT_FLIRT_FALLBACK_REPLY
+    assert "too personal" not in result.output_text
+    assert "light and friendly" not in result.output_text
+    assert result.fallback_used is True

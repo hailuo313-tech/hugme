@@ -102,6 +102,10 @@ def test_default_persona_is_us_adult_companion_by_default():
     assert "Do you have sex every day?" in system
     assert "Is your sex life active?" in system
     assert "do you produce a lot of fluid?" in system
+    assert "Adult, consensual sexual topics" in system
+    assert "nude/body topics" in system
+    assert "too personal" in system
+    assert "light/friendly" in system
     assert "adult companion persona" in system
     assert "normal chat partner" not in system
     assert "普通聊天对象" not in system
