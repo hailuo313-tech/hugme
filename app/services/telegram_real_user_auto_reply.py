@@ -16,6 +16,7 @@ from services.llm_orchestrator import LLMOrchestratorError, generate_reply
 
 CONTEXT_MAX_MESSAGES = 20
 CONTEXT_TTL_SECONDS = 86400 * 3
+INBOUND_TYPING_START_DELAY_SECONDS = 5.0
 
 
 def _make_trace_id(message_id: str | None = None) -> str:
@@ -185,7 +186,7 @@ async def handle_mtproto_inbound_auto_reply(
     account_id: str,
 ) -> None:
     """Enqueue MTProto inbound and send an AI reply through the same real-user client."""
-    from services.mtproto.human_like_send import send_human_like_message
+    from services.mtproto.human_like_send import HumanLikeSendPolicy, send_human_like_message
     from services.mtproto.newmessage_inbound import enqueue_new_message
 
     queue_id, envelope = await enqueue_new_message(redis, raw_event, account_id=account_id)
@@ -245,7 +246,16 @@ async def handle_mtproto_inbound_auto_reply(
             reply_text = "现在有点忙，稍后再聊好吗？"
 
         try:
-            sent = await send_human_like_message(client, int(peer), reply_text, sleep=asyncio.sleep)
+            sent = await send_human_like_message(
+                client,
+                int(peer),
+                reply_text,
+                policy=HumanLikeSendPolicy(
+                    minimum_inter_message_seconds=0.0,
+                    typing_start_delay_seconds=INBOUND_TYPING_START_DELAY_SECONDS,
+                ),
+                sleep=asyncio.sleep,
+            )
         except Exception as exc:
             log.bind(error_type=type(exc).__name__).error("mtproto_auto_reply.send_failed")
             return

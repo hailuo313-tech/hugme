@@ -137,6 +137,32 @@ async def test_send_human_like_message_enforces_inter_message_gap_before_typing(
 
 
 @pytest.mark.asyncio
+async def test_send_human_like_message_waits_before_showing_typing() -> None:
+    client = FakeTelethonClient()
+    sleeper = FakeSleeper()
+    policy = HumanLikeSendPolicy(
+        minimum_inter_message_seconds=0.0,
+        typing_start_delay_seconds=5.0,
+    )
+
+    await send_human_like_message(
+        client,
+        "tg_99",
+        "hello",
+        policy=policy,
+        sleep=sleeper,
+    )
+
+    assert sleeper.delays == [5.0, 3.0]
+    assert client.events == [
+        ("action", "tg_99", "typing"),
+        ("typing.start", "tg_99", "typing"),
+        ("typing.stop", "tg_99", "typing"),
+        ("send_message", "tg_99", "hello", {}),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_send_human_like_message_sends_when_typing_is_forbidden() -> None:
     client = FailingTypingClient()
     sleeper = FakeSleeper()

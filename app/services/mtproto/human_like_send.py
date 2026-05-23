@@ -25,6 +25,7 @@ class HumanLikeSendPolicy:
     very_long_text_seconds: float = 25.0
     minimum_typing_seconds: float = 3.0
     minimum_inter_message_seconds: float = 8.0
+    typing_start_delay_seconds: float = 0.0
 
 
 DEFAULT_HUMAN_LIKE_SEND_POLICY = HumanLikeSendPolicy()
@@ -109,6 +110,8 @@ async def send_human_like_message(
         now=now,
     )
     typing_delay = human_typing_delay_seconds(text, policy=policy)
+    if policy.typing_start_delay_seconds > 0:
+        await sleep(policy.typing_start_delay_seconds)
     action = getattr(client, "action", None)
     if action is None:
         raise TypeError("MTProto client does not expose Telethon-style action()")

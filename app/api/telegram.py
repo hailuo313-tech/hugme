@@ -49,6 +49,7 @@ import asyncio
 import re
 
 router = APIRouter()
+INBOUND_TYPING_START_DELAY_SECONDS = 5.0
 
 # ── Redis 单例 ────────────────────────────────────────
 _redis_client = None
@@ -109,6 +110,7 @@ async def _send_tg(chat_id: int, text_content: str, trace_id: str, typing_delay:
         async with httpx.AsyncClient(timeout=30.0) as client:
             if typing_delay:
                 delay = _human_typing_delay(text_content)
+                await asyncio.sleep(INBOUND_TYPING_START_DELAY_SECONDS)
                 # 发送"正在输入…"状态
                 try:
                     await client.post(
