@@ -5,7 +5,7 @@ from typing import Optional
 from uuid import UUID as PyUUID
 from uuid import uuid4
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Index, String, Text
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Index, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Mapped, mapped_column
@@ -18,7 +18,12 @@ class TelegramAccount(Base):
 
     __tablename__ = "telegram_accounts"
 
-    id: Mapped[PyUUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: Mapped[PyUUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+        server_default=text("uuid_generate_v4()"),
+    )
     phone: Mapped[str] = mapped_column(String(20), unique=True, nullable=False, index=True)
     session_string: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(
@@ -47,6 +52,10 @@ class TelegramAccount(Base):
         Index("idx_telegram_accounts_status_active", "status", "is_active"),
         Index("idx_telegram_accounts_last_connected", "last_connected_at"),
     )
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("id", uuid4())
+        super().__init__(**kwargs)
 
     def __repr__(self) -> str:
         return f"<TelegramAccount(id={self.id}, phone={self.phone}, status={self.status})>"
