@@ -5,7 +5,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from loguru import logger
-from prometheus_fastapi_instrumentator import Instrumentator
+# from prometheus_fastapi_instrumentator import Instrumentator
 import sys
 import time
 import uuid
@@ -270,4 +270,4 @@ app.include_router(device_tokens_router, prefix="/api/v1/device-tokens", tags=["
 app.include_router(metrics_router, tags=["metrics"])
 app.include_router(feature_flags_router, prefix="/api/v1", tags=["feature-flags"])
 
-Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
+# Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
