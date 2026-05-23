@@ -32,6 +32,16 @@ def account_manager(mock_fernet):
         return TelegramAccountManager()
 
 
+def test_telegram_account_generates_id_on_init():
+    """Model instances always have a primary key before SQLAlchemy flushes."""
+    account = TelegramAccount(
+        phone="+1234567890",
+        session_string="encrypted_session",
+    )
+
+    assert isinstance(account.id, UUID)
+
+
 @pytest.mark.asyncio
 async def test_encrypt_decrypt_session(account_manager):
     """Test session encryption and decryption."""
