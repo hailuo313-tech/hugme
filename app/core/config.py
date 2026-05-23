@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     # Novita AI 配置（核心 AI 提供商）
     NOVITA_API_KEY: str = 'sk_HRGPuh2L602D5Hila5CMFvMKWtz42qEnGfAccpHCwds'
     NOVITA_BASE_URL: str = 'https://api.novita.ai/openai'
-    NOVITA_CHAT_MODEL: str = 'deepseek/deepseek-v4-flash'
+    NOVITA_CHAT_MODEL: str = 'sao10k/l3-70b-euryale-v2.1'
     NOVITA_TIMEOUT_S: float = 25.0
 
     # C-03 / W2 MTProto（Telethon Userbot）；W2 前可不启用运行时，但须在 .env 配齐占位
