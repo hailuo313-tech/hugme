@@ -47,8 +47,16 @@ def _moderation_should_block(
     categories: dict[str, Any],
     category_scores: dict[str, Any],
     flagged: bool,
+    skip_sexual_block: bool = False,
 ) -> tuple[bool, str | None]:
-    """在 ``flagged`` 为真时细分：自伤类放行，由危机协议处理。"""
+    """在 ``flagged`` 为真时细分：自伤类放行，由危机协议处理。
+    
+    Args:
+        categories: OpenAI Moderation API 返回的类别
+        category_scores: OpenAI Moderation API 返回的分数
+        flagged: 是否被标记
+        skip_sexual_block: 是否跳过sexual内容拦截（用于premium_nsfw_companion模式）
+    """
     if categories.get("sexual/minors"):
         return True, "moderation:sexual_minors"
     if categories.get("self-harm") or categories.get("self-harm/intent"):
@@ -65,7 +73,8 @@ def _moderation_should_block(
         except (TypeError, ValueError):
             return 0.0
 
-    if _f("sexual") >= 0.9:
+    # 在 premium_nsfw_companion 模式下跳过 sexual 拦截
+    if not skip_sexual_block and _f("sexual") >= 0.9:
         return True, "moderation:sexual"
     if max(_f("hate"), _f("hate/threatening")) >= 0.9:
         return True, "moderation:hate"
@@ -124,8 +133,15 @@ async def evaluate_inbound_content_safety(
     text: str,
     *,
     trace_id: str,
+    skip_sexual_block: bool = False,
 ) -> dict[str, Any]:
-    """生成写入 ``messages.safety_result`` 的文档，并给出是否拦截入站处理。"""
+    """生成写入 ``messages.safety_result`` 的文档，并给出是否拦截入站处理。
+    
+    Args:
+        text: 要检查的文本
+        trace_id: 追踪ID
+        skip_sexual_block: 是否跳过sexual内容拦截（用于premium_nsfw_companion模式）
+    """
     if not settings.CONTENT_SAFETY_ENABLED:
         return {
             "blocked": False,
@@ -160,7 +176,7 @@ async def evaluate_inbound_content_safety(
     cats = mod.get("categories") or {}
     scores = mod.get("category_scores") or {}
     flagged = bool(mod.get("flagged"))
-    block, m_reason = _moderation_should_block(cats, scores, flagged)
+    block, m_reason = _moderation_should_block(cats, scores, flagged, skip_sexual_block)
     mod_out = {
         "flagged": flagged,
         "categories": {k: bool(v) for k, v in cats.items() if v},

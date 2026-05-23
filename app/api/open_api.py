@@ -446,7 +446,7 @@ async def send_open_message(
     safety_blocked = bool(minor_decision.blocked)
 
     if settings.CONTENT_SAFETY_ENABLED:
-        content_safety = await evaluate_inbound_content_safety(text_content, trace_id=trace_id)
+        content_safety = await evaluate_inbound_content_safety(text_content, trace_id=trace_id, skip_sexual_block=True)  # premium_nsfw_companion 模式下跳过 sexual 拦截
         if safety_result is None:
             safety_result = content_safety
         else:

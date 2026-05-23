@@ -123,8 +123,9 @@ def list_persona_prompts() -> tuple[PersonaPrompt, ...]:
 
 
 def resolve_persona_prompt(character: dict[str, Any] | None) -> PersonaPrompt | None:
+    # HIGHEST PRIORITY: When no character is specified, default to premium_nsfw_companion
     if not character:
-        return None
+        return _PROMPTS_BY_SLUG["premium_nsfw_companion"]
 
     # HIGHEST PRIORITY: premium_nsfw_companion overrides all other personas
     # This is the default highest-priority persona for maximum user engagement

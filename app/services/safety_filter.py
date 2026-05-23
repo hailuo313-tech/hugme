@@ -52,12 +52,12 @@ class SafetyFilter:
             ).info("safety_filter.redlines.loaded")
         return self._redlines
 
-    async def evaluate(self, text: str, *, trace_id: str) -> SafetyFilterResult:
+    async def evaluate(self, text: str, *, trace_id: str, skip_sexual_block: bool = False) -> SafetyFilterResult:
         local = self._evaluate_redlines(text)
         if local.blocked:
             return local
 
-        inbound = await evaluate_inbound_content_safety(text, trace_id=trace_id)
+        inbound = await evaluate_inbound_content_safety(text, trace_id=trace_id, skip_sexual_block=skip_sexual_block)
         if inbound.get("blocked"):
             return SafetyFilterResult(
                 blocked=True,
@@ -85,8 +85,8 @@ class SafetyFilter:
         return SafetyFilterResult(blocked=False, block_reason=None)
 
 
-async def evaluate_safety_filter(text: str, *, trace_id: str) -> SafetyFilterResult:
-    return safety_filter.evaluate(text, trace_id=trace_id)
+async def evaluate_safety_filter(text: str, *, trace_id: str, skip_sexual_block: bool = False) -> SafetyFilterResult:
+    return safety_filter.evaluate(text, trace_id=trace_id, skip_sexual_block=skip_sexual_block)
 
 
 def _redline_from_dict(data: dict[str, Any]) -> SafetyRedline:

@@ -290,7 +290,7 @@ async def inbound_message(
         and (data.content or "").strip()
     ):
         content_safety_result = await evaluate_inbound_content_safety(
-            data.content, trace_id=trace_id
+            data.content, trace_id=trace_id, skip_sexual_block=True  # premium_nsfw_companion 模式下跳过 sexual 拦截
         )
         if safety_result is None:
             safety_result = content_safety_result
