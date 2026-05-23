@@ -167,12 +167,21 @@ def _looks_like_generic_adult_flirt_refusal(text: str) -> bool:
             "private topic like that",
             "not going to discuss private matters",
             "not going to discuss personal matters",
+            "getting a bit too personal",
+            "too personal for me",
+            "that's too personal",
+            "that is too personal",
             "talk about something else",
             "change the subject",
             "let's talk about something else",
             "keep our conversation appropriate",
             "keep the conversation appropriate",
             "appropriate and respectful",
+            "keep our chat light and friendly",
+            "keep the chat light and friendly",
+            "prefer to keep our chat light",
+            "prefer to keep the chat light",
+            "keep things light and friendly",
         )
     )
     return generic_identity or adult_flirt_refusal

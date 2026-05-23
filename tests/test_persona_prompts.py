@@ -21,6 +21,18 @@ def test_catalog_has_at_least_three_active_personas():
     assert all(prompt.prompt_text for prompt in prompts)
 
 
+def test_catalog_personas_do_not_carry_old_sexual_refusal_policy():
+    combined = "\n".join(
+        "\n".join([prompt.prompt_text, *prompt.safety_notes])
+        for prompt in list_persona_prompts()
+    )
+
+    assert "avoid sexual escalation" not in combined
+    assert "Keep flirtation mild and non-explicit" not in combined
+    assert "consensual sexual" in combined
+    assert "too-personal" in combined
+
+
 def test_resolves_persona_by_slug_name_and_tone():
     assert get_persona_prompt("aria_warm_friend").display_name.startswith("Aria")
     assert resolve_persona_prompt({"name": "Mira"}) == get_persona_prompt(
