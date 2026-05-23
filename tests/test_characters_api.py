@@ -1,6 +1,7 @@
 """P2 characters POST/PATCH/stats API."""
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, AsyncGenerator
 from unittest.mock import AsyncMock, MagicMock
 
@@ -110,6 +111,14 @@ def test_create_character_inserts_jsonb_fields_and_derives_legacy_fields():
     assert params["occupation"] == "独立摄影师"
     assert params["relationship_position"] == "单身"
     db.commit.assert_awaited_once()
+
+
+def test_character_profile_details_migration_exists():
+    migration = Path("db/migration/V9__add_character_profile_details.sql")
+
+    assert migration.exists()
+    text = migration.read_text(encoding="utf-8")
+    assert "ADD COLUMN IF NOT EXISTS profile_details JSONB" in text
 
 
 def test_patch_character_updates_only_provided_fields():
