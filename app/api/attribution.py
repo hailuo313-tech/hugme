@@ -228,11 +228,13 @@ async def admin_attribution_summary(
         link_window = "COALESCE(sent_at, created_at) >= :start_at AND COALESCE(sent_at, created_at) < :end_at"
         event_window = "created_at >= :start_at AND created_at < :end_at"
         event_window_alias = "e.created_at >= :start_at AND e.created_at < :end_at"
+        user_window = "u.created_at >= :start_at AND u.created_at < :end_at"
     else:
         params = {"days": days}
         link_window = "COALESCE(sent_at, created_at) >= NOW() - (:days || ' days')::interval"
         event_window = "created_at >= NOW() - (:days || ' days')::interval"
         event_window_alias = "e.created_at >= NOW() - (:days || ' days')::interval"
+        user_window = "u.created_at >= NOW() - (:days || ' days')::interval"
     overview = (
         await db.execute(
             text(
@@ -423,6 +425,32 @@ async def admin_attribution_summary(
         LIMIT 20
         """
     )
+    telegram_account_rows = await fetch_rows(
+        f"""
+        SELECT
+            ta.id::text AS account_id,
+            COALESCE(NULLIF(ta.display_name, ''), NULLIF(ta.username, ''), ta.phone, ta.id::text) AS account_label,
+            ta.phone,
+            ta.username,
+            COUNT(DISTINCT c.user_id) FILTER (WHERE m.id IS NOT NULL) AS served_users,
+            COUNT(DISTINCT c.user_id) FILTER (
+                WHERE m.id IS NOT NULL
+                  AND {user_window}
+            ) AS new_users,
+            COUNT(m.id) AS assistant_messages,
+            MAX(m.created_at) AS last_message_at
+        FROM telegram_accounts ta
+        LEFT JOIN messages m
+          ON m.sender_id = ta.id::text
+         AND m.sender_type = 'assistant'
+         AND {event_window.replace("created_at", "m.created_at")}
+        LEFT JOIN conversations c ON c.id = m.conversation_id
+        LEFT JOIN users u ON u.id = c.user_id AND u.channel = 'telegram_real_user'
+        GROUP BY ta.id, ta.display_name, ta.username, ta.phone
+        ORDER BY served_users DESC, new_users DESC, assistant_messages DESC, account_label ASC
+        LIMIT 50
+        """
+    )
 
     def value(row: Any, idx: int, default: Any = 0) -> Any:
         try:
@@ -475,6 +503,8 @@ async def admin_attribution_summary(
     revenue_cents = int(value(overview, 11) or 0)
     upgraded_paid_users = int(value(overview, 12) or 0)
     today_click_users = int(value(overview, 13) or 0)
+    tg_new_users = sum(int(value(r, 5) or 0) for r in telegram_account_rows)
+    tg_served_users = sum(int(value(r, 4) or 0) for r in telegram_account_rows)
     return {
         "days": days,
         "date": selected_date.isoformat() if selected_date else None,
@@ -505,6 +535,8 @@ async def admin_attribution_summary(
             "avg_sent_to_click_seconds": float(value(overview, 14) or 0),
             "avg_click_to_register_seconds": float(value(overview, 15) or 0),
             "avg_click_to_payment_seconds": float(value(overview, 16) or 0),
+            "tg_new_users": tg_new_users,
+            "tg_served_users": tg_served_users,
         },
         "funnel": [
             {"step": "话术发送", "users": sent_users, "events": sent_links},
@@ -551,5 +583,18 @@ async def admin_attribution_summary(
                 "avg_seconds_to_click": float(value(r, 9) or 0),
             }
             for r in link_rows
+        ],
+        "telegram_accounts": [
+            {
+                "account_id": value(r, 0, ""),
+                "account_label": value(r, 1, "unknown"),
+                "phone": value(r, 2, None),
+                "username": value(r, 3, None),
+                "served_users": int(value(r, 4) or 0),
+                "new_users": int(value(r, 5) or 0),
+                "assistant_messages": int(value(r, 6) or 0),
+                "last_message_at": value(r, 7, None).isoformat() if value(r, 7, None) else None,
+            }
+            for r in telegram_account_rows
         ],
     }
