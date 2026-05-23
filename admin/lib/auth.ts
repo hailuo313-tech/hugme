@@ -2,6 +2,7 @@
 // 须与 next.config.js 的 basePath=/admin 一致（硬跳转不能用 "/login"）
 
 export const ADMIN_BASE_PATH = "/admin";
+export const DEFAULT_ADMIN_ENTRY_PATH = ADMIN_BASE_PATH;
 export const LOGIN_PATH = `${ADMIN_BASE_PATH}/login`;
 
 export const TOKEN_KEY = "eris_admin_token";
@@ -14,28 +15,33 @@ export interface Operator {
   role: string;
 }
 
+function getBrowserStorage(): Storage | null {
+  if (typeof window === "undefined") return null;
+  return window.localStorage;
+}
+
 export function saveAuth(token: string, operator: Operator) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(TOKEN_KEY, token);
-  localStorage.setItem(OPERATOR_KEY, JSON.stringify(operator));
+  const storage = getBrowserStorage();
+  if (!storage) return;
+  storage.setItem(TOKEN_KEY, token);
+  storage.setItem(OPERATOR_KEY, JSON.stringify(operator));
 }
 
 export function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(TOKEN_KEY);
+  return getBrowserStorage()?.getItem(TOKEN_KEY) ?? null;
 }
 
 export function getOperator(): Operator | null {
-  if (typeof window === "undefined") return null;
-  const raw = localStorage.getItem(OPERATOR_KEY);
+  const raw = getBrowserStorage()?.getItem(OPERATOR_KEY);
   if (!raw) return null;
   try { return JSON.parse(raw); } catch { return null; }
 }
 
 export function clearAuth() {
-  if (typeof window === "undefined") return;
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(OPERATOR_KEY);
+  const storage = getBrowserStorage();
+  if (!storage) return;
+  storage.removeItem(TOKEN_KEY);
+  storage.removeItem(OPERATOR_KEY);
 }
 
 export function isLoggedIn(): boolean {

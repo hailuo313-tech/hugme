@@ -30,6 +30,8 @@ interface Overview {
   avg_sent_to_click_seconds: number;
   avg_click_to_register_seconds: number;
   avg_click_to_payment_seconds: number;
+  tg_new_users: number;
+  tg_served_users: number;
 }
 
 interface DimensionRow {
@@ -73,6 +75,17 @@ interface LinkRow {
   avg_seconds_to_click: number;
 }
 
+interface TelegramAccountRow {
+  account_id: string;
+  account_label: string;
+  phone?: string | null;
+  username?: string | null;
+  served_users: number;
+  new_users: number;
+  assistant_messages: number;
+  last_message_at?: string | null;
+}
+
 interface AttributionSummary {
   days: number;
   date?: string | null;
@@ -93,6 +106,7 @@ interface AttributionSummary {
   top_register_scripts: ScriptRow[];
   top_payment_scripts: ScriptRow[];
   links: LinkRow[];
+  telegram_accounts: TelegramAccountRow[];
 }
 
 const formatUsd = (cents: number) =>
@@ -203,6 +217,8 @@ function DataDashboard({ operator }: { operator: Operator }) {
       )}
 
       <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-4">
+        <MetricCard label="TG 新用户数" value={overview?.tg_new_users ?? 0} />
+        <MetricCard label="TG 接待用户数" value={overview?.tg_served_users ?? 0} />
         <MetricCard label="今日链接点击人数" value={overview?.today_click_users ?? 0} />
         <MetricCard label="点击率" value={formatRate(overview?.click_rate ?? 0)} />
         <MetricCard label="下载转化率" value={formatRate(overview?.click_to_download_rate ?? 0)} />
@@ -212,6 +228,8 @@ function DataDashboard({ operator }: { operator: Operator }) {
         <MetricCard label="点击到注册平均耗时" value={formatDuration(overview?.avg_click_to_register_seconds ?? 0)} />
         <MetricCard label="点击到首付平均耗时" value={formatDuration(overview?.avg_click_to_payment_seconds ?? 0)} />
       </section>
+
+      <TelegramAccountPanel rows={summary?.telegram_accounts ?? []} />
 
       <section className="mb-6 rounded-lg border border-slate-800 bg-slate-900">
         <div className="border-b border-slate-800 px-5 py-4">
@@ -320,6 +338,51 @@ function DimensionPanel({ title, rows, label }: { title: string; rows: Dimension
         </tbody>
       </table>
     </Panel>
+  );
+}
+
+function TelegramAccountPanel({ rows }: { rows: TelegramAccountRow[] }) {
+  return (
+    <section className="mb-6 overflow-hidden rounded-lg border border-slate-800 bg-slate-900">
+      <div className="border-b border-slate-800 px-5 py-4">
+        <h2 className="text-lg font-semibold">TG 账号接待</h2>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-left text-sm">
+          <thead className="bg-slate-950/50 text-slate-500">
+            <tr>
+              <th className="px-5 py-3 font-medium">TG 账号</th>
+              <th className="px-5 py-3 font-medium">新用户</th>
+              <th className="px-5 py-3 font-medium">接待用户</th>
+              <th className="px-5 py-3 font-medium">发送消息</th>
+              <th className="px-5 py-3 font-medium">最后接待</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-800">
+            {rows.length ? (
+              rows.map((row) => (
+                <tr key={row.account_id}>
+                  <td className="px-5 py-4 text-slate-300">
+                    <div className="font-medium text-slate-100">{row.account_label}</div>
+                    <div className="mt-1 text-xs text-slate-500">{row.username || row.phone || row.account_id}</div>
+                  </td>
+                  <td className="px-5 py-4 text-slate-100">{row.new_users}</td>
+                  <td className="px-5 py-4 text-slate-100">{row.served_users}</td>
+                  <td className="px-5 py-4 text-slate-300">{row.assistant_messages}</td>
+                  <td className="px-5 py-4 text-slate-400">{row.last_message_at || "-"}</td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td className="px-5 py-8 text-sm text-slate-500" colSpan={5}>
+                  暂无 TG 账号接待数据
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
