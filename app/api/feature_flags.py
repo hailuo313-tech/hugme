@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
 
-from app.services.feature_flags import (
+from services.feature_flags import (
     FeatureFlagService, 
     RolloutType,
     feature_flag_service
