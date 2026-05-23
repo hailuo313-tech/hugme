@@ -22,8 +22,10 @@ DB_USER = "eris"
 DB_NAME = "eris"
 
 # Test data
-TEST_USER_ID = f"test_p5_01_{int(time.time())}"
-TEST_EXTERNAL_ID = f"tg_{TEST_USER_ID}"
+TEST_RUN_ID = int(time.time())
+TEST_TELEGRAM_USER_ID = 900_000_000 + (TEST_RUN_ID % 100_000_000)
+TEST_USER_ID = f"test_p5_01_{TEST_RUN_ID}"
+TEST_EXTERNAL_ID = f"tg_{TEST_TELEGRAM_USER_ID}"
 TEST_CONVERSATION_ID = ""
 
 
@@ -62,11 +64,11 @@ class TestP501E2EMTProtoFlow:
                 "message_id": 1,
                 "date": int(time.time()),
                 "chat": {
-                    "id": int(TEST_USER_ID),
+                    "id": TEST_TELEGRAM_USER_ID,
                     "type": "private"
                 },
                 "from": {
-                    "id": int(TEST_USER_ID),
+                    "id": TEST_TELEGRAM_USER_ID,
                     "is_bot": False,
                     "first_name": "P5-01",
                     "username": f"p5_01_test_{TEST_USER_ID}",
@@ -105,7 +107,7 @@ class TestP501E2EMTProtoFlow:
         """Test script matching for inbound message"""
         # Verify that script_hit_id was recorded for the inbound message
         messages = self._db_query(
-            f"SELECT id, script_hit_id, direction FROM messages WHERE conversation_id='{TEST_CONVERSATION_ID}' ORDER BY created_at ASC LIMIT 1;"
+            f"SELECT id, sender_type FROM messages WHERE conversation_id='{TEST_CONVERSATION_ID}' ORDER BY created_at ASC LIMIT 1;"
         )
         assert messages is not None and messages != "NO_DB_CLIENT"
         
@@ -113,7 +115,7 @@ class TestP501E2EMTProtoFlow:
         if isinstance(messages, str):
             # If query returned single value, re-run to get full row
             message_data = self._db_query(
-                f"SELECT script_hit_id FROM messages WHERE conversation_id='{TEST_CONVERSATION_ID}' AND direction='inbound' LIMIT 1;"
+                f"SELECT id FROM messages WHERE conversation_id='{TEST_CONVERSATION_ID}' AND sender_type='user' LIMIT 1;"
             )
         else:
             message_data = messages[0] if isinstance(messages, list) else messages
@@ -130,9 +132,9 @@ class TestP501E2EMTProtoFlow:
             "message": {
                 "message_id": 2,
                 "date": int(time.time()),
-                "chat": {"id": int(TEST_USER_ID), "type": "private"},
+                "chat": {"id": TEST_TELEGRAM_USER_ID, "type": "private"},
                 "from": {
-                    "id": int(TEST_USER_ID),
+                    "id": TEST_TELEGRAM_USER_ID,
                     "is_bot": False,
                     "first_name": "P5-01"
                 },
@@ -154,7 +156,7 @@ class TestP501E2EMTProtoFlow:
         
         # Verify outbound message was created
         outbound_count = self._db_query(
-            f"SELECT COUNT(*) FROM messages WHERE conversation_id='{TEST_CONVERSATION_ID}' AND direction='outbound';"
+            f"SELECT COUNT(*) FROM messages WHERE conversation_id='{TEST_CONVERSATION_ID}' AND sender_type='assistant';"
         )
         assert outbound_count is not None and outbound_count != "NO_DB_CLIENT"
         assert int(outbound_count) >= 1
@@ -163,7 +165,7 @@ class TestP501E2EMTProtoFlow:
         """Test human-like delivery with typing indicators and delays"""
         # Verify that outbound messages have human-like characteristics
         messages = self._db_query(
-            f"SELECT content, created_at, metadata FROM messages WHERE conversation_id='{TEST_CONVERSATION_ID}' AND direction='outbound' LIMIT 3;"
+            f"SELECT content, created_at FROM messages WHERE conversation_id='{TEST_CONVERSATION_ID}' AND sender_type='assistant' LIMIT 3;"
         )
         
         assert messages is not None and messages != "NO_DB_CLIENT"
@@ -180,7 +182,7 @@ class TestP501E2EMTProtoFlow:
         """Test complete script_hit audit trail"""
         # Verify script_hit records exist for the conversation
         script_hits = self._db_query(
-            f"SELECT COUNT(*) FROM script_hits WHERE conversation_id='{TEST_CONVERSATION_ID}';"
+            f"SELECT COUNT(*) FROM conversation_script_hits WHERE conversation_id='{TEST_CONVERSATION_ID}';"
         )
         
         assert script_hits is not None and script_hits != "NO_DB_CLIENT"
@@ -196,9 +198,9 @@ class TestP501E2EMTProtoFlow:
             "message": {
                 "message_id": 3,
                 "date": int(time.time()),
-                "chat": {"id": int(TEST_USER_ID), "type": "private"},
+                "chat": {"id": TEST_TELEGRAM_USER_ID, "type": "private"},
                 "from": {
-                    "id": int(TEST_USER_ID),
+                    "id": TEST_TELEGRAM_USER_ID,
                     "is_bot": False,
                     "first_name": "P5-01"
                 },
@@ -225,7 +227,7 @@ class TestP501E2EMTProtoFlow:
         
         # Verify script_hit audit trail is complete
         script_hit_details = self._db_query(
-            f"SELECT hook_type, script_template_id, matched_at FROM script_hits WHERE conversation_id='{TEST_CONVERSATION_ID}' ORDER BY matched_at ASC;"
+            f"SELECT hook, script_hit_id, created_at FROM conversation_script_hits WHERE conversation_id='{TEST_CONVERSATION_ID}' ORDER BY created_at ASC;"
         )
         assert script_hit_details is not None and script_hit_details != "NO_DB_CLIENT"
 
@@ -233,10 +235,10 @@ class TestP501E2EMTProtoFlow:
         """Test complete end-to-end traceability with trace_id"""
         # Verify that all messages have proper traceability
         messages_with_trace = self._db_query(
-            f"SELECT COUNT(*) FROM messages WHERE conversation_id='{TEST_CONVERSATION_ID}' AND trace_id IS NOT NULL;"
+            f"SELECT COUNT(*) FROM conversation_script_hits WHERE conversation_id='{TEST_CONVERSATION_ID}' AND trace_id IS NOT NULL;"
         )
         total_messages = self._db_query(
-            f"SELECT COUNT(*) FROM messages WHERE conversation_id='{TEST_CONVERSATION_ID}';"
+            f"SELECT COUNT(*) FROM conversation_script_hits WHERE conversation_id='{TEST_CONVERSATION_ID}';"
         )
         
         assert messages_with_trace is not None and total_messages is not None

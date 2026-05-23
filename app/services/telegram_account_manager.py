@@ -3,7 +3,7 @@
 import asyncio
 from datetime import datetime
 from typing import Dict, List, Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from cryptography.fernet import Fernet
 from loguru import logger
@@ -243,6 +243,7 @@ class TelegramAccountManager:
 
         async with AsyncSessionLocal() as session:
             account = TelegramAccount(
+                id=uuid4(),
                 phone=phone,
                 session_string=encrypted_session,
                 is_bot=is_bot,
@@ -283,6 +284,7 @@ class TelegramAccountManager:
                 return account.id
 
             account = TelegramAccount(
+                id=uuid4(),
                 phone=phone,
                 session_string=encrypted_session,
                 is_bot=is_bot,

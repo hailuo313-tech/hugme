@@ -232,7 +232,7 @@ async def verify_telegram_session_login(request: SessionLoginVerifyRequest):
     phone: str = item["phone"]
 
     try:
-        if not await client.is_connected():
+        if not client.is_connected():
             await client.connect()
 
         if request.password:
