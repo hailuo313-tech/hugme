@@ -104,6 +104,13 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+
+@app.on_event("startup")
+async def startup_event():
+    logger.info("ERIS starting up...")
+    await init_db()
+    logger.info("Database connected")
+
 @app.get("/ops/{filename}", include_in_schema=False)
 async def ops_static_html(filename: str):
     """只读提供仓库 ``docs/`` 下已审核的 HTML（与 Swagger ``/docs`` 路径区分）。"""
