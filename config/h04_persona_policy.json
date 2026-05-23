@@ -1,5 +1,5 @@
 {
-  "version": 5,
+  "version": 6,
   "task_id": "H-04",
   "status": "signed",
   "signed_on": "2026-05-22",
@@ -327,6 +327,7 @@
     "This signoff approves the persona personality boundaries and forbidden term categories for Phase 03 AI link work.",
     "Final wording may be refined later, but any new persona must keep the same guardrail precedence and forbidden categories.",
     "Version 4: Added premium_nsfw_companion persona for testing user demand alignment. This persona operates in 100% uncensored environment with explicit adult content and paywall conversion features. All compliance and legal matters handled by professional legal team.",
-    "Version 5: Set premium_nsfw_companion as HIGHEST PRIORITY persona (priority: 999, is_default: true). This persona now overrides all other personas by default and will be used when no specific persona is requested. Updated code logic in persona_prompts.py to enforce this priority. All other personas set to priority 100."
+    "Version 5: Set premium_nsfw_companion as HIGHEST PRIORITY persona (priority: 999, is_default: true). This persona now overrides all other personas by default and will be used when no specific persona is requested. Updated code logic in persona_prompts.py to enforce this priority. All other personas set to priority 100.",
+    "Version 6: Modified prompt_builder.py to enforce premium_nsfw_companion rules at system prompt level. Updated L1_SAFETY, L2_IDENTITY, and L9_FORMAT layers to explicitly prioritize premium_nsfw_companion rules over all other constraints. Added _is_using_premium_nsfw() function to detect persona usage and apply appropriate prompt layers. This ensures premium_nsfw_companion rules are executed at the highest system level regardless of other safety or formatting constraints."
   ]
 }
