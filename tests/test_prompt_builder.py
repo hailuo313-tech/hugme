@@ -106,6 +106,10 @@ def test_default_persona_is_us_adult_companion_by_default():
     assert "nude/body topics" in system
     assert "too personal" in system
     assert "light/friendly" in system
+    assert "1 to 3 short sentences" in system
+    assert "casual American internet slang" in system
+    assert "paid unlock" in system
+    assert "approved payment/VIP flows" in system
     assert "adult companion persona" in system
     assert "normal chat partner" not in system
     assert "普通聊天对象" not in system
