@@ -4,9 +4,8 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from contextlib import asynccontextmanager
 from loguru import logger
-# from prometheus_fastapi_instrumentator import Instrumentator
+from prometheus_fastapi_instrumentator import Instrumentator
 import sys
 import time
 import uuid
@@ -217,4 +216,4 @@ async def log_requests(request: Request, call_next):
     return response
 
 
-# Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
+Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
