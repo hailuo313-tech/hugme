@@ -97,20 +97,10 @@ def request_trace_id(request: Request) -> str:
     return trace_id or str(uuid.uuid4())
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    logger.info("ERIS starting up...")
-    await init_db()
-    logger.info("Database connected")
-    yield
-    logger.info("ERIS shutting down...")
-
-
 app = FastAPI(
     title="ERIS API",
     description="Emotional Relationship Intelligence System",
     version="0.1.0",
-    lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
 )
