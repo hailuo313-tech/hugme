@@ -149,6 +149,29 @@ class TelegramAccountManager:
             await self._update_account_status(account_id, "disconnected")
             return True
 
+    async def delete_account(self, account_id: UUID) -> bool:
+        """Disconnect and permanently delete a Telegram account."""
+        async with self._lock:
+            client = self.clients.pop(account_id, None)
+            handler = self._inbound_handlers.pop(account_id, None)
+            if client:
+                try:
+                    if handler is not None:
+                        client.remove_event_handler(handler)
+                    await client.disconnect()
+                    logger.info(f"Disconnected account {account_id} before delete")
+                except Exception as e:
+                    logger.error(f"Error disconnecting account {account_id} before delete: {e}")
+
+            async with _session_scope() as session:
+                account = await session.get(TelegramAccount, account_id)
+                if not account:
+                    return False
+
+                await session.delete(account)
+                logger.info(f"Deleted Telegram account {account_id}")
+                return True
+
     async def connect_all_active_accounts(self) -> Dict[UUID, bool]:
         """Connect all active accounts."""
         accounts = await self.get_active_accounts()
