@@ -231,10 +231,10 @@ async def admin_attribution_summary(
         user_window = "u.created_at >= :start_at AND u.created_at < :end_at"
     else:
         params = {"days": days}
-        link_window = "COALESCE(sent_at, created_at) >= NOW() - (:days || ' days')::interval"
-        event_window = "created_at >= NOW() - (:days || ' days')::interval"
-        event_window_alias = "e.created_at >= NOW() - (:days || ' days')::interval"
-        user_window = "u.created_at >= NOW() - (:days || ' days')::interval"
+        link_window = "COALESCE(sent_at, created_at) >= NOW() - (:days * INTERVAL '1 day')"
+        event_window = "created_at >= NOW() - (:days * INTERVAL '1 day')"
+        event_window_alias = "e.created_at >= NOW() - (:days * INTERVAL '1 day')"
+        user_window = "u.created_at >= NOW() - (:days * INTERVAL '1 day')"
     overview = (
         await db.execute(
             text(
