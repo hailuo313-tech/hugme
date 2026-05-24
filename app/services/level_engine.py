@@ -26,10 +26,39 @@ CHAT_ROUTE_BY_LEVEL: dict[Level, ChatRoute] = {
     "D": "ai_auto",
 }
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_T1_PATH = _REPO_ROOT / "config" / "t1_countries.json"
-DEFAULT_THRESHOLDS_PATH = _REPO_ROOT / "config" / "level_thresholds.json"
-DEFAULT_ENV_PATH = _REPO_ROOT / ".env"
+_SERVICE_PATH = Path(__file__).resolve()
+_REPO_ROOT = _SERVICE_PATH.parents[2]
+
+
+def _config_candidates(filename: str) -> list[Path]:
+    env_dir = os.environ.get("ERIS_CONFIG_DIR")
+    candidates: list[Path] = []
+    if env_dir:
+        candidates.append(Path(env_dir) / filename)
+    for root in (_REPO_ROOT, _SERVICE_PATH.parents[1], Path("/app")):
+        candidates.append(root / "config" / filename)
+    return candidates
+
+
+def _default_config_path(filename: str) -> Path:
+    candidates = _config_candidates(filename)
+    for path in candidates:
+        if path.exists():
+            return path
+    return candidates[0]
+
+
+def _default_env_path() -> Path:
+    for root in (_REPO_ROOT, _SERVICE_PATH.parents[1], Path("/app")):
+        path = root / ".env"
+        if path.exists():
+            return path
+    return _REPO_ROOT / ".env"
+
+
+DEFAULT_T1_PATH = _default_config_path("t1_countries.json")
+DEFAULT_THRESHOLDS_PATH = _default_config_path("level_thresholds.json")
+DEFAULT_ENV_PATH = _default_env_path()
 
 # T2 sample — H-02 will replace with signed config
 _DEFAULT_T2 = frozenset({"BR", "MX", "IN", "ID", "TH", "VN", "PH", "MY"})
