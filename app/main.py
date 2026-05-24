@@ -28,6 +28,7 @@ from api.onboarding import router as onboarding_router
 from api.admin import router as admin_router
 from api.operator_quality import router as operator_quality_router
 from api.ops_ai import router as ops_ai_router
+from api.ai_ops_admin import router as ai_ops_admin_router
 from api.ab_experiments import router as ab_experiments_router
 from api.open_api import router as open_api_router
 from api.geoip import router as geoip_router
@@ -171,6 +172,7 @@ app.include_router(
     tags=["operator-quality"],
 )
 app.include_router(ops_ai_router, prefix="/api/v1/ops-ai", tags=["ops-ai"])
+app.include_router(ai_ops_admin_router, prefix="/api/v1/ai-ops/admin", tags=["ai-ops-admin"])
 app.include_router(
     ab_experiments_router,
     prefix="/api/v1/ab-experiments",
