@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     MTProto_ENABLED: bool = False
     TELEGRAM_DEVICE_MODEL: str = "ERIS"
     TELEGRAM_SYSTEM_VERSION: str = "1.0"
+    PUBLIC_BASE_URL: str = "https://hugme2.com"
+    APP_DOWNLOAD_URL: Optional[str] = None
+    APP_DOWNLOAD_CONVERSION_ENABLED: bool = True
 
     @field_validator("TELEGRAM_API_ID", mode="before")
     @classmethod

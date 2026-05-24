@@ -20,6 +20,7 @@ from services.llm_orchestrator import (
     LLMOrchestratorError,
     generate_reply,
 )
+from services.app_download_conversion import get_last_app_download_decision
 from services.link_attribution import wrap_text_links_with_tracking
 from services.reply_consistency import (
     evaluate_reply_consistency,
@@ -155,6 +156,7 @@ async def ai_reply(
     log.bind(**consistency.as_log_dict()).info("conversation.reply.consistency_checked")
 
     bot_msg_id = str(uuid.uuid4())
+    app_download_decision = get_last_app_download_decision()
     try:
         reply_text = await wrap_text_links_with_tracking(
             db,
@@ -163,7 +165,48 @@ async def ai_reply(
             user_id=user_id,
             conversation_id=conv_id,
             message_id=bot_msg_id,
+            script_hit_id=(
+                app_download_decision.script_hit_id
+                if app_download_decision is not None
+                else None
+            ),
             platform="h5",
+            scene_step=(
+                app_download_decision.scene_step
+                if app_download_decision is not None
+                else None
+            ),
+            script_category=(
+                app_download_decision.category_key
+                if app_download_decision is not None
+                else None
+            ),
+            persona_slug=(
+                app_download_decision.persona_slug
+                if app_download_decision is not None
+                else None
+            ),
+            intent=(
+                app_download_decision.intent
+                if app_download_decision is not None
+                else None
+            ),
+            country_code=(
+                app_download_decision.country_code
+                if app_download_decision is not None
+                else None
+            ),
+            age=app_download_decision.age if app_download_decision is not None else None,
+            user_level=(
+                app_download_decision.user_level
+                if app_download_decision is not None
+                else None
+            ),
+            is_t1_country=(
+                app_download_decision.is_t1_country
+                if app_download_decision is not None
+                else None
+            ),
             metadata={"source": "conversation_reply", "trace_id": trace_id},
         )
     except Exception as exc:
