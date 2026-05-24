@@ -202,6 +202,39 @@ def test_config_files_load():
     assert th.a_min_spend >= 0
 
 
+def test_signed_t1_country_config_matches_latest_owner_list():
+    assert load_t1_countries() == frozenset(
+        {
+            "US",
+            "CA",
+            "GB",
+            "DE",
+            "FR",
+            "IT",
+            "ES",
+            "NL",
+            "BE",
+            "CH",
+            "AT",
+            "IE",
+            "DK",
+            "NO",
+            "SE",
+            "FI",
+            "IS",
+            "LU",
+            "PT",
+            "GR",
+            "CZ",
+            "JP",
+            "AU",
+            "NZ",
+            "SG",
+            "HK",
+        }
+    )
+
+
 def test_high_spend_non_t1_does_not_auto_s(th):
     r = calc_user_level(
         UserLevelInput(profile_complete=True, country_code="BR", lifetime_spend_usd=1000),
