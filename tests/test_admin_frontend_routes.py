@@ -55,7 +55,7 @@ def test_conversation_overview_has_dedicated_route() -> None:
 
 def test_business_flow_admin_pages_exist() -> None:
     pages = {
-        "admin/app/ai-ops/page.tsx": ["script_match", "H-03", "H-04", "P3-21"],
+        "admin/app/ai-ops/page.tsx": ["话术库管理", "下载引导话术", "/ai-ops/admin/script-templates"],
         "admin/app/approvals/page.tsx": ["H-01", "H-07", "H-10", "H-11"],
         "admin/app/delivery/page.tsx": ["P4-09", "P4-10", "P5-08"],
         "admin/app/data/page.tsx": ["链接与 App 转化", "/admin/attribution/summary", "Top 点击话术"],

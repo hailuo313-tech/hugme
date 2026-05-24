@@ -1,11 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import AuthGate from "@/components/AuthGate";
 import AdminFrame from "@/components/AdminFrame";
 import { apiFetch, Operator } from "@/lib/auth";
-
-type TabKey = "scripts" | "personas" | "redlines" | "intents";
 
 type ScriptTemplate = {
   id: string;
@@ -25,37 +23,6 @@ type ScriptTemplate = {
   updated_at: string | null;
 };
 
-type PersonaPrompt = {
-  id: string;
-  slug: string;
-  display_name: string;
-  language: string;
-  tone_family: string;
-  prompt_text: string;
-  safety_notes: string[] | string | null;
-  status: string;
-  updated_at: string | null;
-};
-
-type IntentRule = {
-  id: string;
-  intent: string;
-  priority: number;
-  confidence: number;
-  keywords: string[];
-  patterns: string[];
-  excludes?: string[];
-  enabled?: boolean;
-};
-
-type Redline = {
-  id: string;
-  category: string;
-  reason: string;
-  patterns: string[];
-  enabled?: boolean;
-};
-
 type ScriptForm = {
   id?: string;
   category_key: string;
@@ -73,47 +40,8 @@ type ScriptForm = {
   status: string;
 };
 
-type PersonaForm = {
-  id?: string;
-  slug: string;
-  display_name: string;
-  language: string;
-  tone_family: string;
-  prompt_text: string;
-  safety_notes: string;
-  status: string;
-};
-
-type IntentForm = {
-  originalId?: string;
-  id: string;
-  intent: string;
-  priority: string;
-  confidence: string;
-  keywords: string;
-  patterns: string;
-  excludes: string;
-  enabled: boolean;
-};
-
-type RedlineForm = {
-  originalId?: string;
-  id: string;
-  category: string;
-  reason: string;
-  patterns: string;
-  enabled: boolean;
-};
-
-const tabs: Array<{ key: TabKey; label: string; desc: string }> = [
-  { key: "scripts", label: "话术底料审核", desc: "script_templates 五类底料，支持审核、归档、启停" },
-  { key: "personas", label: "AI 人设", desc: "persona_prompts 语气、人设 Prompt 和安全注记" },
-  { key: "redlines", label: "禁用词", desc: "安全红线 regex，停用后热加载不再拦截" },
-  { key: "intents", label: "意图 taxonomy", desc: "关键词规则、置信度、优先级和启停" },
-];
-
 const scriptEmpty: ScriptForm = {
-  category_key: "greeting",
+  category_key: "app_download_first_push",
   title: "",
   language: "zh",
   channel: "telegram_real_user",
@@ -123,17 +51,12 @@ const scriptEmpty: ScriptForm = {
   persona_slug: "",
   hook: "reply",
   content: "",
-  variables: "",
-  safety_tags: "safe",
+  variables: "app_download_url",
+  safety_tags: "app_download_conversion",
   status: "draft",
 };
 
 const SCRIPT_CATEGORY_OPTIONS = [
-  "greeting",
-  "conversion",
-  "refusal",
-  "probe",
-  "fallback",
   "app_download_first_push",
   "app_download_after_warmup",
   "app_download_direct_cta",
@@ -141,14 +64,24 @@ const SCRIPT_CATEGORY_OPTIONS = [
   "trust_reassurance",
   "app_link_clicked_followup",
   "operator_app_conversion",
+  "greeting",
+  "conversion",
+  "refusal",
+  "probe",
+  "fallback",
 ];
 
+const APP_DOWNLOAD_CATEGORY_KEYS = new Set([
+  "app_download_first_push",
+  "app_download_after_warmup",
+  "app_download_direct_cta",
+  "app_download_objection",
+  "trust_reassurance",
+  "app_link_clicked_followup",
+  "operator_app_conversion",
+]);
+
 const SCRIPT_CATEGORY_LABELS: Record<string, string> = {
-  greeting: "开场问候",
-  conversion: "转化话术",
-  refusal: "拒绝/安全",
-  probe: "探测话术",
-  fallback: "兜底回复",
   app_download_first_push: "App下载-首次引导",
   app_download_after_warmup: "App下载-升温后引导",
   app_download_direct_cta: "App下载-直接要链接",
@@ -156,35 +89,17 @@ const SCRIPT_CATEGORY_LABELS: Record<string, string> = {
   trust_reassurance: "App下载-信任解释",
   app_link_clicked_followup: "App下载-已点击未下载",
   operator_app_conversion: "App下载-人工/高价值转化",
+  greeting: "开场问候",
+  conversion: "普通转化",
+  refusal: "拒绝/安全",
+  probe: "探测话术",
+  fallback: "兜底回复",
 };
 
-const personaEmpty: PersonaForm = {
-  slug: "",
-  display_name: "",
-  language: "zh",
-  tone_family: "warm",
-  prompt_text: "",
-  safety_notes: "",
-  status: "active",
-};
-
-const intentEmpty: IntentForm = {
-  id: "",
-  intent: "",
-  priority: "80",
-  confidence: "0.82",
-  keywords: "",
-  patterns: "",
-  excludes: "",
-  enabled: true,
-};
-
-const redlineEmpty: RedlineForm = {
-  id: "",
-  category: "",
-  reason: "redline:",
-  patterns: "",
-  enabled: true,
+const STATUS_LABELS: Record<string, string> = {
+  draft: "草稿",
+  approved: "启用",
+  archived: "归档",
 };
 
 export default function AiOpsPage() {
@@ -196,34 +111,22 @@ export default function AiOpsPage() {
 }
 
 function AiOpsContent({ operator }: { operator: Operator }) {
-  const [tab, setTab] = useState<TabKey>("scripts");
   const [scripts, setScripts] = useState<ScriptTemplate[]>([]);
-  const [personas, setPersonas] = useState<PersonaPrompt[]>([]);
-  const [intentRules, setIntentRules] = useState<IntentRule[]>([]);
-  const [redlines, setRedlines] = useState<Redline[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("app");
+  const [statusFilter, setStatusFilter] = useState("active");
   const [scriptForm, setScriptForm] = useState<ScriptForm>(scriptEmpty);
-  const [personaForm, setPersonaForm] = useState<PersonaForm>(personaEmpty);
-  const [intentForm, setIntentForm] = useState<IntentForm>(intentEmpty);
-  const [redlineForm, setRedlineForm] = useState<RedlineForm>(redlineEmpty);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [scriptResp, personaResp, intentResp, redlineResp] = await Promise.all([
-        apiFetch<{ items: ScriptTemplate[] }>("/ai-ops/admin/script-templates?limit=300"),
-        apiFetch<{ items: PersonaPrompt[] }>("/ai-ops/admin/persona-prompts"),
-        apiFetch<{ items: IntentRule[] }>("/ai-ops/admin/intent-rules"),
-        apiFetch<{ items: Redline[] }>("/ai-ops/admin/redlines"),
-      ]);
-      setScripts(scriptResp.items);
-      setPersonas(personaResp.items);
-      setIntentRules(intentResp.items);
-      setRedlines(redlineResp.items);
+      const response = await apiFetch<{ items: ScriptTemplate[] }>("/ai-ops/admin/script-templates?limit=500");
+      setScripts(response.items);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -235,20 +138,33 @@ function AiOpsContent({ operator }: { operator: Operator }) {
     load();
   }, [load]);
 
-  const scriptCounts = useMemo(() => countBy(scripts, (row) => row.status || "unknown"), [scripts]);
-  const personaCounts = useMemo(() => countBy(personas, (row) => row.status || "unknown"), [personas]);
-  const activeIntentCount = intentRules.filter((row) => row.enabled !== false).length;
-  const activeRedlineCount = redlines.filter((row) => row.enabled !== false).length;
+  const visibleScripts = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return scripts.filter((row) => {
+      const isAppDownload = APP_DOWNLOAD_CATEGORY_KEYS.has(row.category_key);
+      if (categoryFilter === "app" && !isAppDownload) return false;
+      if (categoryFilter !== "all" && categoryFilter !== "app" && row.category_key !== categoryFilter) return false;
+      if (statusFilter === "active" && row.status === "archived") return false;
+      if (statusFilter !== "all" && statusFilter !== "active" && row.status !== statusFilter) return false;
+      if (!needle) return true;
+      return [row.title, row.content, row.category_key, categoryLabel(row.category_key), row.language]
+        .some((value) => String(value || "").toLowerCase().includes(needle));
+    });
+  }, [categoryFilter, query, scripts, statusFilter]);
+
+  const appDownloadCount = scripts.filter((row) => APP_DOWNLOAD_CATEGORY_KEYS.has(row.category_key) && row.status !== "archived").length;
+  const approvedCount = visibleScripts.filter((row) => row.status === "approved").length;
+  const draftCount = visibleScripts.filter((row) => row.status === "draft").length;
 
   function notify(message: string) {
     setToast(message);
     window.setTimeout(() => setToast(null), 2200);
   }
 
-  async function saveScript(event: React.FormEvent) {
+  async function saveScript(event: FormEvent) {
     event.preventDefault();
     if (!scriptForm.title.trim() || !scriptForm.content.trim()) {
-      setError("话术标题和内容不能为空");
+      setError("标题和话术内容不能为空");
       return;
     }
     setSaving(true);
@@ -257,9 +173,9 @@ function AiOpsContent({ operator }: { operator: Operator }) {
       const payload = {
         category_key: scriptForm.category_key,
         title: scriptForm.title.trim(),
-        language: scriptForm.language,
-        channel: scriptForm.channel,
-        platform: scriptForm.platform,
+        language: scriptForm.language.trim() || "zh",
+        channel: scriptForm.channel.trim() || "telegram_real_user",
+        platform: scriptForm.platform.trim() || "telegram_real_user",
         user_level: scriptForm.user_level || null,
         chat_route: scriptForm.chat_route || null,
         persona_slug: scriptForm.persona_slug.trim() || null,
@@ -274,7 +190,7 @@ function AiOpsContent({ operator }: { operator: Operator }) {
           method: "PATCH",
           body: JSON.stringify(payload),
         });
-        notify("话术已更新");
+        notify("话术已保存");
       } else {
         await apiFetch("/ai-ops/admin/script-templates", {
           method: "POST",
@@ -291,132 +207,6 @@ function AiOpsContent({ operator }: { operator: Operator }) {
     }
   }
 
-  async function savePersona(event: React.FormEvent) {
-    event.preventDefault();
-    if (!personaForm.slug.trim() || !personaForm.display_name.trim() || !personaForm.prompt_text.trim()) {
-      setError("人设 slug、名称和 Prompt 不能为空");
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    try {
-      const payload = {
-        slug: personaForm.slug.trim(),
-        display_name: personaForm.display_name.trim(),
-        language: personaForm.language,
-        tone_family: personaForm.tone_family.trim(),
-        prompt_text: personaForm.prompt_text.trim(),
-        safety_notes: splitList(personaForm.safety_notes),
-        status: personaForm.status,
-      };
-      if (personaForm.id) {
-        await apiFetch(`/ai-ops/admin/persona-prompts/${personaForm.id}`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        });
-        notify("人设已更新");
-      } else {
-        await apiFetch("/ai-ops/admin/persona-prompts", {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
-        notify("人设已新增");
-      }
-      setPersonaForm(personaEmpty);
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function saveIntent(event: React.FormEvent) {
-    event.preventDefault();
-    if (!intentForm.id.trim() || !intentForm.intent.trim()) {
-      setError("意图规则 ID 和 intent 不能为空");
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    try {
-      const payload = {
-        id: intentForm.id.trim(),
-        intent: intentForm.intent.trim(),
-        priority: Number(intentForm.priority),
-        confidence: Number(intentForm.confidence),
-        keywords: splitList(intentForm.keywords),
-        patterns: splitLines(intentForm.patterns),
-        excludes: splitList(intentForm.excludes),
-        enabled: intentForm.enabled,
-      };
-      if (intentForm.originalId) {
-        await apiFetch(`/ai-ops/admin/intent-rules/${encodeURIComponent(intentForm.originalId)}`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        });
-        notify("意图规则已更新");
-      } else {
-        await apiFetch("/ai-ops/admin/intent-rules", {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
-        notify("意图规则已新增");
-      }
-      setIntentForm(intentEmpty);
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function saveRedline(event: React.FormEvent) {
-    event.preventDefault();
-    if (!redlineForm.id.trim() || !redlineForm.category.trim() || !redlineForm.reason.trim()) {
-      setError("禁用词 ID、类别和原因不能为空");
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    try {
-      const payload = {
-        id: redlineForm.id.trim(),
-        category: redlineForm.category.trim(),
-        reason: redlineForm.reason.trim(),
-        patterns: splitLines(redlineForm.patterns),
-        enabled: redlineForm.enabled,
-      };
-      if (redlineForm.originalId) {
-        await apiFetch(`/ai-ops/admin/redlines/${encodeURIComponent(redlineForm.originalId)}`, {
-          method: "PATCH",
-          body: JSON.stringify(payload),
-        });
-        notify("禁用词规则已更新");
-      } else {
-        await apiFetch("/ai-ops/admin/redlines", {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
-        notify("禁用词规则已新增");
-      }
-      setRedlineForm(redlineEmpty);
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function archiveScript(row: ScriptTemplate) {
-    if (!window.confirm(`确认归档话术：${row.title}？`)) return;
-    await apiFetch(`/ai-ops/admin/script-templates/${row.id}`, { method: "DELETE" });
-    notify("话术已归档");
-    await load();
-  }
-
   async function toggleScript(row: ScriptTemplate) {
     const nextStatus = row.status === "approved" ? "draft" : "approved";
     await apiFetch(`/ai-ops/admin/script-templates/${row.id}`, {
@@ -427,52 +217,10 @@ function AiOpsContent({ operator }: { operator: Operator }) {
     await load();
   }
 
-  async function archivePersona(row: PersonaPrompt) {
-    if (!window.confirm(`确认归档人设：${row.display_name}？`)) return;
-    await apiFetch(`/ai-ops/admin/persona-prompts/${row.id}`, { method: "DELETE" });
-    notify("人设已归档");
-    await load();
-  }
-
-  async function togglePersona(row: PersonaPrompt) {
-    const nextStatus = row.status === "active" ? "inactive" : "active";
-    await apiFetch(`/ai-ops/admin/persona-prompts/${row.id}`, {
-      method: "PATCH",
-      body: JSON.stringify({ status: nextStatus }),
-    });
-    notify(nextStatus === "active" ? "人设已启用" : "人设已停用");
-    await load();
-  }
-
-  async function deleteIntent(row: IntentRule) {
-    if (!window.confirm(`确认删除意图规则：${row.id}？`)) return;
-    await apiFetch(`/ai-ops/admin/intent-rules/${encodeURIComponent(row.id)}`, { method: "DELETE" });
-    notify("意图规则已删除");
-    await load();
-  }
-
-  async function toggleIntent(row: IntentRule) {
-    await apiFetch(`/ai-ops/admin/intent-rules/${encodeURIComponent(row.id)}`, {
-      method: "PATCH",
-      body: JSON.stringify({ ...row, enabled: row.enabled === false }),
-    });
-    notify(row.enabled === false ? "意图规则已启用" : "意图规则已停用");
-    await load();
-  }
-
-  async function deleteRedline(row: Redline) {
-    if (!window.confirm(`确认删除禁用词规则：${row.id}？`)) return;
-    await apiFetch(`/ai-ops/admin/redlines/${encodeURIComponent(row.id)}`, { method: "DELETE" });
-    notify("禁用词规则已删除");
-    await load();
-  }
-
-  async function toggleRedline(row: Redline) {
-    await apiFetch(`/ai-ops/admin/redlines/${encodeURIComponent(row.id)}`, {
-      method: "PATCH",
-      body: JSON.stringify({ ...row, enabled: row.enabled === false }),
-    });
-    notify(row.enabled === false ? "禁用词规则已启用" : "禁用词规则已停用");
+  async function archiveScript(row: ScriptTemplate) {
+    if (!window.confirm(`确认归档「${row.title}」？`)) return;
+    await apiFetch(`/ai-ops/admin/script-templates/${row.id}`, { method: "DELETE" });
+    notify("话术已归档");
     await load();
   }
 
@@ -480,114 +228,139 @@ function AiOpsContent({ operator }: { operator: Operator }) {
     <AdminFrame
       operator={operator}
       active="ai"
-      title="AI话术与人设"
-      subtitle="统一管理 H-03 话术底料审核、H-04 AI 人设与禁用词、P3-05 意图 taxonomy，并服务 P3-21 script_match 命中审计。支持新增、编辑、删除、启用停用和审核归档。"
+      title="话术库管理"
+      subtitle="只管理用户进入到点击下载之间的话术。人设、禁用词、意图规则等高级配置已从此页面隐藏，避免误操作。"
     >
-      <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-4">
-        <Metric label="H-03 已批准话术" value={`${scriptCounts.approved || 0}`} hint={`草稿 ${scriptCounts.draft || 0} / 归档 ${scriptCounts.archived || 0}`} />
-        <Metric label="H-04 启用人设" value={`${personaCounts.active || 0}`} hint={`停用 ${personaCounts.inactive || 0} / 归档 ${personaCounts.archived || 0}`} />
-        <Metric label="禁用词生效规则" value={`${activeRedlineCount}`} hint={`总计 ${redlines.length}`} />
-        <Metric label="意图规则生效" value={`${activeIntentCount}`} hint={`总计 ${intentRules.length}`} />
+      <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+        <Metric label="下载引导话术" value={`${appDownloadCount}`} hint="未归档的 App 下载类目话术" />
+        <Metric label="当前列表启用" value={`${approvedCount}`} hint="会被系统自动匹配使用" />
+        <Metric label="当前列表草稿" value={`${draftCount}`} hint="保存但不会自动发送" />
       </section>
 
-      {error && <div className="mb-4 rounded-lg border border-rose-800 bg-rose-950/50 px-4 py-3 text-sm text-rose-200">{error}</div>}
-      {toast && <div className="fixed bottom-6 right-6 z-50 rounded-lg border border-emerald-700 bg-emerald-950 px-5 py-3 text-sm text-emerald-100 shadow-xl">{toast}</div>}
+      {error && <div className="mb-4 rounded-md border border-rose-800 bg-rose-950/50 px-4 py-3 text-sm text-rose-200">{error}</div>}
+      {toast && <div className="fixed bottom-6 right-6 z-50 rounded-md border border-emerald-700 bg-emerald-950 px-5 py-3 text-sm text-emerald-100 shadow-xl">{toast}</div>}
 
-      <div className="mb-5 flex flex-wrap gap-2">
-        {tabs.map((item) => (
-          <button
-            key={item.key}
-            onClick={() => setTab(item.key)}
-            className={`rounded-md px-4 py-2 text-sm transition ${tab === item.key ? "bg-violet-600 text-white" : "border border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800"}`}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="mb-4 rounded-lg border border-slate-800 bg-slate-900 px-5 py-4">
-        <div className="text-sm font-medium text-slate-100">{tabs.find((item) => item.key === tab)?.label}</div>
-        <div className="mt-1 text-sm text-slate-500">{tabs.find((item) => item.key === tab)?.desc}</div>
-      </div>
-
-      {loading && <div className="rounded-lg border border-slate-800 bg-slate-900 p-5 text-sm text-slate-400">加载中...</div>}
-
-      {!loading && tab === "scripts" && (
-        <TwoColumn
-          form={
-            <ScriptEditor
-              form={scriptForm}
-              personas={personas}
-              saving={saving}
-              onChange={setScriptForm}
-              onSubmit={saveScript}
-              onCancel={() => setScriptForm(scriptEmpty)}
-            />
-          }
-          list={<ScriptList rows={scripts} onEdit={(row) => setScriptForm(scriptToForm(row))} onArchive={archiveScript} onToggle={toggleScript} />}
+      <section className="grid grid-cols-1 gap-5 xl:grid-cols-[360px_1fr]">
+        <ScriptEditor
+          form={scriptForm}
+          saving={saving}
+          onChange={setScriptForm}
+          onSubmit={saveScript}
+          onCancel={() => setScriptForm(scriptEmpty)}
         />
-      )}
 
-      {!loading && tab === "personas" && (
-        <TwoColumn
-          form={
-            <PersonaEditor
-              form={personaForm}
-              saving={saving}
-              onChange={setPersonaForm}
-              onSubmit={savePersona}
-              onCancel={() => setPersonaForm(personaEmpty)}
+        <Panel title="话术列表">
+          <div className="mb-4 grid grid-cols-1 gap-3 lg:grid-cols-[1fr_220px_160px]">
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="搜索标题、内容或类目"
+              className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-violet-500"
             />
-          }
-          list={<PersonaList rows={personas} onEdit={(row) => setPersonaForm(personaToForm(row))} onArchive={archivePersona} onToggle={togglePersona} />}
-        />
-      )}
+            <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-violet-500">
+              <option value="app">只看下载引导</option>
+              <option value="all">全部类目</option>
+              {SCRIPT_CATEGORY_OPTIONS.map((key) => (
+                <option key={key} value={key}>{categoryLabel(key)}</option>
+              ))}
+            </select>
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-violet-500">
+              <option value="active">未归档</option>
+              <option value="approved">启用</option>
+              <option value="draft">草稿</option>
+              <option value="archived">归档</option>
+              <option value="all">全部状态</option>
+            </select>
+          </div>
 
-      {!loading && tab === "redlines" && (
-        <TwoColumn
-          form={
-            <RedlineEditor
-              form={redlineForm}
-              saving={saving}
-              onChange={setRedlineForm}
-              onSubmit={saveRedline}
-              onCancel={() => setRedlineForm(redlineEmpty)}
-            />
-          }
-          list={<RedlineList rows={redlines} onEdit={(row) => setRedlineForm(redlineToForm(row))} onDelete={deleteRedline} onToggle={toggleRedline} />}
-        />
-      )}
-
-      {!loading && tab === "intents" && (
-        <TwoColumn
-          form={
-            <IntentEditor
-              form={intentForm}
-              saving={saving}
-              onChange={setIntentForm}
-              onSubmit={saveIntent}
-              onCancel={() => setIntentForm(intentEmpty)}
-            />
-          }
-          list={<IntentList rows={intentRules} onEdit={(row) => setIntentForm(intentToForm(row))} onDelete={deleteIntent} onToggle={toggleIntent} />}
-        />
-      )}
+          {loading ? (
+            <div className="py-12 text-center text-sm text-slate-500">加载中...</div>
+          ) : visibleScripts.length === 0 ? (
+            <div className="py-12 text-center text-sm text-slate-500">没有符合条件的话术</div>
+          ) : (
+            <div className="divide-y divide-slate-800">
+              {visibleScripts.map((row) => (
+                <ScriptRow
+                  key={row.id}
+                  row={row}
+                  onEdit={() => setScriptForm(scriptToForm(row))}
+                  onToggle={() => toggleScript(row)}
+                  onArchive={() => archiveScript(row)}
+                />
+              ))}
+            </div>
+          )}
+        </Panel>
+      </section>
     </AdminFrame>
   );
 }
 
-function TwoColumn({ form, list }: { form: React.ReactNode; list: React.ReactNode }) {
+function ScriptEditor({ form, saving, onChange, onSubmit, onCancel }: { form: ScriptForm; saving: boolean; onChange: (form: ScriptForm) => void; onSubmit: (event: FormEvent) => void; onCancel: () => void }) {
   return (
-    <section className="grid grid-cols-1 gap-5 xl:grid-cols-[420px_1fr]">
-      <div>{form}</div>
-      <div>{list}</div>
-    </section>
+    <Panel title={form.id ? "编辑话术" : "新增话术"}>
+      <form onSubmit={onSubmit} className="space-y-3">
+        <Input label="标题" value={form.title} onChange={(value) => onChange({ ...form, title: value })} />
+        <Select label="类目" value={form.category_key} options={SCRIPT_CATEGORY_OPTIONS} onChange={(value) => onChange({ ...form, category_key: value })} />
+        <div className="grid grid-cols-2 gap-3">
+          <Input label="语言" value={form.language} onChange={(value) => onChange({ ...form, language: value })} />
+          <Select label="状态" value={form.status} options={["draft", "approved", "archived"]} labels={STATUS_LABELS} onChange={(value) => onChange({ ...form, status: value })} />
+        </div>
+        <TextArea label="话术内容" rows={7} value={form.content} onChange={(value) => onChange({ ...form, content: value })} />
+
+        <details className="rounded-md border border-slate-800 bg-slate-950 p-3">
+          <summary className="cursor-pointer text-sm text-slate-300">高级设置</summary>
+          <div className="mt-3 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <Input label="平台" value={form.platform} onChange={(value) => onChange({ ...form, platform: value })} />
+              <Input label="hook" value={form.hook} onChange={(value) => onChange({ ...form, hook: value })} />
+              <Select label="等级" value={form.user_level} options={["", "S", "A", "B", "C", "D"]} onChange={(value) => onChange({ ...form, user_level: value })} />
+              <Select label="路由" value={form.chat_route} options={["", "manual_premium", "ai_assisted", "ai_auto"]} onChange={(value) => onChange({ ...form, chat_route: value })} />
+            </div>
+            <Input label="persona" value={form.persona_slug} onChange={(value) => onChange({ ...form, persona_slug: value })} />
+            <Input label="变量，逗号分隔" value={form.variables} onChange={(value) => onChange({ ...form, variables: value })} />
+            <Input label="安全标签，逗号分隔" value={form.safety_tags} onChange={(value) => onChange({ ...form, safety_tags: value })} />
+          </div>
+        </details>
+
+        <div className="flex gap-3 pt-2">
+          <button disabled={saving} className="rounded-md bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-50">
+            {saving ? "保存中..." : form.id ? "保存修改" : "新增话术"}
+          </button>
+          <button type="button" onClick={onCancel} className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">
+            清空
+          </button>
+        </div>
+      </form>
+    </Panel>
+  );
+}
+
+function ScriptRow({ row, onEdit, onToggle, onArchive }: { row: ScriptTemplate; onEdit: () => void; onToggle: () => void; onArchive: () => void }) {
+  return (
+    <div className="py-4 first:pt-0 last:pb-0">
+      <div className="mb-2 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="font-medium text-slate-100">{row.title}</div>
+          <div className="mt-1 text-xs text-slate-500">
+            {categoryLabel(row.category_key)} / {row.language || "-"} / {row.hook || "-"} / {row.user_level || "不限等级"}
+          </div>
+        </div>
+        <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${badgeClass(row.status)}`}>{STATUS_LABELS[row.status] || row.status}</span>
+      </div>
+      <p className="mb-3 line-clamp-3 whitespace-pre-wrap text-sm text-slate-400">{row.content}</p>
+      <div className="flex flex-wrap gap-2">
+        <button onClick={onEdit} className="rounded-md bg-slate-800 px-3 py-1.5 text-xs text-slate-100 hover:bg-slate-700">编辑</button>
+        <button onClick={onToggle} className="rounded-md border border-amber-700 px-3 py-1.5 text-xs text-amber-200 hover:bg-amber-950">{row.status === "approved" ? "停用" : "启用"}</button>
+        {row.status !== "archived" && <button onClick={onArchive} className="rounded-md border border-rose-800 px-3 py-1.5 text-xs text-rose-200 hover:bg-rose-950">归档</button>}
+      </div>
+    </div>
   );
 }
 
 function Metric({ label, value, hint }: { label: string; value: string; hint: string }) {
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900 px-5 py-4">
+    <div className="rounded-md border border-slate-800 bg-slate-900 px-5 py-4">
       <div className="text-sm text-slate-500">{label}</div>
       <div className="mt-2 text-2xl font-semibold text-slate-100">{value}</div>
       <div className="mt-1 text-xs text-slate-500">{hint}</div>
@@ -595,183 +368,11 @@ function Metric({ label, value, hint }: { label: string; value: string; hint: st
   );
 }
 
-function ScriptEditor({ form, personas, saving, onChange, onSubmit, onCancel }: { form: ScriptForm; personas: PersonaPrompt[]; saving: boolean; onChange: (form: ScriptForm) => void; onSubmit: (event: React.FormEvent) => void; onCancel: () => void }) {
+function Panel({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <Panel title={form.id ? "编辑话术底料" : "新增话术底料"}>
-      <form onSubmit={onSubmit} className="space-y-3">
-        <Input label="标题" value={form.title} onChange={(v) => onChange({ ...form, title: v })} />
-        <Select label="类目" value={form.category_key} options={SCRIPT_CATEGORY_OPTIONS} labels={SCRIPT_CATEGORY_LABELS} onChange={(v) => onChange({ ...form, category_key: v })} />
-        <div className="grid grid-cols-2 gap-3">
-          <Input label="语言" value={form.language} onChange={(v) => onChange({ ...form, language: v })} />
-          <Select label="审核状态" value={form.status} options={["draft", "approved", "archived"]} onChange={(v) => onChange({ ...form, status: v })} />
-          <Select label="等级" value={form.user_level} options={["", "S", "A", "B", "C", "D"]} onChange={(v) => onChange({ ...form, user_level: v })} />
-          <Select label="路由" value={form.chat_route} options={["", "manual_premium", "ai_assisted", "ai_auto"]} onChange={(v) => onChange({ ...form, chat_route: v })} />
-          <Input label="hook" value={form.hook} onChange={(v) => onChange({ ...form, hook: v })} />
-          <Input label="平台" value={form.platform} onChange={(v) => onChange({ ...form, platform: v })} />
-        </div>
-        <Select label="persona" value={form.persona_slug} options={["", ...personas.map((item) => item.slug)]} onChange={(v) => onChange({ ...form, persona_slug: v })} />
-        <TextArea label="话术内容" rows={5} value={form.content} onChange={(v) => onChange({ ...form, content: v })} />
-        <Input label="变量，逗号分隔" value={form.variables} onChange={(v) => onChange({ ...form, variables: v })} />
-        <Input label="安全标签，逗号分隔" value={form.safety_tags} onChange={(v) => onChange({ ...form, safety_tags: v })} />
-        <FormActions saving={saving} primary={form.id ? "保存修改" : "新增话术"} onCancel={onCancel} />
-      </form>
-    </Panel>
-  );
-}
-
-function PersonaEditor({ form, saving, onChange, onSubmit, onCancel }: { form: PersonaForm; saving: boolean; onChange: (form: PersonaForm) => void; onSubmit: (event: React.FormEvent) => void; onCancel: () => void }) {
-  return (
-    <Panel title={form.id ? "编辑 AI 人设" : "新增 AI 人设"}>
-      <form onSubmit={onSubmit} className="space-y-3">
-        <Input label="slug" value={form.slug} onChange={(v) => onChange({ ...form, slug: v })} />
-        <Input label="显示名称" value={form.display_name} onChange={(v) => onChange({ ...form, display_name: v })} />
-        <div className="grid grid-cols-2 gap-3">
-          <Input label="语言" value={form.language} onChange={(v) => onChange({ ...form, language: v })} />
-          <Select label="状态" value={form.status} options={["draft", "active", "inactive", "archived"]} onChange={(v) => onChange({ ...form, status: v })} />
-        </div>
-        <Input label="语气族" value={form.tone_family} onChange={(v) => onChange({ ...form, tone_family: v })} />
-        <TextArea label="Persona Prompt" rows={7} value={form.prompt_text} onChange={(v) => onChange({ ...form, prompt_text: v })} />
-        <TextArea label="安全注记，每行一条" rows={4} value={form.safety_notes} onChange={(v) => onChange({ ...form, safety_notes: v })} />
-        <FormActions saving={saving} primary={form.id ? "保存修改" : "新增人设"} onCancel={onCancel} />
-      </form>
-    </Panel>
-  );
-}
-
-function IntentEditor({ form, saving, onChange, onSubmit, onCancel }: { form: IntentForm; saving: boolean; onChange: (form: IntentForm) => void; onSubmit: (event: React.FormEvent) => void; onCancel: () => void }) {
-  return (
-    <Panel title={form.originalId ? "编辑意图规则" : "新增意图规则"}>
-      <form onSubmit={onSubmit} className="space-y-3">
-        <Input label="规则 ID" value={form.id} onChange={(v) => onChange({ ...form, id: v })} />
-        <Input label="intent taxonomy ID" value={form.intent} onChange={(v) => onChange({ ...form, intent: v })} />
-        <div className="grid grid-cols-2 gap-3">
-          <Input label="优先级" value={form.priority} onChange={(v) => onChange({ ...form, priority: v })} />
-          <Input label="置信度" value={form.confidence} onChange={(v) => onChange({ ...form, confidence: v })} />
-        </div>
-        <TextArea label="关键词，逗号或换行分隔" rows={4} value={form.keywords} onChange={(v) => onChange({ ...form, keywords: v })} />
-        <TextArea label="正则 pattern，每行一条" rows={4} value={form.patterns} onChange={(v) => onChange({ ...form, patterns: v })} />
-        <TextArea label="排除词，逗号或换行分隔" rows={3} value={form.excludes} onChange={(v) => onChange({ ...form, excludes: v })} />
-        <Toggle label="启用该意图规则" checked={form.enabled} onChange={(v) => onChange({ ...form, enabled: v })} />
-        <FormActions saving={saving} primary={form.originalId ? "保存修改" : "新增规则"} onCancel={onCancel} />
-      </form>
-    </Panel>
-  );
-}
-
-function RedlineEditor({ form, saving, onChange, onSubmit, onCancel }: { form: RedlineForm; saving: boolean; onChange: (form: RedlineForm) => void; onSubmit: (event: React.FormEvent) => void; onCancel: () => void }) {
-  return (
-    <Panel title={form.originalId ? "编辑禁用词" : "新增禁用词"}>
-      <form onSubmit={onSubmit} className="space-y-3">
-        <Input label="规则 ID" value={form.id} onChange={(v) => onChange({ ...form, id: v })} />
-        <Input label="类别" value={form.category} onChange={(v) => onChange({ ...form, category: v })} />
-        <Input label="拦截原因" value={form.reason} onChange={(v) => onChange({ ...form, reason: v })} />
-        <TextArea label="正则 pattern，每行一条" rows={6} value={form.patterns} onChange={(v) => onChange({ ...form, patterns: v })} />
-        <Toggle label="启用该禁用词规则" checked={form.enabled} onChange={(v) => onChange({ ...form, enabled: v })} />
-        <FormActions saving={saving} primary={form.originalId ? "保存修改" : "新增禁用词"} onCancel={onCancel} />
-      </form>
-    </Panel>
-  );
-}
-
-function ScriptList({ rows, onEdit, onArchive, onToggle }: { rows: ScriptTemplate[]; onEdit: (row: ScriptTemplate) => void; onArchive: (row: ScriptTemplate) => void; onToggle: (row: ScriptTemplate) => void }) {
-  return (
-    <Panel title="话术底料列表">
-      <div className="divide-y divide-slate-800">
-        {rows.map((row) => (
-          <ListRow key={row.id} title={row.title} subtitle={`${scriptCategoryLabel(row.category_key)} / ${row.category_key} / ${row.hook || "-"} / ${row.persona_slug || "通用"}`} badge={row.status}>
-            <p className="mb-3 line-clamp-2 text-sm text-slate-400">{row.content}</p>
-            <RowActions onEdit={() => onEdit(row)} onToggle={() => onToggle(row)} toggleText={row.status === "approved" ? "停用" : "启用"} onDelete={() => onArchive(row)} deleteText="归档" />
-          </ListRow>
-        ))}
-      </div>
-    </Panel>
-  );
-}
-
-function PersonaList({ rows, onEdit, onArchive, onToggle }: { rows: PersonaPrompt[]; onEdit: (row: PersonaPrompt) => void; onArchive: (row: PersonaPrompt) => void; onToggle: (row: PersonaPrompt) => void }) {
-  return (
-    <Panel title="AI 人设列表">
-      <div className="divide-y divide-slate-800">
-        {rows.map((row) => (
-          <ListRow key={row.id} title={row.display_name} subtitle={`${row.slug} / ${row.tone_family}`} badge={row.status}>
-            <p className="mb-3 line-clamp-2 text-sm text-slate-400">{row.prompt_text}</p>
-            <RowActions onEdit={() => onEdit(row)} onToggle={() => onToggle(row)} toggleText={row.status === "active" ? "停用" : "启用"} onDelete={() => onArchive(row)} deleteText="归档" />
-          </ListRow>
-        ))}
-      </div>
-    </Panel>
-  );
-}
-
-function RedlineList({ rows, onEdit, onDelete, onToggle }: { rows: Redline[]; onEdit: (row: Redline) => void; onDelete: (row: Redline) => void; onToggle: (row: Redline) => void }) {
-  return (
-    <Panel title="禁用词 / 安全红线">
-      <div className="divide-y divide-slate-800">
-        {rows.map((row) => (
-          <ListRow key={row.id} title={row.id} subtitle={`${row.category} / ${row.reason}`} badge={row.enabled === false ? "disabled" : "enabled"}>
-            <p className="mb-3 text-sm text-slate-400">{row.patterns.join(" / ")}</p>
-            <RowActions onEdit={() => onEdit(row)} onToggle={() => onToggle(row)} toggleText={row.enabled === false ? "启用" : "停用"} onDelete={() => onDelete(row)} deleteText="删除" />
-          </ListRow>
-        ))}
-      </div>
-    </Panel>
-  );
-}
-
-function IntentList({ rows, onEdit, onDelete, onToggle }: { rows: IntentRule[]; onEdit: (row: IntentRule) => void; onDelete: (row: IntentRule) => void; onToggle: (row: IntentRule) => void }) {
-  return (
-    <Panel title="意图 taxonomy 规则">
-      <div className="divide-y divide-slate-800">
-        {rows.map((row) => (
-          <ListRow key={row.id} title={row.intent} subtitle={`${row.id} / priority ${row.priority} / confidence ${row.confidence}`} badge={row.enabled === false ? "disabled" : "enabled"}>
-            <p className="mb-3 text-sm text-slate-400">{(row.keywords || []).slice(0, 8).join(" / ")}</p>
-            <RowActions onEdit={() => onEdit(row)} onToggle={() => onToggle(row)} toggleText={row.enabled === false ? "启用" : "停用"} onDelete={() => onDelete(row)} deleteText="删除" />
-          </ListRow>
-        ))}
-      </div>
-    </Panel>
-  );
-}
-
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900">
+    <div className="rounded-md border border-slate-800 bg-slate-900">
       <h2 className="border-b border-slate-800 px-5 py-4 text-lg font-semibold text-slate-100">{title}</h2>
       <div className="p-5">{children}</div>
-    </div>
-  );
-}
-
-function ListRow({ title, subtitle, badge, children }: { title: string; subtitle: string; badge: string; children: React.ReactNode }) {
-  return (
-    <div className="py-4 first:pt-0 last:pb-0">
-      <div className="mb-2 flex items-start justify-between gap-3">
-        <div>
-          <div className="font-medium text-slate-100">{title}</div>
-          <div className="mt-1 text-xs text-slate-500">{subtitle}</div>
-        </div>
-        <span className={`rounded-full px-2 py-0.5 text-xs ${badgeClass(badge)}`}>{badge}</span>
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function RowActions({ onEdit, onToggle, onDelete, toggleText, deleteText }: { onEdit: () => void; onToggle: () => void; onDelete: () => void; toggleText: string; deleteText: string }) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      <button onClick={onEdit} className="rounded-md bg-slate-800 px-3 py-1.5 text-xs text-slate-100 hover:bg-slate-700">编辑</button>
-      <button onClick={onToggle} className="rounded-md border border-amber-700 px-3 py-1.5 text-xs text-amber-200 hover:bg-amber-950">{toggleText}</button>
-      <button onClick={onDelete} className="rounded-md border border-rose-800 px-3 py-1.5 text-xs text-rose-200 hover:bg-rose-950">{deleteText}</button>
-    </div>
-  );
-}
-
-function FormActions({ saving, primary, onCancel }: { saving: boolean; primary: string; onCancel: () => void }) {
-  return (
-    <div className="flex gap-3 pt-2">
-      <button disabled={saving} className="rounded-md bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-50">{saving ? "保存中..." : primary}</button>
-      <button type="button" onClick={onCancel} className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">清空</button>
     </div>
   );
 }
@@ -792,7 +393,7 @@ function Select({ label, value, options, labels, onChange }: { label: string; va
       <select value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-violet-500">
         {options.map((option) => (
           <option key={option || "empty"} value={option}>
-            {option ? (labels?.[option] || option) : "不限"}
+            {option ? (labels?.[option] || categoryLabel(option)) : "不限"}
           </option>
         ))}
       </select>
@@ -804,27 +405,18 @@ function TextArea({ label, value, rows, onChange }: { label: string; value: stri
   return (
     <label className="block">
       <span className="mb-1 block text-sm text-slate-300">{label}</span>
-      <textarea rows={rows} value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-violet-500" />
-    </label>
-  );
-}
-
-function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (value: boolean) => void }) {
-  return (
-    <label className="flex items-center gap-3 rounded-md border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-200">
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="h-4 w-4" />
-      {label}
+      <textarea rows={rows} value={value} onChange={(event) => onChange(event.target.value)} className="w-full resize-y rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-violet-500" />
     </label>
   );
 }
 
 function badgeClass(status: string) {
-  if (status === "approved" || status === "active" || status === "enabled") return "bg-emerald-500/10 text-emerald-300";
-  if (status === "draft" || status === "inactive" || status === "disabled") return "bg-amber-500/10 text-amber-300";
+  if (status === "approved") return "bg-emerald-500/10 text-emerald-300";
+  if (status === "draft") return "bg-amber-500/10 text-amber-300";
   return "bg-slate-800 text-slate-400";
 }
 
-function scriptCategoryLabel(categoryKey: string): string {
+function categoryLabel(categoryKey: string): string {
   return SCRIPT_CATEGORY_LABELS[categoryKey] || categoryKey;
 }
 
@@ -847,50 +439,8 @@ function scriptToForm(row: ScriptTemplate): ScriptForm {
   };
 }
 
-function personaToForm(row: PersonaPrompt): PersonaForm {
-  return {
-    id: row.id,
-    slug: row.slug,
-    display_name: row.display_name,
-    language: row.language || "zh",
-    tone_family: row.tone_family || "warm",
-    prompt_text: row.prompt_text || "",
-    safety_notes: listToText(row.safety_notes),
-    status: row.status || "active",
-  };
-}
-
-function intentToForm(row: IntentRule): IntentForm {
-  return {
-    originalId: row.id,
-    id: row.id,
-    intent: row.intent,
-    priority: String(row.priority ?? 0),
-    confidence: String(row.confidence ?? 0.75),
-    keywords: listToText(row.keywords),
-    patterns: (row.patterns || []).join("\n"),
-    excludes: listToText(row.excludes || []),
-    enabled: row.enabled !== false,
-  };
-}
-
-function redlineToForm(row: Redline): RedlineForm {
-  return {
-    originalId: row.id,
-    id: row.id,
-    category: row.category,
-    reason: row.reason,
-    patterns: (row.patterns || []).join("\n"),
-    enabled: row.enabled !== false,
-  };
-}
-
 function splitList(value: string): string[] {
   return value.split(/[\n,]/).map((item) => item.trim()).filter(Boolean);
-}
-
-function splitLines(value: string): string[] {
-  return value.split(/\n/).map((item) => item.trim()).filter(Boolean);
 }
 
 function listToText(value: unknown): string {
@@ -904,12 +454,4 @@ function listToText(value: unknown): string {
     }
   }
   return "";
-}
-
-function countBy<T>(rows: T[], key: (row: T) => string): Record<string, number> {
-  return rows.reduce<Record<string, number>>((acc, row) => {
-    const value = key(row);
-    acc[value] = (acc[value] || 0) + 1;
-    return acc;
-  }, {});
 }
