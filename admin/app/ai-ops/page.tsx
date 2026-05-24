@@ -604,7 +604,7 @@ function ScriptEditor({ form, personas, saving, onChange, onSubmit, onCancel }: 
     <Panel title={form.id ? "编辑话术底料" : "新增话术底料"}>
       <form onSubmit={onSubmit} className="space-y-3">
         <Input label="标题" value={form.title} onChange={(v) => onChange({ ...form, title: v })} />
-        <Select label="类目" value={form.category_key} options={SCRIPT_CATEGORY_OPTIONS} onChange={(v) => onChange({ ...form, category_key: v })} />
+        <Select label="类目" value={form.category_key} options={SCRIPT_CATEGORY_OPTIONS} labels={SCRIPT_CATEGORY_LABELS} onChange={(v) => onChange({ ...form, category_key: v })} />
         <div className="grid grid-cols-2 gap-3">
           <Input label="语言" value={form.language} onChange={(v) => onChange({ ...form, language: v })} />
           <Select label="审核状态" value={form.status} options={["draft", "approved", "archived"]} onChange={(v) => onChange({ ...form, status: v })} />
@@ -789,12 +789,16 @@ function Input({ label, value, onChange }: { label: string; value: string; onCha
   );
 }
 
-function Select({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (value: string) => void }) {
+function Select({ label, value, options, labels, onChange }: { label: string; value: string; options: string[]; labels?: Record<string, string>; onChange: (value: string) => void }) {
   return (
     <label className="block">
       <span className="mb-1 block text-sm text-slate-300">{label}</span>
       <select value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-violet-500">
-        {options.map((option) => <option key={option || "empty"} value={option}>{option || "不限"}</option>)}
+        {options.map((option) => (
+          <option key={option || "empty"} value={option}>
+            {option ? (labels?.[option] || option) : "不限"}
+          </option>
+        ))}
       </select>
     </label>
   );
