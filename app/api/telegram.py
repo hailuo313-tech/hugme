@@ -41,6 +41,15 @@ from services.memory_writer import maybe_write_memory
 from services.age_extraction import maybe_extract_and_write_age
 from services.content_safety import evaluate_inbound_content_safety
 from services.minor_protection import evaluate_inbound_minor_protection
+from services.user_level_service import user_level_service
+from services.profile_intake import (
+    country_from_locale,
+    extract_age_from_text,
+    normalize_country_code,
+    read_profile_completeness,
+    write_age,
+    write_country_code,
+)
 from services.reply_consistency import (
     evaluate_reply_consistency,
     load_reply_consistency_context,
@@ -50,6 +59,14 @@ import re
 
 router = APIRouter()
 INBOUND_TYPING_START_DELAY_SECONDS = 5.0
+PROFILE_COUNTRY_QUESTION = (
+    "Before we continue, which country are you in? You can reply with a country name or code, like US, Canada, Japan, or Germany."
+)
+PROFILE_COUNTRY_RETRY = (
+    "I could not recognize that country. Please reply with your country name or a two-letter code, like US, GB, JP, or SG."
+)
+PROFILE_AGE_QUESTION = "Thanks. How old are you?"
+PROFILE_AGE_RETRY = "Please reply with your age as a number, for example 24."
 
 # ── Redis 单例 ────────────────────────────────────────
 _redis_client = None
@@ -227,6 +244,152 @@ async def _handle_command(command: str) -> str | None:
         return RESET_PROMPT_TEXT
     if cmd == "/start":
         return None
+    return None
+
+
+async def _persist_technical_country_hint(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    tg_user: dict,
+    log,
+) -> None:
+    code = country_from_locale(tg_user.get("language_code"))
+    if not code:
+        return
+    completeness = await read_profile_completeness(db, user_id=user_id)
+    if completeness.country_code:
+        return
+    await write_country_code(
+        db,
+        user_id=user_id,
+        country_code=code,
+        source="telegram_language_code",
+    )
+    await db.commit()
+    log.bind(country_code=code).info("tg.profile.country_detected")
+
+
+async def _classify_user_level(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    external_id: str,
+    log,
+) -> None:
+    result = await user_level_service.calculate_and_persist_user_level(
+        db,
+        user_id=user_id,
+        external_user_id=external_id,
+    )
+    log.bind(
+        user_level=result["level"],
+        chat_route=result["chat_route"],
+        level_reason=result["reason"],
+    ).info("tg.profile.level_classified")
+
+
+async def _handle_required_profile_intake(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    chat_id: int,
+    text_content: str,
+    trace_id: str,
+    onboarding_done: bool,
+    language: str,
+    external_id: str,
+    log,
+) -> str | None:
+    prefs = await _get_profile_prefs(db, user_id)
+    pending = str(prefs.get("profile_intake_pending") or "").strip()
+    completeness = await read_profile_completeness(db, user_id=user_id)
+
+    if pending == "country":
+        country_code = normalize_country_code(text_content)
+        if not country_code:
+            await _send_tg(chat_id, PROFILE_COUNTRY_RETRY, trace_id, typing_delay=True)
+            return PROFILE_COUNTRY_RETRY
+        await write_country_code(
+            db,
+            user_id=user_id,
+            country_code=country_code,
+            source="chat_answer",
+        )
+        prefs["profile_intake_pending"] = "age"
+        await db.execute(
+            text("UPDATE user_profiles SET preferences=:v, updated_at=NOW() WHERE user_id=:uid"),
+            {"v": json.dumps(prefs, ensure_ascii=False), "uid": user_id},
+        )
+        await db.commit()
+        await _classify_user_level(
+            db,
+            user_id=user_id,
+            external_id=external_id,
+            log=log,
+        )
+        await db.commit()
+        await _send_tg(chat_id, PROFILE_AGE_QUESTION, trace_id, typing_delay=True)
+        log.bind(country_code=country_code).info("tg.profile.country_collected")
+        return PROFILE_AGE_QUESTION
+
+    if pending == "age":
+        age = extract_age_from_text(text_content)
+        if age is None:
+            await _send_tg(chat_id, PROFILE_AGE_RETRY, trace_id, typing_delay=True)
+            return PROFILE_AGE_RETRY
+        await write_age(db, user_id=user_id, age=age, source="chat_answer")
+        prefs.pop("profile_intake_pending", None)
+        await db.execute(
+            text("UPDATE user_profiles SET preferences=:v, updated_at=NOW() WHERE user_id=:uid"),
+            {"v": json.dumps(prefs, ensure_ascii=False), "uid": user_id},
+        )
+        await db.commit()
+        await _classify_user_level(
+            db,
+            user_id=user_id,
+            external_id=external_id,
+            log=log,
+        )
+        await db.commit()
+        log.bind(age=age).info("tg.profile.age_collected")
+        if onboarding_done:
+            return None
+        next_question = _build_next_question(1, language=language) or ""
+        if next_question:
+            prefs = await _get_profile_prefs(db, user_id)
+            prefs["onboarding_pending"] = True
+            await db.execute(
+                text("UPDATE user_profiles SET preferences=:v, updated_at=NOW() WHERE user_id=:uid"),
+                {"v": json.dumps(prefs, ensure_ascii=False), "uid": user_id},
+            )
+            await db.commit()
+            await _send_tg(chat_id, next_question, trace_id, typing_delay=True)
+            return next_question
+        return None
+
+    if completeness.country_code is None:
+        prefs["profile_intake_pending"] = "country"
+        await db.execute(
+            text("UPDATE user_profiles SET preferences=:v, updated_at=NOW() WHERE user_id=:uid"),
+            {"v": json.dumps(prefs, ensure_ascii=False), "uid": user_id},
+        )
+        await db.commit()
+        await _send_tg(chat_id, PROFILE_COUNTRY_QUESTION, trace_id, typing_delay=True)
+        log.info("tg.profile.ask_country")
+        return PROFILE_COUNTRY_QUESTION
+
+    if completeness.age is None:
+        prefs["profile_intake_pending"] = "age"
+        await db.execute(
+            text("UPDATE user_profiles SET preferences=:v, updated_at=NOW() WHERE user_id=:uid"),
+            {"v": json.dumps(prefs, ensure_ascii=False), "uid": user_id},
+        )
+        await db.commit()
+        await _send_tg(chat_id, PROFILE_AGE_QUESTION, trace_id, typing_delay=True)
+        log.info("tg.profile.ask_age")
+        return PROFILE_AGE_QUESTION
+
     return None
 
 
@@ -471,6 +634,19 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
     # ── 查/建 user ────────────────────────────────────
     user_id = await _get_or_create_user(db, channel, external_id)
     log = log.bind(user_id=user_id)
+    await _persist_technical_country_hint(
+        db,
+        user_id=user_id,
+        tg_user=tg_user,
+        log=log,
+    )
+    await _classify_user_level(
+        db,
+        user_id=user_id,
+        external_id=external_id,
+        log=log,
+    )
+    await db.commit()
     user_status_row = (
         await db.execute(
             text("SELECT status, is_minor_suspected FROM users WHERE id=:uid"),
@@ -592,6 +768,43 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
 
     # ── 决策：Onboarding 还是普通对话 ─────────────────
     # prefs / onboarding_done 已在上文计算
+    intake_reply = await _handle_required_profile_intake(
+        db,
+        user_id=user_id,
+        chat_id=tg_chat_id,
+        text_content=text_content,
+        trace_id=trace_id,
+        onboarding_done=onboarding_done,
+        language=_normalize_onboarding_language(prefs.get("onboarding_language")),
+        external_id=external_id,
+        log=log,
+    )
+    if intake_reply:
+        try:
+            bot_msg_id = await _persist_message(
+                db,
+                conv_id,
+                "assistant",
+                "bot",
+                intake_reply,
+            )
+            await _push_context(redis, conv_id, "assistant", intake_reply, bot_msg_id)
+            log.bind(bot_msg_id=bot_msg_id).info("tg.profile_intake.persisted")
+        except Exception as e:
+            log.warning(f"tg.profile_intake.persist_failed err={e}")
+        elapsed = (time.time() - start_ts) * 1000
+        log.bind(elapsed_ms=round(elapsed, 1), onboarding_done=onboarding_done).info(
+            "tg.webhook.complete"
+        )
+        return JSONResponse(
+            {
+                "ok": True,
+                "trace_id": trace_id,
+                "message_id": msg_id,
+                "onboarding_done": onboarding_done,
+                "profile_intake": True,
+            }
+        )
 
     # ── D3-3: 触发记忆写入（fire-and-forget）──────────
     # 只在 onboarding 完成后写；onboarding 期间的事实由 user_profiles 承接。

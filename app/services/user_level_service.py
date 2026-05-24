@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -11,6 +12,7 @@ from sqlalchemy import text
 
 from core.database import get_async_session
 from services.level_engine import UserLevelInput, calc_user_level, load_thresholds
+from services.profile_intake import age_from_preferences, normalize_country_code
 
 
 @dataclass(frozen=True)
@@ -18,6 +20,7 @@ class UserProfileSignals:
     """Profile signals needed by the level engine."""
 
     country_code: Optional[str] = None
+    age: Optional[int] = None
     lifetime_spend_usd: float = 0.0
     vip_level: int = 0
     operator_assigned_s: bool = False
@@ -44,6 +47,47 @@ class UserLevelService:
             self._thresholds_cache = None
         logger.info("User level thresholds cache invalidated")
 
+    async def calculate_and_persist_user_level(
+        self,
+        db,
+        *,
+        user_id: str,
+        external_user_id: str,
+        country_code: Optional[str] = None,
+    ) -> dict:
+        """Calculate user level and persist routing columns on user_profiles."""
+        result = await self.calculate_user_level_from_inbound(
+            external_user_id,
+            country_code=country_code,
+        )
+        await db.execute(
+            text(
+                """
+                UPDATE user_profiles
+                SET user_level = :user_level,
+                    chat_route = :chat_route,
+                    level_reason = CAST(:level_reason AS jsonb),
+                    level_updated_at = NOW(),
+                    updated_at = NOW()
+                WHERE user_id = CAST(:uid AS uuid)
+                """
+            ),
+            {
+                "uid": user_id,
+                "user_level": result["level"],
+                "chat_route": result["chat_route"],
+                "level_reason": json.dumps(
+                    {
+                        "reason": result["reason"],
+                        "country_tier": result["country_tier"],
+                        "profile_complete": result["profile_complete"],
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        )
+        return result
+
     async def calculate_user_level_from_inbound(
         self,
         external_user_id: str,
@@ -68,10 +112,19 @@ class UserLevelService:
             # Fetch user profile from database
             user_profile = await self._get_user_profile(external_user_id, telegram_user_id)
 
+            effective_country_code = normalize_country_code(country_code) or (
+                user_profile.country_code if user_profile else None
+            )
+            profile_complete = (
+                user_profile is not None
+                and effective_country_code is not None
+                and user_profile.age is not None
+            )
+
             # Prepare input for level calculation
             level_input = UserLevelInput(
-                profile_complete=user_profile is not None,
-                country_code=country_code or (user_profile.country_code if user_profile else None),
+                profile_complete=profile_complete,
+                country_code=effective_country_code,
                 lifetime_spend_usd=user_profile.lifetime_spend_usd if user_profile else 0.0,
                 vip_level=user_profile.vip_level if user_profile else 0,
                 operator_assigned_s=user_profile.operator_assigned_s if user_profile else False,
@@ -122,7 +175,7 @@ class UserLevelService:
                     text(
                         """
                         SELECT
-                            p.preferences->>'country_code' AS country_code,
+                            COALESCE(p.country_code, p.preferences->>'country_code') AS country_code,
                             COALESCE(p.vip_level, 0) AS vip_level,
                             COALESCE(p.preferences, '{}'::jsonb) AS preferences,
                             COALESCE(p.preferences->>'user_level', 'C') AS user_level,
@@ -164,10 +217,13 @@ class UserLevelService:
         preferences = data.get("preferences") or {}
         if not isinstance(preferences, dict):
             preferences = {}
-        country_code = data.get("country_code") or preferences.get("country_code")
+        country_code = normalize_country_code(
+            data.get("country_code") or preferences.get("country_code")
+        )
         lifetime_spend_cents = float(data.get("lifetime_spend_cents") or 0)
         return UserProfileSignals(
-            country_code=str(country_code).upper() if country_code else None,
+            country_code=country_code,
+            age=age_from_preferences(preferences),
             lifetime_spend_usd=lifetime_spend_cents / 100.0,
             vip_level=int(data.get("vip_level") or 0),
             operator_assigned_s=bool(

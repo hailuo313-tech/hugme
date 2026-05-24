@@ -23,6 +23,17 @@ from services.memory_writer import maybe_write_memory
 from services.age_extraction import maybe_extract_and_write_age
 from services.content_safety import evaluate_inbound_content_safety
 from services.minor_protection import evaluate_inbound_minor_protection
+from services.user_level_service import user_level_service
+from services.geoip_service import get_geoip_service
+from services.profile_intake import (
+    country_from_headers,
+    country_from_metadata,
+    extract_age_from_text,
+    normalize_country_code,
+    read_profile_completeness,
+    write_age,
+    write_country_code,
+)
 
 router = APIRouter()
 
@@ -115,6 +126,64 @@ async def _push_context(redis, conv_id: str, role: str, content: str, msg_id: st
     await pipe.execute()
 
 
+def _client_ip(request: Request) -> str | None:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",", 1)[0].strip() or None
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip:
+        return real_ip.strip()
+    return request.client.host if request.client else None
+
+
+async def _persist_technical_profile_signals(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    request: Request,
+    metadata: dict,
+    content: str,
+    log,
+) -> None:
+    completeness = await read_profile_completeness(db, user_id=user_id)
+
+    if completeness.country_code is None:
+        country_code = country_from_metadata(metadata) or country_from_headers(request.headers)
+        source = "metadata_or_header"
+        if not country_code:
+            ip = _client_ip(request)
+            if ip:
+                try:
+                    result = await get_geoip_service().lookup(ip)
+                    country_code = normalize_country_code(
+                        result.country_code if result else None
+                    )
+                    source = "geoip"
+                except Exception as exc:
+                    log.bind(error_type=type(exc).__name__).warning("message.geoip.failed")
+        if country_code:
+            await write_country_code(
+                db,
+                user_id=user_id,
+                country_code=country_code,
+                source=source,
+            )
+            log.bind(country_code=country_code, source=source).info(
+                "message.profile.country_detected"
+            )
+
+    if completeness.age is None:
+        age = (
+            extract_age_from_text(str(metadata.get("age") or ""))
+            if metadata.get("age") is not None
+            else None
+        )
+        age = age or extract_age_from_text(content)
+        if age is not None:
+            await write_age(db, user_id=user_id, age=age, source="metadata_or_text")
+            log.bind(age=age).info("message.profile.age_detected")
+
+
 # ── 路由 ──────────────────────────────────────────────
 
 @router.post(
@@ -198,6 +267,28 @@ async def inbound_message(
         await db.commit()
         is_minor_suspected = False
         log.bind(user_id=user_id).info("message.inbound.user.created")
+
+    await _persist_technical_profile_signals(
+        db,
+        user_id=user_id,
+        request=request,
+        metadata=meta,
+        content=data.content,
+        log=log,
+    )
+    await db.commit()
+    level_result = await user_level_service.calculate_and_persist_user_level(
+        db,
+        user_id=user_id,
+        external_user_id=data.external_user_id,
+        country_code=country_from_metadata(meta) or country_from_headers(request.headers),
+    )
+    log.bind(
+        user_level=level_result["level"],
+        chat_route=level_result["chat_route"],
+        level_reason=level_result["reason"],
+    ).info("message.profile.level_classified")
+    await db.commit()
 
     # ── 限流（用 user_id，比 external_id 更精确）────────────
     passed, reason = await _check_rate_limit(redis, user_id, trace_id)
