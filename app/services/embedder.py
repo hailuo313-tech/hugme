@@ -28,7 +28,7 @@ from loguru import logger
 from core.config import settings
 
 
-OPENAI_BASE = "https://api.openai.com/v1"
+DEFAULT_EMBEDDING_BASE = "https://api.openai.com/v1"
 RETRY_COUNT = 1  # 失败后再试 1 次
 
 
@@ -60,18 +60,19 @@ async def embed(texts: list[str], trace_id: str) -> EmbedResult:
     if not texts:
         return EmbedResult()
 
-    if not settings.OPENAI_API_KEY:
-        return EmbedResult(error="OPENAI_API_KEY_MISSING")
+    api_key = _embedding_api_key()
+    if not api_key:
+        return EmbedResult(error="EMBEDDING_API_KEY_MISSING")
 
     model = settings.EMBEDDING_MODEL or "text-embedding-3-small"
     cleaned = [(t if t and t.strip() else " ") for t in texts]
 
     body = {"model": model, "input": cleaned}
     headers = {
-        "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
-    url = f"{OPENAI_BASE}/embeddings"
+    url = f"{_embedding_base_url()}/embeddings"
 
     log = logger.bind(
         trace_id=trace_id,
@@ -176,6 +177,22 @@ def _extract_vectors(data: dict, expected_len: int) -> Optional[list[list[float]
 
     indexed.sort(key=lambda p: p[0])
     return [v for _, v in indexed]
+
+
+def _embedding_api_key() -> Optional[str]:
+    key = getattr(settings, "EMBEDDING_API_KEY", None) or settings.OPENAI_API_KEY
+    if key and str(key).strip():
+        return str(key).strip()
+    return None
+
+
+def _embedding_base_url() -> str:
+    base = getattr(settings, "EMBEDDING_API_BASE_URL", None) or DEFAULT_EMBEDDING_BASE
+    return str(base).rstrip("/")
+
+
+def has_embedding_credentials() -> bool:
+    return _embedding_api_key() is not None
 
 
 def _vector_literal(vec: list[float]) -> str:

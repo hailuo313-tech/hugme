@@ -77,6 +77,13 @@ def _patch_client(monkeypatch, emb_mod, responses: list[Any]) -> _FakeClient:
 
 
 def _patch_settings(monkeypatch, emb_mod, *, key="sk-xxx", model="text-embedding-3-small"):
+    monkeypatch.setattr(emb_mod.settings, "EMBEDDING_API_KEY", None, raising=False)
+    monkeypatch.setattr(
+        emb_mod.settings,
+        "EMBEDDING_API_BASE_URL",
+        "https://api.openai.com/v1",
+        raising=False,
+    )
     monkeypatch.setattr(emb_mod.settings, "OPENAI_API_KEY", key, raising=False)
     monkeypatch.setattr(emb_mod.settings, "EMBEDDING_MODEL", model, raising=False)
 
@@ -147,8 +154,27 @@ class TestEmbedErrors:
     async def test_missing_api_key(self, emb_mod, monkeypatch):
         _patch_settings(monkeypatch, emb_mod, key=None)
         res = await emb_mod.embed(["hi"], trace_id="t")
-        assert res.error == "OPENAI_API_KEY_MISSING"
+        assert res.error == "EMBEDDING_API_KEY_MISSING"
         assert res.vectors == []
+
+    @pytest.mark.asyncio
+    async def test_embedding_api_key_and_base_url_override_openai(self, emb_mod, monkeypatch):
+        _patch_settings(monkeypatch, emb_mod, key=None, model="openai/text-embedding-3-small")
+        monkeypatch.setattr(emb_mod.settings, "EMBEDDING_API_KEY", "or-key", raising=False)
+        monkeypatch.setattr(
+            emb_mod.settings,
+            "EMBEDDING_API_BASE_URL",
+            "https://openrouter.ai/api/v1/",
+            raising=False,
+        )
+        client = _patch_client(monkeypatch, emb_mod, [_FakeResp(200, _ok_payload([[0.1, 0.2]]))])
+
+        res = await emb_mod.embed(["hi"], trace_id="t")
+
+        assert res.error is None
+        assert client.calls[0]["url"] == "https://openrouter.ai/api/v1/embeddings"
+        assert client.calls[0]["headers"]["Authorization"] == "Bearer or-key"
+        assert client.calls[0]["json"]["model"] == "openai/text-embedding-3-small"
 
     @pytest.mark.asyncio
     async def test_4xx_no_retry(self, emb_mod, monkeypatch):
