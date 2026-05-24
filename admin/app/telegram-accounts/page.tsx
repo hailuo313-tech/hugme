@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import AuthGate from "@/components/AuthGate";
 import { apiFetch } from "@/lib/auth";
 
@@ -25,14 +25,14 @@ interface TelegramAccountsResponse {
   connected_count: number;
 }
 
-interface LoginStartResponse {
+interface SessionLoginStartResponse {
   login_id: string;
   phone: string;
   expires_at: string;
   message: string;
 }
 
-interface LoginVerifyResponse {
+interface SessionLoginVerifyResponse {
   account_id: string | null;
   phone: string | null;
   status: string;
@@ -60,6 +60,7 @@ function TelegramAccountsManager() {
   const [accounts, setAccounts] = useState<TelegramAccount[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
   const [form, setForm] = useState(emptyLoginForm);
   const [loginId, setLoginId] = useState<string | null>(null);
@@ -83,6 +84,22 @@ function TelegramAccountsManager() {
     loadAccounts();
   }, []);
 
+  const filteredAccounts = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return accounts;
+    return accounts.filter((account) => {
+      const fields = [
+        account.phone,
+        account.display_name,
+        account.username,
+        account.username ? `@${account.username}` : null,
+        account.user_id ? String(account.user_id) : null,
+        account.status,
+      ];
+      return fields.some((field) => field?.toLowerCase().includes(needle));
+    });
+  }, [accounts, query]);
+
   const resetLoginForm = () => {
     setForm(emptyLoginForm);
     setLoginId(null);
@@ -95,7 +112,7 @@ function TelegramAccountsManager() {
     setLoading(true);
     setError(null);
     try {
-      const resp = await apiFetch<LoginStartResponse>("/telegram/session-login/start", {
+      const resp = await apiFetch<SessionLoginStartResponse>("/telegram/session-login/start", {
         method: "POST",
         body: JSON.stringify({
           phone: form.phone,
@@ -118,7 +135,7 @@ function TelegramAccountsManager() {
     setLoading(true);
     setError(null);
     try {
-      const resp = await apiFetch<LoginVerifyResponse>("/telegram/session-login/verify", {
+      const resp = await apiFetch<SessionLoginVerifyResponse>("/telegram/session-login/verify", {
         method: "POST",
         body: JSON.stringify({
           login_id: loginId,
@@ -212,25 +229,25 @@ function TelegramAccountsManager() {
 
   return (
     <div className="min-h-screen bg-slate-900 text-white">
-      <header className="bg-slate-800 border-b border-slate-700 px-6 py-4">
-        <div className="flex items-center justify-between">
+      <header className="border-b border-slate-700 bg-slate-800 px-6 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            <a href="/admin" className="text-slate-400 hover:text-white transition">
-              ← 返回会话总览
+            <a href="/admin" className="text-slate-400 transition hover:text-white">
+              返回会话总览
             </a>
             <div>
               <h1 className="text-xl font-bold">Telegram 账号管理</h1>
               <p className="text-sm text-slate-400">管理真人 Telegram 账号</p>
             </div>
           </div>
-          <div className="flex items-center gap-4">
-            <button onClick={connectAll} disabled={loading} className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 rounded-lg text-sm transition">
+          <div className="flex flex-wrap items-center gap-3">
+            <button onClick={connectAll} disabled={loading} className="rounded-lg bg-green-600 px-4 py-2 text-sm transition hover:bg-green-500 disabled:opacity-50">
               连接所有账号
             </button>
-            <button onClick={disconnectAll} disabled={loading} className="px-4 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 rounded-lg text-sm transition">
+            <button onClick={disconnectAll} disabled={loading} className="rounded-lg bg-red-600 px-4 py-2 text-sm transition hover:bg-red-500 disabled:opacity-50">
               断开所有账号
             </button>
-            <button onClick={() => setShowAddModal(true)} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm transition">
+            <button onClick={() => setShowAddModal(true)} className="rounded-lg bg-blue-600 px-4 py-2 text-sm transition hover:bg-blue-500">
               添加账号
             </button>
           </div>
@@ -238,100 +255,105 @@ function TelegramAccountsManager() {
       </header>
 
       {error && (
-        <div className="mx-6 mt-4 px-4 py-3 bg-red-900/40 border border-red-700 rounded-lg text-red-300 text-sm">
+        <div className="mx-6 mt-4 rounded-lg border border-red-700 bg-red-900/40 px-4 py-3 text-sm text-red-300">
           {error}
         </div>
       )}
 
       <main className="p-6">
-        <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-700 flex items-center justify-between">
-            <h2 className="text-lg font-semibold">账号列表</h2>
-            <div className="text-sm text-slate-400">
-              总计: <span className="text-white font-semibold">{accounts.length}</span> | 已连接:{" "}
-              <span className="text-green-400 font-semibold">{accounts.filter((a) => a.is_connected).length}</span>
+        <section className="overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-700 px-6 py-4">
+            <div>
+              <h2 className="text-lg font-semibold">账号列表</h2>
+              <div className="mt-1 text-sm text-slate-400">
+                总计: <span className="font-semibold text-white">{accounts.length}</span> | 已连接:{" "}
+                <span className="font-semibold text-green-400">{accounts.filter((a) => a.is_connected).length}</span>
+              </div>
             </div>
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="搜索手机号、用户名、显示名称、TG ID"
+              className="w-full max-w-sm rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white placeholder-slate-500 outline-none focus:border-blue-500"
+            />
           </div>
 
-          {accounts.length === 0 ? (
+          {filteredAccounts.length === 0 ? (
             <div className="p-12 text-center text-slate-400">
-              <div className="text-4xl mb-4">手机</div>
-              <p>暂无 Telegram 账号</p>
-              <button onClick={() => setShowAddModal(true)} className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm transition">
-                添加第一个账号
+              <p>{accounts.length === 0 ? "暂无 Telegram 账号" : "没有匹配的 Telegram 账号"}</p>
+              <button onClick={() => setShowAddModal(true)} className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm transition hover:bg-blue-500">
+                添加账号
               </button>
             </div>
           ) : (
             <div className="divide-y divide-slate-700">
-              {accounts.map((account) => (
-                <div key={account.id} className="p-4 hover:bg-slate-700/50 transition">
+              {filteredAccounts.map((account) => (
+                <div key={account.id} className="p-4 transition hover:bg-slate-700/50">
                   <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className={`px-2 py-1 rounded text-xs font-semibold ${account.is_connected ? "bg-green-600 text-green-100" : "bg-slate-600 text-slate-300"}`}>
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                        <span className={`rounded px-2 py-1 text-xs font-semibold ${account.is_connected ? "bg-green-600 text-green-100" : "bg-slate-600 text-slate-300"}`}>
                           {account.is_connected ? "已连接" : "未连接"}
                         </span>
-                        {account.is_bot && <span className="px-2 py-1 rounded text-xs font-semibold bg-purple-600 text-purple-100">Bot</span>}
-                        {!account.is_active && <span className="px-2 py-1 rounded text-xs font-semibold bg-red-600 text-red-100">已禁用</span>}
+                        <span className="rounded bg-slate-700 px-2 py-1 text-xs text-slate-200">{account.status}</span>
+                        {account.is_bot && <span className="rounded bg-purple-600 px-2 py-1 text-xs font-semibold text-purple-100">Bot</span>}
+                        {!account.is_active && <span className="rounded bg-red-600 px-2 py-1 text-xs font-semibold text-red-100">已禁用</span>}
                       </div>
-                      <div className="space-y-1">
-                        <div className="text-sm"><span className="text-slate-400">手机号:</span> <span className="text-slate-200">{account.phone}</span></div>
-                        {account.display_name && <div className="text-sm"><span className="text-slate-400">显示名称:</span> <span className="text-slate-200">{account.display_name}</span></div>}
-                        {account.username && <div className="text-sm"><span className="text-slate-400">用户名:</span> <span className="text-slate-200">@{account.username}</span></div>}
-                        {account.user_id && <div className="text-sm"><span className="text-slate-400">用户ID:</span> <span className="text-slate-200">{account.user_id}</span></div>}
-                        {account.last_connected_at && <div className="text-sm"><span className="text-slate-400">最后连接:</span> <span className="text-slate-200">{new Date(account.last_connected_at).toLocaleString("zh-CN")}</span></div>}
-                        {account.error_message && <div className="text-sm text-red-400"><span className="text-slate-400">错误:</span> <span>{account.error_message}</span></div>}
+                      <div className="grid gap-1 text-sm md:grid-cols-2">
+                        <Info label="手机号" value={account.phone} />
+                        <Info label="显示名称" value={account.display_name} />
+                        <Info label="用户名" value={account.username ? `@${account.username}` : null} />
+                        <Info label="用户ID" value={account.user_id ? String(account.user_id) : null} />
+                        <Info label="最后连接" value={formatDate(account.last_connected_at)} />
+                        <Info label="最近错误" value={account.error_message} danger />
                       </div>
                     </div>
-                    <div className="flex flex-col gap-2">
+                    <div className="flex shrink-0 flex-col gap-2">
                       {account.is_connected ? (
-                        <button onClick={() => disconnectAccount(account.id)} disabled={loading} className="px-3 py-1.5 bg-red-600 hover:bg-red-500 disabled:opacity-50 rounded text-sm transition">断开</button>
+                        <button onClick={() => disconnectAccount(account.id)} disabled={loading} className="rounded bg-red-600 px-3 py-1.5 text-sm transition hover:bg-red-500 disabled:opacity-50">
+                          断开
+                        </button>
                       ) : (
-                        <button onClick={() => connectAccount(account.id)} disabled={loading} className="px-3 py-1.5 bg-green-600 hover:bg-green-500 disabled:opacity-50 rounded text-sm transition">连接</button>
+                        <button onClick={() => connectAccount(account.id)} disabled={loading} className="rounded bg-green-600 px-3 py-1.5 text-sm transition hover:bg-green-500 disabled:opacity-50">
+                          连接
+                        </button>
                       )}
-                      <button onClick={() => deleteAccount(account)} disabled={loading} className="px-3 py-1.5 border border-red-500/70 text-red-300 hover:bg-red-500/10 disabled:opacity-50 rounded text-sm transition">删除</button>
+                      <button onClick={() => deleteAccount(account)} disabled={loading} className="rounded border border-red-500/70 px-3 py-1.5 text-sm text-red-300 transition hover:bg-red-500/10 disabled:opacity-50">
+                        删除
+                      </button>
                     </div>
                   </div>
                 </div>
               ))}
             </div>
           )}
-        </div>
+        </section>
       </main>
 
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-slate-800 rounded-xl border border-slate-700 p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold mb-4">添加 Telegram 账号</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-xl border border-slate-700 bg-slate-800 p-6">
+            <h3 className="mb-4 text-lg font-semibold">添加 Telegram 账号</h3>
             <form onSubmit={loginId ? verifyLogin : startLogin} className="space-y-4">
-              <div>
-                <label className="block text-sm text-slate-400 mb-1">手机号</label>
-                <input type="text" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+1234567890" disabled={!!loginId} className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-blue-500" required />
-              </div>
-              <div>
-                <label className="block text-sm text-slate-400 mb-1">显示名称</label>
-                <input type="text" value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} placeholder="可选" className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-blue-500" />
-              </div>
+              <TextInput label="手机号" value={form.phone} onChange={(phone) => setForm({ ...form, phone })} placeholder="+1234567890" disabled={!!loginId} required />
+              <TextInput label="显示名称" value={form.display_name} onChange={(display_name) => setForm({ ...form, display_name })} placeholder="可选" />
               {loginId && <div className="rounded-lg border border-blue-800 bg-blue-950/30 p-3 text-sm text-blue-200">验证码已发送到 {codePhone}</div>}
               {loginId && !requiresPassword && (
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1">验证码</label>
-                  <input type="text" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="Telegram 验证码" className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-blue-500" required />
-                </div>
+                <TextInput label="验证码" value={form.code} onChange={(code) => setForm({ ...form, code })} placeholder="Telegram 验证码" required />
               )}
               {requiresPassword && (
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1">2FA 密码</label>
-                  <input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Telegram 两步验证密码" className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-blue-500" required />
-                </div>
+                <TextInput label="2FA 密码" type="password" value={form.password} onChange={(password) => setForm({ ...form, password })} placeholder="Telegram 两步验证密码" required />
               )}
               <label className="flex items-center gap-2 text-sm text-slate-300">
-                <input type="checkbox" checked={form.auto_connect} onChange={(e) => setForm({ ...form, auto_connect: e.target.checked })} className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-blue-600 focus:ring-blue-500" />
+                <input type="checkbox" checked={form.auto_connect} onChange={(e) => setForm({ ...form, auto_connect: e.target.checked })} className="h-4 w-4 rounded border-slate-600 bg-slate-700 text-blue-600 focus:ring-blue-500" />
                 添加后自动连接
               </label>
               <div className="flex gap-2 pt-4">
-                <button type="button" onClick={() => { setShowAddModal(false); resetLoginForm(); }} className="flex-1 px-4 py-2 bg-slate-600 hover:bg-slate-500 rounded-lg text-sm transition">取消</button>
-                <button type="submit" disabled={loading} className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg text-sm transition">
+                <button type="button" onClick={() => { setShowAddModal(false); resetLoginForm(); }} className="flex-1 rounded-lg bg-slate-600 px-4 py-2 text-sm transition hover:bg-slate-500">
+                  取消
+                </button>
+                <button type="submit" disabled={loading} className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm transition hover:bg-blue-500 disabled:opacity-50">
                   {loading ? "处理中..." : loginId ? "验证并添加" : "发送验证码"}
                 </button>
               </div>
@@ -341,4 +363,52 @@ function TelegramAccountsManager() {
       )}
     </div>
   );
+}
+
+function Info({ label, value, danger = false }: { label: string; value: string | null; danger?: boolean }) {
+  if (!value) return null;
+  return (
+    <div>
+      <span className="text-slate-400">{label}: </span>
+      <span className={danger ? "text-red-400" : "text-slate-200"}>{value}</span>
+    </div>
+  );
+}
+
+function TextInput({
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = "text",
+  disabled = false,
+  required = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  type?: string;
+  disabled?: boolean;
+  required?: boolean;
+}) {
+  return (
+    <div>
+      <label className="mb-1 block text-sm text-slate-400">{label}</label>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        disabled={disabled}
+        required={required}
+        className="w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white placeholder-slate-400 outline-none focus:border-blue-500 disabled:opacity-60"
+      />
+    </div>
+  );
+}
+
+function formatDate(value: string | null): string | null {
+  if (!value) return null;
+  return new Date(value).toLocaleString("zh-CN");
 }
