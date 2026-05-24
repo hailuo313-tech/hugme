@@ -14,6 +14,8 @@ from sqlalchemy import text
 from core.config import settings
 from core.database import AsyncSessionLocal
 from services.llm_orchestrator import LLMOrchestratorError, generate_reply
+from services.app_download_conversion import get_last_app_download_decision
+from services.link_attribution import wrap_text_links_with_tracking
 from services.mtproto.human_like_send import HumanLikeSendPolicy, send_human_like_message
 
 
@@ -153,8 +155,9 @@ async def _persist_message(
     sender_id: str,
     content: str,
     model_name: str | None = None,
+    message_id: str | None = None,
 ) -> str:
-    msg_id = str(uuid.uuid4())
+    msg_id = message_id or str(uuid.uuid4())
     async with AsyncSessionLocal() as db:
         await db.execute(
             text(
@@ -251,6 +254,63 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
         except LLMOrchestratorError as exc:
             log.bind(reason=str(exc)).warning("mtproto.orchestrator.failed")
             reply_text = "I am a little busy right now, talk in a bit?"
+        app_download_decision = get_last_app_download_decision()
+        assistant_msg_id = str(uuid.uuid4())
+        try:
+            reply_text = await wrap_text_links_with_tracking(
+                db,
+                text_value=reply_text,
+                base_url=str(settings.PUBLIC_BASE_URL).rstrip("/"),
+                user_id=user_id,
+                conversation_id=conv_id,
+                message_id=assistant_msg_id,
+                script_hit_id=(
+                    app_download_decision.script_hit_id
+                    if app_download_decision is not None
+                    else None
+                ),
+                platform="telegram_real_user",
+                sender_account_id=str(account_id),
+                scene_step=(
+                    app_download_decision.scene_step
+                    if app_download_decision is not None
+                    else None
+                ),
+                script_category=(
+                    app_download_decision.category_key
+                    if app_download_decision is not None
+                    else None
+                ),
+                persona_slug=(
+                    app_download_decision.persona_slug
+                    if app_download_decision is not None
+                    else None
+                ),
+                intent=(
+                    app_download_decision.intent
+                    if app_download_decision is not None
+                    else None
+                ),
+                country_code=(
+                    app_download_decision.country_code
+                    if app_download_decision is not None
+                    else None
+                ),
+                age=app_download_decision.age if app_download_decision is not None else None,
+                user_level=(
+                    app_download_decision.user_level
+                    if app_download_decision is not None
+                    else None
+                ),
+                is_t1_country=(
+                    app_download_decision.is_t1_country
+                    if app_download_decision is not None
+                    else None
+                ),
+                metadata={"source": "mtproto_auto_reply", "trace_id": trace_id},
+            )
+        except Exception as exc:
+            log.bind(error_type=type(exc).__name__).warning("mtproto.link_attribution_failed")
 
     peer = getattr(event, "chat_id", None) or sender_id
     sent = await send_human_like_message(
@@ -266,6 +326,7 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
         sender_id=str(account_id),
         content=reply_text,
         model_name=getattr(settings, "OPENROUTER_MODEL", None),
+        message_id=assistant_msg_id,
     )
     try:
         await _push_context(redis, conv_id, "assistant", reply_text, assistant_msg_id)

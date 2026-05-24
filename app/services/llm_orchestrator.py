@@ -56,6 +56,10 @@ from services.llm import chat as llm_chat
 from services.memory_consistency import filter_memory_hits_for_current_utterance
 from services.memory_retriever import retrieve as memory_retrieve
 from services.conversation_context import load_conversation_context
+from services.app_download_conversion import (
+    clear_last_app_download_decision,
+    maybe_select_app_download_reply,
+)
 from services.prompt_builder import (
     DEFAULT_SYSTEM_PROMPT,
     LAYER_ORDER,
@@ -118,6 +122,7 @@ async def generate_reply(
         conversation_id_hash=_short_hash(conversation_id),
     )
     log.info("orchestrator.dispatch")
+    clear_last_app_download_decision()
 
     if db is not None:
         from services.crisis_intervention import (
@@ -259,6 +264,26 @@ async def generate_reply(
                 log.bind(s5_phase=s5_phase_kw).info("orchestrator.s5.restrictions_loaded")
         except Exception as exc:  # pragma: no cover
             log.bind(error_type=type(exc).__name__).warning("orchestrator.s5.load_failed")
+
+    decision = await maybe_select_app_download_reply(
+        db=db,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        user_text=user_text,
+        profile_row=profile_row,
+        character_row=character_row,
+        assistant_reply_count=existing_assistant_reply_count,
+        trigger_message_id=trigger_message_id,
+        trace_id=trace_id,
+    )
+    if decision is not None:
+        log.bind(
+            result="success",
+            category_key=decision.category_key,
+            scene_step=decision.scene_step,
+            script_hit_id=decision.script_hit_id,
+        ).info("orchestrator.app_download_conversion.reply")
+        return decision.content
 
     prompt = build_prompt(
         PromptInput(

@@ -37,6 +37,8 @@ from api.onboarding import (
     DEFAULT_CHARACTER_ID,
 )
 from services.llm_orchestrator import generate_reply, LLMOrchestratorError
+from services.app_download_conversion import get_last_app_download_decision
+from services.link_attribution import wrap_text_links_with_tracking
 from services.memory_writer import maybe_write_memory
 from services.age_extraction import maybe_extract_and_write_age
 from services.content_safety import evaluate_inbound_content_safety
@@ -160,8 +162,9 @@ async def _persist_message(
     content: str,
     safety_result: dict | None = None,
     consistency_score: float | None = None,
+    message_id: str | None = None,
 ) -> str:
-    msg_id = str(uuid.uuid4())
+    msg_id = message_id or str(uuid.uuid4())
     if safety_result is not None:
         await db.execute(
             text(
@@ -841,6 +844,7 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
         )
 
     bot_reply = None
+    bot_reply_message_id = None
     bot_consistency_score = None
 
     if not onboarding_done:
@@ -881,6 +885,63 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
         bot_consistency_score = consistency.score
         log.bind(**consistency.as_log_dict()).info("tg.consistency.checked")
 
+        app_download_decision = get_last_app_download_decision()
+        bot_reply_message_id = str(uuid.uuid4())
+        try:
+            reply_text = await wrap_text_links_with_tracking(
+                db,
+                text_value=reply_text,
+                base_url=str(request.base_url).rstrip("/"),
+                user_id=user_id,
+                conversation_id=conv_id,
+                message_id=bot_reply_message_id,
+                script_hit_id=(
+                    app_download_decision.script_hit_id
+                    if app_download_decision is not None
+                    else None
+                ),
+                platform="telegram_bot",
+                scene_step=(
+                    app_download_decision.scene_step
+                    if app_download_decision is not None
+                    else None
+                ),
+                script_category=(
+                    app_download_decision.category_key
+                    if app_download_decision is not None
+                    else None
+                ),
+                persona_slug=(
+                    app_download_decision.persona_slug
+                    if app_download_decision is not None
+                    else None
+                ),
+                intent=(
+                    app_download_decision.intent
+                    if app_download_decision is not None
+                    else None
+                ),
+                country_code=(
+                    app_download_decision.country_code
+                    if app_download_decision is not None
+                    else None
+                ),
+                age=app_download_decision.age if app_download_decision is not None else None,
+                user_level=(
+                    app_download_decision.user_level
+                    if app_download_decision is not None
+                    else None
+                ),
+                is_t1_country=(
+                    app_download_decision.is_t1_country
+                    if app_download_decision is not None
+                    else None
+                ),
+                metadata={"source": "telegram_bot_reply", "trace_id": trace_id},
+            )
+        except Exception as exc:
+            log.bind(error_type=type(exc).__name__).warning("tg.link_attribution_failed")
+
         sent_id = await _send_tg(tg_chat_id, reply_text, trace_id, typing_delay=True)
         if sent_id is not None:
             bot_reply = reply_text
@@ -896,6 +957,7 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
                 "bot",
                 bot_reply,
                 consistency_score=bot_consistency_score,
+                message_id=bot_reply_message_id,
             )
             await _push_context(redis, conv_id, "assistant", bot_reply, bot_msg_id)
             log.bind(bot_msg_id=bot_msg_id).info("tg.bot_reply.persisted")
