@@ -23,25 +23,30 @@ def _client() -> TestClient:
     return TestClient(app)
 
 
-def test_ai_ops_page_exposes_editable_management_sections() -> None:
+def test_ai_ops_page_exposes_simplified_script_management() -> None:
     page = (ROOT / "admin/app/ai-ops/page.tsx").read_text(encoding="utf-8")
 
     for needle in [
-        "话术底料审核",
-        "AI 人设",
-        "禁用词",
-        "意图 taxonomy",
+        "话术库管理",
+        "下载引导话术",
+        "只看下载引导",
+        "App下载-首次引导",
+        "App下载-已点击未下载",
         "/ai-ops/admin/script-templates",
-        "/ai-ops/admin/persona-prompts",
-        "/ai-ops/admin/redlines",
-        "/ai-ops/admin/intent-rules",
-        "新增",
+        "新增话术",
         "编辑",
-        "删除",
+        "归档",
         "启用",
         "停用",
     ]:
         assert needle in page
+
+    for removed in [
+        "/ai-ops/admin/persona-prompts",
+        "/ai-ops/admin/redlines",
+        "/ai-ops/admin/intent-rules",
+    ]:
+        assert removed not in page
 
 
 def test_intent_rule_api_edits_json_and_disabled_rules_do_not_match(
