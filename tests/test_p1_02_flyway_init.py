@@ -6,6 +6,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 FLYWAY_INIT = ROOT / "db" / "migration" / "V1__init.sql"
 DOCKER_INIT = ROOT / "scripts" / "init.sql"
+CHARACTER_TONE_MIGRATION = (
+    ROOT / "db" / "migration" / "V11__extend_character_tone_length.sql"
+)
 
 
 def test_flyway_v1_init_exists_with_expected_name() -> None:
@@ -60,3 +63,9 @@ def test_flyway_init_contains_seed_and_indexes() -> None:
     assert "ON CONFLICT (slug) DO NOTHING" in text
     assert "idx_memories_user_active_created_at" in text
     assert "idx_stripe_webhook_events_type_received" in text
+
+
+def test_character_tone_migration_matches_api_limit() -> None:
+    text = CHARACTER_TONE_MIGRATION.read_text(encoding="utf-8")
+
+    assert "ALTER COLUMN tone TYPE VARCHAR(100)" in text
