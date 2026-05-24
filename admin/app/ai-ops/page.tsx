@@ -128,6 +128,40 @@ const scriptEmpty: ScriptForm = {
   status: "draft",
 };
 
+const SCRIPT_CATEGORY_OPTIONS = [
+  "greeting",
+  "conversion",
+  "refusal",
+  "probe",
+  "fallback",
+  "app_download_first_push",
+  "app_download_after_warmup",
+  "app_download_direct_cta",
+  "app_download_objection",
+  "trust_reassurance",
+  "app_link_clicked_followup",
+  "app_downloaded_not_registered",
+  "app_registered_not_paid",
+  "operator_app_conversion",
+];
+
+const SCRIPT_CATEGORY_LABELS: Record<string, string> = {
+  greeting: "开场问候",
+  conversion: "转化话术",
+  refusal: "拒绝/安全",
+  probe: "探测话术",
+  fallback: "兜底回复",
+  app_download_first_push: "App下载-首次引导",
+  app_download_after_warmup: "App下载-升温后引导",
+  app_download_direct_cta: "App下载-直接要链接",
+  app_download_objection: "App下载-异议处理",
+  trust_reassurance: "App下载-信任解释",
+  app_link_clicked_followup: "App下载-已点击未下载",
+  app_downloaded_not_registered: "App下载-已下载未注册",
+  app_registered_not_paid: "App下载-已注册未付费",
+  operator_app_conversion: "App下载-人工/高价值转化",
+};
+
 const personaEmpty: PersonaForm = {
   slug: "",
   display_name: "",
@@ -570,7 +604,7 @@ function ScriptEditor({ form, personas, saving, onChange, onSubmit, onCancel }: 
     <Panel title={form.id ? "编辑话术底料" : "新增话术底料"}>
       <form onSubmit={onSubmit} className="space-y-3">
         <Input label="标题" value={form.title} onChange={(v) => onChange({ ...form, title: v })} />
-        <Select label="类目" value={form.category_key} options={["greeting", "conversion", "refusal", "probe", "fallback"]} onChange={(v) => onChange({ ...form, category_key: v })} />
+        <Select label="类目" value={form.category_key} options={SCRIPT_CATEGORY_OPTIONS} onChange={(v) => onChange({ ...form, category_key: v })} />
         <div className="grid grid-cols-2 gap-3">
           <Input label="语言" value={form.language} onChange={(v) => onChange({ ...form, language: v })} />
           <Select label="审核状态" value={form.status} options={["draft", "approved", "archived"]} onChange={(v) => onChange({ ...form, status: v })} />
@@ -648,7 +682,7 @@ function ScriptList({ rows, onEdit, onArchive, onToggle }: { rows: ScriptTemplat
     <Panel title="话术底料列表">
       <div className="divide-y divide-slate-800">
         {rows.map((row) => (
-          <ListRow key={row.id} title={row.title} subtitle={`${row.category_key} / ${row.hook || "-"} / ${row.persona_slug || "通用"}`} badge={row.status}>
+          <ListRow key={row.id} title={row.title} subtitle={`${scriptCategoryLabel(row.category_key)} / ${row.category_key} / ${row.hook || "-"} / ${row.persona_slug || "通用"}`} badge={row.status}>
             <p className="mb-3 line-clamp-2 text-sm text-slate-400">{row.content}</p>
             <RowActions onEdit={() => onEdit(row)} onToggle={() => onToggle(row)} toggleText={row.status === "approved" ? "停用" : "启用"} onDelete={() => onArchive(row)} deleteText="归档" />
           </ListRow>
@@ -788,6 +822,10 @@ function badgeClass(status: string) {
   if (status === "approved" || status === "active" || status === "enabled") return "bg-emerald-500/10 text-emerald-300";
   if (status === "draft" || status === "inactive" || status === "disabled") return "bg-amber-500/10 text-amber-300";
   return "bg-slate-800 text-slate-400";
+}
+
+function scriptCategoryLabel(categoryKey: string): string {
+  return SCRIPT_CATEGORY_LABELS[categoryKey] || categoryKey;
 }
 
 function scriptToForm(row: ScriptTemplate): ScriptForm {
