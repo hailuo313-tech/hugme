@@ -109,7 +109,11 @@ app = FastAPI(
 
 @app.on_event("startup")
 async def start_runtime_workers():
-    if getattr(settings, "MTProto_ENABLED", 0):
+    mtproto_runtime_enabled = bool(
+        getattr(settings, "MTProto_ENABLED", False)
+        or getattr(settings, "SESSION_MANAGER_ENABLED", False)
+    )
+    if mtproto_runtime_enabled:
         try:
             await session_manager.start()
             logger.info("mtproto.session_manager.started")
