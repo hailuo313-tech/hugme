@@ -45,7 +45,9 @@ services:
     # 宿主机仓库 ./docs（如 /opt/eris/docs）只读挂进容器，供 /ops/*.html 静态页使用（勿占用 /docs，Swagger 已用）
     volumes:
       - ./docs:/srv/ops-docs:ro
+      - ./config:/config:ro
     environment:
+      ERIS_CONFIG_DIR: /config
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-eris}:${POSTGRES_PASSWORD:-6eb5e4b6495952ec53cc9b2949ed4282}@postgres:5432/${POSTGRES_DB:-eris}
       DATABASE_MIGRATION_URL: postgresql+asyncpg://${POSTGRES_MIGRATION_USER:-eris_migration}:${POSTGRES_MIGRATION_PASSWORD:-eris_migration_secret_2026}@postgres:5432/${POSTGRES_DB:-eris}
       DATABASE_READER_URL: postgresql+asyncpg://${POSTGRES_READER_USER:-eris_reader}:${POSTGRES_READER_PASSWORD:-eris_reader_secret_2026}@postgres:5432/${POSTGRES_DB:-eris}
