@@ -109,6 +109,13 @@ app = FastAPI(
 
 @app.on_event("startup")
 async def start_runtime_workers():
+    try:
+        start_embedding_worker()
+    except Exception as exc:
+        logger.bind(error_type=type(exc).__name__).error(
+            "embedding_worker.scheduler.start_failed"
+        )
+
     mtproto_runtime_enabled = bool(
         getattr(settings, "MTProto_ENABLED", False)
         or getattr(settings, "SESSION_MANAGER_ENABLED", False)
@@ -125,6 +132,13 @@ async def start_runtime_workers():
 
 @app.on_event("shutdown")
 async def stop_runtime_workers():
+    try:
+        shutdown_embedding_worker()
+    except Exception as exc:
+        logger.bind(error_type=type(exc).__name__).warning(
+            "embedding_worker.scheduler.stop_failed"
+        )
+
     try:
         await session_manager.stop()
         logger.info("mtproto.session_manager.stopped")
