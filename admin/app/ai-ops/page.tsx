@@ -140,8 +140,6 @@ const SCRIPT_CATEGORY_OPTIONS = [
   "app_download_objection",
   "trust_reassurance",
   "app_link_clicked_followup",
-  "app_downloaded_not_registered",
-  "app_registered_not_paid",
   "operator_app_conversion",
 ];
 
@@ -157,8 +155,6 @@ const SCRIPT_CATEGORY_LABELS: Record<string, string> = {
   app_download_objection: "App下载-异议处理",
   trust_reassurance: "App下载-信任解释",
   app_link_clicked_followup: "App下载-已点击未下载",
-  app_downloaded_not_registered: "App下载-已下载未注册",
-  app_registered_not_paid: "App下载-已注册未付费",
   operator_app_conversion: "App下载-人工/高价值转化",
 };
 

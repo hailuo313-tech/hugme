@@ -56,6 +56,26 @@ def test_selector_does_not_resend_recent_unclicked_link() -> None:
     assert category is None
 
 
+def test_selector_stops_after_download_handoff() -> None:
+    category, intent, scene_step = _choose_category(
+        user_text="done",
+        state=_FunnelState(
+            tracking_id="trk_1",
+            minutes_since_link=8.0,
+            clicked=True,
+            downloaded=True,
+            registered=False,
+            paid=False,
+        ),
+        assistant_reply_count=5,
+        user_level="A",
+    )
+
+    assert category is None
+    assert intent == "third_party_handoff"
+    assert scene_step == "download_complete"
+
+
 def test_selector_promotes_direct_link_questions() -> None:
     category, intent, scene_step = _choose_category(
         user_text="send me the app link",
