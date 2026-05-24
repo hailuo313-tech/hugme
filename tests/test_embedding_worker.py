@@ -220,13 +220,16 @@ class TestSchedulerStart:
             worker_mod.settings, "EMBEDDING_WORKER_ENABLED", False, raising=False
         )
         monkeypatch.setattr(
-            worker_mod.settings, "OPENAI_API_KEY", "sk-x", raising=False
+            worker_mod.settings, "EMBEDDING_API_KEY", "sk-x", raising=False
         )
         assert worker_mod.start_scheduler() is None
 
     def test_no_key_returns_none(self, worker_mod, monkeypatch):
         monkeypatch.setattr(
             worker_mod.settings, "EMBEDDING_WORKER_ENABLED", True, raising=False
+        )
+        monkeypatch.setattr(
+            worker_mod.settings, "EMBEDDING_API_KEY", None, raising=False
         )
         monkeypatch.setattr(
             worker_mod.settings, "OPENAI_API_KEY", None, raising=False

@@ -99,9 +99,15 @@ class Settings(BaseSettings):
     TRIGGER_THRESHOLD_FLOOR: float = 50.0
     TRIGGER_THRESHOLD_CEIL: float = 82.0
     # D3-4: 异步 embedding worker，把 memories.embedding 从 NULL 填满。
-    # 关闭时 worker scheduler 不启动；OPENAI_API_KEY 没配也会自动跳过。
+    # 关闭时 worker scheduler 不启动；embedding key 没配也会自动跳过。
     EMBEDDING_WORKER_ENABLED: bool = True
-    # 直连 OpenAI（而不是 OpenRouter）的 API key；专给 embeddings 用。
+    # 专给 embeddings 用的 key/base_url；未设置 key 时兼容旧的 OPENAI_API_KEY。
+    # OpenRouter embeddings 可设置：
+    # EMBEDDING_API_BASE_URL=https://openrouter.ai/api/v1
+    # EMBEDDING_MODEL=openai/text-embedding-3-small
+    EMBEDDING_API_KEY: Optional[str] = None
+    EMBEDDING_API_BASE_URL: str = "https://api.openai.com/v1"
+    # 旧配置：OpenAI API key；也被 content safety moderation 复用。
     OPENAI_API_KEY: Optional[str] = None
     # OpenAI embedding 模型；1536 维需与 memories.embedding vector(1536) 对齐。
     EMBEDDING_MODEL: str = 'text-embedding-3-small'

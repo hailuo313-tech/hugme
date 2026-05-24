@@ -33,7 +33,7 @@ from sqlalchemy import text
 
 from core.config import settings
 from core.database import AsyncSessionLocal
-from services.embedder import embed
+from services.embedder import embed, has_embedding_credentials
 
 
 # 固定 advisory lock key（与 silent_reactivation 错开）
@@ -160,7 +160,7 @@ def start_scheduler() -> Optional[AsyncIOScheduler]:
 
     短路条件：
       - settings.EMBEDDING_WORKER_ENABLED=False → no-op
-      - settings.OPENAI_API_KEY 未配置 → no-op + warning
+      - embedding API key 未配置 → no-op + warning
     """
     global _scheduler
     if not settings.EMBEDDING_WORKER_ENABLED:
@@ -168,9 +168,9 @@ def start_scheduler() -> Optional[AsyncIOScheduler]:
             "embedding_worker.scheduler.disabled"
         )
         return None
-    if not settings.OPENAI_API_KEY:
+    if not has_embedding_credentials():
         logger.bind(component="embedding_worker").warning(
-            "embedding_worker.scheduler.no_api_key"
+            "embedding_worker.scheduler.no_embedding_api_key"
         )
         return None
     if _scheduler is not None:
