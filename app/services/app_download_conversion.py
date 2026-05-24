@@ -28,8 +28,6 @@ APP_DOWNLOAD_CATEGORIES = {
     "app_download_objection",
     "trust_reassurance",
     "app_link_clicked_followup",
-    "app_downloaded_not_registered",
-    "app_registered_not_paid",
     "operator_app_conversion",
 }
 
@@ -237,10 +235,8 @@ def _choose_category(
     text_value = str(user_text or "").lower()
     minutes = state.minutes_since_link
     if state.tracking_id:
-        if state.registered and not state.paid and (minutes is None or minutes >= 5):
-            return "app_registered_not_paid", "app_registered_not_paid", "registered_not_paid"
-        if state.downloaded and not state.registered and (minutes is None or minutes >= 5):
-            return "app_downloaded_not_registered", "app_downloaded_not_registered", "downloaded_not_registered"
+        if state.downloaded or state.registered or state.paid:
+            return None, "third_party_handoff", "download_complete"
         if state.clicked and not state.downloaded and (minutes is None or minutes >= 3):
             return "app_link_clicked_followup", "app_link_clicked_followup", "clicked_not_downloaded"
         if not state.clicked and minutes is not None and minutes < 10:
