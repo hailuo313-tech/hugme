@@ -156,6 +156,19 @@ const ASSET_ACCEPT: Record<string, string> = {
   audio: "audio/*",
 };
 
+async function loadAllScriptTemplates() {
+  const pageSize = 500;
+  const items: ScriptTemplate[] = [];
+
+  for (let offset = 0; ; offset += pageSize) {
+    const response = await apiFetch<{ items: ScriptTemplate[] }>(
+      `/ai-ops/admin/script-templates?limit=${pageSize}&offset=${offset}`,
+    );
+    items.push(...response.items);
+    if (response.items.length < pageSize) return items;
+  }
+}
+
 export default function AiOpsPage() {
   return (
     <AuthGate>
@@ -184,10 +197,10 @@ function AiOpsContent({ operator }: { operator: Operator }) {
     setError(null);
     try {
       const [scriptResponse, platformResponse] = await Promise.all([
-        apiFetch<{ items: ScriptTemplate[] }>("/ai-ops/admin/script-templates?limit=500"),
+        loadAllScriptTemplates(),
         apiFetch<{ items: DownloadPlatform[] }>("/ai-ops/admin/app-download-platforms"),
       ]);
-      setScripts(scriptResponse.items);
+      setScripts(scriptResponse);
       setPlatforms(platformResponse.items);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
