@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Literal
 
 from services.t1_country_config import load_t1_countries_hot
+from services.t2_country_config import load_t2_countries_hot
 
 Level = Literal["S", "A", "B", "C", "D"]
 ChatRoute = Literal["manual_premium", "ai_assisted", "ai_auto"]
@@ -57,11 +58,12 @@ def _default_env_path() -> Path:
 
 
 DEFAULT_T1_PATH = _default_config_path("t1_countries.json")
+DEFAULT_T2_PATH = _default_config_path("t2_countries.json")
 DEFAULT_THRESHOLDS_PATH = _default_config_path("level_thresholds.json")
 DEFAULT_ENV_PATH = _default_env_path()
 
-# T2 sample — H-02 will replace with signed config
-_DEFAULT_T2 = frozenset({"BR", "MX", "IN", "ID", "TH", "VN", "PH", "MY"})
+# Legacy fallback if t2_countries.json is missing (tests may inject t2= explicitly).
+_DEFAULT_T2_FALLBACK = frozenset({"BR", "MX", "IN", "ID", "TH", "VN", "PH", "MY"})
 
 
 @dataclass(frozen=True)
@@ -96,6 +98,17 @@ def load_json_config(path: Path) -> dict:
 
 def load_t1_countries(path: Path = DEFAULT_T1_PATH) -> frozenset[str]:
     return load_t1_countries_hot(path)
+
+
+def load_t2_countries(
+    path: Path = DEFAULT_T2_PATH,
+    *,
+    t1_path: Path | None = None,
+) -> frozenset[str]:
+    if not path.exists():
+        return _DEFAULT_T2_FALLBACK
+    t1 = load_t1_countries(t1_path or DEFAULT_T1_PATH)
+    return load_t2_countries_hot(path, t1_countries=t1)
 
 
 def load_thresholds(
@@ -182,7 +195,7 @@ def country_tier(
         return "unknown"
     cc = str(country_code).strip().upper()
     t1_set = t1 if t1 is not None else load_t1_countries()
-    t2_set = t2 if t2 is not None else _DEFAULT_T2
+    t2_set = t2 if t2 is not None else load_t2_countries()
     if cc in t1_set:
         return "T1"
     if cc in t2_set:
