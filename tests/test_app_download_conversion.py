@@ -4,6 +4,8 @@ from services.app_download_conversion import (
     APP_DOWNLOAD_CATEGORIES,
     _FunnelState,
     _choose_category,
+    _relationship_stage,
+    _reply_language,
     _render_script,
 )
 
@@ -94,3 +96,8 @@ def test_render_script_replaces_app_download_url() -> None:
         _render_script("Open here: {{app_download_url}}", app_download_url="https://app.example/dl")
         == "Open here: https://app.example/dl"
     )
+
+
+def test_profile_helpers_allow_missing_profile_for_download_cta() -> None:
+    assert _relationship_stage(None) == "S0"
+    assert _reply_language(None, "where can i talk to you more privately?") == "en"

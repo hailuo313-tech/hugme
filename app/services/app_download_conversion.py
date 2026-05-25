@@ -95,18 +95,19 @@ async def maybe_select_app_download_reply(
     destination_url = await resolve_app_download_url(db)
     if not settings.APP_DOWNLOAD_CONVERSION_ENABLED or not destination_url:
         return None
-    if db is None or profile_row is None:
+    if db is None:
         return None
-    if _relationship_stage(profile_row) == "S5":
+    profile = profile_row or {}
+    if _relationship_stage(profile) == "S5":
         return None
 
-    user_level = str(profile_row.get("user_level") or "C").upper()
+    user_level = str(profile.get("user_level") or "C").upper()
     country_code = normalize_country_code(
-        profile_row.get("country_code")
-        or _preferences(profile_row).get("country_code")
+        profile.get("country_code")
+        or _preferences(profile).get("country_code")
     )
-    age = age_from_preferences(_preferences(profile_row))
-    if user_level == "D" or not country_code or age is None:
+    age = age_from_preferences(_preferences(profile))
+    if user_level == "D":
         return None
 
     state = await _load_latest_funnel_state(
@@ -133,7 +134,7 @@ async def maybe_select_app_download_reply(
             persona_slug=persona_slug,
             hook="reply",
             category_key=category_key,
-            language=_reply_language(profile_row, user_text),
+            language=_reply_language(profile, user_text),
             limit=3,
         ),
         trace_id=trace_id,
@@ -322,12 +323,16 @@ def _render_script(content: str, *, app_download_url: str) -> str:
     return str(content).replace("{{app_download_url}}", app_download_url)
 
 
-def _preferences(profile_row: dict[str, Any]) -> dict[str, Any]:
+def _preferences(profile_row: dict[str, Any] | None) -> dict[str, Any]:
+    if not profile_row:
+        return {}
     prefs = profile_row.get("preferences") or {}
     return prefs if isinstance(prefs, dict) else {}
 
 
-def _relationship_stage(profile_row: dict[str, Any]) -> str:
+def _relationship_stage(profile_row: dict[str, Any] | None) -> str:
+    if not profile_row:
+        return "S0"
     return str(profile_row.get("relationship_stage") or "S0").strip().upper()
 
 
@@ -338,11 +343,12 @@ def _persona_slug(character_row: dict[str, Any] | None) -> str | None:
     return str(value).strip() if value else None
 
 
-def _reply_language(profile_row: dict[str, Any], user_text: str) -> str:
+def _reply_language(profile_row: dict[str, Any] | None, user_text: str) -> str:
+    profile = profile_row or {}
     language = (
-        profile_row.get("language")
-        or _preferences(profile_row).get("language")
-        or _preferences(profile_row).get("user_language")
+        profile.get("language")
+        or _preferences(profile).get("language")
+        or _preferences(profile).get("user_language")
     )
     if language:
         return "zh" if str(language).lower().startswith("zh") else "en"
