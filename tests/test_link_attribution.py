@@ -16,6 +16,7 @@ from api.attribution import (
 from services.link_attribution import (
     new_tracking_id,
     record_attribution_event,
+    record_unique_click_event,
     tracking_url,
     wrap_text_links_with_tracking,
 )
@@ -154,10 +155,36 @@ async def test_redirect_tracking_link_records_click_then_redirects() -> None:
     assert response.headers["location"] == "https://app.example/download"
     assert db.execute.await_count == 2
     event_params = db.execute.await_args_list[1].args[1]
-    assert event_params["event_type"] == "click"
     assert event_params["tracking_id"] == "trk_test"
     assert event_params["user_id"] == "user-1"
+    event_sql = str(db.execute.await_args_list[1].args[0])
+    assert "WHERE NOT EXISTS" in event_sql
+    assert "event_type = 'click'" in event_sql
     db.commit.assert_awaited_once()
+
+
+async def test_record_unique_click_event_dedupes_by_tracking_and_user() -> None:
+    db = FakeSession()
+
+    await record_unique_click_event(
+        db,
+        tracking_id="trk_test",
+        user_id="00000000-0000-0000-0000-000000000001",
+        country_code="us",
+        user_level="a",
+        ip_address="127.0.0.1",
+        user_agent="pytest",
+    )
+
+    sql = str(db.execute.await_args.args[0])
+    params = db.execute.await_args.args[1]
+    assert "WHERE NOT EXISTS" in sql
+    assert "tracking_id IS NOT DISTINCT FROM :tracking_id" in sql
+    assert "user_id = CAST(:user_id AS uuid)" in sql
+    assert "ip_address IS NOT DISTINCT FROM CAST(:ip_address AS INET)" in sql
+    assert params["tracking_id"] == "trk_test"
+    assert params["country_code"] == "US"
+    assert params["user_level"] == "A"
 
 
 async def test_admin_attribution_summary_returns_complete_dashboard_shape() -> None:

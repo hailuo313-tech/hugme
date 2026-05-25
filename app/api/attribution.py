@@ -17,6 +17,7 @@ from services.link_attribution import (
     ALLOWED_EVENT_TYPES,
     create_attribution_link as insert_attribution_link,
     record_attribution_event,
+    record_unique_click_event,
     tracking_url,
 )
 
@@ -147,10 +148,9 @@ async def redirect_tracking_link(
     if row is None:
         raise HTTPException(status_code=404, detail="tracking link not found")
 
-    await record_attribution_event(
+    await record_unique_click_event(
         db,
         tracking_id=tracking_id,
-        event_type="click",
         user_id=row[1],
         country_code=row[2],
         age=row[3],
