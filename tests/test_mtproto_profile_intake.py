@@ -68,7 +68,7 @@ async def test_mtproto_profile_intake_retries_unrecognized_country(monkeypatch):
         log=SimpleNamespace(info=lambda *a, **k: None, bind=lambda **k: SimpleNamespace(info=lambda *a, **kw: None)),
     )
 
-    assert reply == auto_reply.PROFILE_COUNTRY_RETRY
+    assert reply == auto_reply.PROFILE_COUNTRY_QUESTION
 
 
 @pytest.mark.asyncio
@@ -119,7 +119,27 @@ async def test_mtproto_profile_intake_collects_age_then_acknowledges(monkeypatch
         log=SimpleNamespace(info=lambda *a, **k: None, bind=lambda **k: SimpleNamespace(info=lambda *a, **kw: None)),
     )
 
-    assert reply == "Thanks, got it. What would you like to talk about?"
+    assert reply is None
     assert "profile_intake_pending" not in db.prefs
     write_age.assert_awaited_once()
     level_service.calculate_and_persist_user_level.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_mtproto_profile_intake_asks_age_without_blocking_when_missing(monkeypatch):
+    db = _Db({"profile_intake_pending": "age"})
+    monkeypatch.setattr(
+        auto_reply,
+        "read_profile_completeness",
+        AsyncMock(return_value=SimpleNamespace(country_code="US", age=None)),
+    )
+
+    reply = await auto_reply._handle_required_profile_intake(
+        db,
+        user_id="00000000-0000-0000-0000-000000000001",
+        external_id="tg_1",
+        text_value="not telling",
+        log=SimpleNamespace(info=lambda *a, **k: None, bind=lambda **k: SimpleNamespace(info=lambda *a, **kw: None)),
+    )
+
+    assert reply == auto_reply.PROFILE_AGE_QUESTION

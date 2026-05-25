@@ -238,6 +238,7 @@ async def _handle_required_profile_intake(
     text_value: str,
     log: Any,
 ) -> str | None:
+    """Persist profile answers when present and return a non-blocking follow-up question."""
     prefs = await _profile_preferences(db, user_id=user_id)
     pending = str(prefs.get("profile_intake_pending") or "").strip()
     completeness = await read_profile_completeness(db, user_id=user_id)
@@ -245,8 +246,8 @@ async def _handle_required_profile_intake(
     if pending == "country":
         country_code = normalize_country_code(text_value)
         if not country_code:
-            log.info("mtproto.profile.country_retry")
-            return PROFILE_COUNTRY_RETRY
+            log.info("mtproto.profile.country_still_missing")
+            return PROFILE_COUNTRY_QUESTION
         await write_country_code(
             db,
             user_id=user_id,
@@ -268,8 +269,8 @@ async def _handle_required_profile_intake(
     if pending == "age":
         age = extract_age_from_text(text_value)
         if age is None:
-            log.info("mtproto.profile.age_retry")
-            return PROFILE_AGE_RETRY
+            log.info("mtproto.profile.age_still_missing")
+            return PROFILE_AGE_QUESTION
         await write_age(db, user_id=user_id, age=age, source="chat_answer")
         prefs.pop("profile_intake_pending", None)
         await _write_profile_preferences(db, user_id=user_id, preferences=prefs)
@@ -280,7 +281,7 @@ async def _handle_required_profile_intake(
         )
         await db.commit()
         log.bind(age=age).info("mtproto.profile.age_collected")
-        return "Thanks, got it. What would you like to talk about?"
+        return None
 
     if completeness.country_code is None:
         prefs["profile_intake_pending"] = "country"
@@ -405,9 +406,10 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
     except Exception as exc:
         log.bind(error_type=type(exc).__name__).warning("mtproto.context.push_failed")
 
+    profile_followup: str | None = None
     async with AsyncSessionLocal() as db:
         try:
-            intake_reply = await _handle_required_profile_intake(
+            profile_followup = await _handle_required_profile_intake(
                 db,
                 user_id=user_id,
                 external_id=external_id,
@@ -417,31 +419,6 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
         except Exception as exc:
             await db.rollback()
             log.bind(error_type=type(exc).__name__).warning("mtproto.profile.intake_failed")
-            intake_reply = None
-    if intake_reply:
-        peer = getattr(event, "chat_id", None) or sender_id
-        sent = await send_human_like_message(
-            client,
-            peer,
-            intake_reply,
-            policy=_reply_delay_policy(intake_reply),
-        )
-        sent_id = str(getattr(sent, "id", "") or "")
-        assistant_msg_id = await _persist_message(
-            conv_id=conv_id,
-            sender_type="assistant",
-            sender_id=str(account_id),
-            content=intake_reply,
-            model_name="profile_intake",
-        )
-        try:
-            await _push_context(redis, conv_id, "assistant", intake_reply, assistant_msg_id)
-        except Exception as exc:
-            log.bind(error_type=type(exc).__name__).warning("mtproto.profile.ctx_push_failed")
-        log.bind(message_id=assistant_msg_id, telegram_sent_id=sent_id).info(
-            "mtproto.profile.intake_sent"
-        )
-        return
 
     async with AsyncSessionLocal() as db:
         try:
@@ -457,6 +434,8 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
         except LLMOrchestratorError as exc:
             log.bind(reason=str(exc)).warning("mtproto.orchestrator.failed")
             reply_text = "I am a little busy right now, talk in a bit?"
+        if profile_followup and profile_followup not in reply_text:
+            reply_text = f"{reply_text}\n\n{profile_followup}"
         app_download_decision = get_last_app_download_decision()
         assistant_msg_id = str(uuid.uuid4())
         try:
