@@ -24,6 +24,9 @@ class _DB:
 
     async def execute(self, statement, params):
         self.calls.append((str(statement), params))
+        if self.rows and isinstance(self.rows[0], list):
+            index = min(len(self.calls) - 1, len(self.rows) - 1)
+            return _Result(self.rows[index])
         return _Result(self.rows)
 
 
@@ -65,6 +68,33 @@ async def test_vector_search_returns_top3_under_100ms(monkeypatch):
     sql, params = db.calls[0]
     assert "embedding <=>" in sql
     assert params["limit"] == 3
+
+
+@pytest.mark.asyncio
+async def test_vector_search_falls_back_when_templates_have_no_embeddings(monkeypatch):
+    monkeypatch.setattr(
+        retriever,
+        "embed",
+        AsyncMock(return_value=SimpleNamespace(error=None, vectors=[[0.1] * 4])),
+    )
+    db = _DB([[], [_row(1, similarity=None)]])
+
+    result = await retriever.search_script_templates(
+        db=db,
+        query=ScriptTemplateQuery(
+            query="where can i talk to you more privately?",
+            category_key="app_download_direct_cta",
+            language="en",
+            limit=3,
+        ),
+        trace_id="t-vector-fallback",
+    )
+
+    assert len(result.hits) == 1
+    assert result.embedding_used is True
+    assert result.fallback_reason == "vector_no_hits"
+    assert "embedding IS NOT NULL" in db.calls[0][0]
+    assert "embedding IS NOT NULL" not in db.calls[1][0]
 
 
 @pytest.mark.asyncio

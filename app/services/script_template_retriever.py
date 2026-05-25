@@ -90,6 +90,14 @@ async def search_script_templates(
         qvec=qvec,
         limit=limit,
     )
+    if not rows and qvec is not None:
+        fallback_reason = fallback_reason or "vector_no_hits"
+        rows = await _query_candidates(
+            db=db,
+            query=query,
+            qvec=None,
+            limit=limit,
+        )
     hits = [_row_to_hit(row) for row in rows[:limit]]
     latency = _elapsed_ms(started)
     logger.bind(
