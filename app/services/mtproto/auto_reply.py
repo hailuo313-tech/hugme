@@ -310,7 +310,9 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
                 ),
                 metadata={"source": "mtproto_auto_reply", "trace_id": trace_id},
             )
+            await db.commit()
         except Exception as exc:
+            await db.rollback()
             log.bind(error_type=type(exc).__name__).warning("mtproto.link_attribution_failed")
 
     peer = getattr(event, "chat_id", None) or sender_id
