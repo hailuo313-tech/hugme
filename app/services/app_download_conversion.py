@@ -258,6 +258,8 @@ def _choose_category(
     if state.tracking_id:
         if state.downloaded or state.registered or state.paid:
             return None, "third_party_handoff", "download_complete"
+        if state.clicked and not state.downloaded and (minutes is None or minutes >= 3):
+            return "app_link_clicked_followup", "app_link_clicked_followup", "clicked_not_downloaded"
         if not state.clicked and minutes is not None and minutes < 10:
             return None, "recent_link_exposed", "pre_click"
 
@@ -267,19 +269,6 @@ def _choose_category(
         return "app_download_objection", "app_download_objection", "download_objection"
     if _has_any(text_value, ("link", "app", "download", "where", "continue", "send it", "链接", "下载", "继续", "哪里")):
         return "app_download_direct_cta", "app_download_direct_cta", "pre_click"
-
-    mode = _conversation_mode(text_value)
-    if mode in {"serious", "preference"}:
-        return None, f"{mode}_chat", "conversation"
-
-    if state.tracking_id:
-        if state.clicked and not state.downloaded and (minutes is None or minutes >= 3):
-            if mode == "flirty":
-                return "app_link_clicked_followup", "app_link_clicked_followup", "clicked_not_downloaded"
-            return None, "clicked_continue_chat", "conversation"
-
-    if mode != "flirty":
-        return None, "chat_first", "conversation"
 
     count = assistant_reply_count or 0
     if user_level in {"A", "S"} and count >= 2:
@@ -368,68 +357,3 @@ def _reply_language(profile_row: dict[str, Any] | None, user_text: str) -> str:
 
 def _has_any(text_value: str, needles: tuple[str, ...]) -> bool:
     return any(needle in text_value for needle in needles)
-
-
-def _conversation_mode(text_value: str) -> str:
-    if _has_any(
-        text_value,
-        (
-            "serious",
-            "serious conversation",
-            "real conversation",
-            "honest conversation",
-            "can you talk",
-            "can we talk",
-            "listen to me",
-            "understand me",
-            "answer me",
-            "be honest",
-            "for real",
-            "认真",
-            "正经",
-            "严肃",
-        ),
-    ):
-        return "serious"
-    if _has_any(
-        text_value,
-        (
-            "i like",
-            "i prefer",
-            "my type",
-            "looking for",
-            "type of woman",
-            "type of girl",
-            "women over",
-            "girls over",
-            "curvy type",
-            "喜欢",
-            "偏好",
-            "类型",
-        ),
-    ):
-        return "preference"
-    if _has_any(
-        text_value,
-        (
-            "horny",
-            "sexy",
-            "hot",
-            "kiss",
-            "touch",
-            "nude",
-            "naked",
-            "wet",
-            "cum",
-            "daddy",
-            "baby",
-            "babe",
-            "private room",
-            "turn me on",
-            "暧昧",
-            "亲",
-            "吻",
-        ),
-    ):
-        return "flirty"
-    return "neutral"
