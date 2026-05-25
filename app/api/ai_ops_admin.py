@@ -8,13 +8,14 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.admin import require_operator
 from core.database import get_db
+from core.config import settings
 
 router = APIRouter()
 
@@ -44,6 +45,13 @@ SAFETY_REDLINES_PATH = _config_path("safety_filter_redlines.json")
 
 SCRIPT_STATUSES = {"draft", "approved", "archived"}
 PERSONA_STATUSES = {"draft", "active", "inactive", "archived"}
+SCRIPT_ASSET_TYPES = {"image", "video", "voice", "audio"}
+SCRIPT_ASSET_EXTENSIONS = {
+    "image": {".jpg", ".jpeg", ".png", ".webp", ".gif"},
+    "video": {".mp4", ".mov", ".webm", ".m4v"},
+    "voice": {".ogg", ".oga", ".opus", ".m4a", ".mp3", ".wav"},
+    "audio": {".mp3", ".m4a", ".wav", ".ogg", ".oga", ".aac"},
+}
 
 
 class ScriptTemplatePayload(BaseModel):
@@ -133,6 +141,13 @@ def _validate_status(value: str | None, allowed: set[str], field_name: str) -> N
         raise HTTPException(status_code=422, detail=f"invalid {field_name}")
 
 
+def _validate_asset_type(value: str) -> str:
+    asset_type = str(value or "").strip().lower()
+    if asset_type not in SCRIPT_ASSET_TYPES:
+        raise HTTPException(status_code=422, detail="invalid asset_type")
+    return asset_type
+
+
 def _json_dump(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False)
 
@@ -175,6 +190,56 @@ def _validate_regexes(patterns: list[str]) -> None:
             raise HTTPException(status_code=422, detail=f"invalid regex: {pattern}") from exc
 
 
+def _public_asset_url(filename: str) -> str:
+    base = str(settings.PUBLIC_BASE_URL or "").rstrip("/")
+    path = str(settings.MEDIA_PUBLIC_PATH or "/uploads").rstrip("/")
+    return f"{base}{path}/script-assets/{filename}"
+
+
+def _script_asset_dir() -> Path:
+    path = Path(settings.MEDIA_UPLOAD_DIR) / "script-assets"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _safe_ext(filename: str | None, asset_type: str) -> str:
+    suffix = Path(filename or "").suffix.lower()
+    if suffix not in SCRIPT_ASSET_EXTENSIONS[asset_type]:
+        raise HTTPException(status_code=422, detail=f"unsupported {asset_type} file type")
+    return suffix
+
+
+async def _assets_for_templates(db: AsyncSession, template_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
+    if not template_ids:
+        return {}
+    result = await db.execute(
+        text(
+            """
+            SELECT id, script_template_id, asset_type, asset_url, original_filename,
+                   mime_type, file_size_bytes, caption, sort_order, created_at, updated_at
+            FROM script_template_assets
+            WHERE is_active = TRUE
+              AND script_template_id::text = ANY(:ids)
+            ORDER BY sort_order ASC, created_at ASC
+            """
+        ),
+        {"ids": template_ids},
+    )
+    by_template: dict[str, list[dict[str, Any]]] = {tid: [] for tid in template_ids}
+    for row in result.fetchall():
+        item = _row(row)
+        tid = str(item.pop("script_template_id"))
+        by_template.setdefault(tid, []).append(item)
+    return by_template
+
+
+async def _attach_assets(db: AsyncSession, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    assets = await _assets_for_templates(db, [str(item["id"]) for item in items])
+    for item in items:
+        item["assets"] = assets.get(str(item["id"]), [])
+    return items
+
+
 @router.get("/script-templates")
 async def list_script_templates(
     category_key: str | None = Query(default=None, max_length=40),
@@ -214,7 +279,8 @@ async def list_script_templates(
         ),
         params,
     )
-    return {"items": [_row(row) for row in result.fetchall()], "limit": limit, "offset": offset}
+    items = [_row(row) for row in result.fetchall()]
+    return {"items": await _attach_assets(db, items), "limit": limit, "offset": offset}
 
 
 @router.post("/script-templates", status_code=status.HTTP_201_CREATED)
@@ -246,7 +312,7 @@ async def create_script_template(
         },
     )
     await db.commit()
-    return _row(result.fetchone())
+    return (await _attach_assets(db, [_row(result.fetchone())]))[0]
 
 
 @router.patch("/script-templates/{template_id}")
@@ -286,7 +352,7 @@ async def update_script_template(
     if row is None:
         raise HTTPException(status_code=404, detail="script template not found")
     await db.commit()
-    return _row(row)
+    return (await _attach_assets(db, [_row(row)]))[0]
 
 
 @router.delete("/script-templates/{template_id}")
@@ -313,6 +379,163 @@ async def delete_script_template(
         raise HTTPException(status_code=404, detail="script template not found")
     await db.commit()
     return {"status": "archived", "id": tid}
+
+
+@router.get("/script-templates/{template_id}/assets")
+async def list_script_template_assets(
+    template_id: str,
+    db: AsyncSession = Depends(get_db),
+    _operator: dict = Depends(require_operator),
+):
+    tid = _validate_uuid(template_id, "template_id")
+    return {"items": (await _assets_for_templates(db, [tid])).get(tid, [])}
+
+
+@router.post("/script-templates/{template_id}/assets", status_code=status.HTTP_201_CREATED)
+async def upload_script_template_asset(
+    template_id: str,
+    asset_type: str = Form(...),
+    caption: str | None = Form(default=None),
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    _operator: dict = Depends(require_operator),
+):
+    tid = _validate_uuid(template_id, "template_id")
+    kind = _validate_asset_type(asset_type)
+    suffix = _safe_ext(file.filename, kind)
+    exists = (
+        await db.execute(
+            text("SELECT 1 FROM script_templates WHERE id = CAST(:id AS uuid)"),
+            {"id": tid},
+        )
+    ).fetchone()
+    if exists is None:
+        raise HTTPException(status_code=404, detail="script template not found")
+
+    asset_id = str(uuid.uuid4())
+    filename = f"{asset_id}{suffix}"
+    target = _script_asset_dir() / filename
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=422, detail="empty file")
+    max_bytes = 50 * 1024 * 1024
+    if len(content) > max_bytes:
+        raise HTTPException(status_code=413, detail="file too large")
+    target.write_bytes(content)
+
+    next_order = (
+        await db.execute(
+            text(
+                """
+                SELECT COALESCE(MAX(sort_order), -1) + 1
+                FROM script_template_assets
+                WHERE script_template_id = CAST(:tid AS uuid)
+                  AND is_active = TRUE
+                """
+            ),
+            {"tid": tid},
+        )
+    ).scalar()
+    row = (
+        await db.execute(
+            text(
+                """
+                INSERT INTO script_template_assets (
+                    id, script_template_id, asset_type, asset_url, storage_path,
+                    original_filename, mime_type, file_size_bytes, caption, sort_order
+                ) VALUES (
+                    CAST(:id AS uuid), CAST(:tid AS uuid), :asset_type, :asset_url, :storage_path,
+                    :original_filename, :mime_type, :file_size_bytes, :caption, :sort_order
+                )
+                RETURNING id, script_template_id, asset_type, asset_url, original_filename,
+                          mime_type, file_size_bytes, caption, sort_order, created_at, updated_at
+                """
+            ),
+            {
+                "id": asset_id,
+                "tid": tid,
+                "asset_type": kind,
+                "asset_url": _public_asset_url(filename),
+                "storage_path": str(target),
+                "original_filename": file.filename or filename,
+                "mime_type": file.content_type,
+                "file_size_bytes": len(content),
+                "caption": caption,
+                "sort_order": int(next_order or 0),
+            },
+        )
+    ).fetchone()
+    await db.commit()
+    item = _row(row)
+    item.pop("script_template_id", None)
+    return item
+
+
+@router.patch("/script-template-assets/{asset_id}")
+async def update_script_template_asset(
+    asset_id: str,
+    sort_order: int | None = None,
+    caption: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    _operator: dict = Depends(require_operator),
+):
+    aid = _validate_uuid(asset_id, "asset_id")
+    values: dict[str, Any] = {"id": aid}
+    assignments: list[str] = []
+    if sort_order is not None:
+        values["sort_order"] = int(sort_order)
+        assignments.append("sort_order = :sort_order")
+    if caption is not None:
+        values["caption"] = caption
+        assignments.append("caption = :caption")
+    if not assignments:
+        row = (await db.execute(text("SELECT * FROM script_template_assets WHERE id = CAST(:id AS uuid)"), values)).fetchone()
+    else:
+        row = (
+            await db.execute(
+                text(
+                    f"""
+                    UPDATE script_template_assets
+                    SET {', '.join(assignments)}, updated_at = NOW()
+                    WHERE id = CAST(:id AS uuid) AND is_active = TRUE
+                    RETURNING *
+                    """
+                ),
+                values,
+            )
+        ).fetchone()
+        await db.commit()
+    if row is None:
+        raise HTTPException(status_code=404, detail="script template asset not found")
+    item = _row(row)
+    item.pop("script_template_id", None)
+    return item
+
+
+@router.delete("/script-template-assets/{asset_id}")
+async def delete_script_template_asset(
+    asset_id: str,
+    db: AsyncSession = Depends(get_db),
+    _operator: dict = Depends(require_operator),
+):
+    aid = _validate_uuid(asset_id, "asset_id")
+    row = (
+        await db.execute(
+            text(
+                """
+                UPDATE script_template_assets
+                SET is_active = FALSE, updated_at = NOW()
+                WHERE id = CAST(:id AS uuid)
+                RETURNING storage_path
+                """
+            ),
+            {"id": aid},
+        )
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="script template asset not found")
+    await db.commit()
+    return {"status": "deleted", "id": aid}
 
 
 @router.get("/persona-prompts")

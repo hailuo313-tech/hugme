@@ -39,6 +39,7 @@ from api.onboarding import (
 from services.llm_orchestrator import generate_reply, LLMOrchestratorError
 from services.app_download_conversion import get_last_app_download_decision
 from services.link_attribution import wrap_text_links_with_tracking
+from services.script_asset_delivery import send_telegram_bot_asset
 from services.memory_writer import maybe_write_memory
 from services.age_extraction import maybe_extract_and_write_age
 from services.content_safety import evaluate_inbound_content_safety
@@ -943,6 +944,28 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
             log.bind(error_type=type(exc).__name__).warning("tg.link_attribution_failed")
 
         sent_id = await _send_tg(tg_chat_id, reply_text, trace_id, typing_delay=True)
+        if sent_id is not None and app_download_decision is not None:
+            for asset in app_download_decision.assets:
+                asset_mid = await send_telegram_bot_asset(
+                    chat_id=tg_chat_id,
+                    asset=asset,
+                    trace_id=trace_id,
+                )
+                if asset_mid is not None:
+                    await db.execute(
+                        text(
+                            "INSERT INTO messages "
+                            "(id,conversation_id,sender_type,sender_id,content,content_type) "
+                            "VALUES (:id,:cid,'assistant','bot',:content,:content_type)"
+                        ),
+                        {
+                            "id": str(uuid.uuid4()),
+                            "cid": conv_id,
+                            "content": asset.get("asset_url") or "",
+                            "content_type": asset.get("asset_type") or "media",
+                        },
+                    )
+                    await db.commit()
         if sent_id is not None:
             bot_reply = reply_text
             log.bind(result="success").info("tg.bot_reply.sent")

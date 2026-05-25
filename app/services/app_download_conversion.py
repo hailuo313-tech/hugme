@@ -43,6 +43,7 @@ class AppDownloadDecision:
     content: str
     category_key: str
     script_hit_id: str
+    assets: list[dict[str, Any]]
     user_level: str
     persona_slug: str | None
     intent: str
@@ -140,6 +141,7 @@ async def maybe_select_app_download_reply(
         return None
 
     hit = result.hits[0]
+    assets = await _load_script_assets(db=db, script_template_id=hit.id)
     is_t1 = country_tier(country_code) == "T1" if country_code else None
     content = _render_script(
         hit.content,
@@ -149,6 +151,7 @@ async def maybe_select_app_download_reply(
         content=content,
         category_key=hit.category_key,
         script_hit_id=hit.id,
+        assets=assets,
         user_level=user_level,
         persona_slug=hit.persona_slug or persona_slug,
         intent=intent,
@@ -223,6 +226,22 @@ async def _load_latest_funnel_state(
         registered=bool(data.get("registered")),
         paid=bool(data.get("paid")),
     )
+
+
+async def _load_script_assets(*, db: Any, script_template_id: str) -> list[dict[str, Any]]:
+    result = await db.execute(
+        text(
+            """
+            SELECT id, asset_type, asset_url, mime_type, caption, sort_order
+            FROM script_template_assets
+            WHERE script_template_id = CAST(:id AS uuid)
+              AND is_active = TRUE
+            ORDER BY sort_order ASC, created_at ASC
+            """
+        ),
+        {"id": script_template_id},
+    )
+    return [dict(row._mapping) for row in result.fetchall()]
 
 
 def _choose_category(

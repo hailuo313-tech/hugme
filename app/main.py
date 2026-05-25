@@ -1,9 +1,11 @@
 import os
+import tempfile
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from loguru import logger
 from prometheus_fastapi_instrumentator import Instrumentator
 import sys
@@ -202,6 +204,29 @@ app.include_router(device_tokens_router, prefix="/api/v1/device-tokens", tags=["
 app.include_router(metrics_router, tags=["metrics"])
 app.include_router(feature_flags_router, prefix="/api/v1", tags=["feature-flags"])
 app.include_router(attribution_router, tags=["attribution"])
+
+def _resolve_media_upload_dir() -> Path:
+    path = Path(settings.MEDIA_UPLOAD_DIR)
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+    except PermissionError:
+        fallback = Path(tempfile.gettempdir()) / "eris-uploads"
+        fallback.mkdir(parents=True, exist_ok=True)
+        logger.warning(
+            "media_upload_dir.permission_denied fallback={} configured={}",
+            fallback,
+            path,
+        )
+        return fallback
+
+
+media_upload_dir = _resolve_media_upload_dir()
+app.mount(
+    settings.MEDIA_PUBLIC_PATH,
+    StaticFiles(directory=media_upload_dir),
+    name="uploads",
+)
 
 @app.get("/ops/{filename}", include_in_schema=False)
 async def ops_static_html(filename: str):
