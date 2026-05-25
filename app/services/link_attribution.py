@@ -234,5 +234,63 @@ async def record_attribution_event(
     )
 
 
+async def record_unique_click_event(
+    db: AsyncSession,
+    *,
+    tracking_id: str | None,
+    user_id: Any = None,
+    country_code: str | None = None,
+    age: int | None = None,
+    user_level: str | None = None,
+    device_os: str | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
+    referrer: str | None = None,
+    metadata_json: str = "{}",
+) -> None:
+    """Record only the first click for a tracked user/link pair."""
+    await db.execute(
+        text(
+            """
+            INSERT INTO attribution_events (
+                tracking_id, event_type, user_id, country_code, age, user_level,
+                device_os, ip_address, user_agent, referrer, metadata
+            )
+            SELECT
+                :tracking_id, 'click', :user_id, :country_code, :age, :user_level,
+                :device_os, CAST(:ip_address AS INET), :user_agent, :referrer,
+                CAST(:metadata AS JSONB)
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM attribution_events
+                WHERE tracking_id IS NOT DISTINCT FROM :tracking_id
+                  AND event_type = 'click'
+                  AND (
+                    (:user_id IS NOT NULL AND user_id = CAST(:user_id AS uuid))
+                    OR (
+                        :user_id IS NULL
+                        AND user_id IS NULL
+                        AND ip_address IS NOT DISTINCT FROM CAST(:ip_address AS INET)
+                        AND COALESCE(user_agent, '') = COALESCE(:user_agent, '')
+                    )
+                  )
+            )
+            """
+        ),
+        {
+            "tracking_id": tracking_id,
+            "user_id": user_id,
+            "country_code": country_code.upper() if country_code else None,
+            "age": age,
+            "user_level": user_level.upper() if user_level else None,
+            "device_os": device_os,
+            "ip_address": ip_address,
+            "user_agent": user_agent,
+            "referrer": referrer,
+            "metadata": metadata_json,
+        },
+    )
+
+
 def tracking_url(base_url: str, tracking_id: str) -> str:
     return f"{base_url.rstrip('/')}/r/{tracking_id}"
