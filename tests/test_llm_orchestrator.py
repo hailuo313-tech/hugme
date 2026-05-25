@@ -123,11 +123,10 @@ async def test_app_download_nudge_keeps_llm_answer_first(monkeypatch, llm_orches
     async def fake_download_decision(**_kwargs):
         return SimpleNamespace(
             content=(
-                "did u get scared of a voluptuous woman? "
-                "fix it right here: https://app.example/download"
+                "This is real. Try the private app here: https://app.example/download"
             ),
-            category_key="app_link_clicked_followup",
-            scene_step="clicked_not_downloaded",
+            category_key="trust_reassurance",
+            scene_step="trust",
             script_hit_id="script-1",
         )
 
@@ -142,9 +141,35 @@ async def test_app_download_nudge_keeps_llm_answer_first(monkeypatch, llm_orches
     )
 
     assert reply.startswith("Yes, I can slow down.")
-    assert "If you still want to continue somewhere more private" in reply
+    assert "If you decide you want to try the private app" in reply
     assert "https://app.example/download" in reply
     assert "voluptuous woman" not in reply
+
+
+@pytest.mark.asyncio
+async def test_app_download_direct_cta_uses_script(monkeypatch, llm_orchestrator):
+    async def fake_chat(*, messages, trace_id, **_kwargs):
+        return _LLMResultStub(content="ordinary answer")
+
+    async def fake_download_decision(**_kwargs):
+        return SimpleNamespace(
+            content="Here is the private link: https://app.example/download",
+            category_key="app_download_direct_cta",
+            scene_step="pre_click",
+            script_hit_id="script-2",
+        )
+
+    monkeypatch.setattr(llm_orchestrator, "llm_chat", fake_chat)
+    monkeypatch.setattr(llm_orchestrator, "maybe_select_app_download_reply", fake_download_decision)
+
+    reply = await llm_orchestrator.generate_reply(
+        user_id="user-1",
+        conversation_id="conv-1",
+        user_text="send me the app link",
+        trace_id="trace-direct-cta",
+    )
+
+    assert reply == "Here is the private link: https://app.example/download"
 
 
 @pytest.mark.asyncio
