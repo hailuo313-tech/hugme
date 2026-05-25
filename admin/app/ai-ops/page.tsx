@@ -1,9 +1,20 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import AuthGate from "@/components/AuthGate";
 import AdminFrame from "@/components/AdminFrame";
-import { apiFetch, Operator } from "@/lib/auth";
+import { apiFetch, getToken, Operator } from "@/lib/auth";
+
+type ScriptAsset = {
+  id: string;
+  asset_type: "image" | "video" | "voice" | "audio";
+  asset_url: string;
+  original_filename?: string | null;
+  mime_type?: string | null;
+  caption?: string | null;
+  sort_order: number;
+};
 
 type ScriptTemplate = {
   id: string;
@@ -21,6 +32,7 @@ type ScriptTemplate = {
   safety_tags: unknown[] | string | null;
   status: string;
   updated_at: string | null;
+  assets?: ScriptAsset[];
 };
 
 type ScriptForm = {
@@ -102,6 +114,20 @@ const STATUS_LABELS: Record<string, string> = {
   archived: "归档",
 };
 
+const ASSET_LABELS: Record<string, string> = {
+  image: "图片",
+  video: "视频",
+  voice: "语音",
+  audio: "音频",
+};
+
+const ASSET_ACCEPT: Record<string, string> = {
+  image: "image/*",
+  video: "video/*",
+  voice: "audio/*",
+  audio: "audio/*",
+};
+
 export default function AiOpsPage() {
   return (
     <AuthGate>
@@ -114,6 +140,7 @@ function AiOpsContent({ operator }: { operator: Operator }) {
   const [scripts, setScripts] = useState<ScriptTemplate[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -147,11 +174,13 @@ function AiOpsContent({ operator }: { operator: Operator }) {
       if (statusFilter === "active" && row.status === "archived") return false;
       if (statusFilter !== "all" && statusFilter !== "active" && row.status !== statusFilter) return false;
       if (!needle) return true;
-      return [row.title, row.content, row.category_key, categoryLabel(row.category_key), row.language]
-        .some((value) => String(value || "").toLowerCase().includes(needle));
+      return [row.title, row.content, row.category_key, categoryLabel(row.category_key), row.language].some((value) =>
+        String(value || "").toLowerCase().includes(needle),
+      );
     });
   }, [categoryFilter, query, scripts, statusFilter]);
 
+  const currentAssets = scriptForm.id ? scripts.find((item) => item.id === scriptForm.id)?.assets || [] : [];
   const appDownloadCount = scripts.filter((row) => APP_DOWNLOAD_CATEGORY_KEYS.has(row.category_key) && row.status !== "archived").length;
   const approvedCount = visibleScripts.filter((row) => row.status === "approved").length;
   const draftCount = visibleScripts.filter((row) => row.status === "draft").length;
@@ -192,13 +221,13 @@ function AiOpsContent({ operator }: { operator: Operator }) {
         });
         notify("话术已保存");
       } else {
-        await apiFetch("/ai-ops/admin/script-templates", {
+        const created = await apiFetch<ScriptTemplate>("/ai-ops/admin/script-templates", {
           method: "POST",
           body: JSON.stringify(payload),
         });
-        notify("话术已新增");
+        setScriptForm(scriptToForm(created));
+        notify("话术已新增，可以继续上传附件");
       }
-      setScriptForm(scriptEmpty);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -224,12 +253,58 @@ function AiOpsContent({ operator }: { operator: Operator }) {
     await load();
   }
 
+  async function uploadAsset(templateId: string, file: File, assetType: string) {
+    setUploading(true);
+    setError(null);
+    try {
+      const token = getToken();
+      const body = new FormData();
+      body.append("file", file);
+      body.append("asset_type", assetType);
+      const response = await fetch(`/api/v1/ai-ops/admin/script-templates/${templateId}/assets`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body,
+      });
+      if (!response.ok) {
+        const err = (await response.json().catch(() => ({}))) as { detail?: string };
+        throw new Error(err.detail || response.statusText);
+      }
+      notify("附件已上传");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function deleteAsset(assetId: string) {
+    if (!window.confirm("确认删除这个附件？")) return;
+    await apiFetch(`/ai-ops/admin/script-template-assets/${assetId}`, { method: "DELETE" });
+    notify("附件已删除");
+    await load();
+  }
+
+  async function moveAsset(asset: ScriptAsset, direction: -1 | 1) {
+    const ordered = [...currentAssets].sort((a, b) => a.sort_order - b.sort_order);
+    const index = ordered.findIndex((item) => item.id === asset.id);
+    const target = ordered[index + direction];
+    if (!target) return;
+
+    await Promise.all([
+      apiFetch(`/ai-ops/admin/script-template-assets/${asset.id}?sort_order=${target.sort_order}`, { method: "PATCH" }),
+      apiFetch(`/ai-ops/admin/script-template-assets/${target.id}?sort_order=${asset.sort_order}`, { method: "PATCH" }),
+    ]);
+    await load();
+  }
+
   return (
     <AdminFrame
       operator={operator}
       active="ai"
       title="话术库管理"
-      subtitle="只管理用户进入到点击下载之间的话术。人设、禁用词、意图规则等高级配置已从此页面隐藏，避免误操作。"
+      subtitle="只管理用户进入到点击下载之间的话术。每条话术可以绑定图片、视频、语音和音频，命中后会像正常聊天消息一样发送。"
     >
       <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
         <Metric label="下载引导话术" value={`${appDownloadCount}`} hint="未归档的 App 下载类目话术" />
@@ -240,13 +315,18 @@ function AiOpsContent({ operator }: { operator: Operator }) {
       {error && <div className="mb-4 rounded-md border border-rose-800 bg-rose-950/50 px-4 py-3 text-sm text-rose-200">{error}</div>}
       {toast && <div className="fixed bottom-6 right-6 z-50 rounded-md border border-emerald-700 bg-emerald-950 px-5 py-3 text-sm text-emerald-100 shadow-xl">{toast}</div>}
 
-      <section className="grid grid-cols-1 gap-5 xl:grid-cols-[360px_1fr]">
+      <section className="grid grid-cols-1 gap-5 xl:grid-cols-[390px_1fr]">
         <ScriptEditor
           form={scriptForm}
           saving={saving}
+          uploading={uploading}
+          assets={currentAssets}
           onChange={setScriptForm}
           onSubmit={saveScript}
           onCancel={() => setScriptForm(scriptEmpty)}
+          onUploadAsset={uploadAsset}
+          onDeleteAsset={deleteAsset}
+          onMoveAsset={moveAsset}
         />
 
         <Panel title="话术列表">
@@ -296,7 +376,29 @@ function AiOpsContent({ operator }: { operator: Operator }) {
   );
 }
 
-function ScriptEditor({ form, saving, onChange, onSubmit, onCancel }: { form: ScriptForm; saving: boolean; onChange: (form: ScriptForm) => void; onSubmit: (event: FormEvent) => void; onCancel: () => void }) {
+function ScriptEditor({
+  form,
+  saving,
+  uploading,
+  assets,
+  onChange,
+  onSubmit,
+  onCancel,
+  onUploadAsset,
+  onDeleteAsset,
+  onMoveAsset,
+}: {
+  form: ScriptForm;
+  saving: boolean;
+  uploading: boolean;
+  assets: ScriptAsset[];
+  onChange: (form: ScriptForm) => void;
+  onSubmit: (event: FormEvent) => void;
+  onCancel: () => void;
+  onUploadAsset: (templateId: string, file: File, assetType: string) => void;
+  onDeleteAsset: (assetId: string) => void;
+  onMoveAsset: (asset: ScriptAsset, direction: -1 | 1) => void;
+}) {
   return (
     <Panel title={form.id ? "编辑话术" : "新增话术"}>
       <form onSubmit={onSubmit} className="space-y-3">
@@ -307,6 +409,15 @@ function ScriptEditor({ form, saving, onChange, onSubmit, onCancel }: { form: Sc
           <Select label="状态" value={form.status} options={["draft", "approved", "archived"]} labels={STATUS_LABELS} onChange={(value) => onChange({ ...form, status: value })} />
         </div>
         <TextArea label="话术内容" rows={7} value={form.content} onChange={(value) => onChange({ ...form, content: value })} />
+
+        <MediaManager
+          templateId={form.id}
+          assets={assets}
+          uploading={uploading}
+          onUploadAsset={onUploadAsset}
+          onDeleteAsset={onDeleteAsset}
+          onMoveAsset={onMoveAsset}
+        />
 
         <details className="rounded-md border border-slate-800 bg-slate-950 p-3">
           <summary className="cursor-pointer text-sm text-slate-300">高级设置</summary>
@@ -336,7 +447,96 @@ function ScriptEditor({ form, saving, onChange, onSubmit, onCancel }: { form: Sc
   );
 }
 
+function MediaManager({
+  templateId,
+  assets,
+  uploading,
+  onUploadAsset,
+  onDeleteAsset,
+  onMoveAsset,
+}: {
+  templateId?: string;
+  assets: ScriptAsset[];
+  uploading: boolean;
+  onUploadAsset: (templateId: string, file: File, assetType: string) => void;
+  onDeleteAsset: (assetId: string) => void;
+  onMoveAsset: (asset: ScriptAsset, direction: -1 | 1) => void;
+}) {
+  const orderedAssets = [...assets].sort((a, b) => a.sort_order - b.sort_order);
+  return (
+    <div className="rounded-md border border-slate-800 bg-slate-950 p-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium text-slate-100">附件上传区</div>
+          <div className="mt-1 text-xs text-slate-500">命中话术后会按顺序发出，效果和正常聊天发送一致</div>
+        </div>
+        {!templateId && <span className="text-xs text-amber-300">先保存话术</span>}
+      </div>
+
+      {templateId && (
+        <div className="grid grid-cols-2 gap-2">
+          {(["image", "video", "voice", "audio"] as const).map((type) => (
+            <label key={type} className="cursor-pointer rounded-md border border-slate-700 px-3 py-2 text-center text-xs text-slate-200 hover:bg-slate-800">
+              {uploading ? "上传中..." : `上传${ASSET_LABELS[type]}`}
+              <input
+                type="file"
+                accept={ASSET_ACCEPT[type]}
+                className="hidden"
+                disabled={uploading}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.currentTarget.value = "";
+                  if (file) onUploadAsset(templateId, file, type);
+                }}
+              />
+            </label>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-3 space-y-2">
+        {orderedAssets.length === 0 ? (
+          <div className="rounded-md border border-dashed border-slate-800 px-3 py-4 text-center text-xs text-slate-500">暂无附件</div>
+        ) : (
+          orderedAssets.map((asset, index) => (
+            <div key={asset.id} className="rounded-md border border-slate-800 bg-slate-900 p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-sm text-slate-100">{ASSET_LABELS[asset.asset_type] || asset.asset_type}</div>
+                  <a className="mt-1 block truncate text-xs text-slate-500 hover:text-slate-300" href={asset.asset_url} target="_blank" rel="noreferrer">
+                    {asset.original_filename || asset.asset_url}
+                  </a>
+                </div>
+                <div className="flex shrink-0 gap-1">
+                  <button type="button" disabled={index === 0} onClick={() => onMoveAsset(asset, -1)} className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800 disabled:opacity-40">上移</button>
+                  <button type="button" disabled={index === orderedAssets.length - 1} onClick={() => onMoveAsset(asset, 1)} className="rounded border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800 disabled:opacity-40">下移</button>
+                  <button type="button" onClick={() => onDeleteAsset(asset.id)} className="rounded border border-rose-800 px-2 py-1 text-xs text-rose-200 hover:bg-rose-950">删除</button>
+                </div>
+              </div>
+              <AssetPreview asset={asset} />
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AssetPreview({ asset }: { asset: ScriptAsset }) {
+  if (asset.asset_type === "image") {
+    return <img src={asset.asset_url} alt="" className="mt-3 max-h-40 rounded-md border border-slate-800 object-contain" />;
+  }
+  if (asset.asset_type === "video") {
+    return <video src={asset.asset_url} controls className="mt-3 max-h-44 w-full rounded-md border border-slate-800" />;
+  }
+  if (asset.asset_type === "voice" || asset.asset_type === "audio") {
+    return <audio src={asset.asset_url} controls className="mt-3 w-full" />;
+  }
+  return null;
+}
+
 function ScriptRow({ row, onEdit, onToggle, onArchive }: { row: ScriptTemplate; onEdit: () => void; onToggle: () => void; onArchive: () => void }) {
+  const assets = [...(row.assets || [])].sort((a, b) => a.sort_order - b.sort_order);
   return (
     <div className="py-4 first:pt-0 last:pb-0">
       <div className="mb-2 flex items-start justify-between gap-3">
@@ -349,6 +549,13 @@ function ScriptRow({ row, onEdit, onToggle, onArchive }: { row: ScriptTemplate; 
         <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${badgeClass(row.status)}`}>{STATUS_LABELS[row.status] || row.status}</span>
       </div>
       <p className="mb-3 line-clamp-3 whitespace-pre-wrap text-sm text-slate-400">{row.content}</p>
+      {assets.length > 0 && (
+        <div className="mb-3 flex flex-wrap gap-2">
+          {assets.map((asset) => (
+            <span key={asset.id} className="rounded bg-slate-800 px-2 py-1 text-xs text-slate-300">{ASSET_LABELS[asset.asset_type] || asset.asset_type}</span>
+          ))}
+        </div>
+      )}
       <div className="flex flex-wrap gap-2">
         <button onClick={onEdit} className="rounded-md bg-slate-800 px-3 py-1.5 text-xs text-slate-100 hover:bg-slate-700">编辑</button>
         <button onClick={onToggle} className="rounded-md border border-amber-700 px-3 py-1.5 text-xs text-amber-200 hover:bg-amber-950">{row.status === "approved" ? "停用" : "启用"}</button>
@@ -405,19 +612,32 @@ function TextArea({ label, value, rows, onChange }: { label: string; value: stri
   return (
     <label className="block">
       <span className="mb-1 block text-sm text-slate-300">{label}</span>
-      <textarea rows={rows} value={value} onChange={(event) => onChange(event.target.value)} className="w-full resize-y rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-violet-500" />
+      <textarea rows={rows} value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm leading-6 text-slate-100 outline-none focus:border-violet-500" />
     </label>
   );
 }
 
-function badgeClass(status: string) {
-  if (status === "approved") return "bg-emerald-500/10 text-emerald-300";
-  if (status === "draft") return "bg-amber-500/10 text-amber-300";
-  return "bg-slate-800 text-slate-400";
+function categoryLabel(key: string) {
+  return SCRIPT_CATEGORY_LABELS[key] || key;
 }
 
-function categoryLabel(categoryKey: string): string {
-  return SCRIPT_CATEGORY_LABELS[categoryKey] || categoryKey;
+function badgeClass(status: string) {
+  if (status === "approved") return "bg-emerald-950 text-emerald-200";
+  if (status === "archived") return "bg-slate-800 text-slate-400";
+  return "bg-amber-950 text-amber-200";
+}
+
+function splitList(value: string) {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function listToText(value: unknown[] | string | null | undefined) {
+  if (Array.isArray(value)) return value.map((item) => String(item)).join(", ");
+  if (typeof value === "string") return value;
+  return "";
 }
 
 function scriptToForm(row: ScriptTemplate): ScriptForm {
@@ -427,7 +647,7 @@ function scriptToForm(row: ScriptTemplate): ScriptForm {
     title: row.title,
     language: row.language || "zh",
     channel: row.channel || "telegram_real_user",
-    platform: row.platform || row.channel || "telegram_real_user",
+    platform: row.platform || "telegram_real_user",
     user_level: row.user_level || "",
     chat_route: row.chat_route || "",
     persona_slug: row.persona_slug || "",
@@ -437,21 +657,4 @@ function scriptToForm(row: ScriptTemplate): ScriptForm {
     safety_tags: listToText(row.safety_tags),
     status: row.status || "draft",
   };
-}
-
-function splitList(value: string): string[] {
-  return value.split(/[\n,]/).map((item) => item.trim()).filter(Boolean);
-}
-
-function listToText(value: unknown): string {
-  if (Array.isArray(value)) return value.map(String).join(", ");
-  if (typeof value === "string") {
-    try {
-      const parsed = JSON.parse(value);
-      if (Array.isArray(parsed)) return parsed.map(String).join(", ");
-    } catch {
-      return value;
-    }
-  }
-  return "";
 }

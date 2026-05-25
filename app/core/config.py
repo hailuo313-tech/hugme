@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     PUBLIC_BASE_URL: str = "https://hugme2.com"
     APP_DOWNLOAD_URL: Optional[str] = None
     APP_DOWNLOAD_CONVERSION_ENABLED: bool = True
+    MEDIA_UPLOAD_DIR: str = "/srv/eris-uploads"
+    MEDIA_PUBLIC_PATH: str = "/uploads"
 
     @field_validator("TELEGRAM_API_ID", mode="before")
     @classmethod

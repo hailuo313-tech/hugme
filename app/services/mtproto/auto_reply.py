@@ -16,6 +16,7 @@ from core.database import AsyncSessionLocal
 from services.llm_orchestrator import LLMOrchestratorError, generate_reply
 from services.app_download_conversion import get_last_app_download_decision
 from services.link_attribution import wrap_text_links_with_tracking
+from services.script_asset_delivery import send_mtproto_asset
 from services.mtproto.human_like_send import HumanLikeSendPolicy, send_human_like_message
 
 
@@ -328,6 +329,22 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
         model_name=getattr(settings, "OPENROUTER_MODEL", None),
         message_id=assistant_msg_id,
     )
+    if app_download_decision is not None:
+        for asset in app_download_decision.assets:
+            media_sent = await send_mtproto_asset(
+                client,
+                peer,
+                asset,
+                trace_id=trace_id,
+            )
+            if media_sent is not None:
+                await _persist_message(
+                    conv_id=conv_id,
+                    sender_type="assistant",
+                    sender_id=str(account_id),
+                    content=str(asset.get("asset_url") or ""),
+                    model_name=getattr(settings, "OPENROUTER_MODEL", None),
+                )
     try:
         await _push_context(redis, conv_id, "assistant", reply_text, assistant_msg_id)
     except Exception as exc:
