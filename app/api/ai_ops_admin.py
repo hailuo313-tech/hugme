@@ -58,7 +58,7 @@ SCRIPT_ASSET_EXTENSIONS = {
 class ScriptTemplatePayload(BaseModel):
     category_key: str = Field(..., min_length=1, max_length=40)
     title: str = Field(..., min_length=1, max_length=160)
-    language: str = Field(default="zh", min_length=1, max_length=10)
+    language: str = Field(default="en", min_length=1, max_length=10)
     channel: str = Field(default="telegram_real_user", min_length=1, max_length=40)
     platform: str = Field(default="telegram_real_user", min_length=1, max_length=40)
     user_level: str | None = Field(default=None, pattern="^[SABCD]$")

@@ -71,7 +71,7 @@ type PlatformForm = {
 const scriptEmpty: ScriptForm = {
   category_key: "app_download_first_push",
   title: "",
-  language: "zh",
+  language: "en",
   channel: "telegram_real_user",
   platform: "telegram_real_user",
   user_level: "",
@@ -283,7 +283,7 @@ function AiOpsContent({ operator }: { operator: Operator }) {
       const payload = {
         category_key: scriptForm.category_key,
         title: scriptForm.title.trim(),
-        language: scriptForm.language.trim() || "zh",
+        language: scriptForm.language.trim() || "en",
         channel: scriptForm.channel.trim() || "telegram_real_user",
         platform: scriptForm.platform.trim() || "telegram_real_user",
         user_level: scriptForm.user_level || null,
@@ -835,7 +835,7 @@ function scriptToForm(row: ScriptTemplate): ScriptForm {
     id: row.id,
     category_key: row.category_key,
     title: row.title,
-    language: row.language || "zh",
+    language: row.language || "en",
     channel: row.channel || "telegram_real_user",
     platform: row.platform || "telegram_real_user",
     user_level: row.user_level || "",
