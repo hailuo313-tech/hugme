@@ -256,13 +256,22 @@ async def _handle_required_profile_intake(
         )
         prefs["profile_intake_pending"] = "age"
         await _write_profile_preferences(db, user_id=user_id, preferences=prefs)
-        await user_level_service.calculate_and_persist_user_level(
-            db,
-            user_id=user_id,
-            external_user_id=external_id,
-            country_code=country_code,
-        )
         await db.commit()
+        try:
+            await user_level_service.calculate_and_persist_user_level(
+                db,
+                user_id=user_id,
+                external_user_id=external_id,
+                country_code=country_code,
+            )
+            await db.commit()
+        except Exception as exc:
+            rollback = getattr(db, "rollback", None)
+            if rollback is not None:
+                await rollback()
+            log.bind(error_type=type(exc).__name__).warning(
+                "mtproto.profile.level_recalc_failed"
+            )
         log.bind(country_code=country_code).info("mtproto.profile.country_collected")
         return PROFILE_AGE_QUESTION
 
@@ -274,12 +283,21 @@ async def _handle_required_profile_intake(
         await write_age(db, user_id=user_id, age=age, source="chat_answer")
         prefs.pop("profile_intake_pending", None)
         await _write_profile_preferences(db, user_id=user_id, preferences=prefs)
-        await user_level_service.calculate_and_persist_user_level(
-            db,
-            user_id=user_id,
-            external_user_id=external_id,
-        )
         await db.commit()
+        try:
+            await user_level_service.calculate_and_persist_user_level(
+                db,
+                user_id=user_id,
+                external_user_id=external_id,
+            )
+            await db.commit()
+        except Exception as exc:
+            rollback = getattr(db, "rollback", None)
+            if rollback is not None:
+                await rollback()
+            log.bind(error_type=type(exc).__name__).warning(
+                "mtproto.profile.level_recalc_failed"
+            )
         log.bind(age=age).info("mtproto.profile.age_collected")
         return None
 
