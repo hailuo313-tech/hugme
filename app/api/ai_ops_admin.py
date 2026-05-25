@@ -7,6 +7,7 @@ import tempfile
 import uuid
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, Field
@@ -125,6 +126,24 @@ class RedlinePayload(BaseModel):
     enabled: bool = True
 
 
+class AppDownloadPlatformPayload(BaseModel):
+    platform_key: str = Field(..., min_length=1, max_length=40, pattern="^[a-zA-Z0-9_-]+$")
+    display_name: str = Field(..., min_length=1, max_length=80)
+    download_url: str = Field(..., min_length=1)
+    is_active: bool = True
+    is_default: bool = False
+    sort_order: int = Field(default=0, ge=0, le=1000)
+
+
+class AppDownloadPlatformUpdate(BaseModel):
+    platform_key: str | None = Field(default=None, min_length=1, max_length=40, pattern="^[a-zA-Z0-9_-]+$")
+    display_name: str | None = Field(default=None, min_length=1, max_length=80)
+    download_url: str | None = Field(default=None, min_length=1)
+    is_active: bool | None = None
+    is_default: bool | None = None
+    sort_order: int | None = Field(default=None, ge=0, le=1000)
+
+
 def _row(row: Any) -> dict[str, Any]:
     return dict(row._mapping)
 
@@ -188,6 +207,14 @@ def _validate_regexes(patterns: list[str]) -> None:
             re.compile(pattern)
         except re.error as exc:
             raise HTTPException(status_code=422, detail=f"invalid regex: {pattern}") from exc
+
+
+def _validate_http_url(value: str) -> str:
+    url = str(value or "").strip()
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise HTTPException(status_code=422, detail="download_url must be an absolute http(s) URL")
+    return url
 
 
 def _public_asset_url(filename: str) -> str:
@@ -536,6 +563,141 @@ async def delete_script_template_asset(
         raise HTTPException(status_code=404, detail="script template asset not found")
     await db.commit()
     return {"status": "deleted", "id": aid}
+
+
+@router.get("/app-download-platforms")
+async def list_app_download_platforms(
+    db: AsyncSession = Depends(get_db),
+    _operator: dict = Depends(require_operator),
+):
+    rows = (
+        await db.execute(
+            text(
+                """
+                SELECT id, platform_key, display_name, download_url, is_active,
+                       is_default, sort_order, created_at, updated_at
+                FROM app_download_platforms
+                ORDER BY sort_order ASC, is_default DESC, updated_at DESC
+                """
+            )
+        )
+    ).fetchall()
+    return {"items": [_row(row) for row in rows]}
+
+
+@router.post("/app-download-platforms", status_code=status.HTTP_201_CREATED)
+async def create_app_download_platform(
+    payload: AppDownloadPlatformPayload,
+    db: AsyncSession = Depends(get_db),
+    _operator: dict = Depends(require_operator),
+):
+    download_url = _validate_http_url(payload.download_url)
+    if payload.is_default:
+        await db.execute(text("UPDATE app_download_platforms SET is_default = FALSE WHERE is_default = TRUE"))
+    row = (
+        await db.execute(
+            text(
+                """
+                INSERT INTO app_download_platforms (
+                    id, platform_key, display_name, download_url,
+                    is_active, is_default, sort_order
+                ) VALUES (
+                    CAST(:id AS uuid), :platform_key, :display_name, :download_url,
+                    :is_active, :is_default, :sort_order
+                )
+                RETURNING id, platform_key, display_name, download_url, is_active,
+                          is_default, sort_order, created_at, updated_at
+                """
+            ),
+            {
+                **payload.model_dump(exclude={"download_url"}),
+                "id": str(uuid.uuid4()),
+                "download_url": download_url,
+            },
+        )
+    ).fetchone()
+    await db.commit()
+    return _row(row)
+
+
+@router.patch("/app-download-platforms/{platform_id}")
+async def update_app_download_platform(
+    platform_id: str,
+    payload: AppDownloadPlatformUpdate,
+    db: AsyncSession = Depends(get_db),
+    _operator: dict = Depends(require_operator),
+):
+    pid = _validate_uuid(platform_id, "platform_id")
+    values = payload.model_dump(exclude_unset=True)
+    if "download_url" in values:
+        values["download_url"] = _validate_http_url(values["download_url"])
+    if not values:
+        row = (
+            await db.execute(
+                text(
+                    """
+                    SELECT id, platform_key, display_name, download_url, is_active,
+                           is_default, sort_order, created_at, updated_at
+                    FROM app_download_platforms
+                    WHERE id = CAST(:id AS uuid)
+                    """
+                ),
+                {"id": pid},
+            )
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="app download platform not found")
+        return _row(row)
+    if values.get("is_default") is True:
+        await db.execute(
+            text("UPDATE app_download_platforms SET is_default = FALSE WHERE id <> CAST(:id AS uuid)"),
+            {"id": pid},
+        )
+    assignments = [f"{key} = :{key}" for key in values]
+    values["id"] = pid
+    row = (
+        await db.execute(
+            text(
+                f"""
+                UPDATE app_download_platforms
+                SET {', '.join(assignments)}, updated_at = NOW()
+                WHERE id = CAST(:id AS uuid)
+                RETURNING id, platform_key, display_name, download_url, is_active,
+                          is_default, sort_order, created_at, updated_at
+                """
+            ),
+            values,
+        )
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="app download platform not found")
+    await db.commit()
+    return _row(row)
+
+
+@router.delete("/app-download-platforms/{platform_id}")
+async def delete_app_download_platform(
+    platform_id: str,
+    db: AsyncSession = Depends(get_db),
+    _operator: dict = Depends(require_operator),
+):
+    pid = _validate_uuid(platform_id, "platform_id")
+    row = (
+        await db.execute(
+            text(
+                """
+                DELETE FROM app_download_platforms
+                WHERE id = CAST(:id AS uuid)
+                RETURNING id
+                """
+            ),
+            {"id": pid},
+        )
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="app download platform not found")
+    await db.commit()
+    return {"status": "deleted", "id": pid}
 
 
 @router.get("/persona-prompts")
