@@ -182,3 +182,47 @@ async def test_mtproto_profile_intake_asks_age_without_blocking_when_missing(mon
     )
 
     assert reply == auto_reply.PROFILE_AGE_QUESTION
+
+
+def test_mtproto_memory_writer_spawn_uses_fire_and_forget(monkeypatch):
+    calls = []
+    scheduled = []
+
+    async def _noop():
+        return None
+
+    def fake_maybe_write_memory(**kwargs):
+        calls.append(kwargs)
+        return _noop()
+
+    def fake_create_task(coro):
+        scheduled.append(coro)
+        coro.close()
+        return object()
+
+    log = SimpleNamespace(
+        bind=lambda **k: SimpleNamespace(
+            info=lambda *a, **kw: None,
+            warning=lambda *a, **kw: None,
+        )
+    )
+    monkeypatch.setattr(auto_reply, "maybe_write_memory", fake_maybe_write_memory)
+    monkeypatch.setattr(auto_reply.asyncio, "create_task", fake_create_task)
+
+    auto_reply._spawn_memory_write(
+        user_id="00000000-0000-0000-0000-000000000001",
+        conv_id="00000000-0000-0000-0000-000000000002",
+        msg_id="00000000-0000-0000-0000-000000000003",
+        content="I like women over 30 and I get off work at 9.",
+        trace_id="trace-memory",
+        redis=object(),
+        log=log,
+        source="inbound_user",
+    )
+
+    assert len(scheduled) == 1
+    assert calls[0]["user_id"] == "00000000-0000-0000-0000-000000000001"
+    assert calls[0]["conversation_id"] == "00000000-0000-0000-0000-000000000002"
+    assert calls[0]["message_id"] == "00000000-0000-0000-0000-000000000003"
+    assert calls[0]["trace_id"] == "trace-memory"
+    assert calls[0]["is_onboarding"] is False

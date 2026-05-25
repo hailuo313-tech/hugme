@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 import uuid
@@ -13,6 +14,7 @@ from sqlalchemy import text
 
 from core.config import settings
 from core.database import AsyncSessionLocal
+from services.memory_writer import maybe_write_memory
 from services.llm_orchestrator import LLMOrchestratorError, generate_reply
 from services.app_download_conversion import get_last_app_download_decision
 from services.link_attribution import wrap_text_links_with_tracking
@@ -105,6 +107,39 @@ async def _push_context(redis, conv_id: str, role: str, content: str, msg_id: st
     pipe.ltrim(key, -CONTEXT_MAX_MESSAGES, -1)
     pipe.expire(key, CONTEXT_TTL_SECONDS)
     await pipe.execute()
+
+
+def _spawn_memory_write(
+    *,
+    user_id: str,
+    conv_id: str,
+    msg_id: str,
+    content: str,
+    trace_id: str,
+    redis: Any,
+    log: Any,
+    source: str,
+) -> None:
+    """Fire-and-forget memory write for MTProto without blocking chat flow."""
+    try:
+        asyncio.create_task(
+            maybe_write_memory(
+                user_id=user_id,
+                conversation_id=conv_id,
+                message_id=msg_id,
+                content=content,
+                trace_id=trace_id,
+                redis=redis,
+                is_onboarding=False,
+            )
+        )
+        log.bind(message_id=msg_id, source=source).info("mtproto.memory_writer.spawned")
+    except Exception as exc:
+        log.bind(
+            message_id=msg_id,
+            source=source,
+            error_type=type(exc).__name__,
+        ).warning("mtproto.memory_writer.spawn_failed")
 
 
 async def _get_or_create_user_and_conversation(
@@ -423,6 +458,16 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
         await _push_context(redis, conv_id, "user", text_value, user_msg_id)
     except Exception as exc:
         log.bind(error_type=type(exc).__name__).warning("mtproto.context.push_failed")
+    _spawn_memory_write(
+        user_id=user_id,
+        conv_id=conv_id,
+        msg_id=user_msg_id,
+        content=text_value,
+        trace_id=trace_id,
+        redis=redis,
+        log=log,
+        source="inbound_user",
+    )
 
     profile_followup: str | None = None
     async with AsyncSessionLocal() as db:
@@ -529,6 +574,16 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
         content=reply_text,
         model_name=getattr(settings, "OPENROUTER_MODEL", None),
         message_id=assistant_msg_id,
+    )
+    _spawn_memory_write(
+        user_id=user_id,
+        conv_id=conv_id,
+        msg_id=assistant_msg_id,
+        content=reply_text,
+        trace_id=trace_id,
+        redis=redis,
+        log=log,
+        source="outbound_assistant",
     )
     if app_download_decision is not None:
         for asset in app_download_decision.assets:
