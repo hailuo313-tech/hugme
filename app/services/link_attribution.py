@@ -60,7 +60,8 @@ async def create_attribution_link(
                 is_t1_country, country_code, age, user_level, metadata
             )
             VALUES (
-                :tracking_id, :destination_url, :user_id, :conversation_id, :message_id,
+                :tracking_id, :destination_url, :user_id, :conversation_id,
+                (SELECT id FROM messages WHERE id = CAST(:message_id AS uuid)),
                 :script_hit_id, :script_template_id, :campaign_id, :platform,
                 :persona_slug, :intent, :sender_account_id, :scene_step, :script_category,
                 :is_t1_country, :country_code, :age, :user_level,
