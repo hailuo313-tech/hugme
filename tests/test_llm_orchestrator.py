@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import importlib
 import json
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -110,6 +111,40 @@ async def test_happy_path_returns_llm_content(monkeypatch, llm_orchestrator):
     assert captured["trace_id"] == "trace-happy"
     assert captured["messages"][0]["role"] == "system"
     assert captured["messages"][-1] == {"role": "user", "content": "hi"}
+
+
+@pytest.mark.asyncio
+async def test_app_download_nudge_keeps_llm_answer_first(monkeypatch, llm_orchestrator):
+    async def fake_chat(*, messages, trace_id, **_kwargs):
+        return _LLMResultStub(
+            content="Yes, I can slow down. What do you actually want to talk about?"
+        )
+
+    async def fake_download_decision(**_kwargs):
+        return SimpleNamespace(
+            content=(
+                "did u get scared of a voluptuous woman? "
+                "fix it right here: https://app.example/download"
+            ),
+            category_key="app_link_clicked_followup",
+            scene_step="clicked_not_downloaded",
+            script_hit_id="script-1",
+        )
+
+    monkeypatch.setattr(llm_orchestrator, "llm_chat", fake_chat)
+    monkeypatch.setattr(llm_orchestrator, "maybe_select_app_download_reply", fake_download_decision)
+
+    reply = await llm_orchestrator.generate_reply(
+        user_id="user-1",
+        conversation_id="conv-1",
+        user_text="Can you have a serious conversation?",
+        trace_id="trace-download-nudge",
+    )
+
+    assert reply.startswith("Yes, I can slow down.")
+    assert "If you still want to continue somewhere more private" in reply
+    assert "https://app.example/download" in reply
+    assert "voluptuous woman" not in reply
 
 
 @pytest.mark.asyncio
