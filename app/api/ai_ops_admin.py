@@ -66,6 +66,7 @@ class ScriptTemplatePayload(BaseModel):
     persona_slug: str | None = Field(default=None, max_length=80)
     hook: str | None = Field(default=None, max_length=40)
     content: str = Field(..., min_length=1)
+    operator_translation_zh: str | None = None
     variables: list[Any] = Field(default_factory=list)
     safety_tags: list[Any] = Field(default_factory=list)
     status: str = Field(default="draft", min_length=1, max_length=20)
@@ -82,6 +83,7 @@ class ScriptTemplateUpdate(BaseModel):
     persona_slug: str | None = Field(default=None, max_length=80)
     hook: str | None = Field(default=None, max_length=40)
     content: str | None = Field(default=None, min_length=1)
+    operator_translation_zh: str | None = None
     variables: list[Any] | None = None
     safety_tags: list[Any] | None = None
     status: str | None = Field(default=None, min_length=1, max_length=20)
@@ -322,10 +324,11 @@ async def create_script_template(
             """
             INSERT INTO script_templates (
               id, category_key, title, language, channel, platform, user_level,
-              chat_route, persona_slug, hook, content, variables, safety_tags, status
+              chat_route, persona_slug, hook, content, operator_translation_zh,
+              variables, safety_tags, status
             ) VALUES (
               :id, :category_key, :title, :language, :channel, :platform, :user_level,
-              :chat_route, :persona_slug, :hook, :content,
+              :chat_route, :persona_slug, :hook, :content, :operator_translation_zh,
               CAST(:variables AS jsonb), CAST(:safety_tags AS jsonb), :status
             )
             RETURNING *
