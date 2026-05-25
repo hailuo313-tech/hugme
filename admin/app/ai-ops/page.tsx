@@ -187,7 +187,7 @@ function AiOpsContent({ operator }: { operator: Operator }) {
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("app");
+  const [categoryFilter, setCategoryFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("active");
   const [scriptForm, setScriptForm] = useState<ScriptForm>(scriptEmpty);
   const [platformForm, setPlatformForm] = useState<PlatformForm>(platformEmpty);
@@ -229,6 +229,7 @@ function AiOpsContent({ operator }: { operator: Operator }) {
   }, [categoryFilter, query, scripts, statusFilter]);
 
   const currentAssets = scriptForm.id ? scripts.find((item) => item.id === scriptForm.id)?.assets || [] : [];
+  const totalActiveCount = scripts.filter((row) => row.status !== "archived").length;
   const appDownloadCount = scripts.filter((row) => APP_DOWNLOAD_CATEGORY_KEYS.has(row.category_key) && row.status !== "archived").length;
   const approvedCount = visibleScripts.filter((row) => row.status === "approved").length;
   const defaultPlatform = platforms.find((item) => item.is_default && item.is_active) || platforms.find((item) => item.is_active);
@@ -320,6 +321,7 @@ function AiOpsContent({ operator }: { operator: Operator }) {
           body: JSON.stringify(payload),
         });
         setScriptForm(scriptEmpty);
+        setCategoryFilter("all");
         notify("话术已新增，可以继续上传附件");
       }
       await load();
@@ -400,9 +402,10 @@ function AiOpsContent({ operator }: { operator: Operator }) {
       title="话术库管理"
       subtitle="管理下载引导话术、媒体附件和三方平台下载链接。话术里的 {{app_download_url}} 会自动替换成默认平台的追踪链接。"
     >
-      <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+      <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-4">
+        <Metric label="全部话术" value={`${totalActiveCount}`} hint="未归档的所有话术，不限制数量" />
         <Metric label="下载引导话术" value={`${appDownloadCount}`} hint="未归档的 App 下载类目话术" />
-        <Metric label="当前列表启用" value={`${approvedCount}`} hint="会被系统自动匹配使用" />
+        <Metric label="当前列表启用" value={`${approvedCount}`} hint="当前筛选下会被系统自动匹配使用" />
         <Metric label="默认三方平台" value={defaultPlatform?.display_name || "-"} hint="用户点击追踪链接后跳转到这里" />
       </section>
 
