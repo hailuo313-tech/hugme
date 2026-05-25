@@ -282,8 +282,7 @@ async def generate_reply(
             category_key=decision.category_key,
             scene_step=decision.scene_step,
             script_hit_id=decision.script_hit_id,
-        ).info("orchestrator.app_download_conversion.reply")
-        return decision.content
+        ).info("orchestrator.app_download_conversion.nudge_ready")
 
     prompt = build_prompt(
         PromptInput(
@@ -355,10 +354,52 @@ async def generate_reply(
         history_count=len(history),
     ).info("orchestrator.reply")
 
-    return result.content
+    return _append_conservative_download_nudge(result.content, decision)
 
 
 # ── 内部 ──────────────────────────────────────────────
+
+
+def _append_conservative_download_nudge(
+    reply_text: str,
+    decision: Any | None,
+) -> str:
+    """方案 A：先保留 AI 对用户问题的自然回答，再轻轻追加下载入口。"""
+    if decision is None:
+        return reply_text
+    nudge = _conservative_download_nudge(decision)
+    if not nudge:
+        return reply_text
+    base = (reply_text or "").strip()
+    if not base:
+        return nudge
+    url = _first_url(nudge)
+    if url and url in base:
+        return base
+    return f"{base}\n\n{nudge}"
+
+
+def _conservative_download_nudge(decision: Any) -> str | None:
+    url = _first_url(getattr(decision, "content", "") or "")
+    if not url:
+        return None
+    category = str(getattr(decision, "category_key", "") or "").strip()
+    if category == "app_download_direct_cta":
+        return f"If you want the private place, open it here: {url}"
+    if category == "app_link_clicked_followup":
+        return f"If you still want to continue somewhere more private, the link is here: {url}"
+    if category == "app_download_objection":
+        return f"No pressure. If you change your mind, the link is here: {url}"
+    if category == "trust_reassurance":
+        return f"If you decide you want to try the private app, you can use this link: {url}"
+    return f"If you want a more private place later, you can open it here: {url}"
+
+
+def _first_url(text_value: str) -> str | None:
+    match = re.search(r"https?://[^\s<>\]\"']+", text_value or "")
+    if not match:
+        return None
+    return match.group(0).rstrip(".,!?;:)")
 
 
 def _memory_hits_to_prompt_dicts(hits: list[Any]) -> list[dict[str, Any]]:
