@@ -257,7 +257,7 @@ async def record_unique_click_event(
                 device_os, ip_address, user_agent, referrer, metadata
             )
             SELECT
-                CAST(:tracking_id AS varchar), 'click', :user_id, :country_code, :age, :user_level,
+                CAST(:tracking_id AS varchar), 'click', CAST(:user_id AS uuid), :country_code, :age, :user_level,
                 :device_os, CAST(:ip_address AS INET), :user_agent, :referrer,
                 CAST(:metadata AS JSONB)
             WHERE NOT EXISTS (
@@ -266,9 +266,9 @@ async def record_unique_click_event(
                 WHERE tracking_id IS NOT DISTINCT FROM CAST(:tracking_id AS varchar)
                   AND event_type = 'click'
                   AND (
-                    (:user_id IS NOT NULL AND user_id = CAST(:user_id AS uuid))
+                    (CAST(:user_id AS uuid) IS NOT NULL AND user_id = CAST(:user_id AS uuid))
                     OR (
-                        :user_id IS NULL
+                        CAST(:user_id AS uuid) IS NULL
                         AND user_id IS NULL
                         AND ip_address IS NOT DISTINCT FROM CAST(:ip_address AS INET)
                         AND COALESCE(user_agent, '') = COALESCE(:user_agent, '')
