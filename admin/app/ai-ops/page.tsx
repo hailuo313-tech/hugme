@@ -16,6 +16,16 @@ type ScriptAsset = {
   sort_order: number;
 };
 
+type DownloadPlatform = {
+  id: string;
+  platform_key: string;
+  display_name: string;
+  download_url: string;
+  is_active: boolean;
+  is_default: boolean;
+  sort_order: number;
+};
+
 type ScriptTemplate = {
   id: string;
   category_key: string;
@@ -52,6 +62,12 @@ type ScriptForm = {
   status: string;
 };
 
+type PlatformForm = {
+  platform_key: string;
+  display_name: string;
+  download_url: string;
+};
+
 const scriptEmpty: ScriptForm = {
   category_key: "app_download_first_push",
   title: "",
@@ -67,6 +83,18 @@ const scriptEmpty: ScriptForm = {
   safety_tags: "app_download_conversion",
   status: "draft",
 };
+
+const platformEmpty: PlatformForm = {
+  platform_key: "platform_a",
+  display_name: "A平台",
+  download_url: "",
+};
+
+const PLATFORM_PRESETS = [
+  { platform_key: "platform_a", display_name: "A平台" },
+  { platform_key: "platform_b", display_name: "B平台" },
+  { platform_key: "platform_c", display_name: "C平台" },
+];
 
 const SCRIPT_CATEGORY_OPTIONS = [
   "app_download_first_push",
@@ -138,8 +166,10 @@ export default function AiOpsPage() {
 
 function AiOpsContent({ operator }: { operator: Operator }) {
   const [scripts, setScripts] = useState<ScriptTemplate[]>([]);
+  const [platforms, setPlatforms] = useState<DownloadPlatform[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [platformSaving, setPlatformSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -147,13 +177,18 @@ function AiOpsContent({ operator }: { operator: Operator }) {
   const [categoryFilter, setCategoryFilter] = useState("app");
   const [statusFilter, setStatusFilter] = useState("active");
   const [scriptForm, setScriptForm] = useState<ScriptForm>(scriptEmpty);
+  const [platformForm, setPlatformForm] = useState<PlatformForm>(platformEmpty);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await apiFetch<{ items: ScriptTemplate[] }>("/ai-ops/admin/script-templates?limit=500");
-      setScripts(response.items);
+      const [scriptResponse, platformResponse] = await Promise.all([
+        apiFetch<{ items: ScriptTemplate[] }>("/ai-ops/admin/script-templates?limit=500"),
+        apiFetch<{ items: DownloadPlatform[] }>("/ai-ops/admin/app-download-platforms"),
+      ]);
+      setScripts(scriptResponse.items);
+      setPlatforms(platformResponse.items);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -183,11 +218,57 @@ function AiOpsContent({ operator }: { operator: Operator }) {
   const currentAssets = scriptForm.id ? scripts.find((item) => item.id === scriptForm.id)?.assets || [] : [];
   const appDownloadCount = scripts.filter((row) => APP_DOWNLOAD_CATEGORY_KEYS.has(row.category_key) && row.status !== "archived").length;
   const approvedCount = visibleScripts.filter((row) => row.status === "approved").length;
-  const draftCount = visibleScripts.filter((row) => row.status === "draft").length;
+  const defaultPlatform = platforms.find((item) => item.is_default && item.is_active) || platforms.find((item) => item.is_active);
 
   function notify(message: string) {
     setToast(message);
     window.setTimeout(() => setToast(null), 2200);
+  }
+
+  async function savePlatform(event: FormEvent) {
+    event.preventDefault();
+    if (!platformForm.display_name.trim() || !platformForm.download_url.trim()) {
+      setError("平台名称和下载链接不能为空");
+      return;
+    }
+    setPlatformSaving(true);
+    setError(null);
+    try {
+      await apiFetch("/ai-ops/admin/app-download-platforms", {
+        method: "POST",
+        body: JSON.stringify({
+          ...platformForm,
+          platform_key: platformForm.platform_key.trim(),
+          display_name: platformForm.display_name.trim(),
+          download_url: platformForm.download_url.trim(),
+          is_active: true,
+          is_default: platforms.length === 0,
+          sort_order: platforms.length,
+        }),
+      });
+      setPlatformForm(platformEmpty);
+      notify("三方平台已添加");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPlatformSaving(false);
+    }
+  }
+
+  async function patchPlatform(id: string, payload: Partial<DownloadPlatform>) {
+    await apiFetch(`/ai-ops/admin/app-download-platforms/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+    await load();
+  }
+
+  async function deletePlatform(id: string) {
+    if (!window.confirm("确认删除这个三方平台链接？")) return;
+    await apiFetch(`/ai-ops/admin/app-download-platforms/${id}`, { method: "DELETE" });
+    notify("三方平台已删除");
+    await load();
   }
 
   async function saveScript(event: FormEvent) {
@@ -304,16 +385,26 @@ function AiOpsContent({ operator }: { operator: Operator }) {
       operator={operator}
       active="ai"
       title="话术库管理"
-      subtitle="只管理用户进入到点击下载之间的话术。每条话术可以绑定图片、视频、语音和音频，命中后会像正常聊天消息一样发送。"
+      subtitle="管理下载引导话术、媒体附件和三方平台下载链接。话术里的 {{app_download_url}} 会自动替换成默认平台的追踪链接。"
     >
       <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
         <Metric label="下载引导话术" value={`${appDownloadCount}`} hint="未归档的 App 下载类目话术" />
         <Metric label="当前列表启用" value={`${approvedCount}`} hint="会被系统自动匹配使用" />
-        <Metric label="当前列表草稿" value={`${draftCount}`} hint="保存但不会自动发送" />
+        <Metric label="默认三方平台" value={defaultPlatform?.display_name || "-"} hint="用户点击追踪链接后跳转到这里" />
       </section>
 
       {error && <div className="mb-4 rounded-md border border-rose-800 bg-rose-950/50 px-4 py-3 text-sm text-rose-200">{error}</div>}
       {toast && <div className="fixed bottom-6 right-6 z-50 rounded-md border border-emerald-700 bg-emerald-950 px-5 py-3 text-sm text-emerald-100 shadow-xl">{toast}</div>}
+
+      <DownloadPlatformPanel
+        platforms={platforms}
+        form={platformForm}
+        saving={platformSaving}
+        onChange={setPlatformForm}
+        onSubmit={savePlatform}
+        onPatch={patchPlatform}
+        onDelete={deletePlatform}
+      />
 
       <section className="grid grid-cols-1 gap-5 xl:grid-cols-[390px_1fr]">
         <ScriptEditor
@@ -373,6 +464,105 @@ function AiOpsContent({ operator }: { operator: Operator }) {
         </Panel>
       </section>
     </AdminFrame>
+  );
+}
+
+function DownloadPlatformPanel({
+  platforms,
+  form,
+  saving,
+  onChange,
+  onSubmit,
+  onPatch,
+  onDelete,
+}: {
+  platforms: DownloadPlatform[];
+  form: PlatformForm;
+  saving: boolean;
+  onChange: (form: PlatformForm) => void;
+  onSubmit: (event: FormEvent) => void;
+  onPatch: (id: string, payload: Partial<DownloadPlatform>) => void;
+  onDelete: (id: string) => void;
+}) {
+  return (
+    <section className="mb-6 rounded-md border border-slate-800 bg-slate-900">
+      <div className="border-b border-slate-800 px-5 py-4">
+        <h2 className="text-lg font-semibold text-slate-100">三方平台下载链接</h2>
+      </div>
+      <div className="grid grid-cols-1 gap-5 p-5 xl:grid-cols-[380px_1fr]">
+        <form onSubmit={onSubmit} className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            {PLATFORM_PRESETS.map((preset) => (
+              <button
+                key={preset.platform_key}
+                type="button"
+                onClick={() => onChange({ ...form, ...preset })}
+                className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800"
+              >
+                {preset.display_name}
+              </button>
+            ))}
+          </div>
+          <Input label="平台标识" value={form.platform_key} onChange={(value) => onChange({ ...form, platform_key: value })} />
+          <Input label="平台名称" value={form.display_name} onChange={(value) => onChange({ ...form, display_name: value })} />
+          <Input label="三方下载链接" value={form.download_url} onChange={(value) => onChange({ ...form, download_url: value })} />
+          <button disabled={saving} className="rounded-md bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-50">
+            {saving ? "保存中..." : "添加平台"}
+          </button>
+        </form>
+
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead className="bg-slate-950/50 text-slate-500">
+              <tr>
+                <th className="px-4 py-3 font-medium">平台</th>
+                <th className="px-4 py-3 font-medium">链接</th>
+                <th className="px-4 py-3 font-medium">状态</th>
+                <th className="px-4 py-3 font-medium">操作</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800">
+              {platforms.length === 0 ? (
+                <tr>
+                  <td className="px-4 py-8 text-slate-500" colSpan={4}>暂无平台，先添加 A平台 / B平台 / C平台</td>
+                </tr>
+              ) : (
+                platforms.map((platform) => (
+                  <tr key={platform.id}>
+                    <td className="px-4 py-4 text-slate-100">
+                      <div className="font-medium">{platform.display_name}</div>
+                      <div className="mt-1 font-mono text-xs text-slate-500">{platform.platform_key}</div>
+                    </td>
+                    <td className="max-w-[360px] px-4 py-4">
+                      <a className="block truncate text-sky-300 hover:text-sky-200" href={platform.download_url} target="_blank" rel="noreferrer">
+                        {platform.download_url}
+                      </a>
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex flex-wrap gap-2">
+                        {platform.is_default && <span className="rounded bg-violet-500/10 px-2 py-1 text-xs text-violet-200">默认</span>}
+                        <span className={`rounded px-2 py-1 text-xs ${platform.is_active ? "bg-emerald-500/10 text-emerald-200" : "bg-slate-800 text-slate-400"}`}>
+                          {platform.is_active ? "启用" : "停用"}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex flex-wrap gap-2">
+                        <button type="button" onClick={() => onPatch(platform.id, { is_default: true, is_active: true })} className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800">设默认</button>
+                        <button type="button" onClick={() => onPatch(platform.id, { is_active: !platform.is_active })} className="rounded-md border border-amber-700 px-3 py-1.5 text-xs text-amber-200 hover:bg-amber-950">
+                          {platform.is_active ? "停用" : "启用"}
+                        </button>
+                        <button type="button" onClick={() => onDelete(platform.id)} className="rounded-md border border-rose-800 px-3 py-1.5 text-xs text-rose-200 hover:bg-rose-950">删除</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -569,7 +759,7 @@ function Metric({ label, value, hint }: { label: string; value: string; hint: st
   return (
     <div className="rounded-md border border-slate-800 bg-slate-900 px-5 py-4">
       <div className="text-sm text-slate-500">{label}</div>
-      <div className="mt-2 text-2xl font-semibold text-slate-100">{value}</div>
+      <div className="mt-2 truncate text-2xl font-semibold text-slate-100">{value}</div>
       <div className="mt-1 text-xs text-slate-500">{hint}</div>
     </div>
   );

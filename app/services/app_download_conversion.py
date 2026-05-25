@@ -8,6 +8,7 @@ from loguru import logger
 from sqlalchemy import text
 
 from core.config import settings
+from services.app_download_platforms import resolve_app_download_url
 from services.level_engine import country_tier
 from services.profile_intake import age_from_preferences, normalize_country_code
 from services.script_match_hooks import (
@@ -91,7 +92,7 @@ async def maybe_select_app_download_reply(
     through to the existing LLM path.
     """
     clear_last_app_download_decision()
-    destination_url = str(settings.APP_DOWNLOAD_URL or "").strip()
+    destination_url = await resolve_app_download_url(db)
     if not settings.APP_DOWNLOAD_CONVERSION_ENABLED or not destination_url:
         return None
     if db is None or profile_row is None:
