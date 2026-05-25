@@ -109,7 +109,7 @@
       "title": "VIP 达标 — A 级",
       "input": {
         "profile_complete": true,
-        "country_code": "IN",
+        "country_code": "ID",
         "lifetime_spend_usd": 0,
         "vip_level": 1,
         "operator_assigned_s": false

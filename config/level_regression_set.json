@@ -92,7 +92,7 @@
   {
     "case_id": "p5_03_level_011",
     "description": "T2 spend below A defaults to C.",
-    "input": {"profile_complete": true, "country_code": "IN", "lifetime_spend_usd": 98.99},
+    "input": {"profile_complete": true, "country_code": "ID", "lifetime_spend_usd": 98.99},
     "expected_level": "C",
     "expected_chat_route": "ai_auto",
     "expected_reason": "tier_default_t2",

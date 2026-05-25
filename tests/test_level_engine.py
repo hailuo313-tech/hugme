@@ -12,6 +12,7 @@ from services.level_engine import (
     country_tier,
     level_to_chat_route,
     load_t1_countries,
+    load_t2_countries,
     load_thresholds,
 )
 
@@ -233,6 +234,16 @@ def test_signed_t1_country_config_matches_latest_owner_list():
             "HK",
         }
     )
+
+
+def test_signed_t2_country_config_matches_pure_t2_list():
+    t2 = load_t2_countries()
+    assert len(t2) == 48
+    assert "TW" in t2 and "BR" in t2 and "SA" in t2 and "ZA" in t2
+    assert "HK" not in t2 and "PT" not in t2 and "GR" not in t2 and "CZ" not in t2
+    assert country_tier("HK") == "T1"
+    assert country_tier("TW") == "T2"
+    assert country_tier("CN") == "T3"
 
 
 def test_high_spend_non_t1_does_not_auto_s(th):
