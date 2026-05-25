@@ -123,10 +123,11 @@ async def test_app_download_nudge_keeps_llm_answer_first(monkeypatch, llm_orches
     async def fake_download_decision(**_kwargs):
         return SimpleNamespace(
             content=(
-                "This is real. Try the private app here: https://app.example/download"
+                "did u get scared of a voluptuous woman? "
+                "fix it right here: https://app.example/download"
             ),
-            category_key="trust_reassurance",
-            scene_step="trust",
+            category_key="app_link_clicked_followup",
+            scene_step="clicked_not_downloaded",
             script_hit_id="script-1",
         )
 
@@ -141,15 +142,15 @@ async def test_app_download_nudge_keeps_llm_answer_first(monkeypatch, llm_orches
     )
 
     assert reply.startswith("Yes, I can slow down.")
-    assert "If you decide you want to try the private app" in reply
+    assert "If you still want to continue somewhere more private" in reply
     assert "https://app.example/download" in reply
     assert "voluptuous woman" not in reply
 
 
 @pytest.mark.asyncio
-async def test_app_download_direct_cta_uses_script(monkeypatch, llm_orchestrator):
+async def test_app_download_direct_cta_keeps_llm_answer_first(monkeypatch, llm_orchestrator):
     async def fake_chat(*, messages, trace_id, **_kwargs):
-        return _LLMResultStub(content="ordinary answer")
+        return _LLMResultStub(content="Here is the simple answer first.")
 
     async def fake_download_decision(**_kwargs):
         return SimpleNamespace(
@@ -169,7 +170,9 @@ async def test_app_download_direct_cta_uses_script(monkeypatch, llm_orchestrator
         trace_id="trace-direct-cta",
     )
 
-    assert reply == "Here is the private link: https://app.example/download"
+    assert reply.startswith("Here is the simple answer first.")
+    assert "If you want the private place" in reply
+    assert "https://app.example/download" in reply
 
 
 @pytest.mark.asyncio
