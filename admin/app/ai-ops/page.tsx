@@ -38,6 +38,7 @@ type ScriptTemplate = {
   persona_slug: string | null;
   hook: string | null;
   content: string;
+  operator_translation_zh?: string | null;
   variables: unknown[] | string | null;
   safety_tags: unknown[] | string | null;
   status: string;
@@ -57,6 +58,7 @@ type ScriptForm = {
   persona_slug: string;
   hook: string;
   content: string;
+  operator_translation_zh: string;
   variables: string;
   safety_tags: string;
   status: string;
@@ -79,6 +81,7 @@ const scriptEmpty: ScriptForm = {
   persona_slug: "",
   hook: "reply",
   content: "",
+  operator_translation_zh: "",
   variables: "app_download_url",
   safety_tags: "app_download_conversion",
   status: "draft",
@@ -305,6 +308,7 @@ function AiOpsContent({ operator }: { operator: Operator }) {
         persona_slug: scriptForm.persona_slug.trim() || null,
         hook: scriptForm.hook.trim() || null,
         content: scriptForm.content.trim(),
+        operator_translation_zh: scriptForm.operator_translation_zh.trim() || null,
         variables: splitList(scriptForm.variables),
         safety_tags: splitList(scriptForm.safety_tags),
         status: scriptForm.status,
@@ -615,6 +619,7 @@ function ScriptEditor({
           <Select label="状态" value={form.status} options={["draft", "approved", "archived"]} labels={STATUS_LABELS} onChange={(value) => onChange({ ...form, status: value })} />
         </div>
         <TextArea label="话术内容" rows={7} value={form.content} onChange={(value) => onChange({ ...form, content: value })} />
+        <TextArea label="中文译文（仅后台运营查看，不会发送给用户）" rows={5} value={form.operator_translation_zh} onChange={(value) => onChange({ ...form, operator_translation_zh: value })} />
 
         <MediaManager
           templateId={form.id}
@@ -754,7 +759,13 @@ function ScriptRow({ row, onEdit, onToggle, onArchive }: { row: ScriptTemplate; 
         </div>
         <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${badgeClass(row.status)}`}>{STATUS_LABELS[row.status] || row.status}</span>
       </div>
-      <p className="mb-3 line-clamp-3 whitespace-pre-wrap text-sm text-slate-400">{row.content}</p>
+      <p className="mb-2 line-clamp-3 whitespace-pre-wrap text-sm text-slate-400">{row.content}</p>
+      {row.operator_translation_zh && (
+        <div className="mb-3 rounded-md border border-slate-800 bg-slate-950 px-3 py-2">
+          <div className="mb-1 text-xs text-slate-500">中文译文（运营查看）</div>
+          <p className="line-clamp-3 whitespace-pre-wrap text-sm text-slate-300">{row.operator_translation_zh}</p>
+        </div>
+      )}
       {assets.length > 0 && (
         <div className="mb-3 flex flex-wrap gap-2">
           {assets.map((asset) => (
@@ -859,6 +870,7 @@ function scriptToForm(row: ScriptTemplate): ScriptForm {
     persona_slug: row.persona_slug || "",
     hook: row.hook || "",
     content: row.content || "",
+    operator_translation_zh: row.operator_translation_zh || "",
     variables: listToText(row.variables),
     safety_tags: listToText(row.safety_tags),
     status: row.status || "draft",
