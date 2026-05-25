@@ -88,3 +88,36 @@ async def test_p3_13_finalize_message_marks_sent_or_failed():
     assert "retry_count = retry_count + 1" in failed_sql
     assert failed_params == {"id": "msg-2", "reason": "telegram_send_failed"}
     assert session.commits == 2
+
+
+def test_p3_13_start_scheduler_respects_enabled_flag(monkeypatch):
+    monkeypatch.setattr(svc, "_scheduler", None)
+    monkeypatch.setattr(svc.settings, "MESSAGE_SCHEDULE_ENABLED", False)
+
+    svc.start_scheduler()
+
+    assert svc._scheduler is None
+
+
+def test_p3_13_start_scheduler_initializes_when_enabled(monkeypatch):
+    class _FakeScheduler:
+        def __init__(self):
+            self.running = False
+            self.jobs = []
+
+        def add_job(self, *args, **kwargs):
+            self.jobs.append((args, kwargs))
+
+        def start(self):
+            self.running = True
+
+    monkeypatch.setattr(svc, "_scheduler", None)
+    monkeypatch.setattr(svc, "AsyncIOScheduler", _FakeScheduler)
+    monkeypatch.setattr(svc, "IntervalTrigger", lambda **kwargs: ("interval", kwargs))
+    monkeypatch.setattr(svc.settings, "MESSAGE_SCHEDULE_ENABLED", True)
+
+    svc.start_scheduler()
+
+    assert svc._scheduler is not None
+    assert svc._scheduler.running is True
+    assert svc._scheduler.jobs

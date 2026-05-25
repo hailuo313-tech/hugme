@@ -102,6 +102,7 @@ def test_p3_15_start_scheduler_initializes_scheduler(monkeypatch):
     monkeypatch.setattr(worker, "_scheduler", None)
     monkeypatch.setattr(worker, "AsyncIOScheduler", _FakeScheduler)
     monkeypatch.setattr(worker, "IntervalTrigger", lambda **kwargs: ("interval", kwargs))
+    monkeypatch.setattr(worker.settings, "AUTO_DELIVERY_ENABLED", True)
     def _capture_task(coro):
         created_tasks.append(coro)
         coro.close()

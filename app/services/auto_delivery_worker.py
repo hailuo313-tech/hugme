@@ -555,6 +555,9 @@ def start_scheduler() -> None:
     if AsyncIOScheduler is None or IntervalTrigger is None:
         logger.warning("APScheduler not available, auto-delivery worker scheduler not started")
         return
+    if not getattr(settings, "AUTO_DELIVERY_ENABLED", False):
+        logger.info("Auto-delivery worker scheduler disabled")
+        return
 
     if _scheduler is not None and _scheduler.running:
         logger.warning("Auto-delivery worker scheduler already running")

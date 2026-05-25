@@ -33,7 +33,30 @@ def test_d4_4_and_policy_env_vars_are_passed_to_api_container():
         "POLICY_LONELINESS_THRESHOLD",
         "POLICY_VIP_LEVEL_THRESHOLD",
         "POLICY_HANDOFF_COUNT_THRESHOLD",
+        "SILENT_REACTIVATION_ENABLED",
+        "SILENT_REACTIVATION_CRON",
+        "NOTIFICATION_SENDER_ENABLED",
+        "NOTIFICATION_SENDER_POLL_SECONDS",
+        "NOTIFICATION_SENDER_SCHEDULER_MAX_INSTANCES",
+        "MESSAGE_SCHEDULE_ENABLED",
+        "MESSAGE_SCHEDULE_POLL_SECONDS",
+        "MESSAGE_SCHEDULE_SCHEDULER_MAX_INSTANCES",
+        "AUTO_DELIVERY_ENABLED",
+        "AUTO_DELIVERY_POLL_SECONDS",
+        "AUTO_DELIVERY_SCHEDULER_MAX_INSTANCES",
+        "ARCHIVE_WORKER_ENABLED",
+        "ARCHIVE_WORKER_POLL_SECONDS",
+        "ARCHIVE_WORKER_SCHEDULER_MAX_INSTANCES",
     }
 
     missing = [name for name in sorted(required) if f"{name}:" not in compose]
     assert missing == []
+
+
+def test_proactive_delivery_workers_are_enabled_by_default_in_compose():
+    compose = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+
+    assert "SILENT_REACTIVATION_ENABLED: ${SILENT_REACTIVATION_ENABLED:-1}" in compose
+    assert "NOTIFICATION_SENDER_ENABLED: ${NOTIFICATION_SENDER_ENABLED:-1}" in compose
+    assert "MESSAGE_SCHEDULE_ENABLED: ${MESSAGE_SCHEDULE_ENABLED:-1}" in compose
+    assert "AUTO_DELIVERY_ENABLED: ${AUTO_DELIVERY_ENABLED:-1}" in compose
