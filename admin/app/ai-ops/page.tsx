@@ -302,11 +302,11 @@ function AiOpsContent({ operator }: { operator: Operator }) {
         });
         notify("话术已保存");
       } else {
-        const created = await apiFetch<ScriptTemplate>("/ai-ops/admin/script-templates", {
+        await apiFetch<ScriptTemplate>("/ai-ops/admin/script-templates", {
           method: "POST",
           body: JSON.stringify(payload),
         });
-        setScriptForm(scriptToForm(created));
+        setScriptForm(scriptEmpty);
         notify("话术已新增，可以继续上传附件");
       }
       await load();
