@@ -283,6 +283,12 @@ async def generate_reply(
             scene_step=decision.scene_step,
             script_hit_id=decision.script_hit_id,
         ).info("orchestrator.app_download_conversion.nudge_ready")
+        if _should_use_download_script_directly(decision):
+            log.bind(
+                category_key=decision.category_key,
+                scene_step=decision.scene_step,
+            ).info("orchestrator.app_download_conversion.direct_reply")
+            return decision.content
 
     prompt = build_prompt(
         PromptInput(
@@ -393,6 +399,11 @@ def _conservative_download_nudge(decision: Any) -> str | None:
     if category == "trust_reassurance":
         return f"If you decide you want to try the private app, you can use this link: {url}"
     return f"If you want a more private place later, you can open it here: {url}"
+
+
+def _should_use_download_script_directly(decision: Any) -> bool:
+    category = str(getattr(decision, "category_key", "") or "").strip()
+    return category not in {"trust_reassurance", "app_download_objection"}
 
 
 def _first_url(text_value: str) -> str | None:
