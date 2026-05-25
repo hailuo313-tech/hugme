@@ -16,12 +16,31 @@ from core.database import AsyncSessionLocal
 from services.llm_orchestrator import LLMOrchestratorError, generate_reply
 from services.app_download_conversion import get_last_app_download_decision
 from services.link_attribution import wrap_text_links_with_tracking
+from services.profile_intake import (
+    country_from_locale,
+    extract_age_from_text,
+    normalize_country_code,
+    read_profile_completeness,
+    write_age,
+    write_country_code,
+)
 from services.script_asset_delivery import send_mtproto_asset
+from services.user_level_service import user_level_service
 from services.mtproto.human_like_send import HumanLikeSendPolicy, send_human_like_message
 
 
 CONTEXT_MAX_MESSAGES = 50
 CONTEXT_TTL_SECONDS = 86400 * 3
+PROFILE_COUNTRY_QUESTION = (
+    "Before we continue, which country are you in? You can reply with a country name "
+    "or code, like US, Canada, Japan, or Germany."
+)
+PROFILE_COUNTRY_RETRY = (
+    "I could not recognize that country. Please reply with your country name or a "
+    "two-letter code, like US, GB, JP, or SG."
+)
+PROFILE_AGE_QUESTION = "Thanks. How old are you?"
+PROFILE_AGE_RETRY = "Please reply with your age as a number, for example 24."
 
 _redis_client = None
 
@@ -149,6 +168,137 @@ async def _get_or_create_user_and_conversation(
         return user_id, conv_id
 
 
+async def _profile_preferences(db: Any, *, user_id: str) -> dict[str, Any]:
+    row = (
+        await db.execute(
+            text("SELECT preferences FROM user_profiles WHERE user_id = CAST(:uid AS uuid)"),
+            {"uid": user_id},
+        )
+    ).fetchone()
+    if row is None:
+        return {}
+    data = row._mapping if hasattr(row, "_mapping") else row
+    value = data.get("preferences") if hasattr(data, "get") else row[0]
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+async def _write_profile_preferences(db: Any, *, user_id: str, preferences: dict[str, Any]) -> None:
+    await db.execute(
+        text(
+            """
+            UPDATE user_profiles
+            SET preferences = CAST(:prefs AS jsonb), updated_at = NOW()
+            WHERE user_id = CAST(:uid AS uuid)
+            """
+        ),
+        {"uid": user_id, "prefs": json.dumps(preferences, ensure_ascii=False)},
+    )
+
+
+async def _persist_technical_country_hint(
+    db: Any,
+    *,
+    user_id: str,
+    sender: Any,
+    log: Any,
+) -> None:
+    code = country_from_locale(
+        getattr(sender, "lang_code", None)
+        or getattr(sender, "language_code", None)
+        or getattr(sender, "lang", None)
+    )
+    if not code:
+        return
+    completeness = await read_profile_completeness(db, user_id=user_id)
+    if completeness.country_code:
+        return
+    await write_country_code(
+        db,
+        user_id=user_id,
+        country_code=code,
+        source="telegram_language_code",
+    )
+    await db.commit()
+    log.bind(country_code=code).info("mtproto.profile.country_detected")
+
+
+async def _handle_required_profile_intake(
+    db: Any,
+    *,
+    user_id: str,
+    external_id: str,
+    text_value: str,
+    log: Any,
+) -> str | None:
+    prefs = await _profile_preferences(db, user_id=user_id)
+    pending = str(prefs.get("profile_intake_pending") or "").strip()
+    completeness = await read_profile_completeness(db, user_id=user_id)
+
+    if pending == "country":
+        country_code = normalize_country_code(text_value)
+        if not country_code:
+            log.info("mtproto.profile.country_retry")
+            return PROFILE_COUNTRY_RETRY
+        await write_country_code(
+            db,
+            user_id=user_id,
+            country_code=country_code,
+            source="chat_answer",
+        )
+        prefs["profile_intake_pending"] = "age"
+        await _write_profile_preferences(db, user_id=user_id, preferences=prefs)
+        await user_level_service.calculate_and_persist_user_level(
+            db,
+            user_id=user_id,
+            external_user_id=external_id,
+            country_code=country_code,
+        )
+        await db.commit()
+        log.bind(country_code=country_code).info("mtproto.profile.country_collected")
+        return PROFILE_AGE_QUESTION
+
+    if pending == "age":
+        age = extract_age_from_text(text_value)
+        if age is None:
+            log.info("mtproto.profile.age_retry")
+            return PROFILE_AGE_RETRY
+        await write_age(db, user_id=user_id, age=age, source="chat_answer")
+        prefs.pop("profile_intake_pending", None)
+        await _write_profile_preferences(db, user_id=user_id, preferences=prefs)
+        await user_level_service.calculate_and_persist_user_level(
+            db,
+            user_id=user_id,
+            external_user_id=external_id,
+        )
+        await db.commit()
+        log.bind(age=age).info("mtproto.profile.age_collected")
+        return "Thanks, got it. What would you like to talk about?"
+
+    if completeness.country_code is None:
+        prefs["profile_intake_pending"] = "country"
+        await _write_profile_preferences(db, user_id=user_id, preferences=prefs)
+        await db.commit()
+        log.info("mtproto.profile.ask_country")
+        return PROFILE_COUNTRY_QUESTION
+
+    if completeness.age is None:
+        prefs["profile_intake_pending"] = "age"
+        await _write_profile_preferences(db, user_id=user_id, preferences=prefs)
+        await db.commit()
+        log.info("mtproto.profile.ask_age")
+        return PROFILE_AGE_QUESTION
+
+    return None
+
+
 async def _persist_message(
     *,
     conv_id: str,
@@ -227,6 +377,20 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
     )
     log = log.bind(user_id=user_id, conv_id=conv_id, telegram_message_id=message_id)
 
+    async with AsyncSessionLocal() as db:
+        try:
+            await _persist_technical_country_hint(
+                db,
+                user_id=user_id,
+                sender=sender,
+                log=log,
+            )
+        except Exception as exc:
+            await db.rollback()
+            log.bind(error_type=type(exc).__name__).warning(
+                "mtproto.profile.country_hint_failed"
+            )
+
     user_msg_id = await _persist_message(
         conv_id=conv_id,
         sender_type="user",
@@ -240,6 +404,44 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
         await _push_context(redis, conv_id, "user", text_value, user_msg_id)
     except Exception as exc:
         log.bind(error_type=type(exc).__name__).warning("mtproto.context.push_failed")
+
+    async with AsyncSessionLocal() as db:
+        try:
+            intake_reply = await _handle_required_profile_intake(
+                db,
+                user_id=user_id,
+                external_id=external_id,
+                text_value=text_value,
+                log=log,
+            )
+        except Exception as exc:
+            await db.rollback()
+            log.bind(error_type=type(exc).__name__).warning("mtproto.profile.intake_failed")
+            intake_reply = None
+    if intake_reply:
+        peer = getattr(event, "chat_id", None) or sender_id
+        sent = await send_human_like_message(
+            client,
+            peer,
+            intake_reply,
+            policy=_reply_delay_policy(intake_reply),
+        )
+        sent_id = str(getattr(sent, "id", "") or "")
+        assistant_msg_id = await _persist_message(
+            conv_id=conv_id,
+            sender_type="assistant",
+            sender_id=str(account_id),
+            content=intake_reply,
+            model_name="profile_intake",
+        )
+        try:
+            await _push_context(redis, conv_id, "assistant", intake_reply, assistant_msg_id)
+        except Exception as exc:
+            log.bind(error_type=type(exc).__name__).warning("mtproto.profile.ctx_push_failed")
+        log.bind(message_id=assistant_msg_id, telegram_sent_id=sent_id).info(
+            "mtproto.profile.intake_sent"
+        )
+        return
 
     async with AsyncSessionLocal() as db:
         try:
