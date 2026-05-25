@@ -181,6 +181,7 @@ async def test_record_unique_click_event_dedupes_by_tracking_and_user() -> None:
     assert "WHERE NOT EXISTS" in sql
     assert "CAST(:tracking_id AS varchar)" in sql
     assert "tracking_id IS NOT DISTINCT FROM CAST(:tracking_id AS varchar)" in sql
+    assert "CAST(:user_id AS uuid) IS NOT NULL" in sql
     assert "user_id = CAST(:user_id AS uuid)" in sql
     assert "ip_address IS NOT DISTINCT FROM CAST(:ip_address AS INET)" in sql
     assert params["tracking_id"] == "trk_test"
