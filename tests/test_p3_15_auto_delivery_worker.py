@@ -117,6 +117,14 @@ def test_p3_15_start_scheduler_initializes_scheduler(monkeypatch):
     assert created_tasks
 
 
+def test_p3_15_timeout_fallback_locks_handoff_tasks_only():
+    import inspect
+
+    source = inspect.getsource(worker.schedule_expired_timeout_fallbacks)
+    assert "LEFT JOIN user_profiles" in source
+    assert "FOR UPDATE OF ht SKIP LOCKED" in source
+
+
 @pytest.mark.asyncio
 async def test_p3_15_send_via_account_pool_uses_human_delay(monkeypatch):
     fake_pool = _FakePool()
