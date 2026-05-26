@@ -34,11 +34,11 @@ def test_admin_home_no_longer_links_legacy_pages() -> None:
 
     assert "/admin/operator-dashboard" not in text
     assert "/admin/scripts" not in text
-    assert "/admin/characters" not in text
     assert "/admin/memories" not in text
     assert "/admin/push" not in text
     assert "/admin/feedback" not in text
     assert "/admin/media" not in text
+    assert "/admin/characters" in text
 
 
 def test_conversation_overview_has_dedicated_route() -> None:
@@ -58,7 +58,7 @@ def test_business_flow_admin_pages_exist() -> None:
         "admin/app/ai-ops/page.tsx": ["话术库管理", "下载引导话术", "/ai-ops/admin/script-templates"],
         "admin/app/approvals/page.tsx": ["H-01", "H-07", "H-10", "H-11"],
         "admin/app/delivery/page.tsx": ["P4-09", "P4-10", "P5-08"],
-        "admin/app/data/page.tsx": ["链接与 App 转化", "/admin/attribution/summary", "Top 点击话术"],
+        "admin/app/data/page.tsx": ["下载转化总览", "/admin/attribution/summary", "核心下载漏斗"],
     }
 
     for path, needles in pages.items():
@@ -81,44 +81,39 @@ def test_data_page_covers_full_attribution_dashboard() -> None:
     page = read("admin/app/data/page.tsx")
 
     for needle in [
-        "今日链接点击人数",
-        "按天查询",
+        "下载转化总览",
+        "按日期",
         'type="date"',
-        "点击率",
-        "下载转化率",
-        "注册转化率",
-        "付费转化率",
-        "点击到注册平均耗时",
-        "点击到首付平均耗时",
         "TG 新用户数",
         "TG 接待用户数",
-        "TG 账号接待",
+        "发送链接用户",
+        "点击链接用户",
+        "访问下载页",
+        "完成下载",
+        "链接点击率",
+        "点击到下载页",
+        "点击到下载",
+        "平均点击耗时",
+        "核心下载漏斗",
+        "下载话术效果",
         "接待用户",
-        "Top 下载话术",
-        "Top 注册话术",
-        "Top 付费话术",
-        "年龄段点击排行",
-        "各等级点击与付费",
-        "国家 / T1",
-        "TG 账号转化",
-        "单条链接明细",
     ]:
         assert needle in page
 
 
-def test_legacy_admin_pages_are_removed() -> None:
-    legacy_pages = [
+def test_unused_legacy_admin_pages_are_removed_but_character_page_stays() -> None:
+    removed_pages = [
         "admin/app/operator-dashboard/page.tsx",
         "admin/app/scripts/page.tsx",
-        "admin/app/characters/page.tsx",
         "admin/app/memories/page.tsx",
         "admin/app/push/page.tsx",
         "admin/app/feedback/page.tsx",
         "admin/app/media/page.tsx",
     ]
 
-    for path in legacy_pages:
+    for path in removed_pages:
         assert not (ROOT / path).exists()
+    assert (ROOT / "admin/app/characters/page.tsx").exists()
 
 
 def test_login_entry_returns_to_admin_home() -> None:

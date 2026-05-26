@@ -5,7 +5,7 @@ from typing import List
 from uuid import uuid4
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from loguru import logger
 from pydantic import BaseModel, Field
 from telethon import TelegramClient
@@ -19,7 +19,13 @@ from telethon.errors import (
 from telethon.sessions import StringSession
 
 from core.config import settings
+from api.admin import require_operator
 from services.telegram_account_manager import telegram_account_manager
+from services.telegram_session_login import (
+    TelegramSessionLoginError,
+    TelegramSessionPasswordRequired,
+    telegram_session_login_manager,
+)
 
 router = APIRouter()
 
@@ -155,6 +161,72 @@ async def add_telegram_account(request: TelegramAccountCreateRequest):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to add account: {str(e)}",
         )
+
+
+@router.post(
+    "/api/v1/telegram/session-login/start",
+    response_model=SessionLoginStartResponse,
+)
+async def start_telegram_session_login_v2(
+    request: SessionLoginStartRequest,
+    _operator: dict = Depends(require_operator),
+):
+    """Send Telegram verification code via the shared session login manager."""
+    try:
+        result = await telegram_session_login_manager.start_login(
+            phone=request.phone.strip(),
+            display_name=request.display_name.strip() or None,
+        )
+    except TelegramSessionLoginError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return SessionLoginStartResponse(
+        login_id=result["login_id"],
+        phone=result["phone"],
+        expires_at=result["expires_at"],
+        message="verification code sent",
+    )
+
+
+@router.post(
+    "/api/v1/telegram/session-login/verify",
+    response_model=SessionLoginVerifyResponse,
+)
+async def verify_telegram_session_login_v2(
+    request: SessionLoginVerifyRequest,
+    _operator: dict = Depends(require_operator),
+):
+    """Verify Telegram login via the shared session login manager."""
+    try:
+        result = await telegram_session_login_manager.verify_login(
+            login_id=request.login_id,
+            code=request.code.strip() if request.code else None,
+            password=request.password,
+            display_name=request.display_name.strip() or None,
+            auto_connect=request.auto_connect,
+        )
+    except TelegramSessionPasswordRequired:
+        return SessionLoginVerifyResponse(
+            status="password_required",
+            requires_password=True,
+            message="2FA password required",
+        )
+    except TelegramSessionLoginError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    return SessionLoginVerifyResponse(
+        account_id=result.get("account_id"),
+        phone=result.get("phone"),
+        status=result.get("status") or "disconnected",
+        requires_password=bool(result.get("requires_password")),
+        message="account saved",
+    )
 
 
 @router.post(

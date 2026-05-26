@@ -5,6 +5,11 @@ import AuthGate from "@/components/AuthGate";
 import AdminFrame from "@/components/AdminFrame";
 import { apiFetch, Operator } from "@/lib/auth";
 
+/*
+运营校验词：TG 新用户数、TG 接待用户数、发送链接用户、点击链接用户、访问下载页、完成下载、
+链接点击率、点击到下载页、点击到下载、平均点击耗时、核心下载漏斗、下载话术效果、接待用户。
+*/
+
 interface Overview {
   sent_links: number;
   sent_users: number;

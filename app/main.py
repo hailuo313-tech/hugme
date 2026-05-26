@@ -286,7 +286,8 @@ app.add_middleware(
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     # Ensure database is initialized on first request
-    await ensure_db_initialized()
+    if not request.url.path.startswith(("/health", "/metrics")):
+        await ensure_db_initialized()
 
     start = time.time()
     trace_id = request_trace_id(request)
