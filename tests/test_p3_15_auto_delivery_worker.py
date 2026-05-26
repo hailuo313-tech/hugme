@@ -125,6 +125,14 @@ def test_p3_15_timeout_fallback_locks_handoff_tasks_only():
     assert "FOR UPDATE OF ht SKIP LOCKED" in source
 
 
+def test_p3_15_bcd_claim_locks_message_schedule_rows_only():
+    import inspect
+
+    source = inspect.getsource(worker._claim_bcd_message)
+    assert "LEFT JOIN user_profiles" in source
+    assert "FOR UPDATE OF ms SKIP LOCKED" in source
+
+
 @pytest.mark.asyncio
 async def test_p3_15_send_via_account_pool_uses_human_delay(monkeypatch):
     fake_pool = _FakePool()
