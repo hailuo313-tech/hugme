@@ -70,8 +70,11 @@ async def test_p3_15_claim_bcd_message_allows_bcd_and_timeout_fallbacks():
     assert "COALESCE(p.user_level, 'C') IN ('B', 'C', 'D')" in sql
     assert "LEFT JOIN user_profiles p ON p.user_id = u.id" in sql
     assert "ms.metadata->>'delivery_mode' = :delivery_mode" in sql
+    assert "ms.metadata->>'delivery_mode' = :app_download_delivery_mode" in sql
     assert params["delivery_mode"] == worker.TIMEOUT_FALLBACK_DELIVERY_MODE
     assert params["timeout_message_type"] == worker.TIMEOUT_FALLBACK_MESSAGE_TYPE
+    assert params["app_download_delivery_mode"] == worker.APP_DOWNLOAD_NURTURE_DELIVERY_MODE
+    assert params["app_download_message_type"] == worker.APP_DOWNLOAD_MESSAGE_TYPE
     assert session.commits == 1
 
 

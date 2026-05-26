@@ -47,6 +47,12 @@ def test_d4_4_and_policy_env_vars_are_passed_to_api_container():
         "ARCHIVE_WORKER_ENABLED",
         "ARCHIVE_WORKER_POLL_SECONDS",
         "ARCHIVE_WORKER_SCHEDULER_MAX_INSTANCES",
+        "APP_DOWNLOAD_NURTURE_ENABLED",
+        "APP_DOWNLOAD_FIRST_IDLE_SECONDS",
+        "APP_DOWNLOAD_WARM_NO_CLICK_SECONDS",
+        "APP_DOWNLOAD_CLICK_NO_DOWNLOAD_SECONDS",
+        "APP_DOWNLOAD_SILENT_30M_SECONDS",
+        "APP_DOWNLOAD_SILENT_24H_SECONDS",
     }
 
     missing = [name for name in sorted(required) if f"{name}:" not in compose]

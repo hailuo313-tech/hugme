@@ -31,6 +31,12 @@ class Settings(BaseSettings):
     PUBLIC_BASE_URL: str = "https://hugme2.com"
     APP_DOWNLOAD_URL: Optional[str] = None
     APP_DOWNLOAD_CONVERSION_ENABLED: bool = True
+    APP_DOWNLOAD_NURTURE_ENABLED: bool = True
+    APP_DOWNLOAD_FIRST_IDLE_SECONDS: int = 180
+    APP_DOWNLOAD_WARM_NO_CLICK_SECONDS: int = 60
+    APP_DOWNLOAD_CLICK_NO_DOWNLOAD_SECONDS: int = 600
+    APP_DOWNLOAD_SILENT_30M_SECONDS: int = 1800
+    APP_DOWNLOAD_SILENT_24H_SECONDS: int = 86400
     MEDIA_UPLOAD_DIR: str = "/srv/eris-uploads"
     MEDIA_PUBLIC_PATH: str = "/uploads"
 

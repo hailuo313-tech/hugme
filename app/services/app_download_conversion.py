@@ -267,7 +267,29 @@ def _choose_category(
         return "trust_reassurance", "trust_reassurance", "trust"
     if _has_any(text_value, ("don't want to download", "dont want to download", "no download", "too much work", "not downloading", "不想下载", "不下载", "麻烦")):
         return "app_download_objection", "app_download_objection", "download_objection"
-    if _has_any(text_value, ("link", "app", "download", "where", "continue", "send it", "链接", "下载", "继续", "哪里")):
+    if _has_any(
+        text_value,
+        (
+            "link",
+            "app",
+            "download",
+            "where",
+            "continue",
+            "send it",
+            "private",
+            "privately",
+            "more privately",
+            "talk more",
+            "where can i talk",
+            "room",
+            "platform",
+            "链接",
+            "下载",
+            "继续",
+            "哪里",
+            "私聊",
+        ),
+    ):
         return "app_download_direct_cta", "app_download_direct_cta", "pre_click"
 
     count = assistant_reply_count or 0
