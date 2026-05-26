@@ -312,7 +312,7 @@ async def _claim_bcd_message(session: AsyncSession) -> dict[str, Any] | None:
                           OR ms.message_type = :timeout_message_type
                       )
                     ORDER BY ms.priority DESC, ms.send_at ASC NULLS LAST, ms.created_at ASC
-                    FOR UPDATE SKIP LOCKED
+                    FOR UPDATE OF ms SKIP LOCKED
                     LIMIT 1
                 )
                 UPDATE message_schedules ms
