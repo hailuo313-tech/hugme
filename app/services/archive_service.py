@@ -334,11 +334,14 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
 def start_scheduler() -> None:
     """Start the archive worker scheduler."""
     global _scheduler
-    if _scheduler is None:
+    if AsyncIOScheduler is None or IntervalTrigger is None:
         logger.warning("APScheduler not available, archive worker scheduler not started")
         return
+    if not getattr(settings, "ARCHIVE_WORKER_ENABLED", False):
+        logger.info("Archive worker scheduler disabled")
+        return
 
-    if _scheduler.running:
+    if _scheduler is not None and _scheduler.running:
         logger.warning("Archive worker scheduler already running")
         return
 

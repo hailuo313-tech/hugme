@@ -30,6 +30,12 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(m, "start_embedding_worker", _noop)
     monkeypatch.setattr(m, "start_profile_score_scheduler", _noop)
     monkeypatch.setattr(m, "start_notification_sender_worker", _noop)
+    monkeypatch.setattr(m, "start_message_schedule_scheduler", _noop)
+    monkeypatch.setattr(m, "start_auto_delivery_worker", _noop)
+    monkeypatch.setattr(m, "start_archive_worker", _noop)
+    monkeypatch.setattr(m, "shutdown_archive_worker", _noop)
+    monkeypatch.setattr(m, "shutdown_auto_delivery_worker", _noop)
+    monkeypatch.setattr(m, "shutdown_message_schedule_scheduler", _noop)
     monkeypatch.setattr(m, "shutdown_profile_score_scheduler", _noop)
     monkeypatch.setattr(m, "shutdown_notification_sender_worker", _noop)
     monkeypatch.setattr(m, "shutdown_embedding_worker", _noop)
@@ -60,11 +66,41 @@ def _install_worker_stubs(monkeypatch):
         "services.embedding_worker",
         "services.profile_score_scheduler",
         "services.notification_sender_worker",
+        "services.message_schedule_service",
+        "services.auto_delivery_worker",
+        "services.archive_service",
     ):
         fake_module = types.ModuleType(module_name)
         fake_module.start_scheduler = _noop
         fake_module.shutdown_scheduler = _noop
+        fake_module.run_one_tick = _noop_async
+        fake_module.get_scheduler_status = lambda: {"running": False}
+        fake_module.add_scheduled_message = _return_id_async
+        fake_module.reinit_account_pool = _return_true_async
+        fake_module.archive_message_async = _return_false_async
+        fake_module.get_conversation_script_hits = _return_empty_async
+        fake_module.get_premium_chat_trace = _return_none_async
         monkeypatch.setitem(sys.modules, module_name, fake_module)
+
+
+async def _return_id_async(*args, **kwargs):
+    return "test-id"
+
+
+async def _return_true_async(*args, **kwargs):
+    return True
+
+
+async def _return_false_async(*args, **kwargs):
+    return False
+
+
+async def _return_empty_async(*args, **kwargs):
+    return []
+
+
+async def _return_none_async(*args, **kwargs):
+    return None
 
 
 def test_ops_serves_html(client: TestClient):

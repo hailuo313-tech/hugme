@@ -284,6 +284,9 @@ def start_scheduler() -> None:
     if AsyncIOScheduler is None or IntervalTrigger is None:
         logger.warning("APScheduler not available, message schedule scheduler not started")
         return
+    if not getattr(settings, "MESSAGE_SCHEDULE_ENABLED", False):
+        logger.info("Message schedule scheduler disabled")
+        return
 
     if _scheduler is not None and _scheduler.running:
         logger.warning("Message schedule scheduler already running")

@@ -17,7 +17,7 @@ def test_p1_01_db_schema_doc_exists_and_names_required_tables():
 
 
 def test_p1_01_migration_creates_premium_and_audit_tables():
-    migration = ROOT / "db" / "migration" / "V8__p1_premium_chat_and_audit_logs.sql"
+    migration = ROOT / "db" / "migration" / "V17__p1_premium_chat_and_audit_logs.sql"
     sql = migration.read_text(encoding="utf-8")
 
     assert "CREATE TABLE IF NOT EXISTS premium_chat_logs" in sql

@@ -114,7 +114,7 @@ def test_create_character_inserts_jsonb_fields_and_derives_legacy_fields():
 
 
 def test_character_profile_details_migration_exists():
-    migration = Path("db/migration/V9__add_character_profile_details.sql")
+    migration = Path("db/migration/V19__add_character_profile_details.sql")
 
     assert migration.exists()
     text = migration.read_text(encoding="utf-8")

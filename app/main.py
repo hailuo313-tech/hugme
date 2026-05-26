@@ -95,6 +95,26 @@ def configure_logging():
 configure_logging()
 
 
+def _start_scheduler(name: str, start_func) -> None:
+    try:
+        start_func()
+    except Exception as exc:
+        logger.bind(
+            scheduler=name,
+            error_type=type(exc).__name__,
+        ).error("runtime_worker.scheduler.start_failed")
+
+
+def _shutdown_scheduler(name: str, shutdown_func) -> None:
+    try:
+        shutdown_func()
+    except Exception as exc:
+        logger.bind(
+            scheduler=name,
+            error_type=type(exc).__name__,
+        ).warning("runtime_worker.scheduler.stop_failed")
+
+
 def request_trace_id(request: Request) -> str:
     trace_id = request.headers.get("x-trace-id") or request.headers.get("x-request-id")
     return trace_id or str(uuid.uuid4())
@@ -111,12 +131,16 @@ app = FastAPI(
 
 @app.on_event("startup")
 async def start_runtime_workers():
-    try:
-        start_embedding_worker()
-    except Exception as exc:
-        logger.bind(error_type=type(exc).__name__).error(
-            "embedding_worker.scheduler.start_failed"
-        )
+    _start_scheduler("embedding_worker", start_embedding_worker)
+    _start_scheduler("profile_score_scheduler", start_profile_score_scheduler)
+    _start_scheduler(
+        "silent_reactivation_scheduler",
+        start_silent_reactivation_scheduler,
+    )
+    _start_scheduler("notification_sender_worker", start_notification_sender_worker)
+    _start_scheduler("message_schedule_scheduler", start_message_schedule_scheduler)
+    _start_scheduler("auto_delivery_worker", start_auto_delivery_worker)
+    _start_scheduler("archive_worker", start_archive_worker)
 
     mtproto_runtime_enabled = bool(
         getattr(settings, "MTProto_ENABLED", False)
@@ -134,12 +158,16 @@ async def start_runtime_workers():
 
 @app.on_event("shutdown")
 async def stop_runtime_workers():
-    try:
-        shutdown_embedding_worker()
-    except Exception as exc:
-        logger.bind(error_type=type(exc).__name__).warning(
-            "embedding_worker.scheduler.stop_failed"
-        )
+    _shutdown_scheduler("archive_worker", shutdown_archive_worker)
+    _shutdown_scheduler("auto_delivery_worker", shutdown_auto_delivery_worker)
+    _shutdown_scheduler("message_schedule_scheduler", shutdown_message_schedule_scheduler)
+    _shutdown_scheduler("notification_sender_worker", shutdown_notification_sender_worker)
+    _shutdown_scheduler(
+        "silent_reactivation_scheduler",
+        shutdown_silent_reactivation_scheduler,
+    )
+    _shutdown_scheduler("profile_score_scheduler", shutdown_profile_score_scheduler)
+    _shutdown_scheduler("embedding_worker", shutdown_embedding_worker)
 
     try:
         await session_manager.stop()
@@ -258,7 +286,8 @@ app.add_middleware(
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     # Ensure database is initialized on first request
-    await ensure_db_initialized()
+    if not request.url.path.startswith(("/health", "/metrics")):
+        await ensure_db_initialized()
 
     start = time.time()
     trace_id = request_trace_id(request)
