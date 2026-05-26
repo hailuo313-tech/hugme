@@ -202,7 +202,7 @@ async def schedule_expired_timeout_fallbacks(
                         AND ms.metadata->>'source_handoff_task_id' = ht.id::text
                   )
                 ORDER BY ht.draft_expires_at ASC
-                FOR UPDATE SKIP LOCKED
+                FOR UPDATE OF ht SKIP LOCKED
                 LIMIT :batch_size
                 """
             ),
