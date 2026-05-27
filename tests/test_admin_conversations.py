@@ -486,6 +486,65 @@ def test_operator_reply_sends_telegram_real_user(monkeypatch):
     db.commit.assert_awaited_once()
 
 
+@pytest.mark.asyncio
+async def test_operator_reply_real_user_resolves_peer_after_dialog_warmup(monkeypatch):
+    from api.admin import _send_operator_reply_to_telegram_real_user
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.dialogs_loaded = False
+            self.input_entity_calls: list[Any] = []
+
+        async def get_input_entity(self, peer: Any) -> str:
+            self.input_entity_calls.append(peer)
+            if not self.dialogs_loaded:
+                raise ValueError("missing input entity")
+            return "input-peer-after-dialogs"
+
+        async def get_dialogs(self, limit: int) -> list[Any]:
+            assert limit == 200
+            self.dialogs_loaded = True
+            return []
+
+    class FakeManager:
+        def __init__(self, client: FakeClient) -> None:
+            self.client = client
+
+        async def get_any_connected_client(self) -> FakeClient:
+            return self.client
+
+    class FakeSent:
+        id = 777
+
+    fake_client = FakeClient()
+    sent_peers: list[Any] = []
+
+    async def _send_human_like(client: Any, peer: Any, text: str, **kwargs: Any) -> FakeSent:
+        sent_peers.append(peer)
+        assert text == "hello real user"
+        return FakeSent()
+
+    monkeypatch.setattr(
+        "services.telegram_account_manager.telegram_account_manager",
+        FakeManager(fake_client),
+    )
+    monkeypatch.setattr(
+        "services.mtproto.human_like_send.send_human_like_message",
+        _send_human_like,
+    )
+
+    ok, provider_message_id = await _send_operator_reply_to_telegram_real_user(
+        chat_id=123456789,
+        content="hello real user",
+        trace_id="trace-test",
+    )
+
+    assert ok is True
+    assert provider_message_id == "777"
+    assert fake_client.dialogs_loaded is True
+    assert sent_peers == ["input-peer-after-dialogs"]
+
+
 def test_operator_reply_rolls_back_when_send_fails(monkeypatch):
     conversation_id = "11111111-2222-3333-4444-555555555555"
     user_id = "33333333-2222-3333-4444-555555555555"

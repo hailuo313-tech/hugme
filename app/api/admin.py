@@ -221,6 +221,69 @@ def _telegram_chat_id_from_external(external_id: str | None) -> int | None:
         return None
 
 
+async def _resolve_telegram_real_user_peer(client: Any, chat_id: int, trace_id: str | None) -> Any:
+    """Resolve a Telegram user id into a Telethon-sendable peer."""
+    from telethon.tl.types import PeerUser
+
+    candidates: list[Any] = [chat_id, PeerUser(user_id=chat_id)]
+    get_input_entity = getattr(client, "get_input_entity", None)
+    get_entity = getattr(client, "get_entity", None)
+
+    for candidate in candidates:
+        if callable(get_input_entity):
+            try:
+                return await get_input_entity(candidate)
+            except Exception as exc:
+                logger.bind(
+                    trace_id=trace_id,
+                    chat_id=chat_id,
+                    candidate=str(candidate),
+                    error_type=type(exc).__name__,
+                ).debug("admin.conversations.operator_reply.input_entity_miss")
+
+        if callable(get_entity):
+            try:
+                entity = await get_entity(candidate)
+                if callable(get_input_entity):
+                    try:
+                        return await get_input_entity(entity)
+                    except Exception:
+                        return entity
+                return entity
+            except Exception as exc:
+                logger.bind(
+                    trace_id=trace_id,
+                    chat_id=chat_id,
+                    candidate=str(candidate),
+                    error_type=type(exc).__name__,
+                ).debug("admin.conversations.operator_reply.entity_miss")
+
+    get_dialogs = getattr(client, "get_dialogs", None)
+    if callable(get_dialogs):
+        try:
+            await get_dialogs(limit=200)
+        except Exception as exc:
+            logger.bind(
+                trace_id=trace_id,
+                chat_id=chat_id,
+                error_type=type(exc).__name__,
+            ).debug("admin.conversations.operator_reply.dialog_warmup_failed")
+
+        for candidate in candidates:
+            if callable(get_input_entity):
+                try:
+                    return await get_input_entity(candidate)
+                except Exception:
+                    pass
+            if callable(get_entity):
+                try:
+                    return await get_entity(candidate)
+                except Exception:
+                    pass
+
+    return PeerUser(user_id=chat_id)
+
+
 async def _send_operator_reply_to_telegram_real_user(
     *,
     chat_id: int,
@@ -228,21 +291,12 @@ async def _send_operator_reply_to_telegram_real_user(
     trace_id: str | None,
 ) -> tuple[bool, str | None]:
     try:
-        from telethon.tl.types import PeerUser
         from services.mtproto.human_like_send import HumanLikeSendPolicy, send_human_like_message
         from services.telegram_account_manager import telegram_account_manager
 
         client = await telegram_account_manager.get_any_connected_client()
         if client is None:
             return False, "telegram_real_user_account_missing"
-
-        peer = PeerUser(user_id=chat_id)
-        get_input_entity = getattr(client, "get_input_entity", None)
-        if callable(get_input_entity):
-            try:
-                peer = await get_input_entity(peer)
-            except Exception:
-                pass
 
         # Operator-confirmed sends should happen immediately after click; keep
         # typing indication but avoid the long automated delay profile.
@@ -255,7 +309,17 @@ async def _send_operator_reply_to_telegram_real_user(
             minimum_typing_seconds=0.2,
             minimum_inter_message_seconds=0.0,
         )
-        sent = await send_human_like_message(client, peer, content, policy=policy)
+
+        peer = await _resolve_telegram_real_user_peer(client, chat_id, trace_id)
+        try:
+            sent = await send_human_like_message(client, peer, content, policy=policy)
+        except ValueError:
+            get_dialogs = getattr(client, "get_dialogs", None)
+            if callable(get_dialogs):
+                await get_dialogs(limit=200)
+            peer = await _resolve_telegram_real_user_peer(client, chat_id, trace_id)
+            sent = await send_human_like_message(client, peer, content, policy=policy)
+
         sent_id = getattr(sent, "id", None)
         return True, str(sent_id) if sent_id is not None else None
     except Exception as exc:
