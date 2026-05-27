@@ -33,6 +33,9 @@ _CTA_TRIGGERS = {
     TRIGGER_SILENT_24H,
 }
 
+# Only active rows block requeue; failed rows may be retried after a fix.
+_ACTIVE_NURTURE_STATUSES = ("pending", "sending", "sent")
+
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
@@ -64,6 +67,7 @@ async def schedule_download_followups_after_reply(
     chat_id: int | None,
     assistant_message_id: str,
     trace_id: str | None,
+    account_id: str | None = None,
 ) -> int:
     """Queue business-specific App download follow-ups after a normal reply.
 
@@ -73,6 +77,11 @@ async def schedule_download_followups_after_reply(
     """
     if not settings.APP_DOWNLOAD_NURTURE_ENABLED or not chat_id:
         return 0
+
+    sender_account_id = account_id or await resolve_nurture_sender_account_id(
+        db,
+        conversation_id=conversation_id,
+    )
 
     destination_url = await resolve_app_download_url(db)
     if not destination_url:
@@ -109,6 +118,7 @@ async def schedule_download_followups_after_reply(
             stale_after=stale_after,
             rule_key=f"{TRIGGER_FIRST_IDLE}:{conversation_id}",
             trace_id=trace_id,
+            account_id=sender_account_id,
         )
 
     if 3 <= user_count <= 5 and not has_click and not has_download:
@@ -126,6 +136,7 @@ async def schedule_download_followups_after_reply(
             stale_after=stale_after,
             rule_key=f"{TRIGGER_WARM_NO_CLICK}:{conversation_id}",
             trace_id=trace_id,
+            account_id=sender_account_id,
         )
 
     if not has_download:
@@ -143,6 +154,7 @@ async def schedule_download_followups_after_reply(
             stale_after=stale_after,
             rule_key=f"{TRIGGER_SILENT_30M}:{assistant_message_id}",
             trace_id=trace_id,
+            account_id=sender_account_id,
         )
         queued += await _queue_followup(
             db,
@@ -158,6 +170,7 @@ async def schedule_download_followups_after_reply(
             stale_after=stale_after,
             rule_key=f"{TRIGGER_SILENT_24H}:{assistant_message_id}",
             trace_id=trace_id,
+            account_id=sender_account_id,
         )
 
     if queued:
@@ -224,7 +237,7 @@ async def queue_clicked_not_downloaded_followups(
                       WHERE ms.metadata->>'delivery_mode' = :delivery_mode
                         AND ms.metadata->>'trigger' = :trigger
                         AND ms.metadata->>'tracking_id' = c.tracking_id
-                        AND ms.status IN ('pending', 'sending', 'sent', 'failed')
+                        AND ms.status IN ('pending', 'sending', 'sent')
                   )
                 ORDER BY c.clicked_at ASC
                 LIMIT :batch_size
@@ -242,6 +255,10 @@ async def queue_clicked_not_downloaded_followups(
     queued = 0
     for row in rows:
         data = dict(row)
+        sender_account_id = await resolve_nurture_sender_account_id(
+            db,
+            conversation_id=str(data.get("conversation_id") or ""),
+        )
         queued += await _queue_followup(
             db,
             user_id=str(data["user_id"]),
@@ -255,6 +272,7 @@ async def queue_clicked_not_downloaded_followups(
             stale_after=None,
             rule_key=f"{TRIGGER_CLICK_NO_DOWNLOAD}:{data['tracking_id']}",
             trace_id=trace_id,
+            account_id=sender_account_id,
             extra_metadata={"tracking_id": str(data["tracking_id"])},
         )
 
@@ -399,6 +417,35 @@ async def persist_auto_delivery_message(
     return str(row[0]) if row else None
 
 
+async def resolve_nurture_sender_account_id(
+    db: AsyncSession,
+    *,
+    conversation_id: str | None,
+) -> str | None:
+    """Return the MTProto account that last spoke in this conversation."""
+    if not conversation_id:
+        return None
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT sender_id
+                FROM messages
+                WHERE conversation_id = CAST(:conversation_id AS uuid)
+                  AND sender_type = 'assistant'
+                  AND sender_id ~* '^[0-9a-f-]{36}$'
+                ORDER BY created_at DESC
+                LIMIT 1
+                """
+            ),
+            {"conversation_id": conversation_id},
+        )
+    ).fetchone()
+    if not row or not row[0]:
+        return None
+    return str(row[0])
+
+
 async def _queue_followup(
     db: AsyncSession,
     *,
@@ -413,6 +460,7 @@ async def _queue_followup(
     stale_after: datetime | None,
     rule_key: str,
     trace_id: str | None,
+    account_id: str | None = None,
     extra_metadata: dict[str, Any] | None = None,
 ) -> int:
     content, script_meta = await _build_contextual_content(
@@ -439,23 +487,25 @@ async def _queue_followup(
         **script_meta,
         **(extra_metadata or {}),
     }
+    if account_id:
+        metadata["sender_account_id"] = account_id
     result = await db.execute(
         text(
             """
             INSERT INTO message_schedules (
                 user_id, external_user_id, message_type, content, platform, chat_id,
-                status, send_at, priority, metadata, trace_id
+                account_id, status, send_at, priority, metadata, trace_id
             )
             SELECT
                 :user_id, :external_user_id, :message_type, :content,
-                'telegram_real_user', :chat_id, 'pending', :send_at, :priority,
+                'telegram_real_user', :chat_id, :account_id, 'pending', :send_at, :priority,
                 CAST(:metadata AS jsonb), :trace_id
             WHERE NOT EXISTS (
                 SELECT 1
                 FROM message_schedules
                 WHERE metadata->>'delivery_mode' = :delivery_mode
                   AND metadata->>'rule_key' = :rule_key
-                  AND status IN ('pending', 'sending', 'sent', 'failed')
+                  AND status IN ('pending', 'sending', 'sent')
             )
             RETURNING id
             """
@@ -466,6 +516,7 @@ async def _queue_followup(
             "message_type": APP_DOWNLOAD_MESSAGE_TYPE,
             "content": content,
             "chat_id": chat_id,
+            "account_id": account_id,
             "send_at": send_at,
             "priority": priority,
             "metadata": json.dumps(metadata, ensure_ascii=False),

@@ -14,7 +14,7 @@ from core.config import settings
 from core.database import AsyncSessionLocal
 from services.human_delay_calculator import calculate_human_delay
 from services.mtproto.account_pool import AccountPool
-from services.mtproto.account_routing import route_redis_key
+from services.mtproto.account_routing import pin_mtproto_account_route
 from services.telegram_account_manager import telegram_account_manager
 from services.telegram_send import telegram_chat_id_from_external
 from services.app_download_nurture import (
@@ -23,6 +23,7 @@ from services.app_download_nurture import (
     persist_auto_delivery_message,
     prepare_nurture_message_for_send,
     queue_clicked_not_downloaded_followups,
+    resolve_nurture_sender_account_id,
     should_skip_stale_nurture_message,
 )
 
@@ -396,13 +397,97 @@ async def _finalize_message(
     await session.commit()
 
 
+async def _resolve_delivery_account_id(
+    session: AsyncSession,
+    *,
+    message: dict[str, Any],
+) -> str | None:
+    """Prefer the MTProto account that owns the live dialog for this follow-up."""
+    direct = message.get("account_id")
+    if direct:
+        return str(direct)
+
+    metadata = message.get("metadata") or {}
+    sender_account_id = metadata.get("sender_account_id")
+    if sender_account_id:
+        return str(sender_account_id)
+
+    return await resolve_nurture_sender_account_id(
+        session,
+        conversation_id=str(metadata.get("conversation_id") or ""),
+    )
+
+
+async def _send_via_mtproto_account(
+    *,
+    account_id: str,
+    chat_id: int,
+    content: str,
+    trace_id: Optional[str] = None,
+) -> bool:
+    """Send using a specific MTProto account instead of hash routing."""
+    try:
+        from telethon.tl.types import PeerUser
+
+        client = await telegram_account_manager.get_client(UUID(account_id))
+        if client is None:
+            logger.bind(account_id=account_id, trace_id=trace_id).warning(
+                "auto_delivery_worker.account_client_missing"
+            )
+            return False
+
+        delay_result = calculate_human_delay(content)
+        await asyncio.sleep(delay_result.delay_seconds)
+
+        peer = PeerUser(user_id=chat_id)
+        get_input_entity = getattr(client, "get_input_entity", None)
+        if callable(get_input_entity):
+            try:
+                peer = await get_input_entity(peer)
+            except Exception:
+                pass
+
+        from services.mtproto.human_like_send import send_human_like_message
+
+        await send_human_like_message(client, peer, content)
+        logger.bind(
+            trace_id=trace_id,
+            account_id=account_id,
+            chat_id=chat_id,
+        ).info("auto_delivery_worker.sent_via_account")
+        return True
+    except Exception as exc:
+        logger.bind(
+            trace_id=trace_id,
+            account_id=account_id,
+            chat_id=chat_id,
+            error_type=type(exc).__name__,
+        ).error(f"auto_delivery_worker.account_send_error: {exc}")
+        return False
+
+
 async def _send_via_account_pool(
     user_id: str,
     chat_id: int,
     content: str,
     trace_id: Optional[str] = None,
+    preferred_account_id: str | None = None,
 ) -> bool:
     """Send message via AccountPool with human-like delay."""
+    if preferred_account_id:
+        redis = await _get_redis()
+        await pin_mtproto_account_route(
+            redis,
+            user_id=user_id,
+            account_id=preferred_account_id,
+        )
+        return await _send_via_mtproto_account(
+            account_id=preferred_account_id,
+            chat_id=chat_id,
+            content=content,
+            trace_id=trace_id,
+        )
+
     if _account_pool is None:
         logger.error("AccountPool not initialized")
         return False
@@ -531,6 +616,10 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
                     message=message,
                     trace_id=trace_id,
                 )
+                preferred_account_id = await _resolve_delivery_account_id(
+                    session,
+                    message=message,
+                )
                 await session.commit()
 
                 log.bind(
@@ -549,6 +638,7 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
                         chat_id=chat_id,
                         content=content,
                         trace_id=trace_id,
+                        preferred_account_id=preferred_account_id,
                     )
 
                     if success:

@@ -84,6 +84,7 @@ async def maybe_select_app_download_reply(
     assistant_reply_count: int | None,
     trigger_message_id: str | None,
     trace_id: str,
+    classified_intent: str | None = None,
 ) -> AppDownloadDecision | None:
     """Return an approved App-download conversion script when the funnel calls for it.
 
@@ -120,6 +121,7 @@ async def maybe_select_app_download_reply(
         state=state,
         assistant_reply_count=assistant_reply_count,
         user_level=user_level,
+        classified_intent=classified_intent,
     )
     if category_key is None:
         return None
@@ -128,7 +130,7 @@ async def maybe_select_app_download_reply(
     result = await search_script_templates(
         db=db,
         query=ScriptTemplateQuery(
-            query=user_text or category_key,
+            query=_script_query(user_text, category_key, classified_intent),
             platform="telegram_real_user",
             user_level=user_level,
             persona_slug=persona_slug,
@@ -246,15 +248,29 @@ async def _load_script_assets(*, db: Any, script_template_id: str) -> list[dict[
     return [dict(row._mapping) for row in result.fetchall()]
 
 
+def _script_query(
+    user_text: str,
+    category_key: str,
+    classified_intent: str | None,
+) -> str:
+    parts = [user_text or "", category_key]
+    if classified_intent:
+        parts.append(classified_intent)
+    return " ".join(part for part in parts if part).strip()
+
+
 def _choose_category(
     *,
     user_text: str,
     state: _FunnelState,
     assistant_reply_count: int | None,
     user_level: str,
+    classified_intent: str | None = None,
 ) -> tuple[str | None, str, str]:
     text_value = str(user_text or "").lower()
     minutes = state.minutes_since_link
+    if classified_intent == "conversion.objection":
+        return "app_download_objection", classified_intent, "download_objection"
     if state.tracking_id:
         if state.downloaded or state.registered or state.paid:
             return None, "third_party_handoff", "download_complete"

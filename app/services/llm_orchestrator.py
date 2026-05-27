@@ -159,6 +159,26 @@ async def generate_reply(
 
     character_row, profile_row = await _load_db_context(db, user_id, conversation_id, log)
 
+    classified_intent: str | None = None
+    if user_text.strip():
+        try:
+            from services.intent_classifier import classify_intent
+
+            intent_result = classify_intent(user_text, trace_id=trace_id)
+            classified_intent = intent_result.primary_intent
+            log.bind(
+                primary_intent=classified_intent,
+                confidence=intent_result.confidence,
+            ).info("orchestrator.intent.classified")
+            if profile_row is None:
+                profile_row = {"current_intent": classified_intent}
+            else:
+                profile_row = {**profile_row, "current_intent": classified_intent}
+        except Exception as exc:  # pragma: no cover
+            log.bind(error_type=type(exc).__name__).warning(
+                "orchestrator.intent.exception"
+            )
+
     if db is not None and profile_row is not None:
         try:
             profile_row = await refresh_loneliness_score(
@@ -275,6 +295,7 @@ async def generate_reply(
         assistant_reply_count=existing_assistant_reply_count,
         trigger_message_id=trigger_message_id,
         trace_id=trace_id,
+        classified_intent=classified_intent,
     )
     if decision is not None:
         log.bind(
