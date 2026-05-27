@@ -420,6 +420,7 @@ def test_operator_reply_sends_telegram_and_persists(monkeypatch):
         "user_id": user_id,
         "user_channel": "telegram",
         "external_id": "tg_123456789",
+        "telegram_account_id": None,
     })
     sent: list[dict[str, Any]] = []
 
@@ -461,6 +462,7 @@ def test_operator_reply_sends_telegram_real_user(monkeypatch):
         "user_id": user_id,
         "user_channel": "telegram_real_user",
         "external_id": "tg_123456789",
+        "telegram_account_id": "44444444-4444-4444-4444-444444444444",
     })
     calls: list[dict[str, Any]] = []
 
@@ -483,6 +485,7 @@ def test_operator_reply_sends_telegram_real_user(monkeypatch):
     assert r.status_code == 200, r.text
     assert r.json()["provider_message_id"] == "42"
     assert calls[0]["chat_id"] == 123456789
+    assert calls[0]["account_id"] == "44444444-4444-4444-4444-444444444444"
     db.commit.assert_awaited_once()
 
 
@@ -554,6 +557,7 @@ def test_operator_reply_rolls_back_when_send_fails(monkeypatch):
         "user_id": user_id,
         "user_channel": "telegram_real_user",
         "external_id": "tg_123456789",
+        "telegram_account_id": None,
     })
 
     async def _send_real_user(**kwargs: Any) -> tuple[bool, str | None]:

@@ -289,12 +289,20 @@ async def _send_operator_reply_to_telegram_real_user(
     chat_id: int,
     content: str,
     trace_id: str | None,
+    account_id: str | None = None,
 ) -> tuple[bool, str | None]:
     try:
         from services.mtproto.human_like_send import HumanLikeSendPolicy, send_human_like_message
         from services.telegram_account_manager import telegram_account_manager
 
-        client = await telegram_account_manager.get_any_connected_client()
+        client = None
+        if account_id:
+            try:
+                client = await telegram_account_manager.get_client(uuid.UUID(account_id))
+            except (TypeError, ValueError):
+                client = None
+        if client is None:
+            client = await telegram_account_manager.get_any_connected_client()
         if client is None:
             return False, "telegram_real_user_account_missing"
 
@@ -608,7 +616,16 @@ async def admin_send_conversation_operator_reply(
                   c.channel AS conversation_channel,
                   u.id AS user_id,
                   u.channel AS user_channel,
-                  u.external_id
+                  u.external_id,
+                  (
+                    SELECT m.sender_id
+                    FROM messages m
+                    JOIN telegram_accounts ta ON ta.id::text = m.sender_id
+                    WHERE m.conversation_id = c.id
+                      AND m.sender_type = 'assistant'
+                    ORDER BY m.created_at DESC
+                    LIMIT 1
+                  ) AS telegram_account_id
                 FROM conversations c
                 JOIN users u ON u.id = c.user_id
                 WHERE c.id=:cid
@@ -624,6 +641,11 @@ async def admin_send_conversation_operator_reply(
     user_id = str(mapping["user_id"])
     channel = mapping.get("conversation_channel") or mapping.get("user_channel")
     external_id = mapping.get("external_id")
+    telegram_account_id = (
+        str(mapping.get("telegram_account_id"))
+        if mapping.get("telegram_account_id") is not None
+        else None
+    )
     chat_id = _telegram_chat_id_from_external(str(external_id) if external_id is not None else None)
     if chat_id is None:
         raise HTTPException(
@@ -677,6 +699,7 @@ async def admin_send_conversation_operator_reply(
             chat_id=chat_id,
             content=content,
             trace_id=trace_id,
+            account_id=telegram_account_id,
         )
     else:
         await db.rollback()
