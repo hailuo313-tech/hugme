@@ -116,6 +116,7 @@ async def test_stale_guard_skips_when_user_replied_after_queue():
             if "e.event_type = 'download'" in sql:
                 return _RowsResult([])
             if "sender_type = 'user'" in sql:
+                assert isinstance(params["stale_after"], datetime)
                 return _RowsResult([(1,)])
             return _RowsResult([])
 
