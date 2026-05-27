@@ -179,6 +179,23 @@ function stateClass(state: string | null): string {
   }
 }
 
+function queueStateLabel(row: ConversationRow): string {
+  if (row.assigned_operator_id || row.state === "HUMAN_LOCKED") {
+    return "已接管";
+  }
+  if (row.state === "WAITING_OPERATOR") return "待接管";
+  if (row.state === "AI_ACTIVE") return "AI跟进";
+  if (row.state === "CLOSED") return "已关闭";
+  return row.state || "-";
+}
+
+function queueStateClass(row: ConversationRow): string {
+  if (row.assigned_operator_id || row.state === "HUMAN_LOCKED") {
+    return "border-violet-600/70 bg-violet-500/10 text-violet-200";
+  }
+  return stateClass(row.state);
+}
+
 function riskClass(risk: string | null): string {
   if (risk === "critical" || risk === "high") return "text-rose-300";
   if (risk === "elevated") return "text-amber-300";
@@ -604,7 +621,7 @@ function ConversationsContent({ operator }: { operator: Operator }) {
                     </div>
                   </td>
                   <td className="px-4 py-4">
-                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs ${stateClass(row.state)}`}>{stateLabel(row.state)}</span>
+                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs ${queueStateClass(row)}`}>{queueStateLabel(row)}</span>
                     <div className="mt-1 text-xs text-slate-500">{row.channel || row.user_channel || "-"}</div>
                   </td>
                   <td className="px-4 py-4">

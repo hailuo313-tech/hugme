@@ -34,3 +34,14 @@ def test_conversation_dashboard_keeps_business_api_integrations() -> None:
     assert "if (isPremium(response.conversation))" in page
     assert "精聊话术轨迹仅对 S/A 用户启用" in page
     assert "`/ops-ai/conversations/${detail.conversation.conversation_id}/assist`" in page
+
+
+def test_conversation_queue_shows_claimed_after_operator_takeover() -> None:
+    page = (ROOT / "admin" / "app" / "conversations" / "page.tsx").read_text(
+        encoding="utf-8"
+    )
+
+    assert "function queueStateLabel(row: ConversationRow)" in page
+    assert 'row.assigned_operator_id || row.state === "HUMAN_LOCKED"' in page
+    assert 'return "已接管";' in page
+    assert "{queueStateLabel(row)}" in page
