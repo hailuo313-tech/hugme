@@ -468,7 +468,7 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
 
     try:
         async with AsyncSessionLocal() as session:
-            # Get advisory lock
+            got_lock = False
             got = (
                 await session.execute(
                     text("SELECT pg_try_advisory_lock(:k)"),
@@ -479,6 +479,7 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
                 stats["skipped_no_lock"] = 1
                 log.info("auto_delivery_worker.tick.skip_no_lock")
                 return stats
+            got_lock = True
 
             try:
                 # Check AccountPool
@@ -605,6 +606,18 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
                         )
                     except Exception as finalize_error:
                         log.error(f"Error finalizing message: {finalize_error}")
+            finally:
+                if got_lock:
+                    try:
+                        await session.execute(
+                            text("SELECT pg_advisory_unlock(:k)"),
+                            {"k": _ADVISORY_LOCK_KEY},
+                        )
+                        await session.commit()
+                    except Exception as unlock_error:
+                        log.bind(error_type=type(unlock_error).__name__).warning(
+                            "auto_delivery_worker.tick.unlock_failed"
+                        )
 
     except Exception as e:
         log.error(f"auto_delivery_worker.tick.outer_error: {e}")
@@ -658,10 +671,22 @@ async def reinit_account_pool() -> bool:
 
 def get_scheduler_status() -> dict:
     """Get scheduler status."""
+    job_exists = False
+    if _scheduler is not None:
+        get_job = getattr(_scheduler, "get_job", None)
+        if callable(get_job):
+            job_exists = get_job(JOB_ID) is not None
+        else:
+            jobs = getattr(_scheduler, "jobs", None)
+            if isinstance(jobs, list):
+                job_exists = any(
+                    getattr(job, "id", None) == JOB_ID
+                    or (isinstance(job, tuple) and len(job) > 1 and job[1].get("id") == JOB_ID)
+                    for job in jobs
+                )
     return {
         "running": _scheduler is not None and _scheduler.running,
         "job_id": JOB_ID if _scheduler else None,
-        "job_exists": _scheduler is not None and JOB_ID in _scheduler
-        if _scheduler else False,
+        "job_exists": job_exists,
         "account_pool_initialized": _account_pool is not None,
     }
