@@ -411,6 +411,109 @@ def test_delete_user_messages_rejects_bad_uuid():
     db.execute.assert_not_awaited()
 
 
+def test_operator_reply_sends_telegram_and_persists(monkeypatch):
+    conversation_id = "11111111-2222-3333-4444-555555555555"
+    user_id = "33333333-2222-3333-4444-555555555555"
+    head = _row({
+        "conversation_id": conversation_id,
+        "conversation_channel": "telegram",
+        "user_id": user_id,
+        "user_channel": "telegram",
+        "external_id": "tg_123456789",
+    })
+    sent: list[dict[str, Any]] = []
+
+    async def _send(**kwargs: Any) -> int:
+        sent.append(kwargs)
+        return 9988
+
+    async def _redis():
+        raise RuntimeError("redis unavailable in unit test")
+
+    monkeypatch.setattr("services.telegram_send.send_telegram_text", _send)
+    monkeypatch.setattr("api.messages.get_redis", _redis)
+    db = _db_with([_result(rows=[head]), _result(), _result(), _result()])
+    client = TestClient(_build_app(db=db))
+
+    r = client.post(
+        f"/api/v1/admin/conversations/{conversation_id}/operator-reply",
+        json={"content": "hello from operator"},
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["status"] == "sent"
+    assert data["provider_message_id"] == "9988"
+    assert sent[0]["chat_id"] == 123456789
+    assert sent[0]["parse_mode"] is None
+    db.commit.assert_awaited_once()
+    executed_sql = "\n".join(str(call.args[0]) for call in db.execute.await_args_list)
+    assert "INSERT INTO messages" in executed_sql
+    assert "UPDATE conversations" in executed_sql
+    assert "UPDATE handoff_tasks" in executed_sql
+
+
+def test_operator_reply_sends_telegram_real_user(monkeypatch):
+    conversation_id = "11111111-2222-3333-4444-555555555555"
+    user_id = "33333333-2222-3333-4444-555555555555"
+    head = _row({
+        "conversation_id": conversation_id,
+        "conversation_channel": "telegram_real_user",
+        "user_id": user_id,
+        "user_channel": "telegram_real_user",
+        "external_id": "tg_123456789",
+    })
+    calls: list[dict[str, Any]] = []
+
+    async def _send_real_user(**kwargs: Any) -> tuple[bool, str]:
+        calls.append(kwargs)
+        return True, "42"
+
+    async def _redis():
+        raise RuntimeError("redis unavailable in unit test")
+
+    monkeypatch.setattr("api.admin._send_operator_reply_to_telegram_real_user", _send_real_user)
+    monkeypatch.setattr("api.messages.get_redis", _redis)
+    db = _db_with([_result(rows=[head]), _result(), _result(), _result()])
+    client = TestClient(_build_app(db=db))
+
+    r = client.post(
+        f"/api/v1/admin/conversations/{conversation_id}/operator-reply",
+        json={"content": "hello real user"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["provider_message_id"] == "42"
+    assert calls[0]["chat_id"] == 123456789
+    db.commit.assert_awaited_once()
+
+
+def test_operator_reply_rolls_back_when_send_fails(monkeypatch):
+    conversation_id = "11111111-2222-3333-4444-555555555555"
+    user_id = "33333333-2222-3333-4444-555555555555"
+    head = _row({
+        "conversation_id": conversation_id,
+        "conversation_channel": "telegram_real_user",
+        "user_id": user_id,
+        "user_channel": "telegram_real_user",
+        "external_id": "tg_123456789",
+    })
+
+    async def _send_real_user(**kwargs: Any) -> tuple[bool, str | None]:
+        return False, None
+
+    monkeypatch.setattr("api.admin._send_operator_reply_to_telegram_real_user", _send_real_user)
+    db = _db_with([_result(rows=[head]), _result(), _result()])
+    client = TestClient(_build_app(db=db))
+
+    r = client.post(
+        f"/api/v1/admin/conversations/{conversation_id}/operator-reply",
+        json={"content": "hello"},
+    )
+    assert r.status_code == 502
+    assert r.json()["detail"] == "telegram_send_failed"
+    db.rollback.assert_awaited_once()
+    db.commit.assert_not_awaited()
+
+
 def test_serialize_row_converts_decimal_to_float():
     """PG numeric -> Decimal; serializer must convert to float for JSON."""
     from decimal import Decimal
