@@ -58,6 +58,23 @@ def _row_dict(row: Any | None) -> dict[str, Any] | None:
     return None
 
 
+def _coerce_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text_value = value.strip()
+    if text_value.endswith("Z"):
+        text_value = f"{text_value[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(text_value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
 async def schedule_download_followups_after_reply(
     db: AsyncSession,
     *,
@@ -328,7 +345,7 @@ async def should_skip_stale_nurture_message(
         if downloaded:
             return "already_downloaded"
 
-    stale_after = metadata.get("cancel_if_user_message_after")
+    stale_after = _coerce_datetime(metadata.get("cancel_if_user_message_after"))
     if stale_after:
         replied = (
             await db.execute(
