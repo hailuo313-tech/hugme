@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -69,7 +70,7 @@ class IntentKeywordEngine:
 
     def __init__(self, rules_path: Path = DEFAULT_RULES_PATH) -> None:
         self.rules_path = Path(rules_path)
-        self._mtime_ns: int | None = None
+        self._content_digest: str | None = None
         self._ruleset: IntentRuleSet | None = None
 
     @property
@@ -77,10 +78,11 @@ class IntentKeywordEngine:
         return self.load_if_changed()
 
     def load_if_changed(self, *, force: bool = False) -> IntentRuleSet:
-        stat = self.rules_path.stat()
-        if force or self._ruleset is None or stat.st_mtime_ns != self._mtime_ns:
-            self._ruleset = _load_ruleset(self.rules_path)
-            self._mtime_ns = stat.st_mtime_ns
+        raw = self.rules_path.read_bytes()
+        digest = hashlib.sha256(raw).hexdigest()
+        if force or self._ruleset is None or digest != self._content_digest:
+            self._ruleset = _load_ruleset_from_text(raw.decode("utf-8"))
+            self._content_digest = digest
             logger.bind(
                 component="intent_keyword_engine",
                 rules=len(self._ruleset.rules),
@@ -119,7 +121,11 @@ class IntentKeywordEngine:
 
 
 def _load_ruleset(path: Path) -> IntentRuleSet:
-    raw = json.loads(path.read_text(encoding="utf-8"))
+    return _load_ruleset_from_text(path.read_text(encoding="utf-8"))
+
+
+def _load_ruleset_from_text(text: str) -> IntentRuleSet:
+    raw = json.loads(text)
     rules = tuple(_rule_from_dict(item) for item in raw.get("rules", []))
     return IntentRuleSet(
         version=int(raw.get("version", 1)),
