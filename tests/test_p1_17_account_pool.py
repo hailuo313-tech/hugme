@@ -47,6 +47,22 @@ class FakeClient:
         return {"account_id": self.account_id, "peer": peer, "text": text}
 
 
+class ResolvingFakeClient(FakeClient):
+    async def get_input_entity(self, peer: str):
+        self.events.append(("get_input_entity", self.account_id, peer))
+        return f"input:{peer}"
+
+
+class FallbackResolvingFakeClient(FakeClient):
+    async def get_input_entity(self, peer: str):
+        self.events.append(("get_input_entity.fail", self.account_id, peer))
+        raise LookupError("not cached")
+
+    async def get_entity(self, peer: str):
+        self.events.append(("get_entity", self.account_id, peer))
+        return f"entity:{peer}"
+
+
 class FakeSleeper:
     def __init__(self) -> None:
         self.delays: list[float] = []
@@ -120,6 +136,32 @@ async def test_send_message_uses_stable_account_client() -> None:
     assert selected.events[0] == ("action", first.account_id, "tg_99", "typing")
     assert selected.events[3] == ("send_message", first.account_id, "tg_99", "hello from pool", {"parse_mode": "html"})
     assert selected.events[7] == ("send_message", first.account_id, "tg_99", "again", {})
+
+
+@pytest.mark.asyncio
+async def test_send_message_resolves_peer_with_selected_client() -> None:
+    client = ResolvingFakeClient("acc-a")
+    pool = AccountPool(account_ids=["acc-a"], client_resolver=_client_resolver({"acc-a": client}), redis=FakeRedis())
+
+    result = await pool.send_message(user_id="user-42", peer="tg_99", text="hello", sleep=FakeSleeper())
+
+    assert result.peer == "input:tg_99"
+    assert client.events[0] == ("get_input_entity", "acc-a", "tg_99")
+    assert client.events[1] == ("action", "acc-a", "input:tg_99", "typing")
+    assert client.events[4] == ("send_message", "acc-a", "input:tg_99", "hello", {})
+
+
+@pytest.mark.asyncio
+async def test_send_message_falls_back_to_get_entity_when_input_entity_missing() -> None:
+    client = FallbackResolvingFakeClient("acc-a")
+    pool = AccountPool(account_ids=["acc-a"], client_resolver=_client_resolver({"acc-a": client}), redis=FakeRedis())
+
+    result = await pool.send_message(user_id="user-42", peer="tg_99", text="hello", sleep=FakeSleeper())
+
+    assert result.peer == "entity:tg_99"
+    assert client.events[0] == ("get_input_entity.fail", "acc-a", "tg_99")
+    assert client.events[1] == ("get_entity", "acc-a", "tg_99")
+    assert client.events[5] == ("send_message", "acc-a", "entity:tg_99", "hello", {})
 
 
 @pytest.mark.asyncio

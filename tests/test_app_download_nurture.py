@@ -130,3 +130,42 @@ async def test_stale_guard_skips_when_user_replied_after_queue():
     )
 
     assert reason == "user_replied_after_queue"
+
+
+@pytest.mark.asyncio
+async def test_clicked_no_download_scan_is_recent_and_dedupes_failed(monkeypatch):
+    class _ClickedSession(_FakeSession):
+        async def execute(self, statement, params=None):
+            sql = str(statement)
+            self.executed.append((sql, params or {}))
+            if "WITH clicked AS" in sql:
+                return _RowsResult(
+                    [
+                        {
+                            "tracking_id": "track-1",
+                            "user_id": "11111111-1111-1111-1111-111111111111",
+                            "conversation_id": "22222222-2222-2222-2222-222222222222",
+                            "external_user_id": "tg_123",
+                            "chat_id": 123,
+                            "clicked_at": datetime(2026, 5, 26, tzinfo=timezone.utc),
+                        }
+                    ]
+                )
+            if "INSERT INTO message_schedules" in sql:
+                return _RowsResult([("msg-1",)])
+            return _RowsResult()
+
+    db = _ClickedSession()
+
+    async def _build_content(_db, **_kwargs):
+        return "continue here: https://app.example/download", {}
+
+    monkeypatch.setattr(nurture, "_build_contextual_content", _build_content)
+
+    await nurture.queue_clicked_not_downloaded_followups(db, trace_id="trace", batch_size=5)
+
+    scan_sql = db.executed[0][0]
+    insert_sql = [sql for sql, _ in db.executed if "INSERT INTO message_schedules" in sql][0]
+    assert "INTERVAL '24 hours'" in scan_sql
+    assert "ms.status IN ('pending', 'sending', 'sent', 'failed')" in scan_sql
+    assert "status IN ('pending', 'sending', 'sent', 'failed')" in insert_sql
