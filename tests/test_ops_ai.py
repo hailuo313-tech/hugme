@@ -207,7 +207,7 @@ def test_ops_ai_translate_returns_chinese_display_text(monkeypatch):
         {"id": "m2", "text": "你是谁？"},
     ]
     llm_messages = mock_chat.await_args.kwargs["messages"]
-    assert "简体中文" in llm_messages[0]["content"]
+    assert "Simplified Chinese" in llm_messages[0]["content"]
     assert "Mina93" in llm_messages[1]["content"]
 
 
@@ -226,6 +226,48 @@ def test_ops_ai_translate_falls_back_to_original_missing_ids(monkeypatch):
 
     assert r.status_code == 200, r.text
     assert r.json()["translations"] == [{"id": "m1", "text": "Original text"}]
+
+
+def test_ops_ai_translate_extracts_json_from_prose(monkeypatch):
+    db = MagicMock()
+    _patch_llm(
+        monkeypatch,
+        content='Here is the JSON: {"translations":[{"id":"m1","text":"你好"}]}',
+    )
+    client = TestClient(_app(db))
+
+    r = client.post(
+        "/api/v1/ops-ai/translate",
+        json={"items": [{"id": "m1", "text": "Hello"}]},
+    )
+
+    assert r.status_code == 200, r.text
+    assert r.json()["translations"] == [{"id": "m1", "text": "你好"}]
+
+
+def test_ops_ai_translate_repairs_invalid_json(monkeypatch):
+    db = MagicMock()
+    mock_chat = AsyncMock(
+        side_effect=[
+            SimpleNamespace(content="not json", model_used="bad-model", error=None),
+            SimpleNamespace(
+                content=json.dumps({"translations": [{"id": "m1", "text": "你好"}]}, ensure_ascii=False),
+                model_used="repair-model",
+                error=None,
+            ),
+        ]
+    )
+    monkeypatch.setattr("api.ops_ai.llm_chat", mock_chat)
+    client = TestClient(_app(db))
+
+    r = client.post(
+        "/api/v1/ops-ai/translate",
+        json={"items": [{"id": "m1", "text": "Hello"}]},
+    )
+
+    assert r.status_code == 200, r.text
+    assert r.json()["translations"] == [{"id": "m1", "text": "你好"}]
+    assert mock_chat.await_count == 2
 
 
 def test_ops_ai_assist_conversation_not_found():
