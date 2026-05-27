@@ -17,6 +17,14 @@ from services.mtproto.account_pool import AccountPool
 from services.mtproto.account_routing import route_redis_key
 from services.telegram_account_manager import telegram_account_manager
 from services.telegram_send import telegram_chat_id_from_external
+from services.app_download_nurture import (
+    APP_DOWNLOAD_MESSAGE_TYPE,
+    APP_DOWNLOAD_NURTURE_DELIVERY_MODE,
+    persist_auto_delivery_message,
+    prepare_nurture_message_for_send,
+    queue_clicked_not_downloaded_followups,
+    should_skip_stale_nurture_message,
+)
 
 try:
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -84,6 +92,14 @@ def _is_timeout_fallback_message(message: dict[str, Any]) -> bool:
     return (
         message.get("message_type") == TIMEOUT_FALLBACK_MESSAGE_TYPE
         or metadata.get("delivery_mode") == TIMEOUT_FALLBACK_DELIVERY_MODE
+    )
+
+
+def _is_app_download_nurture_message(message: dict[str, Any]) -> bool:
+    metadata = message.get("metadata") or {}
+    return (
+        message.get("message_type") == APP_DOWNLOAD_MESSAGE_TYPE
+        or metadata.get("delivery_mode") == APP_DOWNLOAD_NURTURE_DELIVERY_MODE
     )
 
 
@@ -309,7 +325,9 @@ async def _claim_bcd_message(session: AsyncSession) -> dict[str, Any] | None:
                       AND (
                           COALESCE(p.user_level, 'C') IN ('B', 'C', 'D')
                           OR ms.metadata->>'delivery_mode' = :delivery_mode
+                          OR ms.metadata->>'delivery_mode' = :app_download_delivery_mode
                           OR ms.message_type = :timeout_message_type
+                          OR ms.message_type = :app_download_message_type
                       )
                     ORDER BY ms.priority DESC, ms.send_at ASC NULLS LAST, ms.created_at ASC
                     FOR UPDATE OF ms SKIP LOCKED
@@ -328,6 +346,8 @@ async def _claim_bcd_message(session: AsyncSession) -> dict[str, Any] | None:
             {
                 "delivery_mode": TIMEOUT_FALLBACK_DELIVERY_MODE,
                 "timeout_message_type": TIMEOUT_FALLBACK_MESSAGE_TYPE,
+                "app_download_delivery_mode": APP_DOWNLOAD_NURTURE_DELIVERY_MODE,
+                "app_download_message_type": APP_DOWNLOAD_MESSAGE_TYPE,
             },
         )
     ).mappings().first()
@@ -434,9 +454,11 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
     log = logger.bind(component="auto_delivery_worker", trace_id=trace_id)
     stats: dict[str, Any] = {
         "timeout_fallback_queued": 0,
+        "app_download_followup_queued": 0,
         "claimed": 0,
         "sent": 0,
         "failed": 0,
+        "skipped_stale": 0,
         "skipped_no_lock": 0,
         "skipped_no_pool": 0,
         "error": None,
@@ -470,6 +492,10 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
                     session,
                     trace_id=trace_id,
                 )
+                stats["app_download_followup_queued"] = await queue_clicked_not_downloaded_followups(
+                    session,
+                    trace_id=trace_id,
+                )
 
                 # Claim one B/C/D message to send
                 message = await _claim_bcd_message(session)
@@ -482,6 +508,29 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
                 user_id = message["user_id"]
                 content = message["content"]
                 chat_id = message.get("chat_id")
+                stale_reason = await should_skip_stale_nurture_message(
+                    session,
+                    message=message,
+                )
+                if stale_reason:
+                    await _finalize_message(
+                        session,
+                        message_id=message_id,
+                        status="failed",
+                        failure_reason=f"stale:{stale_reason}",
+                    )
+                    stats["skipped_stale"] = 1
+                    log.bind(message_id=message_id, stale_reason=stale_reason).info(
+                        "auto_delivery_worker.tick.stale_skip"
+                    )
+                    return stats
+
+                content = await prepare_nurture_message_for_send(
+                    session,
+                    message=message,
+                    trace_id=trace_id,
+                )
+                await session.commit()
 
                 log.bind(
                     message_id=message_id,
@@ -489,6 +538,7 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
                     message_type=message["message_type"],
                     script_hit_id=(message.get("metadata") or {}).get("script_hit_id"),
                     timeout_fallback=_is_timeout_fallback_message(message),
+                    app_download_nurture=_is_app_download_nurture_message(message),
                 ).info("auto_delivery_worker.tick.claimed")
 
                 # Send via AccountPool
@@ -501,6 +551,20 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
                     )
 
                     if success:
+                        sender_id = "auto_delivery_worker"
+                        if _is_app_download_nurture_message(message):
+                            try:
+                                await persist_auto_delivery_message(
+                                    session,
+                                    message=message,
+                                    content=content,
+                                    sender_id=sender_id,
+                                )
+                            except Exception as persist_error:
+                                log.bind(
+                                    message_id=message_id,
+                                    error_type=type(persist_error).__name__,
+                                ).warning("auto_delivery_worker.persist_sent_message_failed")
                         await _finalize_message(
                             session,
                             message_id=message_id,
