@@ -151,7 +151,7 @@ function isPremium(row: ConversationRow): boolean {
 }
 
 function isWaiting(row: ConversationRow): boolean {
-  return row.state === "WAITING_OPERATOR" || row.state === "HUMAN_LOCKED";
+  return row.state === "WAITING_OPERATOR" && !row.assigned_operator_id;
 }
 
 function isRisk(row: ConversationRow): boolean {
