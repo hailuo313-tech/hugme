@@ -41,6 +41,7 @@ def test_conversation_queue_shows_claimed_after_operator_takeover() -> None:
         encoding="utf-8"
     )
 
+    assert 'return row.state === "WAITING_OPERATOR" && !row.assigned_operator_id;' in page
     assert "function queueStateLabel(row: ConversationRow)" in page
     assert 'row.assigned_operator_id || row.state === "HUMAN_LOCKED"' in page
     assert 'return "已接管";' in page
