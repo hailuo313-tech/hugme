@@ -18,6 +18,14 @@ class _MappingsResult:
         return self.rows[0] if self.rows else None
 
 
+class _ScalarResult:
+    def __init__(self, value):
+        self.value = value
+
+    def scalar(self):
+        return self.value
+
+
 class _FakeSession:
     def __init__(self, rows=None):
         self.rows = rows or []
@@ -25,8 +33,13 @@ class _FakeSession:
         self.commits = 0
 
     async def execute(self, statement, params=None):
-        self.executed.append((str(statement), params or {}))
-        if "RETURNING ms.id" in str(statement):
+        sql = str(statement)
+        self.executed.append((sql, params or {}))
+        if "pg_try_advisory_lock" in sql:
+            return _ScalarResult(True)
+        if "pg_advisory_unlock" in sql:
+            return _ScalarResult(True)
+        if "RETURNING ms.id" in sql:
             return _MappingsResult(self.rows)
         return _MappingsResult()
 
@@ -118,6 +131,51 @@ def test_p3_15_start_scheduler_initializes_scheduler(monkeypatch):
     assert worker._scheduler.running is True
     assert worker._scheduler.jobs
     assert created_tasks
+
+
+def test_p3_15_scheduler_status_handles_apscheduler(monkeypatch):
+    class _FakeScheduler:
+        running = True
+
+        def get_job(self, job_id):
+            return object() if job_id == worker.JOB_ID else None
+
+    monkeypatch.setattr(worker, "_scheduler", _FakeScheduler())
+    monkeypatch.setattr(worker, "_account_pool", object())
+
+    status = worker.get_scheduler_status()
+
+    assert status["running"] is True
+    assert status["job_exists"] is True
+    assert status["account_pool_initialized"] is True
+
+
+@pytest.mark.asyncio
+async def test_p3_15_run_one_tick_releases_advisory_lock(monkeypatch):
+    session = _FakeSession(rows=[])
+
+    class _SessionFactory:
+        async def __aenter__(self):
+            return session
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(worker, "_account_pool", _FakePool())
+    monkeypatch.setattr(worker, "AsyncSessionLocal", lambda: _SessionFactory())
+    monkeypatch.setattr(worker, "schedule_expired_timeout_fallbacks", lambda *_args, **_kwargs: _async_zero())
+    monkeypatch.setattr(worker, "queue_clicked_not_downloaded_followups", lambda *_args, **_kwargs: _async_zero())
+
+    stats = await worker.run_one_tick(trace_id="trace-lock")
+
+    sql_texts = [sql for sql, _ in session.executed]
+    assert stats["claimed"] == 0
+    assert any("pg_try_advisory_lock" in sql for sql in sql_texts)
+    assert any("pg_advisory_unlock" in sql for sql in sql_texts)
+
+
+async def _async_zero():
+    return 0
 
 
 def test_p3_15_timeout_fallback_locks_handoff_tasks_only():
