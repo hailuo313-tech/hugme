@@ -69,13 +69,18 @@ class _Log:
 
 
 @pytest.mark.asyncio
-async def test_mark_read_acknowledges_before_reply_generation():
+async def test_mark_read_waits_before_acknowledging():
     client = _ReadClient()
     log = _Log()
     message = SimpleNamespace(id=99)
+    delays = []
 
-    await _mark_read(client, SimpleNamespace(message=message), 12345, log)
+    async def _sleep(seconds):
+        delays.append(seconds)
 
+    await _mark_read(client, SimpleNamespace(message=message), 12345, log, sleep=_sleep)
+
+    assert delays == [4.0]
     assert client.calls == [(12345, message, 99)]
     assert ("info", "mtproto_auto_reply.read_ack") in log.events
 
@@ -85,9 +90,14 @@ async def test_mark_read_prefers_event_mark_read():
     client = _ReadClient()
     event = _MarkReadEvent()
     log = _Log()
+    delays = []
 
-    await _mark_read(client, event, 12345, log)
+    async def _sleep(seconds):
+        delays.append(seconds)
 
+    await _mark_read(client, event, 12345, log, sleep=_sleep)
+
+    assert delays == [4.0]
     assert event.marked is True
     assert client.calls == []
     assert ("info", "mtproto_auto_reply.read_ack") in log.events
