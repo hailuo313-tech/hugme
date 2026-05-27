@@ -44,6 +44,8 @@ def _db_with(results: list[Any]):
     """按队列顺序返回 mock result，供 ``db.execute()`` 多次 await。"""
     db = MagicMock()
     db.execute = AsyncMock(side_effect=list(results))
+    db.commit = AsyncMock()
+    db.rollback = AsyncMock()
     return db
 
 
@@ -267,6 +269,97 @@ def test_detail_happy_path_returns_messages():
     assert len(data["messages"]) == 2
     assert data["messages"][0]["id"] == "m1"
     assert data["messages"][1]["sender_type"] == "assistant"
+
+
+def test_delete_single_message_deletes_and_clears_context(monkeypatch):
+    conversation_id = "11111111-2222-3333-4444-555555555555"
+    message_id = "22222222-2222-3333-4444-555555555555"
+    user_id = "33333333-2222-3333-4444-555555555555"
+    cleared: list[tuple[str | None, list[str]]] = []
+
+    async def _clear(user_id_arg: str | None, conversation_ids: list[str]) -> None:
+        cleared.append((user_id_arg, conversation_ids))
+
+    monkeypatch.setattr("api.admin._clear_deleted_message_context", _clear)
+    db = _db_with([
+        _result(rows=[(conversation_id, user_id)]),
+        _result(),
+        _result(scalar=1),
+        _result(),
+    ])
+    client = TestClient(_build_app(db=db))
+
+    r = client.delete(f"/api/v1/admin/conversations/{conversation_id}/messages/{message_id}")
+    assert r.status_code == 200, r.text
+    assert r.json()["deleted_count"] == 1
+    db.commit.assert_awaited_once()
+    db.rollback.assert_not_awaited()
+    assert cleared == [(user_id, [conversation_id])]
+    executed_sql = "\n".join(str(call.args[0]) for call in db.execute.await_args_list)
+    assert "DELETE FROM messages" in executed_sql
+    assert "UPDATE memories" in executed_sql
+
+
+def test_delete_single_message_returns_404_when_message_missing(monkeypatch):
+    conversation_id = "11111111-2222-3333-4444-555555555555"
+    message_id = "22222222-2222-3333-4444-555555555555"
+    user_id = "33333333-2222-3333-4444-555555555555"
+
+    async def _clear(*args: Any, **kwargs: Any) -> None:
+        raise AssertionError("cache clear must not run when delete failed")
+
+    monkeypatch.setattr("api.admin._clear_deleted_message_context", _clear)
+    db = _db_with([
+        _result(rows=[(conversation_id, user_id)]),
+        _result(),
+        _result(scalar=0),
+    ])
+    client = TestClient(_build_app(db=db))
+
+    r = client.delete(f"/api/v1/admin/conversations/{conversation_id}/messages/{message_id}")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "message not found"
+    db.commit.assert_not_awaited()
+    db.rollback.assert_awaited_once()
+
+
+def test_delete_user_messages_deletes_all_user_chat_history(monkeypatch):
+    user_id = "33333333-2222-3333-4444-555555555555"
+    conv1 = "11111111-2222-3333-4444-555555555555"
+    conv2 = "44444444-2222-3333-4444-555555555555"
+    cleared: list[tuple[str | None, list[str]]] = []
+
+    async def _clear(user_id_arg: str | None, conversation_ids: list[str]) -> None:
+        cleared.append((user_id_arg, conversation_ids))
+
+    monkeypatch.setattr("api.admin._clear_deleted_message_context", _clear)
+    db = _db_with([
+        _result(rows=[(user_id,)]),
+        _result(rows=[(conv1,), (conv2,)]),
+        _result(),
+        _result(scalar=3),
+        _result(),
+    ])
+    client = TestClient(_build_app(db=db))
+
+    r = client.delete(f"/api/v1/admin/users/{user_id}/messages")
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["deleted_count"] == 3
+    assert data["conversation_count"] == 2
+    db.commit.assert_awaited_once()
+    assert cleared == [(user_id, [conv1, conv2])]
+    executed_sql = "\n".join(str(call.args[0]) for call in db.execute.await_args_list)
+    assert "DELETE FROM messages" in executed_sql
+    assert "last_message_at = NULL" in executed_sql
+
+
+def test_delete_user_messages_rejects_bad_uuid():
+    db = _db_with([])
+    client = TestClient(_build_app(db=db))
+    r = client.delete("/api/v1/admin/users/not-a-uuid/messages")
+    assert r.status_code == 400
+    db.execute.assert_not_awaited()
 
 
 def test_serialize_row_converts_decimal_to_float():
