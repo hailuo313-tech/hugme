@@ -169,5 +169,8 @@ async def test_clicked_no_download_scan_is_recent_and_dedupes_failed(monkeypatch
     scan_sql = db.executed[0][0]
     insert_sql = [sql for sql, _ in db.executed if "INSERT INTO message_schedules" in sql][0]
     assert "INTERVAL '24 hours'" in scan_sql
-    assert "ms.status IN ('pending', 'sending', 'sent')" in scan_sql
-    assert "status IN ('pending', 'sending', 'sent')" in insert_sql
+    assert "'app_link_clicked_followup'" not in scan_sql
+    assert "ROW_NUMBER() OVER" in scan_sql
+    assert "ms.metadata->>'conversation_id' = c.conversation_id" in scan_sql
+    assert "ms.status IN ('pending', 'sending', 'sent', 'failed')" in scan_sql
+    assert "status IN ('pending', 'sending', 'sent', 'failed')" in insert_sql
