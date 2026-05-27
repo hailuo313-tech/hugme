@@ -109,9 +109,9 @@ def _app(db: Any, *, with_auth: bool = True) -> FastAPI:
 
 def _llm_payload(reply_count: int = 3) -> str:
     replies = [
-        {"rank": 1, "text": "我在的，刚刚让你等了。", "reason": "先安抚等待焦虑。"},
-        {"rank": 2, "text": "我理解你会担心，我们一步步看。", "reason": "降低紧张感。"},
-        {"rank": 3, "text": "谢谢你告诉我，我会认真处理。", "reason": "表达重视。"},
+        {"rank": 1, "text": "I am here.", "translation_zh": "我在这里。", "reason": "先安抚等待焦虑。"},
+        {"rank": 2, "text": "I understand your concern.", "translation_zh": "我理解你的担心。", "reason": "降低紧张感。"},
+        {"rank": 3, "text": "Thanks for telling me.", "translation_zh": "谢谢你告诉我。", "reason": "表达重视。"},
     ][:reply_count]
     return json.dumps(
         {
@@ -261,12 +261,15 @@ def test_ops_ai_assist_returns_summary_and_three_replies(monkeypatch):
     assert body["summary"]["user_state"]
     assert len(body["suggested_replies"]) == 3
     assert [item["rank"] for item in body["suggested_replies"]] == [1, 2, 3]
+    assert body["suggested_replies"][0]["translation_zh"] == "我在这里。"
     assert db.execute.await_args_list[1].args[1]["limit"] == 12
     llm_messages = mock_chat.await_args.kwargs["messages"]
     assert llm_messages[0]["role"] == "system"
     assert "exactly 3" in llm_messages[0]["content"]
     assert "user's actual chat history" in llm_messages[0]["content"]
+    assert "translation_zh" in llm_messages[0]["content"]
     prompt_payload = json.loads(llm_messages[1]["content"])
+    assert "translation_zh" in json.dumps(prompt_payload["required_json_shape"])
     assert prompt_payload["conversation_profile"]["interests"] == ["music", "jazz"]
     assert prompt_payload["conversation_profile"]["preferences"]["age"] == 38
     assert prompt_payload["conversation_profile"]["country_code"] == "US"
@@ -380,6 +383,7 @@ def test_ops_ai_assist_pads_missing_replies(monkeypatch):
     assert r.status_code == 200
     replies = r.json()["suggested_replies"]
     assert len(replies) == 3
-    assert replies[0]["text"] == "我在的，刚刚让你等了。"
+    assert replies[0]["text"] == "I am here."
+    assert replies[0]["translation_zh"] == "我在这里。"
     assert replies[1]["text"]
     assert replies[2]["text"]

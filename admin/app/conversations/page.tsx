@@ -85,6 +85,7 @@ interface ScriptTraceResponse {
 interface OpsAiReply {
   rank: number;
   text: string;
+  translation_zh?: string | null;
   reason: string;
 }
 
@@ -96,6 +97,12 @@ interface OpsAiAssistResponse {
     recommended_strategy: string;
   };
   suggested_replies: OpsAiReply[];
+  model_used?: string | null;
+  latency_ms?: number | null;
+}
+
+interface TranslateResponse {
+  translations: { id: string; text: string }[];
   model_used?: string | null;
   latency_ms?: number | null;
 }
@@ -247,6 +254,9 @@ function ConversationsContent({ operator }: { operator: Operator }) {
   const [queueDeleteId, setQueueDeleteId] = useState<string | null>(null);
   const [sendLoading, setSendLoading] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [messageTranslations, setMessageTranslations] = useState<Record<string, string>>({});
+  const [translatingMessages, setTranslatingMessages] = useState(false);
+  const [translationError, setTranslationError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -338,6 +348,8 @@ function ConversationsContent({ operator }: { operator: Operator }) {
     setTraceError(null);
     setAssist(null);
     setDraft("");
+    setMessageTranslations({});
+    setTranslationError(null);
     setDetailLoading(true);
     try {
       const response = await apiFetch<DetailResponse>(`/admin/conversations/${conversationId}`);
@@ -457,7 +469,7 @@ function ConversationsContent({ operator }: { operator: Operator }) {
     if (!detail) return;
     setAssistLoading(true);
     try {
-      const response = await apiFetch<OpsAiAssistResponse>(
+      let response = await apiFetch<OpsAiAssistResponse>(
         `/ops-ai/conversations/${detail.conversation.conversation_id}/assist`,
         {
           method: "POST",
@@ -468,11 +480,62 @@ function ConversationsContent({ operator }: { operator: Operator }) {
           }),
         },
       );
+      const missingTranslations = (response.suggested_replies || []).filter((reply) => reply.text.trim() && !reply.translation_zh?.trim());
+      if (missingTranslations.length > 0) {
+        const translated = await translateTexts(
+          missingTranslations.map((reply) => ({
+            id: String(reply.rank),
+            text: reply.text,
+            sender_type: "assistant",
+          })),
+        );
+        response = {
+          ...response,
+          suggested_replies: response.suggested_replies.map((reply) => ({
+            ...reply,
+            translation_zh: reply.translation_zh || translated[String(reply.rank)] || "",
+          })),
+        };
+      }
       setAssist(response);
     } catch (err) {
       setDetailError(err instanceof Error ? err.message : String(err));
     } finally {
       setAssistLoading(false);
+    }
+  }
+
+  async function translateTexts(items: { id: string; text: string; sender_type?: string | null }[]) {
+    const response = await apiFetch<TranslateResponse>("/ops-ai/translate", {
+      method: "POST",
+      body: JSON.stringify({
+        target_language: "zh-CN",
+        preserve_terms: [detail?.conversation.nickname, detail?.conversation.external_id].filter(Boolean),
+        items,
+      }),
+    });
+    return Object.fromEntries((response.translations || []).map((item) => [item.id, item.text]));
+  }
+
+  async function translateAllMessages() {
+    if (!detail || translatingMessages) return;
+    const items = detail.messages
+      .filter((message) => (message.content || "").trim())
+      .map((message) => ({
+        id: message.id,
+        text: message.content || "",
+        sender_type: message.sender_type,
+      }));
+    if (items.length === 0) return;
+
+    setTranslatingMessages(true);
+    setTranslationError(null);
+    try {
+      setMessageTranslations(await translateTexts(items));
+    } catch (err) {
+      setTranslationError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setTranslatingMessages(false);
     }
   }
 
@@ -696,10 +759,14 @@ function ConversationsContent({ operator }: { operator: Operator }) {
           deleteError={deleteError}
           sendLoading={sendLoading}
           sendError={sendError}
+          messageTranslations={messageTranslations}
+          translatingMessages={translatingMessages}
+          translationError={translationError}
           onDraftChange={setDraft}
           onClose={() => setDetail(null)}
           onGenerateAssist={() => void generateAssist()}
           onConfirmSend={() => void confirmSendDraft()}
+          onTranslateAllMessages={() => void translateAllMessages()}
           onDeleteMessage={(messageId) => void deleteSingleMessage(messageId)}
           onDeleteAllUserMessages={() => void deleteAllUserMessages()}
         />
@@ -762,10 +829,14 @@ function DetailDrawer({
   deleteError,
   sendLoading,
   sendError,
+  messageTranslations,
+  translatingMessages,
+  translationError,
   onDraftChange,
   onClose,
   onGenerateAssist,
   onConfirmSend,
+  onTranslateAllMessages,
   onDeleteMessage,
   onDeleteAllUserMessages,
 }: {
@@ -782,10 +853,14 @@ function DetailDrawer({
   deleteError: string | null;
   sendLoading: boolean;
   sendError: string | null;
+  messageTranslations: Record<string, string>;
+  translatingMessages: boolean;
+  translationError: string | null;
   onDraftChange: (value: string) => void;
   onClose: () => void;
   onGenerateAssist: () => void;
   onConfirmSend: () => void;
+  onTranslateAllMessages: () => void;
   onDeleteMessage: (messageId: string) => void;
   onDeleteAllUserMessages: () => void;
 }) {
@@ -880,7 +955,13 @@ function DetailDrawer({
                     {assist.suggested_replies.map((reply) => (
                       <button key={reply.rank} onClick={() => onDraftChange(reply.text)} className="w-full rounded-md border border-slate-800 p-3 text-left text-slate-200 hover:border-violet-700">
                         <div className="mb-1 text-xs text-violet-300">建议回复 {reply.rank}</div>
-                        {reply.text}
+                        <div className="whitespace-pre-wrap break-words">{reply.text}</div>
+                        {reply.translation_zh && (
+                          <div className="mt-3 rounded-md border border-slate-800 bg-slate-900/70 px-3 py-2 text-xs leading-6 text-amber-100">
+                            <div className="mb-1 font-medium text-amber-300">中文参考</div>
+                            <div className="whitespace-pre-wrap break-words">{reply.translation_zh}</div>
+                          </div>
+                        )}
                       </button>
                     ))}
                   </div>
@@ -898,13 +979,27 @@ function DetailDrawer({
                   </button>
                 </div>
               </Panel>
-              <Panel title="最近消息">
+              <Panel
+                title="最近消息"
+                action={
+                  <button
+                    type="button"
+                    onClick={onTranslateAllMessages}
+                    disabled={translatingMessages || detail.messages.length === 0}
+                    className="rounded-md border border-sky-700 px-3 py-2 text-xs font-medium text-sky-200 hover:bg-sky-950/40 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {translatingMessages ? "翻译中..." : "翻译全部信息"}
+                  </button>
+                }
+              >
+                {translationError && <div className="mb-3 rounded-md border border-rose-800 bg-rose-950/40 px-3 py-2 text-xs text-rose-200">{translationError}</div>}
                 <div className="space-y-3">
                   {detail.messages.length === 0 && <div className="text-sm text-slate-500">暂无消息</div>}
                   {[...detail.messages].reverse().map((message) => (
                     <MessageBubble
                       key={message.id}
                       message={message}
+                      translatedText={messageTranslations[message.id]}
                       deleteLoading={deleteLoading}
                       onDelete={() => onDeleteMessage(message.id)}
                     />
@@ -928,7 +1023,7 @@ function Meta({ label, value }: { label: string; value: string | null | undefine
   );
 }
 
-function MessageBubble({ message, deleteLoading, onDelete }: { message: MessageRow; deleteLoading: boolean; onDelete: () => void }) {
+function MessageBubble({ message, translatedText, deleteLoading, onDelete }: { message: MessageRow; translatedText?: string; deleteLoading: boolean; onDelete: () => void }) {
   const isUser = message.sender_type === "user";
   const isOperator = message.is_operator_message || message.sender_type === "operator";
   const cls = isUser ? "border-slate-700 bg-slate-900" : isOperator ? "border-amber-800 bg-amber-950/30" : "border-violet-800 bg-violet-950/25";
@@ -950,6 +1045,12 @@ function MessageBubble({ message, deleteLoading, onDelete }: { message: MessageR
         </div>
       </div>
       <div className="whitespace-pre-wrap break-words text-sm text-slate-100">{message.content || "（空）"}</div>
+      {translatedText && (
+        <div className="mt-3 rounded-md border border-slate-800 bg-slate-950/70 px-3 py-2 text-xs leading-6 text-amber-100">
+          <div className="mb-1 font-medium text-amber-300">中文参考</div>
+          <div className="whitespace-pre-wrap break-words">{translatedText}</div>
+        </div>
+      )}
     </div>
   );
 }

@@ -47,3 +47,15 @@ def test_conversation_queue_shows_claimed_after_operator_takeover() -> None:
     assert "{queueStateLabel(row)}" in page
     assert "`/admin/conversations/${row.conversation_id}/accept`" in page
     assert "processConversation(row)" in page
+
+
+def test_conversation_drawer_supports_operator_translation_helpers() -> None:
+    page = (ROOT / "admin" / "app" / "conversations" / "page.tsx").read_text(
+        encoding="utf-8"
+    )
+
+    assert "translation_zh" in page
+    assert "中文参考" in page
+    assert "翻译全部信息" in page
+    assert 'apiFetch<TranslateResponse>("/ops-ai/translate"' in page
+    assert "messageTranslations[message.id]" in page

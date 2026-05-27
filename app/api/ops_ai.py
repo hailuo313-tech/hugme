@@ -133,6 +133,7 @@ def _build_messages(
         "You are an operations assistant for a human operator. "
         "Summarize the conversation and draft exactly 3 candidate replies. "
         "Every candidate reply must be personalized from the user's actual chat history, interests, hobbies, profile preferences, and memories. "
+        "Every candidate reply must include translation_zh, a Simplified Chinese reference translation for the human operator only. "
         "If the user has stated a preference or personal fact, reference it naturally when it helps the reply. "
         "Do not claim to be the user, the operator, a doctor, lawyer, or financial advisor. "
         "Do not promise refunds, bans, medical/legal/financial outcomes, or policy exceptions. "
@@ -152,9 +153,9 @@ def _build_messages(
                 "recommended_strategy": "string",
             },
             "suggested_replies": [
-                {"rank": 1, "text": "string", "reason": "string"},
-                {"rank": 2, "text": "string", "reason": "string"},
-                {"rank": 3, "text": "string", "reason": "string"},
+                {"rank": 1, "text": "string", "translation_zh": "Simplified Chinese reference for operator", "reason": "string"},
+                {"rank": 2, "text": "string", "translation_zh": "Simplified Chinese reference for operator", "reason": "string"},
+                {"rank": 3, "text": "string", "translation_zh": "Simplified Chinese reference for operator", "reason": "string"},
             ],
         },
     }
@@ -242,6 +243,7 @@ def _fallback_reply(rank: int, summary: dict[str, Any]) -> dict[str, Any]:
     return {
         "rank": rank,
         "text": templates[(rank - 1) % len(templates)],
+        "translation_zh": templates[(rank - 1) % len(templates)],
         "reason": strategy or "LLM 返回不足 3 条时的安全补位回复。",
     }
 
@@ -263,6 +265,7 @@ def _normalize_assist_payload(parsed: dict[str, Any]) -> tuple[dict[str, Any], l
         if not isinstance(reply, dict):
             continue
         text_value = str(reply.get("text") or "").strip()
+        translation_value = str(reply.get("translation_zh") or "").strip()
         reason_value = str(reply.get("reason") or "").strip()
         if not text_value:
             continue
@@ -270,6 +273,7 @@ def _normalize_assist_payload(parsed: dict[str, Any]) -> tuple[dict[str, Any], l
             {
                 "rank": len(normalized_replies) + 1,
                 "text": text_value,
+                "translation_zh": translation_value,
                 "reason": reason_value,
             }
         )
