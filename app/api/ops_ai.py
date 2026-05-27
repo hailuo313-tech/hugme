@@ -85,6 +85,7 @@ def _build_messages(
     *,
     conversation: dict[str, Any],
     messages: list[dict[str, Any]],
+    memories: list[dict[str, Any]],
     language: str,
     tone: str,
 ) -> list[dict[str, str]]:
@@ -97,15 +98,42 @@ def _build_messages(
         "risk_level": conversation.get("risk_level"),
         "relationship_stage": conversation.get("relationship_stage"),
         "vip_level": conversation.get("vip_level"),
+        "user_level": conversation.get("user_level"),
+        "chat_route": conversation.get("chat_route"),
+        "country_code": conversation.get("country_code"),
         "character_name": conversation.get("character_name"),
         "language": conversation.get("language"),
         "chat_style": conversation.get("chat_style"),
         "interests": conversation.get("interests"),
+        "preferences": conversation.get("preferences"),
+        "emotional_patterns": conversation.get("emotional_patterns"),
+        "notes": conversation.get("notes"),
         "forbidden_topics": conversation.get("forbidden_topics"),
+    }
+    personalization = {
+        "must_use": [
+            "Read the recent message history before drafting.",
+            "Use the user's interests, hobbies, preferences, country, age, relationship stage, and memories when relevant.",
+            "The reply must answer the user's latest message first, then naturally guide the business goal.",
+            "Avoid generic replies that could fit any user.",
+        ],
+        "long_term_memories": [
+            {
+                "type": memory.get("memory_type"),
+                "content": memory.get("content"),
+                "summary": memory.get("summary"),
+                "importance": memory.get("importance_score"),
+                "emotion_tags": memory.get("emotion_tags"),
+                "created_at": memory.get("created_at"),
+            }
+            for memory in memories
+        ],
     }
     system = (
         "You are an operations assistant for a human operator. "
         "Summarize the conversation and draft exactly 3 candidate replies. "
+        "Every candidate reply must be personalized from the user's actual chat history, interests, hobbies, profile preferences, and memories. "
+        "If the user has stated a preference or personal fact, reference it naturally when it helps the reply. "
         "Do not claim to be the user, the operator, a doctor, lawyer, or financial advisor. "
         "Do not promise refunds, bans, medical/legal/financial outcomes, or policy exceptions. "
         "Return strict JSON only, no markdown fences."
@@ -114,6 +142,7 @@ def _build_messages(
         "target_language": language,
         "tone": tone,
         "conversation_profile": profile,
+        "personalization_context": personalization,
         "recent_messages_chronological": transcript or "(no messages)",
         "required_json_shape": {
             "summary": {
@@ -285,10 +314,16 @@ async def assist_conversation(
                   u.language,
                   p.loneliness_score,
                   p.vip_level,
+                  p.user_level,
+                  p.chat_route,
+                  p.country_code,
                   p.relationship_stage,
                   p.chat_style,
+                  p.preferences,
                   p.interests,
+                  p.emotional_patterns,
                   p.forbidden_topics,
+                  p.notes,
                   ch.id AS character_id,
                   ch.name AS character_name
                 FROM conversations c
@@ -319,11 +354,29 @@ async def assist_conversation(
             {"cid": cid, "limit": body.max_context_messages},
         )
     ).fetchall()
+    memory_rows = (
+        await db.execute(
+            text(
+                """
+                SELECT memory_type, content, summary, importance_score,
+                       emotion_tags, created_at
+                FROM memories
+                WHERE user_id = CAST(:user_id AS uuid)
+                  AND is_active = true
+                ORDER BY importance_score DESC, created_at DESC
+                LIMIT 12
+                """
+            ),
+            {"user_id": str(conversation_row._mapping["user_id"])},
+        )
+    ).fetchall()
     conversation = _row_to_dict(conversation_row)
     recent_messages = [_row_to_dict(row) for row in reversed(msg_rows)]
+    memories = [_row_to_dict(row) for row in memory_rows]
     llm_messages = _build_messages(
         conversation=conversation,
         messages=recent_messages,
+        memories=memories,
         language=body.language,
         tone=body.tone,
     )
@@ -374,6 +427,7 @@ async def assist_conversation(
         conversation_id=cid,
         handoff_task_id=body.handoff_task_id,
         messages_used=len(recent_messages),
+        memories_used=len(memories),
         model_used=result.model_used,
         elapsed_ms=elapsed_ms,
     ).info("ops_ai.assist.success")
