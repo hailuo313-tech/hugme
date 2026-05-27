@@ -303,6 +303,31 @@ function ConversationsContent({ operator }: { operator: Operator }) {
     return items;
   }, [items, tab]);
 
+  async function acceptConversation(row: ConversationRow) {
+    if (!isWaiting(row) || row.assigned_operator_id) return;
+    await apiFetch(`/admin/conversations/${row.conversation_id}/accept`, {
+      method: "POST",
+    });
+    setItems((current) =>
+      current.map((item) =>
+        item.conversation_id === row.conversation_id
+          ? { ...item, state: "HUMAN_LOCKED", assigned_operator_id: operator.operator_id }
+          : item,
+      ),
+    );
+  }
+
+  async function processConversation(row: ConversationRow) {
+    setError(null);
+    try {
+      await acceptConversation(row);
+      await openDetail(row.conversation_id);
+      void load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   async function openDetail(conversationId: string) {
     setDetail(null);
     setDetailError(null);
@@ -636,7 +661,7 @@ function ConversationsContent({ operator }: { operator: Operator }) {
                   <td className="px-4 py-4 text-slate-400">{fmtTime(row.last_message_at)}</td>
                   <td className="px-4 py-4">
                     <div className="flex justify-end gap-2">
-                      <button onClick={() => void openDetail(row.conversation_id)} className="rounded-md bg-slate-800 px-3 py-2 text-xs font-medium text-sky-300 hover:bg-slate-700">
+                      <button onClick={() => void processConversation(row)} className="rounded-md bg-slate-800 px-3 py-2 text-xs font-medium text-sky-300 hover:bg-slate-700">
                         处理
                       </button>
                       <button

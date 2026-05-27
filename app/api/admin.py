@@ -1035,6 +1035,73 @@ async def admin_silent_reactivation_run(
 # ── P4-03: 坐席看板任务管理 ───────────────────────────────────────────
 
 @router.post(
+    "/admin/conversations/{conversation_id}/accept",
+    summary="Admin: accept/take over one conversation by conversation_id.",
+)
+async def admin_accept_conversation(
+    conversation_id: str,
+    payload: dict = Depends(require_operator),
+    db: AsyncSession = Depends(get_db),
+):
+    _require_uuid(conversation_id, "conversation_id")
+    operator_id = payload.get("sub")
+
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT id, assigned_operator_id
+                FROM conversations
+                WHERE id = CAST(:conversation_id AS uuid)
+                """
+            ),
+            {"conversation_id": conversation_id},
+        )
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="conversation not found")
+
+    assigned_operator_id = str(row[1]) if row[1] is not None else None
+    if assigned_operator_id and assigned_operator_id != str(operator_id):
+        raise HTTPException(status_code=400, detail="conversation already assigned to another operator")
+
+    await db.execute(
+        text(
+            """
+            UPDATE handoff_tasks
+            SET assigned_operator_id = CAST(:operator_id AS uuid),
+                status = 'HUMAN_LOCKED',
+                locked_at = COALESCE(locked_at, NOW())
+            WHERE conversation_id = CAST(:conversation_id AS uuid)
+              AND status IN ('pending', 'PENDING', 'ESCALATED', 'WAITING_OPERATOR', 'HUMAN_LOCKED')
+              AND (assigned_operator_id IS NULL OR assigned_operator_id = CAST(:operator_id AS uuid))
+            """
+        ),
+        {"operator_id": operator_id, "conversation_id": conversation_id},
+    )
+    await db.execute(
+        text(
+            """
+            UPDATE conversations
+            SET assigned_operator_id = CAST(:operator_id AS uuid),
+                state = 'HUMAN_LOCKED',
+                updated_at = NOW()
+            WHERE id = CAST(:conversation_id AS uuid)
+            """
+        ),
+        {"operator_id": operator_id, "conversation_id": conversation_id},
+    )
+    await db.commit()
+
+    logger.bind(
+        operator_id=operator_id,
+        conversation_id=conversation_id,
+    ).info("admin.conversation.accepted")
+
+    return {"status": "success", "conversation_id": conversation_id, "operator_id": operator_id}
+
+
+@router.post(
     "/admin/handoff-tasks/{task_id}/accept",
     summary="P4-03：坐席接受任务（需要 operator JWT）",
 )
