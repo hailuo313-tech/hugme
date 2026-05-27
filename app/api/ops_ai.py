@@ -170,6 +170,11 @@ def _extract_json_object(content: str) -> dict[str, Any]:
     if raw.startswith("```"):
         raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.IGNORECASE)
         raw = re.sub(r"\s*```$", "", raw)
+    if not raw.startswith("{"):
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start >= 0 and end > start:
+            raw = raw[start : end + 1]
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError as exc:
@@ -222,10 +227,44 @@ def _build_translation_messages(body: OpsAiTranslateRequest) -> list[dict[str, s
         },
     }
     system = (
-        "你是 ERIS 运营后台的只读翻译助手。"
-        "把后台会话记录翻译成简体中文；已经是中文的内容保持原样。"
-        "必须保留用户名、昵称、ID、URL、代码、金额、时间、表情和专有名词，不要增删事实。"
-        "只返回严格 JSON，不要 Markdown，不要解释。"
+        "You are a translation assistant for ERIS operators. "
+        "Translate each conversation item into Simplified Chinese for internal operator reference only. "
+        "If an item is already Chinese, keep the meaning unchanged. "
+        "Preserve usernames, nicknames, IDs, URLs, codes, money amounts, times, emojis, and proper nouns. "
+        "Do not add, remove, summarize, or explain facts. "
+        "Return strict JSON only with this exact shape: "
+        '{"translations":[{"id":"same input id","text":"Simplified Chinese translation"}]}. '
+        "Do not use markdown fences or any prose outside JSON."
+    )
+    return [
+        {"role": "system", "content": system},
+        {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+    ]
+
+
+def _build_translation_repair_messages(
+    *,
+    original_content: str,
+    requested_items: list[OpsAiTranslateItem],
+) -> list[dict[str, str]]:
+    payload = {
+        "invalid_model_output": original_content,
+        "original_items": [
+            {
+                "id": item.id,
+                "sender_type": item.sender_type,
+                "text": item.text,
+            }
+            for item in requested_items
+        ],
+        "required_json_shape": {
+            "translations": [{"id": "same input id", "text": "Simplified Chinese translation"}]
+        },
+    }
+    system = (
+        "Repair or regenerate the translation result as valid strict JSON only. "
+        "Use only the original item ids. Translate missing items into Simplified Chinese. "
+        "Return no markdown and no explanation."
     )
     return [
         {"role": "system", "content": system},
@@ -501,7 +540,29 @@ async def translate_admin_text(
             elapsed_ms=round((time.time() - started) * 1000, 1),
             error=str(exc),
         ).warning("ops_ai.translate.parse_error")
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        try:
+            repair_result = await llm_chat(
+                messages=_build_translation_repair_messages(
+                    original_content=result.content,
+                    requested_items=items,
+                ),
+                trace_id=trace_id,
+                temperature=0,
+                max_tokens=1600,
+            )
+            if repair_result.error:
+                raise ValueError(repair_result.error)
+            parsed = _extract_json_object(repair_result.content)
+            translations = _normalize_translation_payload(parsed, items)
+            result = repair_result
+        except Exception as repair_exc:
+            logger.bind(
+                operator_id=operator_id,
+                item_count=len(items),
+                elapsed_ms=round((time.time() - started) * 1000, 1),
+                error=str(repair_exc),
+            ).warning("ops_ai.translate.repair_failed")
+            translations = [{"id": item.id, "text": item.text} for item in items]
 
     elapsed_ms = round((time.time() - started) * 1000, 1)
     logger.bind(
