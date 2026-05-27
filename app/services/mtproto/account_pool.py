@@ -97,9 +97,10 @@ class AccountPool:
         if client is None:
             raise LookupError(f"no connected MTProto client for account_id={route.account_id}")
 
+        resolved_peer = await self._resolve_peer(client, peer)
         message = await send_human_like_message(
             client,
-            peer,
+            resolved_peer,
             text,
             policy=self.send_policy,
             last_sent_at=self._last_sent_at_by_account.get(route.account_id),
@@ -111,9 +112,26 @@ class AccountPool:
         return AccountPoolSendResult(
             account_id=route.account_id,
             user_id=route.user_id,
-            peer=peer,
+            peer=resolved_peer,
             message=message,
         )
+
+    async def _resolve_peer(self, client: Any, peer: Any) -> Any:
+        get_input_entity = getattr(client, "get_input_entity", None)
+        if callable(get_input_entity):
+            try:
+                return await get_input_entity(peer)
+            except Exception:
+                pass
+
+        get_entity = getattr(client, "get_entity", None)
+        if callable(get_entity):
+            try:
+                return await get_entity(peer)
+            except Exception:
+                pass
+
+        return peer
 
     async def _get_cached_route(self, redis_key: str) -> Optional[str]:
         if self.redis is None:

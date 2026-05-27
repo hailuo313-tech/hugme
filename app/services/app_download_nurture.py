@@ -211,6 +211,7 @@ async def queue_clicked_not_downloaded_followups(
                     GROUP BY l.tracking_id, l.user_id, l.conversation_id, u.external_id
                     HAVING
                         MIN(e.created_at) FILTER (WHERE e.event_type = 'click') <= NOW() - (:delay_seconds * INTERVAL '1 second')
+                        AND MIN(e.created_at) FILTER (WHERE e.event_type = 'click') >= NOW() - INTERVAL '24 hours'
                         AND COUNT(*) FILTER (WHERE e.event_type = 'download') = 0
                 )
                 SELECT *
@@ -223,7 +224,7 @@ async def queue_clicked_not_downloaded_followups(
                       WHERE ms.metadata->>'delivery_mode' = :delivery_mode
                         AND ms.metadata->>'trigger' = :trigger
                         AND ms.metadata->>'tracking_id' = c.tracking_id
-                        AND ms.status IN ('pending', 'sending', 'sent')
+                        AND ms.status IN ('pending', 'sending', 'sent', 'failed')
                   )
                 ORDER BY c.clicked_at ASC
                 LIMIT :batch_size
@@ -454,7 +455,7 @@ async def _queue_followup(
                 FROM message_schedules
                 WHERE metadata->>'delivery_mode' = :delivery_mode
                   AND metadata->>'rule_key' = :rule_key
-                  AND status IN ('pending', 'sending', 'sent')
+                  AND status IN ('pending', 'sending', 'sent', 'failed')
             )
             RETURNING id
             """
