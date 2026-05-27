@@ -84,6 +84,11 @@ class MeResponse(BaseModel):
     display_name: Optional[str]
     role: str
 
+
+class ConversationOperatorReplyRequest(BaseModel):
+    content: str
+    used_script_id: Optional[str] = None
+
 # ── Auth dependency ──────────────────────────────────────────────────
 
 async def require_operator(
@@ -205,6 +210,61 @@ def _require_uuid(value: str, field_name: str) -> None:
         uuid.UUID(value)
     except ValueError:
         raise HTTPException(status_code=400, detail=f"{field_name} must be a valid UUID")
+
+
+def _telegram_chat_id_from_external(external_id: str | None) -> int | None:
+    if not external_id or not str(external_id).startswith("tg_"):
+        return None
+    try:
+        return int(str(external_id)[3:])
+    except ValueError:
+        return None
+
+
+async def _send_operator_reply_to_telegram_real_user(
+    *,
+    chat_id: int,
+    content: str,
+    trace_id: str | None,
+) -> tuple[bool, str | None]:
+    try:
+        from telethon.tl.types import PeerUser
+        from services.mtproto.human_like_send import HumanLikeSendPolicy, send_human_like_message
+        from services.telegram_account_manager import telegram_account_manager
+
+        client = await telegram_account_manager.get_any_connected_client()
+        if client is None:
+            return False, "telegram_real_user_account_missing"
+
+        peer = PeerUser(user_id=chat_id)
+        get_input_entity = getattr(client, "get_input_entity", None)
+        if callable(get_input_entity):
+            try:
+                peer = await get_input_entity(peer)
+            except Exception:
+                pass
+
+        # Operator-confirmed sends should happen immediately after click; keep
+        # typing indication but avoid the long automated delay profile.
+        policy = HumanLikeSendPolicy(
+            short_text_seconds=0.2,
+            medium_text_seconds=0.2,
+            long_text_seconds=0.2,
+            extended_text_seconds=0.2,
+            very_long_text_seconds=0.2,
+            minimum_typing_seconds=0.2,
+            minimum_inter_message_seconds=0.0,
+        )
+        sent = await send_human_like_message(client, peer, content, policy=policy)
+        sent_id = getattr(sent, "id", None)
+        return True, str(sent_id) if sent_id is not None else None
+    except Exception as exc:
+        logger.bind(
+            trace_id=trace_id,
+            chat_id=chat_id,
+            error_type=type(exc).__name__,
+        ).warning("admin.conversations.operator_reply.mtproto_failed")
+        return False, "telegram_real_user_send_failed"
 
 
 @router.get(
@@ -452,6 +512,173 @@ async def admin_delete_conversation(
         "user_id": user_id,
         "channel": channel,
         "deleted_count": deleted_count,
+    }
+
+
+@router.post(
+    "/admin/conversations/{conversation_id}/operator-reply",
+    summary="Admin: send an operator-confirmed reply from a conversation.",
+)
+async def admin_send_conversation_operator_reply(
+    conversation_id: str,
+    data: ConversationOperatorReplyRequest,
+    request: Request,
+    payload: dict = Depends(require_operator),
+    db: AsyncSession = Depends(get_db),
+):
+    _require_uuid(conversation_id, "conversation_id")
+    content = (data.content or "").strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="content is required")
+
+    script_id = data.used_script_id
+    if script_id:
+        _require_uuid(script_id, "used_script_id")
+
+    head_row = (
+        await db.execute(
+            text(
+                """
+                SELECT
+                  c.id AS conversation_id,
+                  c.channel AS conversation_channel,
+                  u.id AS user_id,
+                  u.channel AS user_channel,
+                  u.external_id
+                FROM conversations c
+                JOIN users u ON u.id = c.user_id
+                WHERE c.id=:cid
+                """
+            ),
+            {"cid": conversation_id},
+        )
+    ).fetchone()
+    if not head_row:
+        raise HTTPException(status_code=404, detail="conversation not found")
+
+    mapping = dict(head_row._mapping)
+    user_id = str(mapping["user_id"])
+    channel = mapping.get("conversation_channel") or mapping.get("user_channel")
+    external_id = mapping.get("external_id")
+    chat_id = _telegram_chat_id_from_external(str(external_id) if external_id is not None else None)
+    if chat_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="cannot resolve telegram chat_id from user external_id",
+        )
+
+    trace_id = getattr(request.state, "trace_id", None)
+    operator_id = str(payload.get("sub", ""))
+    msg_id = str(uuid.uuid4())
+
+    await db.execute(
+        text(
+            """
+            INSERT INTO messages (
+              id, conversation_id, sender_type, sender_id, content, content_type,
+              is_operator_message, used_script_id
+            ) VALUES (
+              :id, :cid, 'operator', :sid, :ct, 'text', true, :script
+            )
+            """
+        ),
+        {
+            "id": msg_id,
+            "cid": conversation_id,
+            "sid": operator_id,
+            "ct": content,
+            "script": script_id,
+        },
+    )
+    await db.execute(
+        text("UPDATE conversations SET last_message_at=NOW(), updated_at=NOW() WHERE id=:id"),
+        {"id": conversation_id},
+    )
+
+    sent_ok = False
+    provider_message_id: str | None = None
+    if channel == "telegram":
+        from services.telegram_send import send_telegram_text
+
+        sent = await send_telegram_text(
+            chat_id=chat_id,
+            text_content=content,
+            trace_id=trace_id,
+            parse_mode=None,
+        )
+        sent_ok = sent is not None
+        provider_message_id = str(sent) if sent is not None else None
+    elif channel == "telegram_real_user":
+        sent_ok, provider_message_id = await _send_operator_reply_to_telegram_real_user(
+            chat_id=chat_id,
+            content=content,
+            trace_id=trace_id,
+        )
+    else:
+        await db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail=f"operator reply not supported for channel={channel}",
+        )
+
+    if not sent_ok:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="telegram_send_failed",
+        )
+
+    await db.execute(
+        text(
+            """
+            UPDATE handoff_tasks
+            SET status='CLOSED', closed_at=NOW()
+            WHERE conversation_id=:cid
+              AND status IN ('pending', 'HUMAN_LOCKED', 'WAITING_OPERATOR')
+            """
+        ),
+        {"cid": conversation_id},
+    )
+    await db.commit()
+
+    try:
+        redis = await __import__("api.messages", fromlist=["get_redis"]).get_redis()
+        entry = json.dumps(
+            {
+                "role": "assistant",
+                "content": content,
+                "msg_id": msg_id,
+                "ts": int(time.time()),
+                "operator": True,
+            },
+            ensure_ascii=False,
+        )
+        pipe = redis.pipeline()
+        pipe.rpush(f"ctx:{conversation_id}", entry)
+        pipe.ltrim(f"ctx:{conversation_id}", -20, -1)
+        pipe.expire(f"ctx:{conversation_id}", 86400 * 3)
+        await pipe.execute()
+    except Exception as exc:
+        logger.bind(
+            trace_id=trace_id,
+            conversation_id=conversation_id,
+            error_type=type(exc).__name__,
+        ).warning("admin.conversations.operator_reply.redis_ctx_failed")
+
+    logger.bind(
+        trace_id=trace_id,
+        operator_id=operator_id,
+        conversation_id=conversation_id,
+        user_id=user_id,
+        channel=channel,
+        message_id=msg_id,
+        provider_message_id=provider_message_id,
+    ).info("admin.conversations.operator_reply.sent")
+    return {
+        "status": "sent",
+        "conversation_id": conversation_id,
+        "message_id": msg_id,
+        "provider_message_id": provider_message_id,
     }
 
 

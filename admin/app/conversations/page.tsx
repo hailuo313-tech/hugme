@@ -228,6 +228,8 @@ function ConversationsContent({ operator }: { operator: Operator }) {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [queueDeleteId, setQueueDeleteId] = useState<string | null>(null);
+  const [sendLoading, setSendLoading] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -288,6 +290,7 @@ function ConversationsContent({ operator }: { operator: Operator }) {
     setDetail(null);
     setDetailError(null);
     setDeleteError(null);
+    setSendError(null);
     setSuggestions([]);
     setTrace(null);
     setTraceError(null);
@@ -428,6 +431,32 @@ function ConversationsContent({ operator }: { operator: Operator }) {
       setDetailError(err instanceof Error ? err.message : String(err));
     } finally {
       setAssistLoading(false);
+    }
+  }
+
+  async function confirmSendDraft() {
+    if (!detail || sendLoading) return;
+    const content = draft.trim();
+    if (!content) {
+      setSendError("请先填写要发送的内容。");
+      return;
+    }
+
+    setSendLoading(true);
+    setSendError(null);
+    try {
+      await apiFetch(`/admin/conversations/${detail.conversation.conversation_id}/operator-reply`, {
+        method: "POST",
+        body: JSON.stringify({ content }),
+      });
+      const conversationId = detail.conversation.conversation_id;
+      setDraft("");
+      await openDetail(conversationId);
+      void load();
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSendLoading(false);
     }
   }
 
@@ -623,9 +652,12 @@ function ConversationsContent({ operator }: { operator: Operator }) {
           draft={draft}
           deleteLoading={deleteLoading}
           deleteError={deleteError}
+          sendLoading={sendLoading}
+          sendError={sendError}
           onDraftChange={setDraft}
           onClose={() => setDetail(null)}
           onGenerateAssist={() => void generateAssist()}
+          onConfirmSend={() => void confirmSendDraft()}
           onDeleteMessage={(messageId) => void deleteSingleMessage(messageId)}
           onDeleteAllUserMessages={() => void deleteAllUserMessages()}
         />
@@ -686,9 +718,12 @@ function DetailDrawer({
   draft,
   deleteLoading,
   deleteError,
+  sendLoading,
+  sendError,
   onDraftChange,
   onClose,
   onGenerateAssist,
+  onConfirmSend,
   onDeleteMessage,
   onDeleteAllUserMessages,
 }: {
@@ -703,9 +738,12 @@ function DetailDrawer({
   draft: string;
   deleteLoading: boolean;
   deleteError: string | null;
+  sendLoading: boolean;
+  sendError: string | null;
   onDraftChange: (value: string) => void;
   onClose: () => void;
   onGenerateAssist: () => void;
+  onConfirmSend: () => void;
   onDeleteMessage: (messageId: string) => void;
   onDeleteAllUserMessages: () => void;
 }) {
@@ -723,6 +761,7 @@ function DetailDrawer({
           {loading && <div className="text-sm text-slate-500">加载中...</div>}
           {error && <div className="rounded-md border border-rose-800 bg-rose-950/40 px-4 py-3 text-sm text-rose-200">{error}</div>}
           {deleteError && <div className="rounded-md border border-rose-800 bg-rose-950/40 px-4 py-3 text-sm text-rose-200">{deleteError}</div>}
+          {sendError && <div className="rounded-md border border-rose-800 bg-rose-950/40 px-4 py-3 text-sm text-rose-200">{sendError}</div>}
           {detail && (
             <>
               <Panel title="用户与路由">
@@ -807,7 +846,14 @@ function DetailDrawer({
                 <textarea value={draft} onChange={(event) => onDraftChange(event.target.value)} rows={5} placeholder="选择推荐话术或 AI 建议后，在这里人工修改确认。" className="w-full rounded-md border border-slate-800 bg-slate-950 px-3 py-3 text-sm text-slate-200 placeholder:text-slate-600" />
                 <div className="mt-3 flex justify-end gap-3">
                   <button className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">保存草稿</button>
-                  <button className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500">确认发送</button>
+                  <button
+                    type="button"
+                    onClick={onConfirmSend}
+                    disabled={sendLoading || !draft.trim()}
+                    className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {sendLoading ? "发送中..." : "确认发送"}
+                  </button>
                 </div>
               </Panel>
               <Panel title="最近消息">
