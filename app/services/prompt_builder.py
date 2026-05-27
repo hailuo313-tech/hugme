@@ -369,9 +369,12 @@ def _render_user_profile(profile: dict[str, Any] | None) -> str:
     forbidden_txt = ", ".join(_as_str_list(forbidden)) or "无"
 
     nick_line = f"昵称：{nickname}\n" if nickname else ""
+    intent = profile.get("current_intent")
+    intent_line = f"当前意图：{intent}\n" if intent else ""
 
     return (
         f"{nick_line}"
+        f"{intent_line}"
         f"偏好的聊天风格：{chat_style}（warm=温暖、playful=俏皮、calm=冷静、direct=直接）\n"
         f"兴趣：{interests_txt}\n"
         f"禁忌话题（绝对不主动提）：{forbidden_txt}"

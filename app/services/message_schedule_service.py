@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.config import settings
 from core.database import AsyncSessionLocal
 from models.message_schedule import MessageSchedule
+from services.app_download_nurture import APP_DOWNLOAD_NURTURE_DELIVERY_MODE
 
 try:
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -34,13 +35,14 @@ async def _claim_one_message(session: AsyncSession) -> dict[str, Any] | None:
             text(
                 """
                 WITH c AS (
-                    SELECT id
-                    FROM message_schedules
-                    WHERE status = 'pending'
-                      AND (send_at IS NULL OR send_at <= NOW())
-                      AND retry_count < max_retries
-                    ORDER BY priority DESC, send_at ASC NULLS LAST, created_at ASC
-                    FOR UPDATE SKIP LOCKED
+                    SELECT ms.id
+                    FROM message_schedules ms
+                    WHERE ms.status = 'pending'
+                      AND (ms.send_at IS NULL OR ms.send_at <= NOW())
+                      AND ms.retry_count < ms.max_retries
+                      AND COALESCE(ms.metadata->>'delivery_mode', '') <> :app_download_nurture_mode
+                    ORDER BY ms.priority DESC, ms.send_at ASC NULLS LAST, ms.created_at ASC
+                    FOR UPDATE OF ms SKIP LOCKED
                     LIMIT 1
                 )
                 UPDATE message_schedules ms
@@ -52,7 +54,8 @@ async def _claim_one_message(session: AsyncSession) -> dict[str, Any] | None:
                        ms.content, ms.platform, ms.account_id, ms.chat_id,
                        ms.metadata, ms.trace_id, ms.retry_count
                 """
-            )
+            ),
+            {"app_download_nurture_mode": APP_DOWNLOAD_NURTURE_DELIVERY_MODE},
         )
     ).mappings().first()
     if not row:

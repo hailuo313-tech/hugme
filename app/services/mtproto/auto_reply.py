@@ -28,7 +28,9 @@ from services.profile_intake import (
 )
 from services.script_asset_delivery import send_mtproto_asset
 from services.app_download_nurture import schedule_download_followups_after_reply
+from services.content_safety import evaluate_inbound_content_safety
 from services.user_level_service import user_level_service
+from services.mtproto.account_routing import pin_mtproto_account_route
 from services.mtproto.human_like_send import HumanLikeSendPolicy, send_human_like_message
 
 
@@ -432,6 +434,16 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
     )
     log = log.bind(user_id=user_id, conv_id=conv_id, telegram_message_id=message_id)
 
+    redis = await _get_redis()
+    try:
+        await pin_mtproto_account_route(
+            redis,
+            user_id=user_id,
+            account_id=str(account_id),
+        )
+    except Exception as exc:
+        log.bind(error_type=type(exc).__name__).warning("mtproto.route.pin_failed")
+
     async with AsyncSessionLocal() as db:
         try:
             await _persist_technical_country_hint(
@@ -454,7 +466,29 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
     )
     log.bind(message_id=user_msg_id).info("mtproto.inbound.persisted")
 
-    redis = await _get_redis()
+    if settings.CONTENT_SAFETY_ENABLED:
+        safety_result = await evaluate_inbound_content_safety(text_value, trace_id=trace_id)
+        if safety_result.get("blocked"):
+            refusal = "这个话题我没办法聊，换个方向说说？"
+            peer = getattr(event, "chat_id", None) or sender_id
+            await send_human_like_message(
+                client,
+                peer,
+                refusal,
+                policy=_reply_delay_policy(refusal),
+            )
+            await _persist_message(
+                conv_id=conv_id,
+                sender_type="assistant",
+                sender_id=str(account_id),
+                content=refusal,
+                model_name=getattr(settings, "OPENROUTER_MODEL", None),
+            )
+            log.bind(
+                block_reason=safety_result.get("block_reason"),
+            ).info("mtproto.content_safety.blocked")
+            return
+
     try:
         await _push_context(redis, conv_id, "user", text_value, user_msg_id)
     except Exception as exc:
@@ -596,6 +630,7 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
                 chat_id=int(sender_id),
                 assistant_message_id=assistant_msg_id,
                 trace_id=trace_id,
+                account_id=str(account_id),
             )
         except Exception as exc:
             await db.rollback()

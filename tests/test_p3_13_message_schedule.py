@@ -61,10 +61,12 @@ async def test_p3_13_claim_one_message_uses_send_at_priority_and_commits():
 
     sql = session.executed[0][0]
     assert message["id"] == "msg-1"
-    assert "WHERE status = 'pending'" in sql
+    assert "ms.status = 'pending'" in sql
     assert "send_at <= NOW()" in sql
-    assert "ORDER BY priority DESC, send_at ASC" in sql
-    assert "FOR UPDATE SKIP LOCKED" in sql
+    assert "delivery_mode" in sql
+    assert "app_download_nurture" in session.executed[0][1]["app_download_nurture_mode"]
+    assert "ORDER BY ms.priority DESC, ms.send_at ASC" in sql
+    assert "FOR UPDATE OF ms SKIP LOCKED" in sql
     assert session.commits == 1
 
 

@@ -95,6 +95,7 @@ async def test_first_message_idle_followup_is_queued_with_context(monkeypatch):
         chat_id=123,
         assistant_message_id="33333333-3333-3333-3333-333333333333",
         trace_id="trace",
+        account_id="44444444-4444-4444-4444-444444444444",
     )
 
     assert queued >= 1
@@ -104,6 +105,7 @@ async def test_first_message_idle_followup_is_queued_with_context(monkeypatch):
     assert "https://app.example/download" in insert_params["content"]
     assert '"delivery_mode": "app_download_nurture"' in insert_params["metadata"]
     assert '"trigger": "first_message_idle_3m"' in insert_params["metadata"]
+    assert insert_params["account_id"] == "44444444-4444-4444-4444-444444444444"
 
 
 @pytest.mark.asyncio
@@ -167,5 +169,5 @@ async def test_clicked_no_download_scan_is_recent_and_dedupes_failed(monkeypatch
     scan_sql = db.executed[0][0]
     insert_sql = [sql for sql, _ in db.executed if "INSERT INTO message_schedules" in sql][0]
     assert "INTERVAL '24 hours'" in scan_sql
-    assert "ms.status IN ('pending', 'sending', 'sent', 'failed')" in scan_sql
-    assert "status IN ('pending', 'sending', 'sent', 'failed')" in insert_sql
+    assert "ms.status IN ('pending', 'sending', 'sent')" in scan_sql
+    assert "status IN ('pending', 'sending', 'sent')" in insert_sql
