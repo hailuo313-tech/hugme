@@ -225,6 +225,8 @@ function ConversationsContent({ operator }: { operator: Operator }) {
   const [assist, setAssist] = useState<OpsAiAssistResponse | null>(null);
   const [assistLoading, setAssistLoading] = useState(false);
   const [draft, setDraft] = useState("");
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -284,6 +286,7 @@ function ConversationsContent({ operator }: { operator: Operator }) {
   async function openDetail(conversationId: string) {
     setDetail(null);
     setDetailError(null);
+    setDeleteError(null);
     setSuggestions([]);
     setTrace(null);
     setTraceError(null);
@@ -301,6 +304,48 @@ function ConversationsContent({ operator }: { operator: Operator }) {
       setDetailError(err instanceof Error ? err.message : String(err));
     } finally {
       setDetailLoading(false);
+    }
+  }
+
+  async function deleteSingleMessage(messageId: string) {
+    if (!detail || deleteLoading) return;
+    const confirmed = window.confirm("确认删除这条聊天记录？删除后页面和 AI 上下文都不会再使用它。");
+    if (!confirmed) return;
+
+    const conversationId = detail.conversation.conversation_id;
+    setDeleteLoading(true);
+    setDeleteError(null);
+    try {
+      await apiFetch(`/admin/conversations/${conversationId}/messages/${messageId}`, {
+        method: "DELETE",
+      });
+      await openDetail(conversationId);
+      void load();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDeleteLoading(false);
+    }
+  }
+
+  async function deleteAllUserMessages() {
+    if (!detail?.conversation.user_id || deleteLoading) return;
+    const confirmed = window.confirm("确认删除这个用户的所有聊天记录？此操作不可恢复。");
+    if (!confirmed) return;
+
+    const conversationId = detail.conversation.conversation_id;
+    setDeleteLoading(true);
+    setDeleteError(null);
+    try {
+      await apiFetch(`/admin/users/${detail.conversation.user_id}/messages`, {
+        method: "DELETE",
+      });
+      await openDetail(conversationId);
+      void load();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDeleteLoading(false);
     }
   }
 
@@ -542,9 +587,13 @@ function ConversationsContent({ operator }: { operator: Operator }) {
           assist={assist}
           assistLoading={assistLoading}
           draft={draft}
+          deleteLoading={deleteLoading}
+          deleteError={deleteError}
           onDraftChange={setDraft}
           onClose={() => setDetail(null)}
           onGenerateAssist={() => void generateAssist()}
+          onDeleteMessage={(messageId) => void deleteSingleMessage(messageId)}
+          onDeleteAllUserMessages={() => void deleteAllUserMessages()}
         />
       )}
     </AdminFrame>
@@ -601,9 +650,13 @@ function DetailDrawer({
   assist,
   assistLoading,
   draft,
+  deleteLoading,
+  deleteError,
   onDraftChange,
   onClose,
   onGenerateAssist,
+  onDeleteMessage,
+  onDeleteAllUserMessages,
 }: {
   detail: DetailResponse | null;
   loading: boolean;
@@ -614,9 +667,13 @@ function DetailDrawer({
   assist: OpsAiAssistResponse | null;
   assistLoading: boolean;
   draft: string;
+  deleteLoading: boolean;
+  deleteError: string | null;
   onDraftChange: (value: string) => void;
   onClose: () => void;
   onGenerateAssist: () => void;
+  onDeleteMessage: (messageId: string) => void;
+  onDeleteAllUserMessages: () => void;
 }) {
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/60" onClick={onClose}>
@@ -631,6 +688,7 @@ function DetailDrawer({
         <div className="space-y-5 p-6">
           {loading && <div className="text-sm text-slate-500">加载中...</div>}
           {error && <div className="rounded-md border border-rose-800 bg-rose-950/40 px-4 py-3 text-sm text-rose-200">{error}</div>}
+          {deleteError && <div className="rounded-md border border-rose-800 bg-rose-950/40 px-4 py-3 text-sm text-rose-200">{deleteError}</div>}
           {detail && (
             <>
               <Panel title="用户与路由">
@@ -645,9 +703,17 @@ function DetailDrawer({
                   <Meta label="风险" value={detail.conversation.risk_level || "normal"} />
                 </div>
                 {detail.conversation.user_id && (
-                  <div className="mt-4 flex gap-3">
+                  <div className="mt-4 flex flex-wrap items-center gap-3">
                     <a href={`/admin/users/${detail.conversation.user_id}`} className="text-sm text-sky-300 hover:text-sky-200">查看画像</a>
                     <a href={`/admin/data?user_id=${detail.conversation.user_id}`} className="text-sm text-violet-300 hover:text-violet-200">查看归因</a>
+                    <button
+                      type="button"
+                      onClick={onDeleteAllUserMessages}
+                      disabled={deleteLoading}
+                      className="rounded-md border border-rose-800 px-3 py-1.5 text-xs font-medium text-rose-300 hover:bg-rose-950/40 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {deleteLoading ? "删除中..." : "删除该用户全部聊天记录"}
+                    </button>
                   </div>
                 )}
               </Panel>
@@ -713,7 +779,14 @@ function DetailDrawer({
               <Panel title="最近消息">
                 <div className="space-y-3">
                   {detail.messages.length === 0 && <div className="text-sm text-slate-500">暂无消息</div>}
-                  {[...detail.messages].reverse().map((message) => <MessageBubble key={message.id} message={message} />)}
+                  {[...detail.messages].reverse().map((message) => (
+                    <MessageBubble
+                      key={message.id}
+                      message={message}
+                      deleteLoading={deleteLoading}
+                      onDelete={() => onDeleteMessage(message.id)}
+                    />
+                  ))}
                 </div>
               </Panel>
             </>
@@ -733,7 +806,7 @@ function Meta({ label, value }: { label: string; value: string | null | undefine
   );
 }
 
-function MessageBubble({ message }: { message: MessageRow }) {
+function MessageBubble({ message, deleteLoading, onDelete }: { message: MessageRow; deleteLoading: boolean; onDelete: () => void }) {
   const isUser = message.sender_type === "user";
   const isOperator = message.is_operator_message || message.sender_type === "operator";
   const cls = isUser ? "border-slate-700 bg-slate-900" : isOperator ? "border-amber-800 bg-amber-950/30" : "border-violet-800 bg-violet-950/25";
@@ -742,7 +815,17 @@ function MessageBubble({ message }: { message: MessageRow }) {
     <div className={`rounded-md border px-4 py-3 ${cls}`}>
       <div className="mb-2 flex items-center justify-between text-xs text-slate-500">
         <span>{label}</span>
-        <span>{fmtTime(message.created_at)}</span>
+        <div className="flex items-center gap-3">
+          <span>{fmtTime(message.created_at)}</span>
+          <button
+            type="button"
+            onClick={onDelete}
+            disabled={deleteLoading}
+            className="rounded border border-rose-900 px-2 py-1 text-rose-300 hover:bg-rose-950/40 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            删除
+          </button>
+        </div>
       </div>
       <div className="whitespace-pre-wrap break-words text-sm text-slate-100">{message.content || "（空）"}</div>
     </div>

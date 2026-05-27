@@ -184,6 +184,29 @@ def _serialize_row(row: Any) -> dict:
     return out
 
 
+async def _clear_deleted_message_context(user_id: str | None, conversation_ids: list[str]) -> None:
+    """Best-effort cache cleanup after admin deletes persisted chat history."""
+    try:
+        from api.messages import get_redis
+        from services.conversation_context import conversation_context_key
+
+        redis = await get_redis()
+        keys = [f"ctx:{cid}" for cid in conversation_ids if cid]
+        if user_id:
+            keys.append(conversation_context_key(user_id))
+        if keys:
+            await redis.delete(*keys)
+    except Exception as exc:  # pragma: no cover - cache cleanup must not block admin delete
+        logger.bind(error_type=type(exc).__name__).warning("admin.chat_history.cache_clear_failed")
+
+
+def _require_uuid(value: str, field_name: str) -> None:
+    try:
+        uuid.UUID(value)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"{field_name} must be a valid UUID")
+
+
 @router.get(
     "/admin/conversations",
     summary="D5-2：会话列表（分页 + state/channel/search 过滤；需要 operator JWT）",
@@ -289,10 +312,7 @@ async def admin_get_conversation_detail(
     db: AsyncSession = Depends(get_db),
 ):
     # 校验 UUID 格式（防 SQL 出错时落到 5xx）
-    try:
-        uuid.UUID(conversation_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="conversation_id must be a valid UUID")
+    _require_uuid(conversation_id, "conversation_id")
 
     head_row = (await db.execute(
         text("""
@@ -349,6 +369,190 @@ async def admin_get_conversation_detail(
     return {
         "conversation": _serialize_row(head_row),
         "messages": [_serialize_row(m) for m in msg_rows],
+    }
+
+
+@router.delete(
+    "/admin/conversations/{conversation_id}/messages/{message_id}",
+    summary="Admin: delete one persisted chat message from a conversation.",
+)
+async def admin_delete_conversation_message(
+    conversation_id: str,
+    message_id: str,
+    payload: dict = Depends(require_operator),
+    db: AsyncSession = Depends(get_db),
+):
+    _require_uuid(conversation_id, "conversation_id")
+    _require_uuid(message_id, "message_id")
+
+    head_row = (
+        await db.execute(
+            text("SELECT id, user_id FROM conversations WHERE id=:cid"),
+            {"cid": conversation_id},
+        )
+    ).fetchone()
+    if not head_row:
+        raise HTTPException(status_code=404, detail="conversation not found")
+
+    user_id = str(head_row[1]) if head_row[1] is not None else None
+
+    try:
+        await db.execute(
+            text(
+                """
+                UPDATE memories
+                SET is_active=false, updated_at=NOW()
+                WHERE source_message_id=:mid
+                """
+            ),
+            {"mid": message_id},
+        )
+        delete_row = (
+            await db.execute(
+                text(
+                    """
+                    WITH deleted AS (
+                        DELETE FROM messages
+                        WHERE id=:mid AND conversation_id=:cid
+                        RETURNING id
+                    )
+                    SELECT COUNT(*) AS deleted_count FROM deleted
+                    """
+                ),
+                {"mid": message_id, "cid": conversation_id},
+            )
+        ).fetchone()
+        deleted_count = int(delete_row[0] if delete_row else 0)
+        if deleted_count == 0:
+            await db.rollback()
+            raise HTTPException(status_code=404, detail="message not found")
+
+        await db.execute(
+            text(
+                """
+                UPDATE conversations
+                SET last_message_at = (
+                    SELECT MAX(created_at)
+                    FROM messages
+                    WHERE conversation_id=:cid
+                ),
+                    updated_at = NOW()
+                WHERE id=:cid
+                """
+            ),
+            {"cid": conversation_id},
+        )
+        await db.commit()
+    except HTTPException:
+        raise
+    except Exception:
+        await db.rollback()
+        raise
+
+    await _clear_deleted_message_context(user_id, [conversation_id])
+    logger.bind(
+        operator_id=payload.get("sub"),
+        conversation_id=conversation_id,
+        message_id=message_id,
+        deleted_count=deleted_count,
+    ).info("admin.conversations.message_deleted")
+    return {
+        "status": "success",
+        "conversation_id": conversation_id,
+        "message_id": message_id,
+        "deleted_count": deleted_count,
+    }
+
+
+@router.delete(
+    "/admin/users/{user_id}/messages",
+    summary="Admin: delete all persisted chat messages for one user.",
+)
+async def admin_delete_user_messages(
+    user_id: str,
+    payload: dict = Depends(require_operator),
+    db: AsyncSession = Depends(get_db),
+):
+    _require_uuid(user_id, "user_id")
+
+    user_row = (
+        await db.execute(text("SELECT id FROM users WHERE id=:uid"), {"uid": user_id})
+    ).fetchone()
+    if not user_row:
+        raise HTTPException(status_code=404, detail="user not found")
+
+    conversation_rows = (
+        await db.execute(
+            text("SELECT id FROM conversations WHERE user_id=:uid ORDER BY created_at DESC"),
+            {"uid": user_id},
+        )
+    ).fetchall()
+    conversation_ids = [str(row[0]) for row in conversation_rows]
+
+    try:
+        await db.execute(
+            text(
+                """
+                UPDATE memories
+                SET is_active=false, updated_at=NOW()
+                WHERE user_id=:uid
+                  AND source_message_id IN (
+                      SELECT m.id
+                      FROM messages m
+                      JOIN conversations c ON c.id=m.conversation_id
+                      WHERE c.user_id=:uid
+                  )
+                """
+            ),
+            {"uid": user_id},
+        )
+        delete_row = (
+            await db.execute(
+                text(
+                    """
+                    WITH deleted AS (
+                        DELETE FROM messages
+                        WHERE conversation_id IN (
+                            SELECT id FROM conversations WHERE user_id=:uid
+                        )
+                        RETURNING id
+                    )
+                    SELECT COUNT(*) AS deleted_count FROM deleted
+                    """
+                ),
+                {"uid": user_id},
+            )
+        ).fetchone()
+        deleted_count = int(delete_row[0] if delete_row else 0)
+
+        await db.execute(
+            text(
+                """
+                UPDATE conversations
+                SET last_message_at = NULL,
+                    updated_at = NOW()
+                WHERE user_id=:uid
+                """
+            ),
+            {"uid": user_id},
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+
+    await _clear_deleted_message_context(user_id, conversation_ids)
+    logger.bind(
+        operator_id=payload.get("sub"),
+        user_id=user_id,
+        conversation_count=len(conversation_ids),
+        deleted_count=deleted_count,
+    ).info("admin.users.messages_deleted")
+    return {
+        "status": "success",
+        "user_id": user_id,
+        "conversation_count": len(conversation_ids),
+        "deleted_count": deleted_count,
     }
 
 
