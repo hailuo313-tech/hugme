@@ -16,6 +16,7 @@ from services.llm_orchestrator import LLMOrchestratorError, generate_reply
 
 CONTEXT_MAX_MESSAGES = 20
 CONTEXT_TTL_SECONDS = 86400 * 3
+INBOUND_READ_ACK_DELAY_SECONDS = 4.0
 INBOUND_TYPING_START_DELAY_SECONDS = 5.0
 
 
@@ -153,8 +154,17 @@ async def _is_managed_telegram_account(db, external_user_id: str) -> bool:
     return row is not None
 
 
-async def _mark_read(client: Any, raw_event: Any, peer: Any, log: Any) -> None:
-    """Mark an inbound Telegram message as read before AI reply generation."""
+async def _mark_read(
+    client: Any,
+    raw_event: Any,
+    peer: Any,
+    log: Any,
+    *,
+    sleep: Any = asyncio.sleep,
+) -> None:
+    """Mark an inbound Telegram message as read after a short human delay."""
+    if INBOUND_READ_ACK_DELAY_SECONDS > 0:
+        await sleep(INBOUND_READ_ACK_DELAY_SECONDS)
     mark_read = getattr(raw_event, "mark_read", None)
     if mark_read is not None:
         try:

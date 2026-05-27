@@ -36,6 +36,7 @@ from services.mtproto.human_like_send import HumanLikeSendPolicy, send_human_lik
 
 CONTEXT_MAX_MESSAGES = 50
 CONTEXT_TTL_SECONDS = 86400 * 3
+INBOUND_READ_ACK_DELAY_SECONDS = 4.0
 PROFILE_COUNTRY_QUESTION = (
     "Before we continue, which country are you in? You can reply with a country name "
     "or code, like US, Canada, Japan, or Germany."
@@ -97,6 +98,24 @@ def _reply_delay_policy(reply_text: str) -> HumanLikeSendPolicy:
         minimum_inter_message_seconds=0.0,
         typing_start_delay_seconds=5.0,
     )
+
+
+async def _mark_read_after_delay(
+    client: Any,
+    event: Any,
+    message: Any,
+    log: Any,
+    *,
+    sleep: Any = asyncio.sleep,
+) -> None:
+    """Delay Telegram read receipt so the account does not read instantly."""
+    if INBOUND_READ_ACK_DELAY_SECONDS > 0:
+        await sleep(INBOUND_READ_ACK_DELAY_SECONDS)
+    try:
+        await client.send_read_acknowledge(getattr(event, "chat_id", None), message=message)
+        log.info("mtproto.inbound.mark_read")
+    except Exception as exc:
+        log.bind(error_type=type(exc).__name__).warning("mtproto.inbound.mark_read_failed")
 
 
 async def _push_context(redis, conv_id: str, role: str, content: str, msg_id: str) -> None:
@@ -422,11 +441,7 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
     nickname = getattr(sender, "first_name", None) or getattr(sender, "username", None)
     log = logger.bind(trace_id=trace_id, account_id=str(account_id), external_id=external_id)
 
-    try:
-        await client.send_read_acknowledge(getattr(event, "chat_id", None), message=message)
-        log.info("mtproto.inbound.mark_read")
-    except Exception as exc:
-        log.bind(error_type=type(exc).__name__).warning("mtproto.inbound.mark_read_failed")
+    await _mark_read_after_delay(client, event, message, log)
 
     user_id, conv_id = await _get_or_create_user_and_conversation(
         external_id=external_id,
