@@ -45,10 +45,16 @@ def _conversation_row() -> MagicMock:
             "language": "zh-CN",
             "loneliness_score": 72.0,
             "vip_level": 1,
+            "user_level": "B",
+            "chat_route": "ai_assisted",
+            "country_code": "US",
             "relationship_stage": "S2",
             "chat_style": "gentle",
-            "interests": ["music"],
+            "preferences": {"age": 38, "hobbies": ["jazz", "night walks"], "country_code": "US"},
+            "interests": ["music", "jazz"],
+            "emotional_patterns": {"likes": "warm direct attention"},
             "forbidden_topics": [],
+            "notes": "Prefers concise private-feeling replies.",
             "character_id": "00000000-0000-0000-0000-000000000605",
             "character_name": "Aria",
         }
@@ -65,6 +71,19 @@ def _message_row(sender_type: str, content: str) -> MagicMock:
             "is_operator_message": sender_type == "operator",
             "model_name": None,
             "created_at": "2026-05-16T00:01:00",
+        }
+    )
+
+
+def _memory_row(content: str, *, memory_type: str = "preference") -> MagicMock:
+    return _row(
+        {
+            "memory_type": memory_type,
+            "content": content,
+            "summary": content,
+            "importance_score": 8.5,
+            "emotion_tags": ["preference"],
+            "created_at": "2026-05-16T00:00:30",
         }
     )
 
@@ -114,6 +133,7 @@ def _db_with_conversation(*, rows: list[Any] | None = None) -> MagicMock:
         side_effect=[
             _result(one=_conversation_row()),
             _result(rows=rows if rows is not None else [_message_row("user", "你还在吗？")]),
+            _result(rows=[_memory_row("User likes jazz and mature women over 30.")]),
         ]
     )
     return db
@@ -245,6 +265,15 @@ def test_ops_ai_assist_returns_summary_and_three_replies(monkeypatch):
     llm_messages = mock_chat.await_args.kwargs["messages"]
     assert llm_messages[0]["role"] == "system"
     assert "exactly 3" in llm_messages[0]["content"]
+    assert "user's actual chat history" in llm_messages[0]["content"]
+    prompt_payload = json.loads(llm_messages[1]["content"])
+    assert prompt_payload["conversation_profile"]["interests"] == ["music", "jazz"]
+    assert prompt_payload["conversation_profile"]["preferences"]["age"] == 38
+    assert prompt_payload["conversation_profile"]["country_code"] == "US"
+    assert "User likes jazz" in json.dumps(
+        prompt_payload["personalization_context"]["long_term_memories"],
+        ensure_ascii=False,
+    )
 
 
 def test_ops_ai_assist_passthrough_handoff_task_id(monkeypatch):
