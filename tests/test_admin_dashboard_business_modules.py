@@ -45,3 +45,5 @@ def test_conversation_queue_shows_claimed_after_operator_takeover() -> None:
     assert 'row.assigned_operator_id || row.state === "HUMAN_LOCKED"' in page
     assert 'return "已接管";' in page
     assert "{queueStateLabel(row)}" in page
+    assert "`/admin/conversations/${row.conversation_id}/accept`" in page
+    assert "processConversation(row)" in page

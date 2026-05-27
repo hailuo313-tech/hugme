@@ -320,6 +320,28 @@ def test_delete_conversation_404_when_missing():
     db.commit.assert_not_awaited()
 
 
+def test_accept_conversation_assigns_operator_and_locks_state():
+    conversation_id = "11111111-2222-3333-4444-555555555555"
+    db = _db_with([
+        _result(rows=[(conversation_id, None)]),
+        _result(),
+        _result(),
+    ])
+    client = TestClient(_build_app(db=db))
+
+    r = client.post(f"/api/v1/admin/conversations/{conversation_id}/accept")
+
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "success"
+    assert r.json()["conversation_id"] == conversation_id
+    db.commit.assert_awaited_once()
+    executed_sql = "\n".join(str(call.args[0]) for call in db.execute.await_args_list)
+    assert "UPDATE handoff_tasks" in executed_sql
+    assert "status = 'HUMAN_LOCKED'" in executed_sql
+    assert "UPDATE conversations" in executed_sql
+    assert "state = 'HUMAN_LOCKED'" in executed_sql
+
+
 def test_delete_single_message_deletes_and_clears_context(monkeypatch):
     conversation_id = "11111111-2222-3333-4444-555555555555"
     message_id = "22222222-2222-3333-4444-555555555555"
