@@ -227,6 +227,7 @@ function ConversationsContent({ operator }: { operator: Operator }) {
   const [draft, setDraft] = useState("");
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [queueDeleteId, setQueueDeleteId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -346,6 +347,29 @@ function ConversationsContent({ operator }: { operator: Operator }) {
       setDeleteError(err instanceof Error ? err.message : String(err));
     } finally {
       setDeleteLoading(false);
+    }
+  }
+
+  async function deleteConversation(row: ConversationRow) {
+    if (queueDeleteId) return;
+    const name = row.nickname || row.external_id || row.conversation_id;
+    const confirmed = window.confirm(`确认删除这个TG会话？\n\n${name}\n\n删除后这个会话和它的聊天记录都会从工作队列移除。`);
+    if (!confirmed) return;
+
+    setQueueDeleteId(row.conversation_id);
+    setError(null);
+    try {
+      await apiFetch(`/admin/conversations/${row.conversation_id}`, {
+        method: "DELETE",
+      });
+      if (detail?.conversation.conversation_id === row.conversation_id) {
+        setDetail(null);
+      }
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setQueueDeleteId(null);
     }
   }
 
@@ -564,10 +588,20 @@ function ConversationsContent({ operator }: { operator: Operator }) {
                   </td>
                   <td className={`px-4 py-4 ${riskClass(row.risk_level)}`}>{row.risk_level || "normal"}</td>
                   <td className="px-4 py-4 text-slate-400">{fmtTime(row.last_message_at)}</td>
-                  <td className="px-4 py-4 text-right">
-                    <button onClick={() => void openDetail(row.conversation_id)} className="rounded-md bg-slate-800 px-3 py-2 text-xs font-medium text-sky-300 hover:bg-slate-700">
-                      处理
-                    </button>
+                  <td className="px-4 py-4">
+                    <div className="flex justify-end gap-2">
+                      <button onClick={() => void openDetail(row.conversation_id)} className="rounded-md bg-slate-800 px-3 py-2 text-xs font-medium text-sky-300 hover:bg-slate-700">
+                        处理
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void deleteConversation(row)}
+                        disabled={queueDeleteId === row.conversation_id}
+                        className="rounded-md border border-rose-800 px-3 py-2 text-xs font-medium text-rose-300 hover:bg-rose-950/40 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {queueDeleteId === row.conversation_id ? "删除中..." : "删除会话"}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

@@ -373,6 +373,89 @@ async def admin_get_conversation_detail(
 
 
 @router.delete(
+    "/admin/conversations/{conversation_id}",
+    summary="Admin: delete one conversation and its persisted chat history.",
+)
+async def admin_delete_conversation(
+    conversation_id: str,
+    payload: dict = Depends(require_operator),
+    db: AsyncSession = Depends(get_db),
+):
+    _require_uuid(conversation_id, "conversation_id")
+
+    head_row = (
+        await db.execute(
+            text("SELECT id, user_id, channel FROM conversations WHERE id=:cid"),
+            {"cid": conversation_id},
+        )
+    ).fetchone()
+    if not head_row:
+        raise HTTPException(status_code=404, detail="conversation not found")
+
+    user_id = str(head_row[1]) if head_row[1] is not None else None
+    channel = str(head_row[2]) if head_row[2] is not None else None
+
+    try:
+        await db.execute(
+            text(
+                """
+                UPDATE memories
+                SET is_active=false, updated_at=NOW()
+                WHERE source_message_id IN (
+                    SELECT id FROM messages WHERE conversation_id=:cid
+                )
+                """
+            ),
+            {"cid": conversation_id},
+        )
+        await db.execute(
+            text("DELETE FROM handoff_tasks WHERE conversation_id=:cid"),
+            {"cid": conversation_id},
+        )
+        delete_row = (
+            await db.execute(
+                text(
+                    """
+                    WITH deleted AS (
+                        DELETE FROM conversations
+                        WHERE id=:cid
+                        RETURNING id
+                    )
+                    SELECT COUNT(*) AS deleted_count FROM deleted
+                    """
+                ),
+                {"cid": conversation_id},
+            )
+        ).fetchone()
+        deleted_count = int(delete_row[0] if delete_row else 0)
+        if deleted_count == 0:
+            await db.rollback()
+            raise HTTPException(status_code=404, detail="conversation not found")
+        await db.commit()
+    except HTTPException:
+        raise
+    except Exception:
+        await db.rollback()
+        raise
+
+    await _clear_deleted_message_context(user_id, [conversation_id])
+    logger.bind(
+        operator_id=payload.get("sub"),
+        conversation_id=conversation_id,
+        user_id=user_id,
+        channel=channel,
+        deleted_count=deleted_count,
+    ).info("admin.conversations.deleted")
+    return {
+        "status": "success",
+        "conversation_id": conversation_id,
+        "user_id": user_id,
+        "channel": channel,
+        "deleted_count": deleted_count,
+    }
+
+
+@router.delete(
     "/admin/conversations/{conversation_id}/messages/{message_id}",
     summary="Admin: delete one persisted chat message from a conversation.",
 )

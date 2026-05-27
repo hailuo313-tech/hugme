@@ -271,6 +271,55 @@ def test_detail_happy_path_returns_messages():
     assert data["messages"][1]["sender_type"] == "assistant"
 
 
+def test_delete_conversation_removes_queue_item_and_clears_context(monkeypatch):
+    conversation_id = "11111111-2222-3333-4444-555555555555"
+    user_id = "33333333-2222-3333-4444-555555555555"
+    cleared: list[tuple[str | None, list[str]]] = []
+
+    async def _clear(user_id_arg: str | None, conversation_ids: list[str]) -> None:
+        cleared.append((user_id_arg, conversation_ids))
+
+    monkeypatch.setattr("api.admin._clear_deleted_message_context", _clear)
+    db = _db_with([
+        _result(rows=[(conversation_id, user_id, "telegram")]),
+        _result(),
+        _result(),
+        _result(scalar=1),
+    ])
+    client = TestClient(_build_app(db=db))
+
+    r = client.delete(f"/api/v1/admin/conversations/{conversation_id}")
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["deleted_count"] == 1
+    assert data["conversation_id"] == conversation_id
+    assert data["channel"] == "telegram"
+    db.commit.assert_awaited_once()
+    db.rollback.assert_not_awaited()
+    assert cleared == [(user_id, [conversation_id])]
+    executed_sql = "\n".join(str(call.args[0]) for call in db.execute.await_args_list)
+    assert "DELETE FROM handoff_tasks" in executed_sql
+    assert "DELETE FROM conversations" in executed_sql
+    assert "UPDATE memories" in executed_sql
+
+
+def test_delete_conversation_400_when_id_not_uuid():
+    db = _db_with([])
+    client = TestClient(_build_app(db=db))
+    r = client.delete("/api/v1/admin/conversations/not-a-uuid")
+    assert r.status_code == 400
+    db.execute.assert_not_awaited()
+
+
+def test_delete_conversation_404_when_missing():
+    db = _db_with([_result(rows=[])])
+    client = TestClient(_build_app(db=db))
+    r = client.delete("/api/v1/admin/conversations/11111111-2222-3333-4444-555555555555")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "conversation not found"
+    db.commit.assert_not_awaited()
+
+
 def test_delete_single_message_deletes_and_clears_context(monkeypatch):
     conversation_id = "11111111-2222-3333-4444-555555555555"
     message_id = "22222222-2222-3333-4444-555555555555"
