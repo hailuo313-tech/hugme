@@ -86,6 +86,38 @@ async def test_mtproto_profile_intake_defaults_country_from_user_language(monkey
 
 
 @pytest.mark.asyncio
+async def test_mtproto_profile_intake_recovers_country_from_recent_messages(monkeypatch):
+    db = _Db({"profile_intake_pending": "country"})
+    monkeypatch.setattr(
+        auto_reply,
+        "read_profile_completeness",
+        AsyncMock(return_value=SimpleNamespace(country_code=None, age=None)),
+    )
+    monkeypatch.setattr(
+        auto_reply,
+        "country_from_recent_user_messages",
+        AsyncMock(return_value="US"),
+    )
+    write_country = AsyncMock()
+    monkeypatch.setattr(auto_reply, "write_country_code", write_country)
+    level_service = SimpleNamespace(calculate_and_persist_user_level=AsyncMock(return_value={}))
+    monkeypatch.setattr(auto_reply, "user_level_service", level_service)
+
+    reply = await auto_reply._handle_required_profile_intake(
+        db,
+        user_id="00000000-0000-0000-0000-000000000001",
+        external_id="tg_1",
+        text_value="just to chat really",
+        log=SimpleNamespace(info=lambda *a, **k: None, bind=lambda **k: SimpleNamespace(info=lambda *a, **kw: None, warning=lambda *a, **kw: None)),
+    )
+
+    assert reply == auto_reply.PROFILE_AGE_QUESTION
+    assert db.prefs["profile_intake_pending"] == "age"
+    write_country.assert_awaited_once()
+    assert write_country.await_args.kwargs["country_code"] == "US"
+
+
+@pytest.mark.asyncio
 async def test_mtproto_profile_intake_retries_unrecognized_country(monkeypatch):
     db = _Db({"profile_intake_pending": "country"})
     monkeypatch.setattr(

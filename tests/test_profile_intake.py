@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import asyncio
+
 from services.profile_intake import (
     country_from_headers,
     country_from_locale,
     country_from_metadata,
+    country_from_recent_user_messages,
     country_from_text_language,
     extract_age_from_text,
     normalize_country_code,
@@ -39,6 +42,30 @@ def test_country_hint_from_message_language_defaults_t1_country() -> None:
     assert country_from_text_language("Olá, obrigado") == "PT"
     assert country_from_text_language("こんにちは") == "JP"
     assert country_from_text_language("안녕하세요") == "KR"
+
+
+def test_country_from_recent_user_messages_uses_explicit_country_only() -> None:
+    class _Result:
+        def fetchall(self):
+            return [
+                {"content": "just to chat really"},
+                {"content": "US"},
+                {"content": "hello"},
+            ]
+
+    class _Db:
+        async def execute(self, *_args, **_kwargs):
+            return _Result()
+
+    assert (
+        asyncio.run(
+            country_from_recent_user_messages(
+                _Db(),
+                user_id="00000000-0000-0000-0000-000000000001",
+            )
+        )
+        == "US"
+    )
 
 
 def test_age_extraction_accepts_explicit_user_age_only() -> None:
