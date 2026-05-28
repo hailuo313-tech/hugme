@@ -9,6 +9,7 @@ from sqlalchemy import text
 
 from core.config import settings
 from services.app_download_platforms import resolve_app_download_url
+from services.emotion_lexicon import detect_language_from_text, normalize_language
 from services.level_engine import country_tier
 from services.profile_intake import age_from_preferences, normalize_country_code
 from services.script_match_hooks import (
@@ -389,8 +390,11 @@ def _reply_language(profile_row: dict[str, Any] | None, user_text: str) -> str:
         or _preferences(profile).get("user_language")
     )
     if language:
-        return "zh" if str(language).lower().startswith("zh") else "en"
-    return "zh" if any("\u4e00" <= ch <= "\u9fff" for ch in str(user_text or "")) else "en"
+        return normalize_language(str(language), default="en")
+    return normalize_language(
+        detect_language_from_text(str(user_text or ""), default="en"),
+        default="en",
+    )
 
 
 def _has_any(text_value: str, needles: tuple[str, ...]) -> bool:

@@ -18,8 +18,10 @@ from services.memory_writer import maybe_write_memory
 from services.llm_orchestrator import LLMOrchestratorError, generate_reply
 from services.app_download_conversion import get_last_app_download_decision
 from services.link_attribution import wrap_text_links_with_tracking
+from services.emotion_lexicon import detect_language_from_text, normalize_language
 from services.profile_intake import (
     country_from_locale,
+    country_from_text_language,
     extract_age_from_text,
     normalize_country_code,
     read_profile_completeness,
@@ -47,6 +49,41 @@ PROFILE_COUNTRY_RETRY = (
 )
 PROFILE_AGE_QUESTION = "Thanks. How old are you?"
 PROFILE_AGE_RETRY = "Please reply with your age as a number, for example 24."
+
+_PROFILE_COPY = {
+    "es": {
+        "country_question": "Antes de seguir, ¿en qué país estás? Puedes responder con el país o el código, como US, Canada, Japan o Germany.",
+        "country_retry": "No pude reconocer ese país. Responde con el nombre de tu país o un código de dos letras, como US, GB, JP o SG.",
+        "age_question": "Gracias. ¿Cuántos años tienes?",
+        "age_retry": "Responde con tu edad en número, por ejemplo 24.",
+    },
+    "pt": {
+        "country_question": "Antes de continuar, em que país você está? Pode responder com o país ou o código, como US, Canada, Japan ou Germany.",
+        "country_retry": "Não consegui reconhecer esse país. Responda com o nome do país ou um código de duas letras, como US, GB, JP ou SG.",
+        "age_question": "Obrigado. Quantos anos você tem?",
+        "age_retry": "Responda com sua idade em número, por exemplo 24.",
+    },
+    "ja": {
+        "country_question": "続ける前に、どの国にいますか？US、Canada、Japan、Germany のように国名かコードで答えてください。",
+        "country_retry": "その国を認識できませんでした。US、GB、JP、SG のように国名か2文字コードで答えてください。",
+        "age_question": "ありがとう。何歳ですか？",
+        "age_retry": "年齢を数字で答えてください。例: 24",
+    },
+    "ko": {
+        "country_question": "계속하기 전에 어느 나라에 있나요? US, Canada, Japan, Germany처럼 나라 이름이나 코드로 답해 주세요.",
+        "country_retry": "그 국가는 인식하지 못했어요. US, GB, JP, SG처럼 국가명이나 두 글자 코드로 답해 주세요.",
+        "age_question": "고마워요. 몇 살인가요?",
+        "age_retry": "나이를 숫자로 답해 주세요. 예: 24",
+    },
+}
+
+
+def _profile_copy(kind: str, text_value: str, fallback: str) -> str:
+    language = normalize_language(
+        detect_language_from_text(text_value or "", default="en"),
+        default="en",
+    )
+    return _PROFILE_COPY.get(language, {}).get(kind, fallback)
 
 _redis_client = None
 
@@ -304,7 +341,7 @@ async def _handle_required_profile_intake(
         country_code = normalize_country_code(text_value)
         if not country_code:
             log.info("mtproto.profile.country_still_missing")
-            return PROFILE_COUNTRY_QUESTION
+            return _profile_copy("country_retry", text_value, PROFILE_COUNTRY_RETRY)
         await write_country_code(
             db,
             user_id=user_id,
@@ -330,13 +367,13 @@ async def _handle_required_profile_intake(
                 "mtproto.profile.level_recalc_failed"
             )
         log.bind(country_code=country_code).info("mtproto.profile.country_collected")
-        return PROFILE_AGE_QUESTION
+        return _profile_copy("age_question", text_value, PROFILE_AGE_QUESTION)
 
     if pending == "age":
         age = extract_age_from_text(text_value)
         if age is None:
             log.info("mtproto.profile.age_still_missing")
-            return PROFILE_AGE_QUESTION
+            return _profile_copy("age_retry", text_value, PROFILE_AGE_RETRY)
         await write_age(db, user_id=user_id, age=age, source="chat_answer")
         prefs.pop("profile_intake_pending", None)
         await _write_profile_preferences(db, user_id=user_id, preferences=prefs)
@@ -359,18 +396,48 @@ async def _handle_required_profile_intake(
         return None
 
     if completeness.country_code is None:
+        inferred_country = country_from_text_language(text_value)
+        if inferred_country:
+            await write_country_code(
+                db,
+                user_id=user_id,
+                country_code=inferred_country,
+                source="language_fallback",
+            )
+            await db.commit()
+            try:
+                await user_level_service.calculate_and_persist_user_level(
+                    db,
+                    user_id=user_id,
+                    external_user_id=external_id,
+                    country_code=inferred_country,
+                )
+                await db.commit()
+            except Exception as exc:
+                rollback = getattr(db, "rollback", None)
+                if rollback is not None:
+                    await rollback()
+                log.bind(error_type=type(exc).__name__).warning(
+                    "mtproto.profile.level_recalc_failed"
+                )
+            completeness = await read_profile_completeness(db, user_id=user_id)
+            log.bind(country_code=inferred_country).info(
+                "mtproto.profile.country_detected_from_language"
+            )
+
+    if completeness.country_code is None:
         prefs["profile_intake_pending"] = "country"
         await _write_profile_preferences(db, user_id=user_id, preferences=prefs)
         await db.commit()
         log.info("mtproto.profile.ask_country")
-        return PROFILE_COUNTRY_QUESTION
+        return _profile_copy("country_question", text_value, PROFILE_COUNTRY_QUESTION)
 
     if completeness.age is None:
         prefs["profile_intake_pending"] = "age"
         await _write_profile_preferences(db, user_id=user_id, preferences=prefs)
         await db.commit()
         log.info("mtproto.profile.ask_age")
-        return PROFILE_AGE_QUESTION
+        return _profile_copy("age_question", text_value, PROFILE_AGE_QUESTION)
 
     return None
 

@@ -28,6 +28,7 @@ from services.geoip_service import get_geoip_service
 from services.profile_intake import (
     country_from_headers,
     country_from_metadata,
+    country_from_text_language,
     extract_age_from_text,
     normalize_country_code,
     read_profile_completeness,
@@ -161,6 +162,9 @@ async def _persist_technical_profile_signals(
                     source = "geoip"
                 except Exception as exc:
                     log.bind(error_type=type(exc).__name__).warning("message.geoip.failed")
+        if not country_code:
+            country_code = country_from_text_language(content)
+            source = "language_fallback"
         if country_code:
             await write_country_code(
                 db,

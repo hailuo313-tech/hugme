@@ -208,6 +208,10 @@ def test_ops_ai_translate_returns_chinese_display_text(monkeypatch):
     ]
     llm_messages = mock_chat.await_args.kwargs["messages"]
     assert "Simplified Chinese" in llm_messages[0]["content"]
+    assert "Spanish" in llm_messages[0]["content"]
+    assert "Portuguese" in llm_messages[0]["content"]
+    assert "Japanese" in llm_messages[0]["content"]
+    assert "Korean" in llm_messages[0]["content"]
     assert "Mina93" in llm_messages[1]["content"]
 
 

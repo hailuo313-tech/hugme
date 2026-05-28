@@ -43,13 +43,46 @@ async def test_mtproto_profile_intake_asks_country_when_missing(monkeypatch):
         db,
         user_id="00000000-0000-0000-0000-000000000001",
         external_id="tg_1",
-        text_value="hi",
+        text_value="12345",
         log=SimpleNamespace(info=lambda *a, **k: None, bind=lambda **k: SimpleNamespace(info=lambda *a, **kw: None)),
     )
 
     assert reply == auto_reply.PROFILE_COUNTRY_QUESTION
     assert db.prefs["profile_intake_pending"] == "country"
     db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_mtproto_profile_intake_defaults_country_from_user_language(monkeypatch):
+    db = _Db({})
+    monkeypatch.setattr(
+        auto_reply,
+        "read_profile_completeness",
+        AsyncMock(
+            side_effect=[
+                SimpleNamespace(country_code=None, age=None),
+                SimpleNamespace(country_code="ES", age=None),
+            ]
+        ),
+    )
+    write_country = AsyncMock()
+    monkeypatch.setattr(auto_reply, "write_country_code", write_country)
+    level_service = SimpleNamespace(calculate_and_persist_user_level=AsyncMock(return_value={}))
+    monkeypatch.setattr(auto_reply, "user_level_service", level_service)
+
+    reply = await auto_reply._handle_required_profile_intake(
+        db,
+        user_id="00000000-0000-0000-0000-000000000001",
+        external_id="tg_1",
+        text_value="Hola, gracias",
+        log=SimpleNamespace(info=lambda *a, **k: None, bind=lambda **k: SimpleNamespace(info=lambda *a, **kw: None, warning=lambda *a, **kw: None)),
+    )
+
+    assert reply == "Gracias. ¿Cuántos años tienes?"
+    assert db.prefs["profile_intake_pending"] == "age"
+    write_country.assert_awaited_once()
+    assert write_country.await_args.kwargs["country_code"] == "ES"
+    level_service.calculate_and_persist_user_level.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -69,7 +102,7 @@ async def test_mtproto_profile_intake_retries_unrecognized_country(monkeypatch):
         log=SimpleNamespace(info=lambda *a, **k: None, bind=lambda **k: SimpleNamespace(info=lambda *a, **kw: None)),
     )
 
-    assert reply == auto_reply.PROFILE_COUNTRY_QUESTION
+    assert reply == auto_reply.PROFILE_COUNTRY_RETRY
 
 
 @pytest.mark.asyncio
@@ -181,7 +214,7 @@ async def test_mtproto_profile_intake_asks_age_without_blocking_when_missing(mon
         log=SimpleNamespace(info=lambda *a, **k: None, bind=lambda **k: SimpleNamespace(info=lambda *a, **kw: None)),
     )
 
-    assert reply == auto_reply.PROFILE_AGE_QUESTION
+    assert reply == auto_reply.PROFILE_AGE_RETRY
 
 
 def test_mtproto_memory_writer_spawn_uses_fire_and_forget(monkeypatch):
