@@ -4,6 +4,7 @@ from services.profile_intake import (
     country_from_headers,
     country_from_locale,
     country_from_metadata,
+    country_from_text_language,
     extract_age_from_text,
     normalize_country_code,
     profile_completeness,
@@ -27,7 +28,17 @@ def test_country_detection_prefers_structured_metadata_and_headers() -> None:
 def test_locale_country_hint_is_conservative_for_telegram() -> None:
     assert country_from_locale("de") == "DE"
     assert country_from_locale("en-US") == "US"
-    assert country_from_locale("en") is None
+    assert country_from_locale("en") == "US"
+    assert country_from_locale("es") == "ES"
+    assert country_from_locale("pt") == "PT"
+    assert country_from_locale("ja") == "JP"
+
+
+def test_country_hint_from_message_language_defaults_t1_country() -> None:
+    assert country_from_text_language("Hola, gracias") == "ES"
+    assert country_from_text_language("Olá, obrigado") == "PT"
+    assert country_from_text_language("こんにちは") == "JP"
+    assert country_from_text_language("안녕하세요") == "KR"
 
 
 def test_age_extraction_accepts_explicit_user_age_only() -> None:

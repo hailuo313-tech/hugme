@@ -506,15 +506,25 @@ function ConversationsContent({ operator }: { operator: Operator }) {
   }
 
   async function translateTexts(items: { id: string; text: string; sender_type?: string | null }[]) {
-    const response = await apiFetch<TranslateResponse>("/ops-ai/translate", {
-      method: "POST",
-      body: JSON.stringify({
-        target_language: "zh-CN",
-        preserve_terms: [detail?.conversation.nickname, detail?.conversation.external_id].filter(Boolean),
-        items,
-      }),
-    });
-    return Object.fromEntries((response.translations || []).map((item) => [item.id, item.text]));
+    const chunks: typeof items[] = [];
+    for (let i = 0; i < items.length; i += 40) {
+      chunks.push(items.slice(i, i + 40));
+    }
+    const merged: Record<string, string> = {};
+    for (const chunk of chunks) {
+      const response = await apiFetch<TranslateResponse>("/ops-ai/translate", {
+        method: "POST",
+        body: JSON.stringify({
+          target_language: "zh-CN",
+          preserve_terms: [detail?.conversation.nickname, detail?.conversation.external_id].filter(Boolean),
+          items: chunk,
+        }),
+      });
+      for (const item of response.translations || []) {
+        merged[item.id] = item.text;
+      }
+    }
+    return merged;
   }
 
   async function translateAllMessages() {

@@ -101,3 +101,10 @@ def test_render_script_replaces_app_download_url() -> None:
 def test_profile_helpers_allow_missing_profile_for_download_cta() -> None:
     assert _relationship_stage(None) == "S0"
     assert _reply_language(None, "where can i talk to you more privately?") == "en"
+
+
+def test_reply_language_follows_user_message_language() -> None:
+    assert _reply_language(None, "Hola, mándame el link") == "es"
+    assert _reply_language(None, "Olá, quero o app") == "pt"
+    assert _reply_language(None, "こんにちは、リンクを送って") == "ja"
+    assert _reply_language(None, "안녕하세요 링크 보내줘") == "ko"

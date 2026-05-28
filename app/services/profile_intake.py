@@ -10,6 +10,8 @@ from typing import Any, Mapping
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from services.emotion_lexicon import detect_language_from_text, normalize_language
+
 COUNTRY_ALIASES: dict[str, str] = {
     "US": "US",
     "USA": "US",
@@ -109,10 +111,15 @@ COUNTRY_HEADER_NAMES = (
 )
 
 LANGUAGE_COUNTRY_HINTS = {
+    "en": "US",
+    "es": "ES",
+    "pt": "PT",
     "de": "DE",
     "fr": "FR",
     "it": "IT",
     "ja": "JP",
+    "ko": "KR",
+    "zh": "HK",
     "nl": "NL",
     "sv": "SE",
     "da": "DK",
@@ -121,6 +128,8 @@ LANGUAGE_COUNTRY_HINTS = {
     "nn": "NO",
     "no": "NO",
     "is": "IS",
+    "el": "GR",
+    "cs": "CZ",
 }
 
 AGE_MIN = 13
@@ -196,7 +205,17 @@ def country_from_locale(locale: Any) -> str | None:
         code = normalize_country_code(parts[-1])
         if code:
             return code
-    return LANGUAGE_COUNTRY_HINTS.get(parts[0].lower()) if parts else None
+    if not parts:
+        return None
+    language = normalize_language(parts[0], default="")
+    return LANGUAGE_COUNTRY_HINTS.get(language)
+
+
+def country_from_text_language(text_value: str) -> str | None:
+    language = detect_language_from_text(text_value, default="")
+    if not language:
+        return None
+    return LANGUAGE_COUNTRY_HINTS.get(normalize_language(language, default=""))
 
 
 def parse_age_value(value: Any) -> int | None:

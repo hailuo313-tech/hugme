@@ -3,14 +3,44 @@ from __future__ import annotations
 import re
 from typing import Final
 
-SUPPORTED_LANGUAGES: Final[set[str]] = {"zh", "en", "es", "fr", "de"}
+SUPPORTED_LANGUAGES: Final[set[str]] = {
+    "zh",
+    "en",
+    "es",
+    "pt",
+    "ja",
+    "ko",
+    "fr",
+    "de",
+    "it",
+    "nl",
+    "sv",
+    "da",
+    "no",
+    "fi",
+    "is",
+    "el",
+    "cs",
+}
 
 LANGUAGE_NAMES: Final[dict[str, str]] = {
     "zh": "Chinese",
     "en": "English",
     "es": "Spanish",
+    "pt": "Portuguese",
+    "ja": "Japanese",
+    "ko": "Korean",
     "fr": "French",
     "de": "German",
+    "it": "Italian",
+    "nl": "Dutch",
+    "sv": "Swedish",
+    "da": "Danish",
+    "no": "Norwegian",
+    "fi": "Finnish",
+    "is": "Icelandic",
+    "el": "Greek",
+    "cs": "Czech",
 }
 
 TAG_WEIGHTS: Final[dict[str, float]] = {
@@ -86,17 +116,63 @@ _LANG_ALIASES: Final[dict[str, str]] = {
     "en": "en",
     "es-es": "es",
     "es-mx": "es",
+    "es-us": "es",
     "es": "es",
+    "pt-pt": "pt",
+    "pt-br": "pt",
+    "pt": "pt",
+    "ja-jp": "ja",
+    "jp": "ja",
+    "ja": "ja",
+    "ko-kr": "ko",
+    "kr": "ko",
+    "ko": "ko",
     "fr-fr": "fr",
+    "fr-ca": "fr",
     "fr": "fr",
     "de-de": "de",
+    "de-at": "de",
+    "de-ch": "de",
     "de": "de",
+    "it-it": "it",
+    "it": "it",
+    "nl-nl": "nl",
+    "nl-be": "nl",
+    "nl": "nl",
+    "sv-se": "sv",
+    "sv": "sv",
+    "da-dk": "da",
+    "da": "da",
+    "nb-no": "no",
+    "nn-no": "no",
+    "no-no": "no",
+    "nb": "no",
+    "nn": "no",
+    "no": "no",
+    "fi-fi": "fi",
+    "fi": "fi",
+    "is-is": "is",
+    "is": "is",
+    "el-gr": "el",
+    "el": "el",
+    "cs-cz": "cs",
+    "cs": "cs",
 }
 
 _LANG_HINTS: Final[dict[str, tuple[str, ...]]] = {
-    "es": (" que ", " estoy ", " siento ", " hola ", " gracias ", " solo", " sola", " feliz"),
+    "es": (" que ", " estoy ", " siento ", " hola ", " gracias ", " solo", " sola", " feliz", " quiero ", " donde "),
+    "pt": (" que ", " estou ", " sinto ", " olá ", " ola ", " obrigado ", " obrigada ", " sozinho", " sozinha", " feliz", " quero "),
     "fr": (" je ", " suis ", " très ", " merci ", " bonjour ", " seul", " seule", " triste"),
     "de": (" ich ", " bin ", " sehr ", " danke ", " hallo ", " einsam", " traurig", " glücklich"),
+    "it": (" che ", " sono ", " ciao ", " grazie ", " voglio ", " triste", " felice"),
+    "nl": (" ik ", " ben ", " hallo ", " dank je ", " bedankt ", " wil ", " verdrietig"),
+    "sv": (" jag ", " är ", " hej ", " tack ", " vill ", " ledsen"),
+    "da": (" jeg ", " er ", " hej ", " tak ", " vil ", " trist"),
+    "no": (" jeg ", " er ", " hei ", " takk ", " vil ", " trist"),
+    "fi": (" minä ", " olen ", " hei ", " kiitos ", " haluan ", " surullinen"),
+    "is": (" ég ", " er ", " hæ ", " takk ", " vil ", " leiður"),
+    "el": (" είμαι ", " γεια ", " ευχαριστώ ", " θέλω "),
+    "cs": (" jsem ", " ahoj ", " děkuji ", " chci ", " smutný"),
 }
 
 
@@ -116,9 +192,15 @@ def detect_language_from_text(text_value: str, default: str = "zh") -> str:
     text_value = (text_value or "").strip()
     if not text_value:
         return default
+    if re.search(r"[\u3040-\u30ff]", text_value):
+        return "ja"
+    if re.search(r"[\uac00-\ud7af]", text_value):
+        return "ko"
+    if re.search(r"[\u0370-\u03ff]", text_value):
+        return "el"
     if re.search(r"[\u4e00-\u9fff]", text_value):
         return "zh"
-    padded = f" {text_value.lower()} "
+    padded = f" {re.sub(r'[^\w]+', ' ', text_value.lower(), flags=re.UNICODE)} "
     for lang, hints in _LANG_HINTS.items():
         if any(hint in padded for hint in hints):
             return lang

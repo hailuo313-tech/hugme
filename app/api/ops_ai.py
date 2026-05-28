@@ -229,7 +229,9 @@ def _build_translation_messages(body: OpsAiTranslateRequest) -> list[dict[str, s
     system = (
         "You are a translation assistant for ERIS operators. "
         "Translate each conversation item into Simplified Chinese for internal operator reference only. "
+        "Source text can be any language, including Spanish, Portuguese, Japanese, Korean, French, German, Italian, Dutch, Nordic languages, Greek, Czech, English, Chinese, or mixed-language chat. "
         "If an item is already Chinese, keep the meaning unchanged. "
+        "Do not copy foreign-language source text as the translation unless it is a URL, code, ID, username, emoji, or proper noun that should be preserved. "
         "Preserve usernames, nicknames, IDs, URLs, codes, money amounts, times, emojis, and proper nouns. "
         "Do not add, remove, summarize, or explain facts. "
         "Return strict JSON only with this exact shape: "

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -59,14 +60,18 @@ class SafetyFilter:
     def __init__(self, redlines_path: Path = DEFAULT_REDLINES_PATH) -> None:
         self.redlines_path = Path(redlines_path)
         self._mtime_ns: int | None = None
+        self._digest: str | None = None
         self._redlines: tuple[SafetyRedline, ...] = ()
 
     def load_if_changed(self) -> tuple[SafetyRedline, ...]:
         stat = self.redlines_path.stat()
-        if stat.st_mtime_ns != self._mtime_ns:
-            raw = json.loads(self.redlines_path.read_text(encoding="utf-8"))
+        content = self.redlines_path.read_text(encoding="utf-8")
+        digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        if stat.st_mtime_ns != self._mtime_ns or digest != self._digest:
+            raw = json.loads(content)
             self._redlines = tuple(_redline_from_dict(item) for item in raw.get("redlines", []))
             self._mtime_ns = stat.st_mtime_ns
+            self._digest = digest
             logger.bind(
                 component="safety_filter",
                 redlines=len(self._redlines),

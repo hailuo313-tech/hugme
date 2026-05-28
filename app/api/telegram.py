@@ -43,10 +43,12 @@ from services.script_asset_delivery import send_telegram_bot_asset
 from services.memory_writer import maybe_write_memory
 from services.age_extraction import maybe_extract_and_write_age
 from services.content_safety import evaluate_inbound_content_safety
+from services.emotion_lexicon import detect_language_from_text, normalize_language
 from services.minor_protection import evaluate_inbound_minor_protection
 from services.user_level_service import user_level_service
 from services.profile_intake import (
     country_from_locale,
+    country_from_text_language,
     extract_age_from_text,
     normalize_country_code,
     read_profile_completeness,
@@ -70,6 +72,41 @@ PROFILE_COUNTRY_RETRY = (
 )
 PROFILE_AGE_QUESTION = "Thanks. How old are you?"
 PROFILE_AGE_RETRY = "Please reply with your age as a number, for example 24."
+
+_PROFILE_COPY = {
+    "es": {
+        "country_question": "Antes de seguir, ¿en qué país estás? Puedes responder con el país o el código, como US, Canada, Japan o Germany.",
+        "country_retry": "No pude reconocer ese país. Responde con el nombre de tu país o un código de dos letras, como US, GB, JP o SG.",
+        "age_question": "Gracias. ¿Cuántos años tienes?",
+        "age_retry": "Responde con tu edad en número, por ejemplo 24.",
+    },
+    "pt": {
+        "country_question": "Antes de continuar, em que país você está? Pode responder com o país ou o código, como US, Canada, Japan ou Germany.",
+        "country_retry": "Não consegui reconhecer esse país. Responda com o nome do país ou um código de duas letras, como US, GB, JP ou SG.",
+        "age_question": "Obrigado. Quantos anos você tem?",
+        "age_retry": "Responda com sua idade em número, por exemplo 24.",
+    },
+    "ja": {
+        "country_question": "続ける前に、どの国にいますか？US、Canada、Japan、Germany のように国名かコードで答えてください。",
+        "country_retry": "その国を認識できませんでした。US、GB、JP、SG のように国名か2文字コードで答えてください。",
+        "age_question": "ありがとう。何歳ですか？",
+        "age_retry": "年齢を数字で答えてください。例: 24",
+    },
+    "ko": {
+        "country_question": "계속하기 전에 어느 나라에 있나요? US, Canada, Japan, Germany처럼 나라 이름이나 코드로 답해 주세요.",
+        "country_retry": "그 국가는 인식하지 못했어요. US, GB, JP, SG처럼 국가명이나 두 글자 코드로 답해 주세요.",
+        "age_question": "고마워요. 몇 살인가요?",
+        "age_retry": "나이를 숫자로 답해 주세요. 예: 24",
+    },
+}
+
+
+def _profile_copy(kind: str, text_content: str, fallback: str) -> str:
+    language = normalize_language(
+        detect_language_from_text(text_content or "", default="en"),
+        default="en",
+    )
+    return _PROFILE_COPY.get(language, {}).get(kind, fallback)
 
 # ── Redis 单例 ────────────────────────────────────────
 _redis_client = None
@@ -312,8 +349,9 @@ async def _handle_required_profile_intake(
     if pending == "country":
         country_code = normalize_country_code(text_content)
         if not country_code:
-            await _send_tg(chat_id, PROFILE_COUNTRY_RETRY, trace_id, typing_delay=True)
-            return PROFILE_COUNTRY_RETRY
+            retry = _profile_copy("country_retry", text_content, PROFILE_COUNTRY_RETRY)
+            await _send_tg(chat_id, retry, trace_id, typing_delay=True)
+            return retry
         await write_country_code(
             db,
             user_id=user_id,
@@ -333,15 +371,17 @@ async def _handle_required_profile_intake(
             log=log,
         )
         await db.commit()
-        await _send_tg(chat_id, PROFILE_AGE_QUESTION, trace_id, typing_delay=True)
+        age_question = _profile_copy("age_question", text_content, PROFILE_AGE_QUESTION)
+        await _send_tg(chat_id, age_question, trace_id, typing_delay=True)
         log.bind(country_code=country_code).info("tg.profile.country_collected")
-        return PROFILE_AGE_QUESTION
+        return age_question
 
     if pending == "age":
         age = extract_age_from_text(text_content)
         if age is None:
-            await _send_tg(chat_id, PROFILE_AGE_RETRY, trace_id, typing_delay=True)
-            return PROFILE_AGE_RETRY
+            retry = _profile_copy("age_retry", text_content, PROFILE_AGE_RETRY)
+            await _send_tg(chat_id, retry, trace_id, typing_delay=True)
+            return retry
         await write_age(db, user_id=user_id, age=age, source="chat_answer")
         prefs.pop("profile_intake_pending", None)
         await db.execute(
@@ -373,15 +413,38 @@ async def _handle_required_profile_intake(
         return None
 
     if completeness.country_code is None:
+        inferred_country = country_from_text_language(text_content)
+        if inferred_country:
+            await write_country_code(
+                db,
+                user_id=user_id,
+                country_code=inferred_country,
+                source="language_fallback",
+            )
+            await db.commit()
+            await _classify_user_level(
+                db,
+                user_id=user_id,
+                external_id=external_id,
+                log=log,
+            )
+            await db.commit()
+            completeness = await read_profile_completeness(db, user_id=user_id)
+            log.bind(country_code=inferred_country).info(
+                "tg.profile.country_detected_from_language"
+            )
+
+    if completeness.country_code is None:
         prefs["profile_intake_pending"] = "country"
         await db.execute(
             text("UPDATE user_profiles SET preferences=:v, updated_at=NOW() WHERE user_id=:uid"),
             {"v": json.dumps(prefs, ensure_ascii=False), "uid": user_id},
         )
         await db.commit()
-        await _send_tg(chat_id, PROFILE_COUNTRY_QUESTION, trace_id, typing_delay=True)
+        question = _profile_copy("country_question", text_content, PROFILE_COUNTRY_QUESTION)
+        await _send_tg(chat_id, question, trace_id, typing_delay=True)
         log.info("tg.profile.ask_country")
-        return PROFILE_COUNTRY_QUESTION
+        return question
 
     if completeness.age is None:
         prefs["profile_intake_pending"] = "age"
@@ -390,9 +453,10 @@ async def _handle_required_profile_intake(
             {"v": json.dumps(prefs, ensure_ascii=False), "uid": user_id},
         )
         await db.commit()
-        await _send_tg(chat_id, PROFILE_AGE_QUESTION, trace_id, typing_delay=True)
+        question = _profile_copy("age_question", text_content, PROFILE_AGE_QUESTION)
+        await _send_tg(chat_id, question, trace_id, typing_delay=True)
         log.info("tg.profile.ask_age")
-        return PROFILE_AGE_QUESTION
+        return question
 
     return None
 

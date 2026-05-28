@@ -474,6 +474,20 @@ def test_l9_detects_spanish_when_no_profile_language():
     assert "language_code=es" in out.layers["L9_FORMAT"]
 
 
+def test_l9_detects_portuguese_japanese_and_korean_when_no_profile_language():
+    portuguese = build_prompt(PromptInput(user_text="Olá, obrigado"))
+    assert "Portuguese" in portuguese.layers["L9_FORMAT"]
+    assert "language_code=pt" in portuguese.layers["L9_FORMAT"]
+
+    japanese = build_prompt(PromptInput(user_text="こんにちは"))
+    assert "Japanese" in japanese.layers["L9_FORMAT"]
+    assert "language_code=ja" in japanese.layers["L9_FORMAT"]
+
+    korean = build_prompt(PromptInput(user_text="안녕하세요"))
+    assert "Korean" in korean.layers["L9_FORMAT"]
+    assert "language_code=ko" in korean.layers["L9_FORMAT"]
+
+
 # ─────────────────────────────────────────────────────────────
 # 向后兼容：DEFAULT_SYSTEM_PROMPT
 # ─────────────────────────────────────────────────────────────
