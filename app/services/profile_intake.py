@@ -303,6 +303,39 @@ async def read_profile_completeness(
     )
 
 
+async def country_from_recent_user_messages(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    limit: int = 30,
+) -> str | None:
+    result = await db.execute(
+        text(
+            """
+            SELECT m.content
+            FROM messages m
+            JOIN conversations c ON c.id = m.conversation_id
+            WHERE c.user_id = CAST(:uid AS uuid)
+              AND m.sender_type = 'user'
+              AND COALESCE(m.content, '') <> ''
+            ORDER BY m.created_at DESC
+            LIMIT :limit
+            """
+        ),
+        {"uid": user_id, "limit": limit},
+    )
+    fetchall = getattr(result, "fetchall", None)
+    if fetchall is None:
+        return None
+    for row in fetchall():
+        data = row._mapping if hasattr(row, "_mapping") else row
+        content = data["content"] if hasattr(data, "__getitem__") else row[0]
+        code = normalize_country_code(content)
+        if code:
+            return code
+    return None
+
+
 async def write_country_code(
     db: AsyncSession,
     *,

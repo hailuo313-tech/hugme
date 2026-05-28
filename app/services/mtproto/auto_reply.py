@@ -20,6 +20,7 @@ from services.app_download_conversion import get_last_app_download_decision
 from services.link_attribution import wrap_text_links_with_tracking
 from services.emotion_lexicon import detect_language_from_text, normalize_language
 from services.profile_intake import (
+    country_from_recent_user_messages,
     country_from_locale,
     country_from_text_language,
     extract_age_from_text,
@@ -340,6 +341,11 @@ async def _handle_required_profile_intake(
     if pending == "country":
         country_code = normalize_country_code(text_value)
         if not country_code:
+            country_code = await country_from_recent_user_messages(
+                db,
+                user_id=user_id,
+            )
+        if not country_code:
             log.info("mtproto.profile.country_still_missing")
             return _profile_copy("country_retry", text_value, PROFILE_COUNTRY_RETRY)
         await write_country_code(
@@ -396,7 +402,11 @@ async def _handle_required_profile_intake(
         return None
 
     if completeness.country_code is None:
-        inferred_country = country_from_text_language(text_value)
+        inferred_country = (
+            normalize_country_code(text_value)
+            or await country_from_recent_user_messages(db, user_id=user_id)
+            or country_from_text_language(text_value)
+        )
         if inferred_country:
             await write_country_code(
                 db,

@@ -47,6 +47,7 @@ from services.emotion_lexicon import detect_language_from_text, normalize_langua
 from services.minor_protection import evaluate_inbound_minor_protection
 from services.user_level_service import user_level_service
 from services.profile_intake import (
+    country_from_recent_user_messages,
     country_from_locale,
     country_from_text_language,
     extract_age_from_text,
@@ -349,6 +350,11 @@ async def _handle_required_profile_intake(
     if pending == "country":
         country_code = normalize_country_code(text_content)
         if not country_code:
+            country_code = await country_from_recent_user_messages(
+                db,
+                user_id=user_id,
+            )
+        if not country_code:
             retry = _profile_copy("country_retry", text_content, PROFILE_COUNTRY_RETRY)
             await _send_tg(chat_id, retry, trace_id, typing_delay=True)
             return retry
@@ -413,7 +419,11 @@ async def _handle_required_profile_intake(
         return None
 
     if completeness.country_code is None:
-        inferred_country = country_from_text_language(text_content)
+        inferred_country = (
+            normalize_country_code(text_content)
+            or await country_from_recent_user_messages(db, user_id=user_id)
+            or country_from_text_language(text_content)
+        )
         if inferred_country:
             await write_country_code(
                 db,
