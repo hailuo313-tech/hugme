@@ -274,6 +274,41 @@ def test_ops_ai_translate_repairs_invalid_json(monkeypatch):
     assert mock_chat.await_count == 2
 
 
+def test_ops_ai_translate_repairs_valid_json_that_is_not_chinese(monkeypatch):
+    db = MagicMock()
+    mock_chat = AsyncMock(
+        side_effect=[
+            SimpleNamespace(
+                content=json.dumps(
+                    {"translations": [{"id": "m1", "text": "Please keep going"}]},
+                    ensure_ascii=False,
+                ),
+                model_used="copy-model",
+                error=None,
+            ),
+            SimpleNamespace(
+                content=json.dumps(
+                    {"translations": [{"id": "m1", "text": "请继续。"}]},
+                    ensure_ascii=False,
+                ),
+                model_used="repair-model",
+                error=None,
+            ),
+        ]
+    )
+    monkeypatch.setattr("api.ops_ai.llm_chat", mock_chat)
+    client = TestClient(_app(db))
+
+    r = client.post(
+        "/api/v1/ops-ai/translate",
+        json={"items": [{"id": "m1", "text": "Please keep going"}]},
+    )
+
+    assert r.status_code == 200, r.text
+    assert r.json()["translations"] == [{"id": "m1", "text": "请继续。"}]
+    assert mock_chat.await_count == 2
+
+
 def test_ops_ai_assist_conversation_not_found():
     db = MagicMock()
     db.execute = AsyncMock(return_value=_result(one=None))

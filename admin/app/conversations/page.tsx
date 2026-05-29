@@ -507,8 +507,8 @@ function ConversationsContent({ operator }: { operator: Operator }) {
 
   async function translateTexts(items: { id: string; text: string; sender_type?: string | null }[]) {
     const chunks: typeof items[] = [];
-    for (let i = 0; i < items.length; i += 40) {
-      chunks.push(items.slice(i, i + 40));
+    for (let i = 0; i < items.length; i += 10) {
+      chunks.push(items.slice(i, i + 10));
     }
     const merged: Record<string, string> = {};
     for (const chunk of chunks) {
