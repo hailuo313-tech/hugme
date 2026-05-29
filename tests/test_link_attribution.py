@@ -150,7 +150,10 @@ def test_render_tracking_links_as_html_cta_adds_large_click_target() -> None:
         'Open here: <a href="https://hugme2.com/r/AbC123xYz987QrStU0">'
         "OPEN APP LINK - TAP HERE</a>"
     ) in rendered
-    assert "https://hugme2.com/r/AbC123xYz987QrStU0." in rendered
+    assert (
+        '<a href="https://hugme2.com/r/AbC123xYz987QrStU0">'
+        "https://hugme2.com/r/AbC123xYz987QrStU0</a>."
+    ) in rendered
     assert "&lt;ok&gt;" in rendered
 
 
