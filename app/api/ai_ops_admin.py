@@ -302,7 +302,7 @@ async def list_script_templates(
             SELECT *
             FROM script_templates
             {where}
-            ORDER BY updated_at DESC, created_at DESC
+            ORDER BY created_at DESC, updated_at DESC
             LIMIT :limit OFFSET :offset
             """
         ),
