@@ -11,6 +11,7 @@ from api.attribution import (
     AttributionLinkCreate,
     admin_attribution_summary,
     create_attribution_link,
+    delete_admin_attribution_clicked_user,
     redirect_tracking_link,
 )
 from services.link_attribution import (
@@ -26,9 +27,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class FakeResult:
-    def __init__(self, row=None, rows=None):
+    def __init__(self, row=None, rows=None, rowcount=0):
         self.row = row
         self.rows = rows or []
+        self.rowcount = rowcount
 
     def fetchone(self):
         return self.row
@@ -242,9 +244,27 @@ async def test_admin_attribution_summary_returns_complete_dashboard_shape() -> N
     assert out["clicked_users"][0]["click_count"] == 4
     assert out["clicked_users"][0]["clicked_links"] == 2
     assert out["clicked_users"][0]["latest_tracking_id"] == "trk-1"
+    clicked_users_sql = db.execute.await_args_list[-2].args[0].text
+    assert "ORDER BY clicked.last_click_at DESC" in clicked_users_sql
+    assert "LIMIT 500" in clicked_users_sql
     assert out["overview"]["tg_new_users"] == 3
     assert out["overview"]["tg_served_users"] == 5
     assert out["telegram_accounts"][0]["account_label"] == "Mira TG"
     assert out["telegram_accounts"][0]["new_users"] == 3
     assert out["telegram_accounts"][0]["served_users"] == 5
     assert db.execute.await_args_list[0].args[1]["start_at"] == date(2026, 5, 22)
+
+
+async def test_delete_admin_attribution_clicked_user_removes_only_click_events() -> None:
+    db = FakeSession(results=[FakeResult(rowcount=3)])
+
+    out = await delete_admin_attribution_clicked_user(user_id="user-1", _={}, db=db)
+
+    sql = db.execute.await_args.args[0].text
+    params = db.execute.await_args.args[1]
+    assert out == {"deleted_events": 3}
+    assert "DELETE FROM attribution_events" in sql
+    assert "e.event_type = 'click'" in sql
+    assert "attribution_links" in sql
+    assert params == {"user_id": "user-1"}
+    db.commit.assert_awaited_once()

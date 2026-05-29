@@ -78,6 +78,10 @@ class AttributionEventCreate(BaseModel):
         return value
 
 
+class AttributionDeleteResponse(BaseModel):
+    deleted_events: int
+
+
 def _client_ip(request: Request) -> str | None:
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
@@ -474,7 +478,7 @@ async def admin_attribution_summary(
         LEFT JOIN users u ON u.id = clicked.user_id
         LEFT JOIN user_profiles p ON p.user_id = clicked.user_id
         ORDER BY clicked.last_click_at DESC
-        LIMIT 100
+        LIMIT 500
         """
     )
     telegram_account_rows = await fetch_rows(
@@ -669,3 +673,34 @@ async def admin_attribution_summary(
             for r in telegram_account_rows
         ],
     }
+
+
+@router.delete(
+    "/api/v1/admin/attribution/clicked-users/{user_id}",
+    response_model=AttributionDeleteResponse,
+)
+async def delete_admin_attribution_clicked_user(
+    user_id: str,
+    _: dict = Depends(require_operator),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        text(
+            """
+            DELETE FROM attribution_events e
+            WHERE e.event_type = 'click'
+              AND (
+                e.user_id::text = :user_id
+                OR EXISTS (
+                    SELECT 1
+                    FROM attribution_links l
+                    WHERE l.tracking_id = e.tracking_id
+                      AND l.user_id::text = :user_id
+                )
+              )
+            """
+        ),
+        {"user_id": user_id},
+    )
+    await db.commit()
+    return {"deleted_events": max(int(getattr(result, "rowcount", 0) or 0), 0)}

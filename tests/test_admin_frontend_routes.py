@@ -100,7 +100,15 @@ def test_data_page_covers_full_attribution_dashboard() -> None:
     ]:
         assert needle in page
 
-    for needle in ["点击链接用户明细", "clicked_users", "最近链接"]:
+    for needle in [
+        "点击链接用户明细",
+        "clicked_users",
+        "排名规则：最近点击时间越近，越排在最上面。",
+        "最多显示 500 个",
+        "onDelete(row)",
+        "/admin/attribution/clicked-users/",
+        "最近链接",
+    ]:
         assert needle in page
 
 
