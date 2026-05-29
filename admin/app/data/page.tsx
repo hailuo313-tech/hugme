@@ -43,6 +43,8 @@ interface ScriptRow {
   persona?: string | null;
   scene_step?: string | null;
   sender_account_id?: string | null;
+  content?: string | null;
+  operator_translation_zh?: string | null;
   clicks: number;
   downloads: number;
 }
@@ -314,7 +316,13 @@ function ScriptPanel({ title, rows, metric }: { title: string; rows: ScriptRow[]
           {rows.map((row) => (
             <tr key={`${title}-${row.script_key}`}>
               <td className="px-5 py-4 text-slate-300">
-                <div className="font-mono text-xs text-sky-300">{row.script_key}</div>
+                <div className="group relative inline-block max-w-full">
+                  <div className="cursor-help truncate font-mono text-xs text-sky-300">{row.script_key}</div>
+                  <div className="pointer-events-none absolute left-0 top-6 z-20 hidden w-[360px] max-w-[80vw] rounded-md border border-slate-700 bg-slate-950 p-3 text-sm leading-6 text-slate-200 shadow-xl group-hover:block">
+                    <div className="mb-1 text-xs text-slate-500">中文参考</div>
+                    <div className="whitespace-pre-wrap">{scriptChineseText(row)}</div>
+                  </div>
+                </div>
                 <div className="mt-1 text-xs text-slate-500">{row.sender_account_id || "未记录账号"}</div>
               </td>
               <td className="px-5 py-4 text-slate-400">
@@ -517,6 +525,14 @@ function formatDateOffset(offsetDays: number) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function scriptChineseText(row: ScriptRow) {
+  const translated = row.operator_translation_zh?.trim();
+  if (translated) return translated;
+  const original = row.content?.trim();
+  if (original) return `暂无中文翻译，原文：\n${original}`;
+  return "暂无中文翻译";
 }
 
 function shortUrl(value?: string | null) {
