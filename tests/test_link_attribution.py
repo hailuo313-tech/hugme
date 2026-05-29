@@ -197,7 +197,22 @@ async def test_admin_attribution_summary_returns_complete_dashboard_shape() -> N
     )
     dimension = ("US", 3, 4, 2, 1, 1, 1, 9900, True)
     generic_dimension = ("A", 1, 2, 1, 1, 1, 1, 9900)
-    script = ("hit-1", "tpl-1", "hit-1", "purchase_intent", "warm", "vip_cta", "tg-1", 4, 1, 1, 1, 9900)
+    script = (
+        "hit-1",
+        "tpl-1",
+        "hit-1",
+        "purchase_intent",
+        "warm",
+        "vip_cta",
+        "tg-1",
+        4,
+        1,
+        1,
+        1,
+        9900,
+        "Open the app and we will continue.",
+        "打开 App，我们继续聊。",
+    )
     link = ("trk-1", "https://app.example/download", "hit-1", None, "tg-1", "telegram", 4, 2, None, 30.0)
     clicked_user = (
         "user-1",
@@ -238,6 +253,8 @@ async def test_admin_attribution_summary_returns_complete_dashboard_shape() -> N
     assert out["countries"][0]["is_t1_country"] is True
     assert out["funnel"][0]["step"] == "话术发送"
     assert out["top_click_scripts"][0]["intent"] == "purchase_intent"
+    assert out["top_click_scripts"][0]["content"] == "Open the app and we will continue."
+    assert out["top_click_scripts"][0]["operator_translation_zh"] == "打开 App，我们继续聊。"
     assert out["top_payment_scripts"][0]["revenue_cents"] == 9900
     assert out["links"][0]["tracking_id"] == "trk-1"
     assert out["clicked_users"][0]["external_id"] == "tg_100"
