@@ -69,8 +69,11 @@ def test_business_flow_admin_pages_exist() -> None:
 
 def test_ai_ops_script_templates_show_newest_created_first() -> None:
     api = read("app/api/ai_ops_admin.py")
+    page = read("admin/app/ai-ops/page.tsx")
 
     assert "ORDER BY created_at DESC, updated_at DESC" in api
+    assert "created_at: string | null" in page
+    assert "sort((a, b) => newestTime(b) - newestTime(a))" in page
 
 
 def test_approvals_page_shows_confirmed_statuses() -> None:
