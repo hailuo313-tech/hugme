@@ -321,7 +321,9 @@ async def admin_attribution_summary(
             MIN(st.operator_translation_zh) AS operator_translation_zh
         FROM attribution_events e
         LEFT JOIN attribution_links l ON l.tracking_id = e.tracking_id
-        LEFT JOIN script_templates st ON st.id = l.script_template_id
+        LEFT JOIN script_templates st
+          ON st.id = l.script_template_id
+          OR st.id::text = l.script_hit_id
         WHERE {event_window_alias}
         GROUP BY 1
         ORDER BY {{order_expr}} DESC, clicks DESC
