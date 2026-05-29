@@ -34,6 +34,10 @@ APP_DOWNLOAD_CATEGORIES = {
 }
 
 APP_DOWNLOAD_SAFETY_TAG = "app_download_conversion"
+ASSET_KEYWORD_TRIGGER_TITLES: tuple[str, ...] = (
+    "用户聊天中想要看本人视频的关键词",
+    "用户聊天中想要看本人图片的关键词",
+)
 _last_decision: contextvars.ContextVar["AppDownloadDecision | None"] = contextvars.ContextVar(
     "last_app_download_decision",
     default=None,
@@ -111,6 +115,50 @@ async def maybe_select_app_download_reply(
     age = age_from_preferences(_preferences(profile))
     if user_level == "D":
         return None
+
+    asset_trigger = await _match_asset_keyword_trigger(
+        db=db,
+        user_text=user_text,
+        user_level=user_level,
+        persona_slug=_persona_slug(character_row),
+        language=_reply_language(profile, user_text),
+    )
+    if asset_trigger is not None:
+        hit, matched_keyword = asset_trigger
+        assets = await _load_script_assets(db=db, script_template_id=hit["id"])
+        if assets:
+            is_t1 = country_tier(country_code) == "T1" if country_code else None
+            decision = AppDownloadDecision(
+                content=str(hit.get("content") or ""),
+                category_key=str(hit.get("category_key") or "app_download_first_push"),
+                script_hit_id=str(hit["id"]),
+                assets=assets,
+                user_level=user_level,
+                persona_slug=hit.get("persona_slug") or _persona_slug(character_row),
+                intent="asset_keyword_request",
+                scene_step=f"asset_keyword:{matched_keyword}",
+                country_code=country_code,
+                age=age,
+                is_t1_country=is_t1,
+            )
+            _last_decision.set(decision)
+            await _audit_decision(
+                db=db,
+                decision=decision,
+                conversation_id=conversation_id,
+                trigger_message_id=trigger_message_id,
+                user_text=user_text,
+                trace_id=trace_id,
+            )
+            logger.bind(
+                component="app_download_conversion",
+                trace_id=trace_id,
+                category_key=decision.category_key,
+                script_hit_id=decision.script_hit_id,
+                matched_keyword=matched_keyword,
+                asset_count=len(assets),
+            ).info("app_download_conversion.asset_keyword_selected")
+            return decision
 
     state = await _load_latest_funnel_state(
         db=db,
@@ -247,6 +295,89 @@ async def _load_script_assets(*, db: Any, script_template_id: str) -> list[dict[
         {"id": script_template_id},
     )
     return [dict(row._mapping) for row in result.fetchall()]
+
+
+async def _match_asset_keyword_trigger(
+    *,
+    db: Any,
+    user_text: str,
+    user_level: str,
+    persona_slug: str | None,
+    language: str,
+) -> tuple[dict[str, Any], str] | None:
+    text_value = _normalize_keyword_text(user_text)
+    if not text_value:
+        return None
+    result = await db.execute(
+        text(
+            """
+            SELECT id, category_key, title, content, language, platform,
+                   user_level, persona_slug, hook
+            FROM script_templates
+            WHERE status = 'approved'
+              AND title = ANY(:titles)
+              AND hook = 'reply'
+              AND (platform = 'telegram_real_user' OR platform IS NULL)
+              AND (user_level = :user_level OR user_level IS NULL)
+              AND (persona_slug = :persona_slug OR persona_slug IS NULL OR :persona_slug IS NULL)
+              AND language IN (:language, 'en')
+            ORDER BY
+              CASE title
+                WHEN :video_title THEN 0
+                WHEN :image_title THEN 1
+                ELSE 2
+              END,
+              CASE WHEN language = :language THEN 0 ELSE 1 END,
+              updated_at DESC,
+              created_at DESC
+            LIMIT 10
+            """
+        ),
+        {
+            "titles": list(ASSET_KEYWORD_TRIGGER_TITLES),
+            "video_title": ASSET_KEYWORD_TRIGGER_TITLES[0],
+            "image_title": ASSET_KEYWORD_TRIGGER_TITLES[1],
+            "language": language or "en",
+            "user_level": user_level,
+            "persona_slug": persona_slug,
+        },
+    )
+    for row in result.fetchall():
+        data = dict(row._mapping)
+        for keyword in _split_asset_keywords(str(data.get("content") or "")):
+            if _keyword_matches(text_value, keyword):
+                return data, keyword
+    return None
+
+
+def _split_asset_keywords(content: str) -> list[str]:
+    normalized = (
+        str(content or "")
+        .replace("\r", "\n")
+        .replace("，", ",")
+        .replace("、", ",")
+        .replace("；", ",")
+        .replace(";", ",")
+        .replace("`", ",")
+    )
+    keywords: list[str] = []
+    seen: set[str] = set()
+    for part in normalized.replace("\n", ",").split(","):
+        keyword = part.strip().strip(".!? ")
+        key = _normalize_keyword_text(keyword)
+        if key and key not in seen:
+            keywords.append(keyword)
+            seen.add(key)
+    return keywords
+
+
+def _keyword_matches(normalized_text: str, keyword: str) -> bool:
+    key = _normalize_keyword_text(keyword)
+    return bool(key and key in normalized_text)
+
+
+def _normalize_keyword_text(value: str) -> str:
+    return " ".join(str(value or "").casefold().replace("’", "'").split())
 
 
 def _script_query(
