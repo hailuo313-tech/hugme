@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import json
 import re
 import secrets
@@ -21,6 +22,7 @@ ALLOWED_EVENT_TYPES = {
     "payment",
 }
 URL_RE = re.compile(r"https?://[^\s<>\]\"']+")
+TRACKING_URL_RE = re.compile(r"https?://[^\s<>\]\"']+/r/[A-Za-z0-9]+")
 TRAILING_URL_PUNCTUATION = ".,!?;:)"
 
 
@@ -296,3 +298,36 @@ async def record_unique_click_event(
 
 def tracking_url(base_url: str, tracking_id: str) -> str:
     return f"{base_url.rstrip('/')}/r/{tracking_id}"
+
+
+def render_tracking_links_as_html_cta(
+    text_value: str,
+    *,
+    cta_label: str = "OPEN APP LINK - TAP HERE",
+) -> str:
+    """Render tracked short links as a large Telegram HTML text link.
+
+    Telegram controls which parts of its native link preview card are clickable.
+    Adding a prominent text-link CTA gives users a predictable clickable target
+    while keeping the original short link visible for attribution/debugging.
+    """
+    if not text_value or "/r/" not in text_value:
+        return text_value
+
+    output: list[str] = []
+    last = 0
+    changed = False
+    for match in TRACKING_URL_RE.finditer(text_value):
+        raw_url = match.group(0)
+        tracked_url = raw_url.rstrip(TRAILING_URL_PUNCTUATION)
+        suffix = raw_url[len(tracked_url):]
+        output.append(html.escape(text_value[last:match.start()]))
+        escaped_url_attr = html.escape(tracked_url, quote=True)
+        escaped_url_text = html.escape(tracked_url)
+        escaped_label = html.escape(cta_label)
+        output.append(f'<a href="{escaped_url_attr}">{escaped_label}</a>\n{escaped_url_text}')
+        output.append(html.escape(suffix))
+        last = match.end()
+        changed = True
+    output.append(html.escape(text_value[last:]))
+    return "".join(output) if changed else text_value

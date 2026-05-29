@@ -38,7 +38,7 @@ from api.onboarding import (
 )
 from services.llm_orchestrator import generate_reply, LLMOrchestratorError
 from services.app_download_conversion import get_last_app_download_decision
-from services.link_attribution import wrap_text_links_with_tracking
+from services.link_attribution import render_tracking_links_as_html_cta, wrap_text_links_with_tracking
 from services.script_asset_delivery import send_telegram_bot_asset
 from services.memory_writer import maybe_write_memory
 from services.age_extraction import maybe_extract_and_write_age
@@ -1017,7 +1017,8 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
         except Exception as exc:
             log.bind(error_type=type(exc).__name__).warning("tg.link_attribution_failed")
 
-        sent_id = await _send_tg(tg_chat_id, reply_text, trace_id, typing_delay=True)
+        telegram_reply_text = render_tracking_links_as_html_cta(reply_text)
+        sent_id = await _send_tg(tg_chat_id, telegram_reply_text, trace_id, typing_delay=True)
         if sent_id is not None and app_download_decision is not None:
             for asset in app_download_decision.assets:
                 asset_mid = await send_telegram_bot_asset(
