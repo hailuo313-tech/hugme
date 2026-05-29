@@ -325,7 +325,10 @@ def render_tracking_links_as_html_cta(
         escaped_url_attr = html.escape(tracked_url, quote=True)
         escaped_url_text = html.escape(tracked_url)
         escaped_label = html.escape(cta_label)
-        output.append(f'<a href="{escaped_url_attr}">{escaped_label}</a>\n{escaped_url_text}')
+        output.append(
+            f'<a href="{escaped_url_attr}">{escaped_label}</a>\n'
+            f'<a href="{escaped_url_attr}">{escaped_url_text}</a>'
+        )
         output.append(html.escape(suffix))
         last = match.end()
         changed = True
