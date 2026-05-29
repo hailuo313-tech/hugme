@@ -19,6 +19,7 @@ from services.link_attribution import (
     new_tracking_id,
     record_attribution_event,
     record_unique_click_event,
+    render_tracking_links_as_html_cta,
     tracking_url,
     wrap_text_links_with_tracking,
 )
@@ -138,6 +139,19 @@ async def test_wrap_text_links_with_tracking_replaces_outbound_url() -> None:
     event_params = db.execute.await_args_list[1].args[1]
     assert event_params["event_type"] == "link_exposed"
     assert event_params["tracking_id"] == "trk_reply"
+
+
+def test_render_tracking_links_as_html_cta_adds_large_click_target() -> None:
+    rendered = render_tracking_links_as_html_cta(
+        'Open here: https://hugme2.com/r/AbC123xYz987QrStU0. <ok>'
+    )
+
+    assert (
+        'Open here: <a href="https://hugme2.com/r/AbC123xYz987QrStU0">'
+        "OPEN APP LINK - TAP HERE</a>"
+    ) in rendered
+    assert "https://hugme2.com/r/AbC123xYz987QrStU0." in rendered
+    assert "&lt;ok&gt;" in rendered
 
 
 async def test_redirect_tracking_link_records_click_then_redirects() -> None:

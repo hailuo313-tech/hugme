@@ -17,7 +17,7 @@ from core.database import AsyncSessionLocal
 from services.memory_writer import maybe_write_memory
 from services.llm_orchestrator import LLMOrchestratorError, generate_reply
 from services.app_download_conversion import get_last_app_download_decision
-from services.link_attribution import wrap_text_links_with_tracking
+from services.link_attribution import render_tracking_links_as_html_cta, wrap_text_links_with_tracking
 from services.emotion_lexicon import detect_language_from_text, normalize_language
 from services.profile_intake import (
     country_from_recent_user_messages,
@@ -687,11 +687,14 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
             log.bind(error_type=type(exc).__name__).warning("mtproto.link_attribution_failed")
 
     peer = getattr(event, "chat_id", None) or sender_id
+    telegram_reply_text = render_tracking_links_as_html_cta(reply_text)
+    send_kwargs = {"parse_mode": "html"} if telegram_reply_text != reply_text else {}
     sent = await send_human_like_message(
         client,
         peer,
-        reply_text,
+        telegram_reply_text,
         policy=_reply_delay_policy(reply_text),
+        **send_kwargs,
     )
     sent_id = str(getattr(sent, "id", "") or "")
     assistant_msg_id = await _persist_message(
