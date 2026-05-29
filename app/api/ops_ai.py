@@ -209,6 +209,56 @@ def _normalize_translation_payload(
     ]
 
 
+def _has_cjk(text_value: str) -> bool:
+    return bool(re.search(r"[\u3400-\u9fff]", text_value or ""))
+
+
+def _has_translatable_text(text_value: str) -> bool:
+    value = re.sub(r"https?://\S+", " ", text_value or "")
+    value = re.sub(r"[@#]\w+", " ", value)
+    return bool(re.search(r"[A-Za-z]{3,}|[\u3040-\u30ff\uac00-\ud7af\u0370-\u03ff]", value))
+
+
+def _same_after_normalize(left: str, right: str) -> bool:
+    def _norm(value: str) -> str:
+        return re.sub(r"\s+", " ", (value or "").strip()).lower()
+
+    return bool(_norm(left)) and _norm(left) == _norm(right)
+
+
+def _items_needing_chinese_repair(
+    requested_items: list[OpsAiTranslateItem],
+    translations: list[dict[str, str]],
+    *,
+    target_language: str,
+) -> list[OpsAiTranslateItem]:
+    if not str(target_language or "").lower().startswith("zh"):
+        return []
+    translated_by_id = {item["id"]: item.get("text", "") for item in translations}
+    needs_repair: list[OpsAiTranslateItem] = []
+    for item in requested_items:
+        source = item.text or ""
+        translated = translated_by_id.get(item.id, "")
+        if not _has_translatable_text(source):
+            continue
+        if _has_cjk(source):
+            continue
+        if not _has_cjk(translated) or _same_after_normalize(source, translated):
+            needs_repair.append(item)
+    return needs_repair
+
+
+def _merge_translation_repairs(
+    translations: list[dict[str, str]],
+    repaired: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    repaired_by_id = {item["id"]: item["text"] for item in repaired}
+    return [
+        {"id": item["id"], "text": repaired_by_id.get(item["id"], item["text"])}
+        for item in translations
+    ]
+
+
 def _build_translation_messages(body: OpsAiTranslateRequest) -> list[dict[str, str]]:
     preserve_terms = [term for term in body.preserve_terms if term.strip()]
     payload = {
@@ -248,9 +298,11 @@ def _build_translation_repair_messages(
     *,
     original_content: str,
     requested_items: list[OpsAiTranslateItem],
+    previous_translations: list[dict[str, str]] | None = None,
 ) -> list[dict[str, str]]:
     payload = {
         "invalid_model_output": original_content,
+        "previous_translations": previous_translations or [],
         "original_items": [
             {
                 "id": item.id,
@@ -266,6 +318,9 @@ def _build_translation_repair_messages(
     system = (
         "Repair or regenerate the translation result as valid strict JSON only. "
         "Use only the original item ids. Translate missing items into Simplified Chinese. "
+        "If previous_translations copied English or any other foreign language, replace them with real Simplified Chinese. "
+        "The output text for every translatable non-Chinese item must contain Chinese characters. "
+        "Do not refuse explicit, adult, rude, or sensitive text; translate it literally for internal operator reference only. "
         "Return no markdown and no explanation."
     )
     return [
@@ -512,7 +567,7 @@ async def translate_admin_text(
             messages=_build_translation_messages(normalized_body),
             trace_id=trace_id,
             temperature=0.1,
-            max_tokens=1600,
+            max_tokens=4000,
         )
     except Exception as exc:
         logger.bind(
@@ -550,7 +605,7 @@ async def translate_admin_text(
                 ),
                 trace_id=trace_id,
                 temperature=0,
-                max_tokens=1600,
+                max_tokens=4000,
             )
             if repair_result.error:
                 raise ValueError(repair_result.error)
@@ -565,6 +620,45 @@ async def translate_admin_text(
                 error=str(repair_exc),
             ).warning("ops_ai.translate.repair_failed")
             translations = [{"id": item.id, "text": item.text} for item in items]
+
+    needs_repair = _items_needing_chinese_repair(
+        items,
+        translations,
+        target_language=body.target_language,
+    )
+    if needs_repair:
+        logger.bind(
+            operator_id=operator_id,
+            item_count=len(items),
+            repair_count=len(needs_repair),
+        ).warning("ops_ai.translate.untranslated_items_detected")
+        try:
+            repair_result = await llm_chat(
+                messages=_build_translation_repair_messages(
+                    original_content=result.content,
+                    requested_items=needs_repair,
+                    previous_translations=[
+                        item for item in translations if item["id"] in {source.id for source in needs_repair}
+                    ],
+                ),
+                trace_id=trace_id,
+                temperature=0,
+                max_tokens=4000,
+            )
+            if repair_result.error:
+                raise ValueError(repair_result.error)
+            parsed = _extract_json_object(repair_result.content)
+            repaired = _normalize_translation_payload(parsed, needs_repair)
+            translations = _merge_translation_repairs(translations, repaired)
+            result = repair_result
+        except Exception as repair_exc:
+            logger.bind(
+                operator_id=operator_id,
+                item_count=len(items),
+                repair_count=len(needs_repair),
+                elapsed_ms=round((time.time() - started) * 1000, 1),
+                error=str(repair_exc),
+            ).warning("ops_ai.translate.untranslated_repair_failed")
 
     elapsed_ms = round((time.time() - started) * 1000, 1)
     logger.bind(
