@@ -403,9 +403,12 @@ def _choose_category(
     minutes = state.minutes_since_link
     if classified_intent == "conversion.objection":
         return "app_download_objection", classified_intent, "download_objection"
+    direct_link_request = _is_direct_link_request(text_value)
     if state.tracking_id:
         if state.downloaded or state.registered or state.paid:
             return None, "third_party_handoff", "download_complete"
+        if _is_explicit_link_request(text_value):
+            return "app_download_direct_cta", "app_download_direct_cta", "pre_click"
         if state.clicked and not state.downloaded and (minutes is None or minutes >= 3):
             return "app_link_clicked_followup", "app_link_clicked_followup", "clicked_not_downloaded"
         if not state.clicked and minutes is not None and minutes < 10:
@@ -415,7 +418,7 @@ def _choose_category(
         return "trust_reassurance", "trust_reassurance", "trust"
     if _has_any(text_value, ("don't want to download", "dont want to download", "no download", "too much work", "not downloading", "不想下载", "不下载", "麻烦")):
         return "app_download_objection", "app_download_objection", "download_objection"
-    if _has_any(
+    if direct_link_request or _has_any(
         text_value,
         (
             "link",
@@ -530,3 +533,57 @@ def _reply_language(profile_row: dict[str, Any] | None, user_text: str) -> str:
 
 def _has_any(text_value: str, needles: tuple[str, ...]) -> bool:
     return any(needle in text_value for needle in needles)
+
+
+def _is_direct_link_request(text_value: str) -> bool:
+    return _has_any(
+        text_value,
+        (
+            "link",
+            "app",
+            "download",
+            "quick sign up",
+            "sign up",
+            "where",
+            "continue",
+            "send it",
+            "private",
+            "privately",
+            "more privately",
+            "talk more",
+            "where can i talk",
+            "room",
+            "platform",
+            "链接",
+            "下载",
+            "继续",
+            "哪里",
+            "私聊",
+            "閾炬帴",
+            "涓嬭浇",
+            "缁х画",
+            "鍝噷",
+            "绉佽亰",
+        ),
+    )
+
+
+def _is_explicit_link_request(text_value: str) -> bool:
+    return _has_any(
+        text_value,
+        (
+            "link",
+            "app link",
+            "download app",
+            "download link",
+            "download",
+            "quick sign up",
+            "sign up",
+            "send it",
+            "send me",
+            "链接",
+            "下载",
+            "閾炬帴",
+            "涓嬭浇",
+        ),
+    )

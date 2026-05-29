@@ -64,6 +64,23 @@ def test_selector_does_not_resend_recent_unclicked_link() -> None:
     assert category is None
 
 
+def test_selector_resends_link_when_user_explicitly_asks_during_cooldown() -> None:
+    category, intent, scene_step = _choose_category(
+        user_text="Download APP LINK",
+        state=_FunnelState(
+            tracking_id="trk_1",
+            minutes_since_link=2.0,
+            clicked=False,
+        ),
+        assistant_reply_count=5,
+        user_level="C",
+    )
+
+    assert category == "app_download_direct_cta"
+    assert intent == "app_download_direct_cta"
+    assert scene_step == "pre_click"
+
+
 def test_selector_stops_after_download_handoff() -> None:
     category, intent, scene_step = _choose_category(
         user_text="done",
