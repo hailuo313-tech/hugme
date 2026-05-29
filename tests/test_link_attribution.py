@@ -255,9 +255,11 @@ async def test_admin_attribution_summary_returns_complete_dashboard_shape() -> N
     assert out["top_click_scripts"][0]["intent"] == "purchase_intent"
     assert out["top_click_scripts"][0]["content"] == "Open the app and we will continue."
     assert out["top_click_scripts"][0]["operator_translation_zh"] == "打开 App，我们继续聊。"
-    script_sql = "\n".join(call.args[0].text for call in db.execute.await_args_list)
+    script_sql = db.execute.await_args_list[10].args[0].text
     assert "st.id = l.script_template_id" in script_sql
     assert "st.id::text = l.script_hit_id" in script_sql
+    dimension_sql = db.execute.await_args_list[2].args[0].text
+    assert "script_templates st" not in dimension_sql
     assert out["top_payment_scripts"][0]["revenue_cents"] == 9900
     assert out["links"][0]["tracking_id"] == "trk-1"
     assert out["clicked_users"][0]["external_id"] == "tg_100"
