@@ -154,8 +154,8 @@ async def test_redirect_tracking_link_records_click_then_redirects() -> None:
 
     response = await redirect_tracking_link("trk_test", request, db)
 
-    assert response.status_code == 302
-    assert response.headers["location"] == "https://app.example/download"
+    assert response.status_code == 200
+    assert "https://app.example/download" in response.body.decode()
     assert db.execute.await_count == 2
     event_params = db.execute.await_args_list[1].args[1]
     assert event_params["tracking_id"] == "trk_test"
@@ -164,6 +164,25 @@ async def test_redirect_tracking_link_records_click_then_redirects() -> None:
     assert "WHERE NOT EXISTS" in event_sql
     assert "event_type = 'click'" in event_sql
     db.commit.assert_awaited_once()
+
+
+async def test_redirect_tracking_link_does_not_count_telegram_preview_as_click() -> None:
+    db = FakeSession(
+        results=[
+            FakeResult(("https://app.example/download", "user-1", "US", 29, "A")),
+        ]
+    )
+    request = SimpleNamespace(
+        headers={"user-agent": "TelegramBot (like TwitterBot)", "referer": ""},
+        client=SimpleNamespace(host="149.154.161.220"),
+    )
+
+    response = await redirect_tracking_link("trk_test", request, db)
+
+    assert response.status_code == 200
+    assert "https://app.example/download" in response.body.decode()
+    assert db.execute.await_count == 1
+    db.commit.assert_not_awaited()
 
 
 async def test_head_tracking_link_redirects_without_recording_click() -> None:

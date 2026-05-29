@@ -6,7 +6,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -137,19 +137,21 @@ async def redirect_tracking_link(
     db: AsyncSession = Depends(get_db),
 ):
     row = await _load_tracking_link(db=db, tracking_id=tracking_id)
-    await record_unique_click_event(
-        db,
-        tracking_id=tracking_id,
-        user_id=row[1],
-        country_code=row[2],
-        age=row[3],
-        user_level=row[4],
-        ip_address=_client_ip(request),
-        user_agent=request.headers.get("user-agent"),
-        referrer=request.headers.get("referer"),
-    )
-    await db.commit()
-    return RedirectResponse(url=row[0], status_code=302)
+    user_agent = request.headers.get("user-agent")
+    if not _is_link_preview_bot(user_agent):
+        await record_unique_click_event(
+            db,
+            tracking_id=tracking_id,
+            user_id=row[1],
+            country_code=row[2],
+            age=row[3],
+            user_level=row[4],
+            ip_address=_client_ip(request),
+            user_agent=user_agent,
+            referrer=request.headers.get("referer"),
+        )
+        await db.commit()
+    return _html_redirect_response(str(row[0]))
 
 
 @router.head("/r/{tracking_id}", include_in_schema=False)
@@ -178,6 +180,49 @@ async def _load_tracking_link(*, db: AsyncSession, tracking_id: str):
     if row is None:
         raise HTTPException(status_code=404, detail="tracking link not found")
     return row
+
+
+def _is_link_preview_bot(user_agent: str | None) -> bool:
+    ua = (user_agent or "").casefold()
+    return any(
+        token in ua
+        for token in (
+            "telegrambot",
+            "twitterbot",
+            "facebookexternalhit",
+            "slackbot",
+            "discordbot",
+            "whatsapp",
+        )
+    )
+
+
+def _html_redirect_response(destination_url: str) -> HTMLResponse:
+    escaped = (
+        destination_url.replace("&", "&amp;")
+        .replace('"', "&quot;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+    html = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="refresh" content="0;url={escaped}">
+  <title>Opening...</title>
+  <script>window.location.replace({json.dumps(destination_url)});</script>
+</head>
+<body>
+  <p>Opening link...</p>
+  <p><a href="{escaped}" rel="nofollow">Tap here if it does not open automatically</a></p>
+</body>
+</html>"""
+    return HTMLResponse(
+        content=html,
+        status_code=200,
+        headers={"Cache-Control": "no-store, no-cache, max-age=0"},
+    )
 
 
 @router.post("/api/v1/attribution/events", status_code=status.HTTP_202_ACCEPTED)
