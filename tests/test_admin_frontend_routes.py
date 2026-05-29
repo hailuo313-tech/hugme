@@ -100,6 +100,9 @@ def test_data_page_covers_full_attribution_dashboard() -> None:
     ]:
         assert needle in page
 
+    for needle in ["点击链接用户明细", "clicked_users", "最近链接"]:
+        assert needle in page
+
 
 def test_unused_legacy_admin_pages_are_removed_but_character_page_stays() -> None:
     removed_pages = [
