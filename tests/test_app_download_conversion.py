@@ -1,5 +1,9 @@
 from pathlib import Path
+from types import SimpleNamespace
 
+import pytest
+
+import services.app_download_conversion as conversion
 from services.app_download_conversion import (
     APP_DOWNLOAD_CATEGORIES,
     _FunnelState,
@@ -7,6 +11,8 @@ from services.app_download_conversion import (
     _relationship_stage,
     _reply_language,
     _render_script,
+    _split_asset_keywords,
+    maybe_select_app_download_reply,
 )
 
 
@@ -104,7 +110,89 @@ def test_profile_helpers_allow_missing_profile_for_download_cta() -> None:
 
 
 def test_reply_language_follows_user_message_language() -> None:
-    assert _reply_language(None, "Hola, mándame el link") == "es"
-    assert _reply_language(None, "Olá, quero o app") == "pt"
-    assert _reply_language(None, "こんにちは、リンクを送って") == "ja"
-    assert _reply_language(None, "안녕하세요 링크 보내줘") == "ko"
+    assert _reply_language(None, "Hola, m\u00e1ndame el link") == "es"
+    assert _reply_language(None, "Ol\u00e1, quero o app") == "pt"
+    assert _reply_language(None, "\u3053\u3093\u306b\u3061\u306f\u3001\u30ea\u30f3\u30af\u3092\u9001\u3063\u3066") == "ja"
+    assert _reply_language(None, "\uc548\ub155\ud558\uc138\uc694 \ub9c1\ud06c \ubcf4\ub0b4\uc918") == "ko"
+
+
+def test_asset_keyword_split_accepts_operator_separators() -> None:
+    assert _split_asset_keywords("video, vid\u3001clip\uff0ccustom video` tape") == [
+        "video",
+        "vid",
+        "clip",
+        "custom video",
+        "tape",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_asset_keyword_template_selects_attached_media(monkeypatch) -> None:
+    class Result:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def fetchall(self):
+            return self._rows
+
+    class FakeDb:
+        async def execute(self, sql, params=None):
+            sql_text = str(sql)
+            if "FROM script_templates" in sql_text:
+                return Result(
+                    [
+                        SimpleNamespace(
+                            _mapping={
+                                "id": "33333333-3333-3333-3333-333333333333",
+                                "category_key": "app_download_first_push",
+                                "title": conversion.ASSET_KEYWORD_TRIGGER_TITLES[0],
+                                "content": "video, vid, custom video",
+                                "language": "en",
+                                "platform": "telegram_real_user",
+                                "user_level": None,
+                                "persona_slug": None,
+                                "hook": "reply",
+                            }
+                        )
+                    ]
+                )
+            if "FROM script_template_assets" in sql_text:
+                return Result(
+                    [
+                        SimpleNamespace(
+                            _mapping={
+                                "id": "asset-1",
+                                "asset_type": "video",
+                                "asset_url": "https://cdn.example/video.mp4",
+                                "mime_type": "video/mp4",
+                                "caption": None,
+                                "sort_order": 0,
+                            }
+                        )
+                    ]
+                )
+            return Result([])
+
+    async def fake_resolve_app_download_url(_db):
+        return "https://app.example/download"
+
+    monkeypatch.setattr(conversion, "resolve_app_download_url", fake_resolve_app_download_url)
+    monkeypatch.setattr(conversion.settings, "APP_DOWNLOAD_CONVERSION_ENABLED", True)
+
+    decision = await maybe_select_app_download_reply(
+        db=FakeDb(),
+        user_id="11111111-1111-1111-1111-111111111111",
+        conversation_id="22222222-2222-2222-2222-222222222222",
+        user_text="send me a custom video",
+        profile_row={"user_level": "C"},
+        character_row=None,
+        assistant_reply_count=0,
+        trigger_message_id=None,
+        trace_id="trace-asset",
+        classified_intent=None,
+    )
+
+    assert decision is not None
+    assert decision.intent == "asset_keyword_request"
+    assert decision.script_hit_id == "33333333-3333-3333-3333-333333333333"
+    assert decision.assets[0]["asset_url"] == "https://cdn.example/video.mp4"
