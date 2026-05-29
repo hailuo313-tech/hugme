@@ -94,8 +94,8 @@ interface AttributionSummary {
 
 const QUICK_RANGES = [
   { label: "今日", days: 1 },
+  { label: "昨天", days: 1, dateOffsetDays: -1 },
   { label: "本周", days: 7 },
-  { label: "14 天", days: 14 },
   { label: "30 天", days: 30 },
 ];
 
@@ -187,7 +187,9 @@ function DataDashboard({ operator }: { operator: Operator }) {
     });
   }, [summary]);
 
-  const rangeLabel = selectedDate ? `${selectedDate} 当天` : QUICK_RANGES.find((item) => item.days === days)?.label || `最近 ${days} 天`;
+  const yesterdayDate = formatDateOffset(-1);
+  const activeQuickLabel = selectedDate === yesterdayDate ? "昨天" : QUICK_RANGES.find((item) => !item.dateOffsetDays && item.days === days)?.label;
+  const rangeLabel = selectedDate ? `${selectedDate} 当天` : activeQuickLabel || `最近 ${days} 天`;
 
   return (
     <AdminFrame
@@ -200,13 +202,13 @@ function DataDashboard({ operator }: { operator: Operator }) {
         <div className="flex rounded-md border border-slate-800 bg-slate-900 p-1">
           {QUICK_RANGES.map((item) => (
             <button
-              key={item.days}
+              key={item.label}
               onClick={() => {
                 setDays(item.days);
-                setSelectedDate("");
+                setSelectedDate(item.dateOffsetDays ? formatDateOffset(item.dateOffsetDays) : "");
               }}
               className={`rounded px-3 py-1.5 text-sm transition ${
-                !selectedDate && days === item.days
+                (item.dateOffsetDays ? selectedDate === formatDateOffset(item.dateOffsetDays) : !selectedDate && days === item.days)
                   ? "bg-violet-600 text-white"
                   : "text-slate-400 hover:bg-slate-800 hover:text-white"
               }`}
@@ -506,6 +508,15 @@ function Panel({ title, empty, hasRows, children }: { title: string; empty: stri
 function formatDate(value?: string | null) {
   if (!value) return "-";
   return value.replace("T", " ").slice(0, 16);
+}
+
+function formatDateOffset(offsetDays: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + offsetDays);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function shortUrl(value?: string | null) {
