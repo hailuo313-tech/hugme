@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, useEffect, useMemo, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import AuthGate from "@/components/AuthGate";
 import AdminFrame from "@/components/AdminFrame";
 import { apiFetch, Operator } from "@/lib/auth";
@@ -125,32 +125,54 @@ function DataDashboard({ operator }: { operator: Operator }) {
   const [summary, setSummary] = useState<AttributionSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
 
-  useEffect(() => {
-    let mounted = true;
-    setLoading(true);
-    const query = selectedDate
-      ? `/admin/attribution/summary?date=${selectedDate}`
-      : `/admin/attribution/summary?days=${days}`;
+  const loadSummary = useCallback(
+    async (mounted = true) => {
+      setLoading(true);
+      const query = selectedDate
+        ? `/admin/attribution/summary?date=${selectedDate}`
+        : `/admin/attribution/summary?days=${days}`;
 
-    apiFetch<AttributionSummary>(query)
-      .then((data) => {
+      try {
+        const data = await apiFetch<AttributionSummary>(query);
         if (!mounted) return;
         setSummary(data);
         setError(null);
-      })
-      .catch((err: Error) => {
+      } catch (err) {
         if (!mounted) return;
-        setError(err.message);
-      })
-      .finally(() => {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
         if (mounted) setLoading(false);
-      });
+      }
+    },
+    [days, selectedDate]
+  );
+
+  useEffect(() => {
+    let mounted = true;
+    void loadSummary(mounted);
 
     return () => {
       mounted = false;
     };
-  }, [days, selectedDate]);
+  }, [loadSummary]);
+
+  async function deleteClickedUser(row: ClickedUserRow) {
+    const label = row.nickname || row.external_id || row.user_id;
+    if (!window.confirm(`确认删除 ${label} 的点击链接记录吗？只删除点击归因记录，不删除 TG 用户和聊天记录。`)) return;
+    setDeletingUserId(row.user_id);
+    setLoading(true);
+    try {
+      await apiFetch(`/admin/attribution/clicked-users/${encodeURIComponent(row.user_id)}`, { method: "DELETE" });
+      await loadSummary();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDeletingUserId(null);
+      setLoading(false);
+    }
+  }
 
   const overview = summary?.overview;
   const funnel = useMemo(() => {
@@ -247,8 +269,6 @@ function DataDashboard({ operator }: { operator: Operator }) {
         </div>
       </section>
 
-      <ClickedUsersPanel rows={summary?.clicked_users ?? []} />
-
       <TelegramAccountPanel rows={summary?.telegram_accounts ?? []} />
 
       <section className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -262,6 +282,8 @@ function DataDashboard({ operator }: { operator: Operator }) {
         <DimensionPanel title="用户等级效果" rows={summary?.levels ?? []} label="等级" />
         <DimensionPanel title="话术分类效果" rows={summary?.script_categories ?? []} label="分类" />
       </section>
+
+      <ClickedUsersPanel rows={summary?.clicked_users ?? []} deletingUserId={deletingUserId} onDelete={deleteClickedUser} />
     </AdminFrame>
   );
 }
@@ -336,15 +358,24 @@ function DimensionPanel({ title, rows, label }: { title: string; rows: Dimension
   );
 }
 
-function ClickedUsersPanel({ rows }: { rows: ClickedUserRow[] }) {
+function ClickedUsersPanel({
+  rows,
+  deletingUserId,
+  onDelete,
+}: {
+  rows: ClickedUserRow[];
+  deletingUserId: string | null;
+  onDelete: (row: ClickedUserRow) => void;
+}) {
   return (
-    <section className="mb-6 overflow-hidden rounded-md border border-slate-800 bg-slate-900">
+    <section className="mt-6 overflow-hidden rounded-md border border-slate-800 bg-slate-900">
       <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-5 py-4">
         <div>
           <h2 className="text-lg font-semibold">点击链接用户明细</h2>
           <p className="mt-1 text-sm text-slate-500">看清楚哪些 TG 用户点过链接、点了几次、最后点的是哪条链接。</p>
+          <p className="mt-1 text-xs text-slate-600">排名规则：最近点击时间越近，越排在最上面。</p>
         </div>
-        <span className="shrink-0 text-sm text-slate-500">最多显示 100 个</span>
+        <span className="shrink-0 text-sm text-slate-500">最多显示 500 个</span>
       </div>
       <div className="overflow-x-auto">
         <table className="min-w-full text-left text-sm">
@@ -355,6 +386,7 @@ function ClickedUsersPanel({ rows }: { rows: ClickedUserRow[] }) {
               <th className="px-5 py-3 font-medium">国家 / 等级</th>
               <th className="px-5 py-3 font-medium">最近点击</th>
               <th className="px-5 py-3 font-medium">最近链接</th>
+              <th className="px-5 py-3 text-right font-medium">操作</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800">
@@ -387,11 +419,21 @@ function ClickedUsersPanel({ rows }: { rows: ClickedUserRow[] }) {
                     </div>
                     <div className="mt-1 font-mono text-xs text-slate-600">{row.latest_tracking_id || "-"}</div>
                   </td>
+                  <td className="px-5 py-4 text-right">
+                    <button
+                      type="button"
+                      onClick={() => onDelete(row)}
+                      disabled={deletingUserId === row.user_id}
+                      className="rounded border border-rose-500/70 px-3 py-1.5 text-sm text-rose-300 transition hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {deletingUserId === row.user_id ? "删除中" : "删除"}
+                    </button>
+                  </td>
                 </tr>
               ))
             ) : (
               <tr>
-                <td className="px-5 py-8 text-sm text-slate-500" colSpan={5}>
+                <td className="px-5 py-8 text-sm text-slate-500" colSpan={6}>
                   暂无点击链接用户
                 </td>
               </tr>
