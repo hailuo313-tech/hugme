@@ -136,6 +136,32 @@ async def redirect_tracking_link(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
+    row = await _load_tracking_link(db=db, tracking_id=tracking_id)
+    await record_unique_click_event(
+        db,
+        tracking_id=tracking_id,
+        user_id=row[1],
+        country_code=row[2],
+        age=row[3],
+        user_level=row[4],
+        ip_address=_client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+        referrer=request.headers.get("referer"),
+    )
+    await db.commit()
+    return RedirectResponse(url=row[0], status_code=302)
+
+
+@router.head("/r/{tracking_id}", include_in_schema=False)
+async def head_tracking_link(
+    tracking_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    row = await _load_tracking_link(db=db, tracking_id=tracking_id)
+    return RedirectResponse(url=row[0], status_code=302)
+
+
+async def _load_tracking_link(*, db: AsyncSession, tracking_id: str):
     row = (
         await db.execute(
             text(
@@ -151,20 +177,7 @@ async def redirect_tracking_link(
     ).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="tracking link not found")
-
-    await record_unique_click_event(
-        db,
-        tracking_id=tracking_id,
-        user_id=row[1],
-        country_code=row[2],
-        age=row[3],
-        user_level=row[4],
-        ip_address=_client_ip(request),
-        user_agent=request.headers.get("user-agent"),
-        referrer=request.headers.get("referer"),
-    )
-    await db.commit()
-    return RedirectResponse(url=row[0], status_code=302)
+    return row
 
 
 @router.post("/api/v1/attribution/events", status_code=status.HTTP_202_ACCEPTED)

@@ -12,6 +12,7 @@ from api.attribution import (
     admin_attribution_summary,
     create_attribution_link,
     delete_admin_attribution_clicked_user,
+    head_tracking_link,
     redirect_tracking_link,
 )
 from services.link_attribution import (
@@ -163,6 +164,21 @@ async def test_redirect_tracking_link_records_click_then_redirects() -> None:
     assert "WHERE NOT EXISTS" in event_sql
     assert "event_type = 'click'" in event_sql
     db.commit.assert_awaited_once()
+
+
+async def test_head_tracking_link_redirects_without_recording_click() -> None:
+    db = FakeSession(
+        results=[
+            FakeResult(("https://app.example/download", "user-1", "US", 29, "A")),
+        ]
+    )
+
+    response = await head_tracking_link("trk_test", db)
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "https://app.example/download"
+    assert db.execute.await_count == 1
+    db.commit.assert_not_awaited()
 
 
 async def test_record_unique_click_event_dedupes_by_tracking_and_user() -> None:
