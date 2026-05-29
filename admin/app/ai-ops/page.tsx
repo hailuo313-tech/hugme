@@ -42,6 +42,7 @@ type ScriptTemplate = {
   variables: unknown[] | string | null;
   safety_tags: unknown[] | string | null;
   status: string;
+  created_at: string | null;
   updated_at: string | null;
   assets?: ScriptAsset[];
 };
@@ -228,7 +229,7 @@ function AiOpsContent({ operator }: { operator: Operator }) {
       return [row.title, row.content, row.category_key, categoryLabel(row.category_key), row.language].some((value) =>
         String(value || "").toLowerCase().includes(needle),
       );
-    });
+    }).sort((a, b) => newestTime(b) - newestTime(a));
   }, [categoryFilter, query, scripts, statusFilter]);
 
   const currentAssets = scriptForm.id ? scripts.find((item) => item.id === scriptForm.id)?.assets || [] : [];
@@ -842,6 +843,12 @@ function badgeClass(status: string) {
   if (status === "approved") return "bg-emerald-950 text-emerald-200";
   if (status === "archived") return "bg-slate-800 text-slate-400";
   return "bg-amber-950 text-amber-200";
+}
+
+function newestTime(row: ScriptTemplate) {
+  const value = row.created_at || row.updated_at || "";
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
 function splitList(value: string) {
