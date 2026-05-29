@@ -74,8 +74,8 @@ def test_v10_migration_adds_complete_analytics_dimensions() -> None:
 def test_tracking_id_and_url_are_url_safe() -> None:
     tracking_id = new_tracking_id()
 
-    assert len(tracking_id) >= 12
-    assert "/" not in tracking_id
+    assert len(tracking_id) == 18
+    assert tracking_id.isalnum()
     assert tracking_url("https://hugme2.com/", "trk_1") == "https://hugme2.com/r/trk_1"
 
 
