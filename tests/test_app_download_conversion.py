@@ -121,6 +121,13 @@ def test_render_script_replaces_app_download_url() -> None:
     )
 
 
+def test_render_script_force_appends_missing_app_download_url() -> None:
+    assert (
+        _render_script("Open the app here.", app_download_url="https://app.example/dl", force_url=True)
+        == "Open the app here.\nhttps://app.example/dl"
+    )
+
+
 def test_profile_helpers_allow_missing_profile_for_download_cta() -> None:
     assert _relationship_stage(None) == "S0"
     assert _reply_language(None, "where can i talk to you more privately?") == "en"
