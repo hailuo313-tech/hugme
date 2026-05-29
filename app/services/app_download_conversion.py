@@ -199,6 +199,7 @@ async def maybe_select_app_download_reply(
     content = _render_script(
         hit.content,
         app_download_url=destination_url,
+        force_url=_category_requires_download_url(hit.category_key),
     )
     decision = AppDownloadDecision(
         content=content,
@@ -492,8 +493,15 @@ async def _audit_decision(
     await record_script_match_result(db=db, ctx=ctx, result=result)
 
 
-def _render_script(content: str, *, app_download_url: str) -> str:
-    return str(content).replace("{{app_download_url}}", app_download_url)
+def _render_script(content: str, *, app_download_url: str, force_url: bool = False) -> str:
+    rendered = str(content).replace("{{app_download_url}}", app_download_url)
+    if force_url and app_download_url and app_download_url not in rendered:
+        return f"{rendered.rstrip()}\n{app_download_url}"
+    return rendered
+
+
+def _category_requires_download_url(category_key: str | None) -> bool:
+    return str(category_key or "") in APP_DOWNLOAD_CATEGORIES
 
 
 def _preferences(profile_row: dict[str, Any] | None) -> dict[str, Any]:
