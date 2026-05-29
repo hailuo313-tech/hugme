@@ -3,13 +3,15 @@ from __future__ import annotations
 import json
 import re
 import secrets
+import string
 from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
-TRACKING_ID_BYTES = 12
+TRACKING_ID_LENGTH = 18
+TRACKING_ID_ALPHABET = string.ascii_letters + string.digits
 ALLOWED_EVENT_TYPES = {
     "link_exposed",
     "click",
@@ -23,7 +25,7 @@ TRAILING_URL_PUNCTUATION = ".,!?;:)"
 
 
 def new_tracking_id() -> str:
-    return secrets.token_urlsafe(TRACKING_ID_BYTES)
+    return "".join(secrets.choice(TRACKING_ID_ALPHABET) for _ in range(TRACKING_ID_LENGTH))
 
 
 async def create_attribution_link(
