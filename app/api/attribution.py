@@ -427,6 +427,56 @@ async def admin_attribution_summary(
         LIMIT 20
         """
     )
+    clicked_user_rows = await fetch_rows(
+        f"""
+        WITH clicked AS (
+            SELECT
+                COALESCE(e.user_id, l.user_id) AS user_id,
+                COUNT(*) AS click_count,
+                COUNT(DISTINCT e.tracking_id) AS clicked_links,
+                MIN(e.created_at) AS first_click_at,
+                MAX(e.created_at) AS last_click_at,
+                (ARRAY_AGG(e.tracking_id ORDER BY e.created_at DESC))[1] AS latest_tracking_id,
+                (ARRAY_AGG(l.destination_url ORDER BY e.created_at DESC))[1] AS latest_destination_url,
+                (ARRAY_AGG(l.script_category ORDER BY e.created_at DESC))[1] AS latest_script_category,
+                (ARRAY_AGG(l.sender_account_id ORDER BY e.created_at DESC))[1] AS latest_sender_account_id,
+                COALESCE(
+                    (ARRAY_AGG(e.country_code ORDER BY e.created_at DESC) FILTER (WHERE e.country_code IS NOT NULL))[1],
+                    (ARRAY_AGG(l.country_code ORDER BY e.created_at DESC) FILTER (WHERE l.country_code IS NOT NULL))[1]
+                ) AS country_code,
+                COALESCE(
+                    (ARRAY_AGG(e.user_level ORDER BY e.created_at DESC) FILTER (WHERE e.user_level IS NOT NULL))[1],
+                    (ARRAY_AGG(l.user_level ORDER BY e.created_at DESC) FILTER (WHERE l.user_level IS NOT NULL))[1]
+                ) AS user_level
+            FROM attribution_events e
+            LEFT JOIN attribution_links l ON l.tracking_id = e.tracking_id
+            WHERE {event_window_alias}
+              AND e.event_type = 'click'
+              AND COALESCE(e.user_id, l.user_id) IS NOT NULL
+            GROUP BY COALESCE(e.user_id, l.user_id)
+        )
+        SELECT
+            clicked.user_id::text,
+            u.external_id,
+            u.nickname,
+            u.channel,
+            COALESCE(clicked.country_code, p.country_code, p.preferences->>'country_code') AS country_code,
+            COALESCE(clicked.user_level, p.user_level) AS user_level,
+            clicked.click_count,
+            clicked.clicked_links,
+            clicked.first_click_at,
+            clicked.last_click_at,
+            clicked.latest_tracking_id,
+            clicked.latest_destination_url,
+            clicked.latest_script_category,
+            clicked.latest_sender_account_id
+        FROM clicked
+        LEFT JOIN users u ON u.id = clicked.user_id
+        LEFT JOIN user_profiles p ON p.user_id = clicked.user_id
+        ORDER BY clicked.last_click_at DESC
+        LIMIT 100
+        """
+    )
     telegram_account_rows = await fetch_rows(
         f"""
         SELECT
@@ -585,6 +635,25 @@ async def admin_attribution_summary(
                 "avg_seconds_to_click": float(value(r, 9) or 0),
             }
             for r in link_rows
+        ],
+        "clicked_users": [
+            {
+                "user_id": value(r, 0, ""),
+                "external_id": value(r, 1, None),
+                "nickname": value(r, 2, None),
+                "channel": value(r, 3, None),
+                "country_code": value(r, 4, None),
+                "user_level": value(r, 5, None),
+                "click_count": int(value(r, 6) or 0),
+                "clicked_links": int(value(r, 7) or 0),
+                "first_click_at": value(r, 8, None).isoformat() if value(r, 8, None) else None,
+                "last_click_at": value(r, 9, None).isoformat() if value(r, 9, None) else None,
+                "latest_tracking_id": value(r, 10, None),
+                "latest_destination_url": value(r, 11, None),
+                "latest_script_category": value(r, 12, None),
+                "latest_sender_account_id": value(r, 13, None),
+            }
+            for r in clicked_user_rows
         ],
         "telegram_accounts": [
             {

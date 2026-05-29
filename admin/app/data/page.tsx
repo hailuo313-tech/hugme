@@ -58,6 +58,23 @@ interface TelegramAccountRow {
   last_message_at?: string | null;
 }
 
+interface ClickedUserRow {
+  user_id: string;
+  external_id?: string | null;
+  nickname?: string | null;
+  channel?: string | null;
+  country_code?: string | null;
+  user_level?: string | null;
+  click_count: number;
+  clicked_links: number;
+  first_click_at?: string | null;
+  last_click_at?: string | null;
+  latest_tracking_id?: string | null;
+  latest_destination_url?: string | null;
+  latest_script_category?: string | null;
+  latest_sender_account_id?: string | null;
+}
+
 interface AttributionSummary {
   days: number;
   date?: string | null;
@@ -72,6 +89,7 @@ interface AttributionSummary {
   top_click_scripts: ScriptRow[];
   top_download_scripts: ScriptRow[];
   telegram_accounts: TelegramAccountRow[];
+  clicked_users: ClickedUserRow[];
 }
 
 const QUICK_RANGES = [
@@ -229,6 +247,8 @@ function DataDashboard({ operator }: { operator: Operator }) {
         </div>
       </section>
 
+      <ClickedUsersPanel rows={summary?.clicked_users ?? []} />
+
       <TelegramAccountPanel rows={summary?.telegram_accounts ?? []} />
 
       <section className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -316,6 +336,73 @@ function DimensionPanel({ title, rows, label }: { title: string; rows: Dimension
   );
 }
 
+function ClickedUsersPanel({ rows }: { rows: ClickedUserRow[] }) {
+  return (
+    <section className="mb-6 overflow-hidden rounded-md border border-slate-800 bg-slate-900">
+      <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-5 py-4">
+        <div>
+          <h2 className="text-lg font-semibold">点击链接用户明细</h2>
+          <p className="mt-1 text-sm text-slate-500">看清楚哪些 TG 用户点过链接、点了几次、最后点的是哪条链接。</p>
+        </div>
+        <span className="shrink-0 text-sm text-slate-500">最多显示 100 个</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-left text-sm">
+          <thead className="bg-slate-950/50 text-slate-500">
+            <tr>
+              <th className="px-5 py-3 font-medium">用户</th>
+              <th className="px-5 py-3 font-medium">点击次数</th>
+              <th className="px-5 py-3 font-medium">国家 / 等级</th>
+              <th className="px-5 py-3 font-medium">最近点击</th>
+              <th className="px-5 py-3 font-medium">最近链接</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-800">
+            {rows.length ? (
+              rows.map((row) => (
+                <tr key={row.user_id}>
+                  <td className="px-5 py-4 text-slate-300">
+                    <div className="font-medium text-slate-100">{row.nickname || row.external_id || row.user_id}</div>
+                    <div className="mt-1 font-mono text-xs text-slate-500">{row.external_id || row.user_id}</div>
+                    <div className="mt-1 text-xs text-slate-600">{row.channel || "telegram"}</div>
+                  </td>
+                  <td className="px-5 py-4 text-slate-100">
+                    <div className="text-xl font-semibold">{row.click_count}</div>
+                    <div className="mt-1 text-xs text-slate-500">链接 {row.clicked_links}</div>
+                  </td>
+                  <td className="px-5 py-4 text-slate-300">
+                    <div>{row.country_code || "-"}</div>
+                    <div className="mt-1 text-xs text-slate-500">{row.user_level || "-"}</div>
+                  </td>
+                  <td className="px-5 py-4 text-slate-400">
+                    <div>{formatDate(row.last_click_at)}</div>
+                    <div className="mt-1 text-xs text-slate-500">首次 {formatDate(row.first_click_at)}</div>
+                  </td>
+                  <td className="px-5 py-4 text-slate-300">
+                    <div className="max-w-[360px] truncate text-sky-300" title={row.latest_destination_url || ""}>
+                      {shortUrl(row.latest_destination_url)}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      {row.latest_script_category || "未记录话术分类"} / {row.latest_sender_account_id || "未记录账号"}
+                    </div>
+                    <div className="mt-1 font-mono text-xs text-slate-600">{row.latest_tracking_id || "-"}</div>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td className="px-5 py-8 text-sm text-slate-500" colSpan={5}>
+                  暂无点击链接用户
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 function TelegramAccountPanel({ rows }: { rows: TelegramAccountRow[] }) {
   return (
     <section className="mb-6 overflow-hidden rounded-md border border-slate-800 bg-slate-900">
@@ -377,4 +464,14 @@ function Panel({ title, empty, hasRows, children }: { title: string; empty: stri
 function formatDate(value?: string | null) {
   if (!value) return "-";
   return value.replace("T", " ").slice(0, 16);
+}
+
+function shortUrl(value?: string | null) {
+  if (!value) return "-";
+  try {
+    const url = new URL(value);
+    return `${url.hostname}${url.pathname}`.slice(0, 80);
+  } catch {
+    return value.slice(0, 80);
+  }
 }

@@ -197,6 +197,22 @@ async def test_admin_attribution_summary_returns_complete_dashboard_shape() -> N
     generic_dimension = ("A", 1, 2, 1, 1, 1, 1, 9900)
     script = ("hit-1", "tpl-1", "hit-1", "purchase_intent", "warm", "vip_cta", "tg-1", 4, 1, 1, 1, 9900)
     link = ("trk-1", "https://app.example/download", "hit-1", None, "tg-1", "telegram", 4, 2, None, 30.0)
+    clicked_user = (
+        "user-1",
+        "tg_100",
+        "Danica",
+        "telegram_real_user",
+        "US",
+        "A",
+        4,
+        2,
+        None,
+        None,
+        "trk-1",
+        "https://app.example/download",
+        "app_download_first_guide",
+        "tg-1",
+    )
     telegram_account = ("acc-1", "Mira TG", "+10000000000", "mira_tg", 5, 3, 12, None)
     db = FakeSession(
         results=[
@@ -205,6 +221,7 @@ async def test_admin_attribution_summary_returns_complete_dashboard_shape() -> N
             *[FakeResult(rows=[generic_dimension]) for _ in range(8)],
             *[FakeResult(rows=[script]) for _ in range(4)],
             FakeResult(rows=[link]),
+            FakeResult(rows=[clicked_user]),
             FakeResult(rows=[telegram_account]),
         ]
     )
@@ -221,6 +238,10 @@ async def test_admin_attribution_summary_returns_complete_dashboard_shape() -> N
     assert out["top_click_scripts"][0]["intent"] == "purchase_intent"
     assert out["top_payment_scripts"][0]["revenue_cents"] == 9900
     assert out["links"][0]["tracking_id"] == "trk-1"
+    assert out["clicked_users"][0]["external_id"] == "tg_100"
+    assert out["clicked_users"][0]["click_count"] == 4
+    assert out["clicked_users"][0]["clicked_links"] == 2
+    assert out["clicked_users"][0]["latest_tracking_id"] == "trk-1"
     assert out["overview"]["tg_new_users"] == 3
     assert out["overview"]["tg_served_users"] == 5
     assert out["telegram_accounts"][0]["account_label"] == "Mira TG"
