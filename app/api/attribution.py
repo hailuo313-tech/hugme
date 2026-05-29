@@ -316,14 +316,9 @@ async def admin_attribution_summary(
             COUNT(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'download') AS downloads,
             COUNT(DISTINCT COALESCE(e.app_user_id, e.user_id::text)) FILTER (WHERE e.event_type = 'app_register') AS registrations,
             COUNT(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'payment') AS payments,
-            COALESCE(SUM(e.amount_cents) FILTER (WHERE e.event_type = 'payment'), 0) AS revenue_cents,
-            MIN(st.content) AS script_content,
-            MIN(st.operator_translation_zh) AS operator_translation_zh
+            COALESCE(SUM(e.amount_cents) FILTER (WHERE e.event_type = 'payment'), 0) AS revenue_cents
         FROM attribution_events e
         LEFT JOIN attribution_links l ON l.tracking_id = e.tracking_id
-        LEFT JOIN script_templates st
-          ON st.id = l.script_template_id
-          OR st.id::text = l.script_hit_id
         WHERE {event_window_alias}
         GROUP BY 1
         ORDER BY {{order_expr}} DESC, clicks DESC
@@ -401,9 +396,14 @@ async def admin_attribution_summary(
             COUNT(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'download') AS downloads,
             COUNT(DISTINCT COALESCE(e.app_user_id, e.user_id::text)) FILTER (WHERE e.event_type = 'app_register') AS registrations,
             COUNT(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'payment') AS payments,
-            COALESCE(SUM(e.amount_cents) FILTER (WHERE e.event_type = 'payment'), 0) AS revenue_cents
+            COALESCE(SUM(e.amount_cents) FILTER (WHERE e.event_type = 'payment'), 0) AS revenue_cents,
+            MIN(st.content) AS script_content,
+            MIN(st.operator_translation_zh) AS operator_translation_zh
         FROM attribution_events e
         LEFT JOIN attribution_links l ON l.tracking_id = e.tracking_id
+        LEFT JOIN script_templates st
+          ON st.id = l.script_template_id
+          OR st.id::text = l.script_hit_id
         WHERE {event_window_alias}
         GROUP BY 1
         ORDER BY {{order_expr}} DESC, clicks DESC
