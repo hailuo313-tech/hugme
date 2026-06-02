@@ -220,3 +220,102 @@ async def test_asset_keyword_template_selects_attached_media(monkeypatch) -> Non
     assert decision.intent == "asset_keyword_request"
     assert decision.script_hit_id == "33333333-3333-3333-3333-333333333333"
     assert decision.assets[0]["asset_url"] == "https://cdn.example/video.mp4"
+
+
+@pytest.mark.asyncio
+async def test_asset_keyword_template_combines_image_and_video_media(monkeypatch) -> None:
+    class Result:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def fetchall(self):
+            return self._rows
+
+    class FakeDb:
+        async def execute(self, sql, params=None):
+            sql_text = str(sql)
+            if "FROM script_templates" in sql_text:
+                return Result(
+                    [
+                        SimpleNamespace(
+                            _mapping={
+                                "id": "33333333-3333-3333-3333-333333333333",
+                                "category_key": "app_download_first_push",
+                                "title": conversion.ASSET_KEYWORD_TRIGGER_TITLES[0],
+                                "content": "video, vid",
+                                "language": "en",
+                                "platform": "telegram_real_user",
+                                "user_level": None,
+                                "persona_slug": None,
+                                "hook": "reply",
+                            }
+                        ),
+                        SimpleNamespace(
+                            _mapping={
+                                "id": "44444444-4444-4444-4444-444444444444",
+                                "category_key": "app_download_first_push",
+                                "title": conversion.ASSET_KEYWORD_TRIGGER_TITLES[1],
+                                "content": "photo, pic, picture",
+                                "language": "en",
+                                "platform": "telegram_real_user",
+                                "user_level": None,
+                                "persona_slug": None,
+                                "hook": "reply",
+                            }
+                        ),
+                    ]
+                )
+            if "FROM script_template_assets" in sql_text:
+                if params["id"] == "33333333-3333-3333-3333-333333333333":
+                    return Result(
+                        [
+                            SimpleNamespace(
+                                _mapping={
+                                    "id": "asset-video",
+                                    "asset_type": "video",
+                                    "asset_url": "https://cdn.example/video.mp4",
+                                    "mime_type": "video/mp4",
+                                    "caption": None,
+                                    "sort_order": 0,
+                                }
+                            )
+                        ]
+                    )
+                return Result(
+                    [
+                        SimpleNamespace(
+                            _mapping={
+                                "id": "asset-image",
+                                "asset_type": "image",
+                                "asset_url": "https://cdn.example/photo.jpg",
+                                "mime_type": "image/jpeg",
+                                "caption": None,
+                                "sort_order": 0,
+                            }
+                        )
+                    ]
+                )
+            return Result([])
+
+    async def fake_resolve_app_download_url(_db):
+        return "https://app.example/download"
+
+    monkeypatch.setattr(conversion, "resolve_app_download_url", fake_resolve_app_download_url)
+    monkeypatch.setattr(conversion.settings, "APP_DOWNLOAD_CONVERSION_ENABLED", True)
+
+    decision = await maybe_select_app_download_reply(
+        db=FakeDb(),
+        user_id="11111111-1111-1111-1111-111111111111",
+        conversation_id="22222222-2222-2222-2222-222222222222",
+        user_text="send me a photo and video",
+        profile_row={"user_level": "C"},
+        character_row=None,
+        assistant_reply_count=0,
+        trigger_message_id=None,
+        trace_id="trace-asset",
+        classified_intent=None,
+    )
+
+    assert decision is not None
+    assert [asset["asset_type"] for asset in decision.assets] == ["video", "image"]
+    assert decision.scene_step == "asset_keyword:video,photo"

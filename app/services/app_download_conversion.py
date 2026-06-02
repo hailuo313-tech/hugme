@@ -57,6 +57,7 @@ class AppDownloadDecision:
     country_code: str | None
     age: int | None
     is_t1_country: bool | None
+    language: str | None = None
 
 
 @dataclass(frozen=True)
@@ -116,30 +117,42 @@ async def maybe_select_app_download_reply(
     if user_level == "D":
         return None
 
-    asset_trigger = await _match_asset_keyword_trigger(
+    asset_triggers = await _match_asset_keyword_triggers(
         db=db,
         user_text=user_text,
         user_level=user_level,
         persona_slug=_persona_slug(character_row),
         language=_reply_language(profile, user_text),
     )
-    if asset_trigger is not None:
-        hit, matched_keyword = asset_trigger
-        assets = await _load_script_assets(db=db, script_template_id=hit["id"])
+    if asset_triggers:
+        first_hit, _ = asset_triggers[0]
+        matched_keywords: list[str] = []
+        assets: list[dict[str, Any]] = []
+        seen_asset_ids: set[str] = set()
+        for hit, matched_keyword in asset_triggers:
+            matched_keywords.append(matched_keyword)
+            for asset in await _load_script_assets(db=db, script_template_id=hit["id"]):
+                asset_key = str(asset.get("id") or asset.get("asset_url") or "")
+                if asset_key and asset_key in seen_asset_ids:
+                    continue
+                if asset_key:
+                    seen_asset_ids.add(asset_key)
+                assets.append(asset)
         if assets:
             is_t1 = country_tier(country_code) == "T1" if country_code else None
             decision = AppDownloadDecision(
-                content=str(hit.get("content") or ""),
-                category_key=str(hit.get("category_key") or "app_download_first_push"),
-                script_hit_id=str(hit["id"]),
+                content=str(first_hit.get("content") or ""),
+                category_key=str(first_hit.get("category_key") or "app_download_first_push"),
+                script_hit_id=str(first_hit["id"]),
                 assets=assets,
                 user_level=user_level,
-                persona_slug=hit.get("persona_slug") or _persona_slug(character_row),
+                persona_slug=first_hit.get("persona_slug") or _persona_slug(character_row),
                 intent="asset_keyword_request",
-                scene_step=f"asset_keyword:{matched_keyword}",
+                scene_step=f"asset_keyword:{','.join(matched_keywords[:4])}",
                 country_code=country_code,
                 age=age,
                 is_t1_country=is_t1,
+                language=_reply_language(profile, user_text),
             )
             _last_decision.set(decision)
             await _audit_decision(
@@ -155,7 +168,7 @@ async def maybe_select_app_download_reply(
                 trace_id=trace_id,
                 category_key=decision.category_key,
                 script_hit_id=decision.script_hit_id,
-                matched_keyword=matched_keyword,
+                matched_keyword=",".join(matched_keywords),
                 asset_count=len(assets),
             ).info("app_download_conversion.asset_keyword_selected")
             return decision
@@ -213,6 +226,7 @@ async def maybe_select_app_download_reply(
         country_code=country_code,
         age=age,
         is_t1_country=is_t1,
+        language=_reply_language(profile, user_text),
     )
     _last_decision.set(decision)
     await _audit_decision(
@@ -298,17 +312,17 @@ async def _load_script_assets(*, db: Any, script_template_id: str) -> list[dict[
     return [dict(row._mapping) for row in result.fetchall()]
 
 
-async def _match_asset_keyword_trigger(
+async def _match_asset_keyword_triggers(
     *,
     db: Any,
     user_text: str,
     user_level: str,
     persona_slug: str | None,
     language: str,
-) -> tuple[dict[str, Any], str] | None:
+) -> list[tuple[dict[str, Any], str]]:
     text_value = _normalize_keyword_text(user_text)
     if not text_value:
-        return None
+        return []
     result = await db.execute(
         text(
             """
@@ -343,12 +357,20 @@ async def _match_asset_keyword_trigger(
             "persona_slug": persona_slug,
         },
     )
+    matches: list[tuple[dict[str, Any], str]] = []
+    seen_template_ids: set[str] = set()
     for row in result.fetchall():
         data = dict(row._mapping)
+        template_id = str(data.get("id") or "")
+        if template_id in seen_template_ids:
+            continue
         for keyword in _split_asset_keywords(str(data.get("content") or "")):
             if _keyword_matches(text_value, keyword):
-                return data, keyword
-    return None
+                matches.append((data, keyword))
+                if template_id:
+                    seen_template_ids.add(template_id)
+                break
+    return matches
 
 
 def _split_asset_keywords(content: str) -> list[str]:
