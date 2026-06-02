@@ -102,7 +102,7 @@ function AdminHome({ operator }: { operator: Operator }) {
         desc: "H-01 到 H-11 的配置签字、SOP、灰度审批和 Go/No-Go。",
         href: "/admin/approvals",
         metric: "Human gates",
-        status: "review",
+        status: "online",
       },
       {
         title: "推送监控与 H5",
