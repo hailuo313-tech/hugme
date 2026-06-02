@@ -114,6 +114,43 @@ async def test_happy_path_returns_llm_content(monkeypatch, llm_orchestrator):
 
 
 @pytest.mark.asyncio
+async def test_asset_keyword_decision_skips_llm_refusal(monkeypatch, llm_orchestrator):
+    async def fake_decision(**_kwargs):
+        return SimpleNamespace(
+            intent="asset_keyword_request",
+            category_key="app_download_first_push",
+            scene_step="asset_keyword:photo,video",
+            script_hit_id="hit-asset",
+            language="fr",
+            assets=[
+                {"asset_type": "image", "asset_url": "https://cdn.example/photo.jpg"},
+                {"asset_type": "video", "asset_url": "https://cdn.example/video.mp4"},
+            ],
+        )
+
+    async def fail_chat(**_kwargs):
+        raise AssertionError("asset keyword replies must not call LLM")
+
+    monkeypatch.setattr(llm_orchestrator, "maybe_select_app_download_reply", fake_decision)
+    monkeypatch.setattr(llm_orchestrator, "llm_chat", fail_chat)
+    monkeypatch.setattr(llm_orchestrator.settings, "MEMORY_RETRIEVE_IN_PROMPT", False)
+    monkeypatch.setattr(llm_orchestrator.settings, "POLICY_SERVICE_ENABLED", False)
+    monkeypatch.setattr(llm_orchestrator.settings, "REL_STAGE_AUTO_ENABLED", False)
+
+    reply = await llm_orchestrator.generate_reply(
+        user_id="u1",
+        conversation_id="c1",
+        user_text="tu peux m’envoyer des photos et vidéos",
+        trace_id="t-asset",
+        db=None,
+    )
+
+    assert "photos" in reply
+    assert "vidéo" in reply
+    assert "ne peux pas" not in reply.lower()
+
+
+@pytest.mark.asyncio
 async def test_app_download_nudge_keeps_llm_answer_first(monkeypatch, llm_orchestrator):
     async def fake_chat(*, messages, trace_id, **_kwargs):
         return _LLMResultStub(

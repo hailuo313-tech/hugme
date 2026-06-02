@@ -56,6 +56,7 @@ from services.llm import chat as llm_chat
 from services.memory_consistency import filter_memory_hits_for_current_utterance
 from services.memory_retriever import retrieve as memory_retrieve
 from services.conversation_context import load_conversation_context
+from services.emotion_lexicon import detect_language_from_text, normalize_language
 from services.app_download_conversion import (
     clear_last_app_download_decision,
     maybe_select_app_download_reply,
@@ -304,6 +305,8 @@ async def generate_reply(
             scene_step=decision.scene_step,
             script_hit_id=decision.script_hit_id,
         ).info("orchestrator.app_download_conversion.nudge_ready")
+        if getattr(decision, "intent", None) == "asset_keyword_request":
+            return _asset_keyword_acknowledgement(user_text, decision)
 
     prompt = build_prompt(
         PromptInput(
@@ -398,6 +401,56 @@ def _append_conservative_download_nudge(
     if url and url in base:
         return base
     return f"{base}\n\n{nudge}"
+
+
+def _asset_keyword_acknowledgement(user_text: str, decision: Any) -> str:
+    asset_types = {str(asset.get("asset_type") or "").lower() for asset in getattr(decision, "assets", [])}
+    has_image = "image" in asset_types
+    has_video = "video" in asset_types
+    if has_image and has_video:
+        en = "Sure, I’m sending the photos and video here."
+    elif has_image:
+        en = "Sure, I’m sending the photos here."
+    elif has_video:
+        en = "Sure, I’m sending the video here."
+    else:
+        en = "Sure, I’m sending it here."
+
+    lang = normalize_language(getattr(decision, "language", None) or detect_language_from_text(user_text) or "en")
+    translations = {
+        "fr": {
+            "both": "Oui, je t’envoie les photos et la vidéo ici.",
+            "image": "Oui, je t’envoie les photos ici.",
+            "video": "Oui, je t’envoie la vidéo ici.",
+            "other": "Oui, je t’envoie ça ici.",
+        },
+        "es": {
+            "both": "Sí, te envío las fotos y el video aquí.",
+            "image": "Sí, te envío las fotos aquí.",
+            "video": "Sí, te envío el video aquí.",
+            "other": "Sí, te lo envío aquí.",
+        },
+        "pt": {
+            "both": "Sim, vou te mandar as fotos e o vídeo aqui.",
+            "image": "Sim, vou te mandar as fotos aqui.",
+            "video": "Sim, vou te mandar o vídeo aqui.",
+            "other": "Sim, vou te mandar aqui.",
+        },
+        "ja": {
+            "both": "うん、写真と動画をここに送るね。",
+            "image": "うん、写真をここに送るね。",
+            "video": "うん、動画をここに送るね。",
+            "other": "うん、ここに送るね。",
+        },
+        "ko": {
+            "both": "응, 사진이랑 영상을 여기로 보낼게.",
+            "image": "응, 사진을 여기로 보낼게.",
+            "video": "응, 영상을 여기로 보낼게.",
+            "other": "응, 여기로 보낼게.",
+        },
+    }
+    key = "both" if has_image and has_video else "image" if has_image else "video" if has_video else "other"
+    return translations.get(lang, {}).get(key, en)
 
 
 def _conservative_download_nudge(decision: Any) -> str | None:
