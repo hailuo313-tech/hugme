@@ -52,6 +52,16 @@ def test_admin_home_ai_ops_card_is_online() -> None:
     )
 
 
+def test_admin_home_approvals_card_is_online() -> None:
+    page = read("admin/app/page.tsx")
+
+    assert re.search(
+        r'href: "/admin/approvals",\s*metric: "Human gates",\s*status: "online"',
+        page,
+        re.S,
+    )
+
+
 def test_conversation_overview_has_dedicated_route() -> None:
     page = read("admin/app/conversations/page.tsx")
 
