@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 
@@ -39,6 +40,16 @@ def test_admin_home_no_longer_links_legacy_pages() -> None:
     assert "/admin/feedback" not in text
     assert "/admin/media" not in text
     assert "/admin/characters" in text
+
+
+def test_admin_home_ai_ops_card_is_online() -> None:
+    page = read("admin/app/page.tsx")
+
+    assert re.search(
+        r'href: "/admin/ai-ops",\s*metric: "P3 .*?",\s*status: "online"',
+        page,
+        re.S,
+    )
 
 
 def test_conversation_overview_has_dedicated_route() -> None:

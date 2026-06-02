@@ -88,7 +88,7 @@ function AdminHome({ operator }: { operator: Operator }) {
         desc: "话术底料、意图 taxonomy、persona prompt、安全过滤、script_hit 审计。",
         href: "/admin/ai-ops",
         metric: "P3 链路",
-        status: "review",
+        status: "online",
       },
       {
         title: "角色与语气",
