@@ -33,6 +33,21 @@ _CTA_TRIGGERS = {
     TRIGGER_SILENT_24H,
 }
 
+_PRE_CLICK_TRIGGERS = {
+    TRIGGER_FIRST_IDLE,
+    TRIGGER_WARM_NO_CLICK,
+    TRIGGER_SILENT_30M,
+    TRIGGER_SILENT_24H,
+}
+
+_SOFT_REMINDER_TRIGGERS = {
+    TRIGGER_FIRST_IDLE,
+    TRIGGER_WARM_NO_CLICK,
+    TRIGGER_CLICK_NO_DOWNLOAD,
+    TRIGGER_SILENT_30M,
+    TRIGGER_SILENT_24H,
+}
+
 # Only active rows block requeue; failed rows may be retried after a fix.
 _ACTIVE_NURTURE_STATUSES = ("pending", "sending", "sent")
 
@@ -120,72 +135,39 @@ async def schedule_download_followups_after_reply(
     has_click = bool(state.get("has_click"))
     has_download = bool(state.get("has_download"))
 
-    if user_count == 1 and not has_click and not has_download:
-        queued += await _queue_followup(
-            db,
-            user_id=user_id,
-            external_user_id=external_user_id,
-            conversation_id=conversation_id,
-            chat_id=chat_id,
-            trigger=TRIGGER_FIRST_IDLE,
-            category_key="app_download_first_push",
-            send_at=_utc_now()
-            + timedelta(seconds=max(30, settings.APP_DOWNLOAD_FIRST_IDLE_SECONDS)),
-            priority=60,
-            stale_after=stale_after,
-            rule_key=f"{TRIGGER_FIRST_IDLE}:{conversation_id}",
-            trace_id=trace_id,
-            account_id=sender_account_id,
-        )
+    if has_download:
+        return 0
 
-    if 3 <= user_count <= 5 and not has_click and not has_download:
-        queued += await _queue_followup(
-            db,
-            user_id=user_id,
-            external_user_id=external_user_id,
-            conversation_id=conversation_id,
-            chat_id=chat_id,
-            trigger=TRIGGER_WARM_NO_CLICK,
-            category_key="app_download_after_warmup",
-            send_at=_utc_now()
-            + timedelta(seconds=max(10, settings.APP_DOWNLOAD_WARM_NO_CLICK_SECONDS)),
-            priority=80,
-            stale_after=stale_after,
-            rule_key=f"{TRIGGER_WARM_NO_CLICK}:{conversation_id}",
-            trace_id=trace_id,
-            account_id=sender_account_id,
-        )
+    if await _has_recent_nurture(db, conversation_id=conversation_id, seconds=1800):
+        return 0
 
-    if not has_download:
+    if (
+        not has_click
+        and await _has_pre_click_nurture(db, conversation_id=conversation_id)
+    ):
+        return 0
+
+    next_followup = _choose_after_reply_followup(
+        user_count=user_count,
+        has_click=has_click,
+    )
+    if next_followup is not None:
+        trigger, category_key, delay_seconds, priority, rule_key = next_followup
         queued += await _queue_followup(
             db,
             user_id=user_id,
             external_user_id=external_user_id,
             conversation_id=conversation_id,
             chat_id=chat_id,
-            trigger=TRIGGER_SILENT_30M,
-            category_key="app_download_after_warmup",
-            send_at=_utc_now()
-            + timedelta(seconds=max(60, settings.APP_DOWNLOAD_SILENT_30M_SECONDS)),
-            priority=50,
+            trigger=trigger,
+            category_key=category_key,
+            send_at=_utc_now() + timedelta(seconds=delay_seconds),
+            priority=priority,
             stale_after=stale_after,
-            rule_key=f"{TRIGGER_SILENT_30M}:{assistant_message_id}",
-            trace_id=trace_id,
-            account_id=sender_account_id,
-        )
-        queued += await _queue_followup(
-            db,
-            user_id=user_id,
-            external_user_id=external_user_id,
-            conversation_id=conversation_id,
-            chat_id=chat_id,
-            trigger=TRIGGER_SILENT_24H,
-            category_key="app_download_after_warmup",
-            send_at=_utc_now()
-            + timedelta(seconds=max(3600, settings.APP_DOWNLOAD_SILENT_24H_SECONDS)),
-            priority=40,
-            stale_after=stale_after,
-            rule_key=f"{TRIGGER_SILENT_24H}:{assistant_message_id}",
+            rule_key=rule_key.format(
+                conversation_id=conversation_id,
+                assistant_message_id=assistant_message_id,
+            ),
             trace_id=trace_id,
             account_id=sender_account_id,
         )
@@ -199,6 +181,95 @@ async def schedule_download_followups_after_reply(
             queued=queued,
         ).info("app_download_nurture.followups_queued")
     return queued
+
+
+def _choose_after_reply_followup(
+    *,
+    user_count: int,
+    has_click: bool,
+) -> tuple[str, str, int, int, str] | None:
+    if has_click:
+        return None
+    if user_count == 1:
+        return (
+            TRIGGER_FIRST_IDLE,
+            "app_download_first_push",
+            max(30, settings.APP_DOWNLOAD_FIRST_IDLE_SECONDS),
+            60,
+            f"{TRIGGER_FIRST_IDLE}:{{conversation_id}}",
+        )
+    if 3 <= user_count <= 5:
+        return (
+            TRIGGER_WARM_NO_CLICK,
+            "app_download_after_warmup",
+            max(10, settings.APP_DOWNLOAD_WARM_NO_CLICK_SECONDS),
+            80,
+            f"{TRIGGER_WARM_NO_CLICK}:{{conversation_id}}",
+        )
+    return (
+        TRIGGER_SILENT_30M,
+        "app_download_after_warmup",
+        max(60, settings.APP_DOWNLOAD_SILENT_30M_SECONDS),
+        50,
+        f"{TRIGGER_SILENT_30M}:{{assistant_message_id}}",
+    )
+
+
+async def _has_recent_nurture(
+    db: AsyncSession,
+    *,
+    conversation_id: str,
+    seconds: int,
+) -> bool:
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT 1
+                FROM message_schedules
+                WHERE metadata->>'delivery_mode' = :delivery_mode
+                  AND metadata->>'conversation_id' = :conversation_id
+                  AND created_at >= NOW() - (:seconds * INTERVAL '1 second')
+                  AND status IN ('pending', 'sending', 'sent', 'failed')
+                LIMIT 1
+                """
+            ),
+            {
+                "delivery_mode": APP_DOWNLOAD_NURTURE_DELIVERY_MODE,
+                "conversation_id": conversation_id,
+                "seconds": max(1, seconds),
+            },
+        )
+    ).fetchone()
+    return bool(row)
+
+
+async def _has_pre_click_nurture(
+    db: AsyncSession,
+    *,
+    conversation_id: str,
+) -> bool:
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT 1
+                FROM message_schedules
+                WHERE metadata->>'delivery_mode' = :delivery_mode
+                  AND metadata->>'conversation_id' = :conversation_id
+                  AND metadata->>'trigger' = ANY(:triggers)
+                  AND status IN ('pending', 'sending', 'sent', 'failed')
+                LIMIT 1
+                """
+            ),
+            {
+                "delivery_mode": APP_DOWNLOAD_NURTURE_DELIVERY_MODE,
+                "conversation_id": conversation_id,
+                "triggers": list(_PRE_CLICK_TRIGGERS),
+            },
+        )
+    ).fetchone()
+    return bool(row)
 
 
 async def queue_clicked_not_downloaded_followups(
@@ -257,6 +328,14 @@ async def queue_clicked_not_downloaded_followups(
                 WHERE c.conversation_id IS NOT NULL
                   AND c.chat_id IS NOT NULL
                   AND c.rn = 1
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM message_schedules ms
+                      WHERE ms.metadata->>'delivery_mode' = :delivery_mode
+                        AND ms.metadata->>'conversation_id' = c.conversation_id
+                        AND ms.created_at >= NOW() - INTERVAL '30 minutes'
+                        AND ms.status IN ('pending', 'sending', 'sent', 'failed')
+                  )
                   AND NOT EXISTS (
                       SELECT 1
                       FROM message_schedules ms
@@ -602,7 +681,7 @@ async def _build_contextual_content(
     profile = await _load_profile(db, user_id=user_id)
     history = await _load_recent_messages(db, conversation_id=conversation_id)
     last_user_text = _last_user_text(history)
-    context_line = _context_line(last_user_text)
+    context_line = ""
 
     user_level = str((profile or {}).get("user_level") or "C").upper()
     persona_slug = (profile or {}).get("persona_slug")
@@ -611,15 +690,18 @@ async def _build_contextual_content(
     is_t1 = country_tier(country_code) == "T1" if country_code else None
     language = _language(profile, history)
 
-    script_content, script_hit_id = await _select_script_content(
-        db,
-        category_key=category_key,
-        user_level=user_level,
-        persona_slug=persona_slug,
-        language=language,
-        query=last_user_text or trigger,
-        trace_id=trace_id,
-    )
+    script_content: str | None = None
+    script_hit_id: str | None = None
+    if trigger not in _SOFT_REMINDER_TRIGGERS:
+        script_content, script_hit_id = await _select_script_content(
+            db,
+            category_key=category_key,
+            user_level=user_level,
+            persona_slug=persona_slug,
+            language=language,
+            query=last_user_text or trigger,
+            trace_id=trace_id,
+        )
     if not script_content:
         script_content = _fallback_template(trigger)
 
@@ -716,10 +798,7 @@ def _last_user_text(history: list[dict[str, Any]]) -> str:
 
 
 def _context_line(last_user_text: str) -> str:
-    if not last_user_text:
-        return ""
-    trimmed = last_user_text[:120]
-    return f"You said: \"{trimmed}\". "
+    return ""
 
 
 def _render_contextual_template(
@@ -739,12 +818,12 @@ def _render_contextual_template(
 
 def _fallback_template(trigger: str) -> str:
     if trigger == TRIGGER_FIRST_IDLE:
-        return "I liked where this was going. When you are ready, open this and we can keep it private: {{app_download_url}}"
+        return "No rush. If you want to keep chatting privately, you can open this when you are ready: {{app_download_url}}"
     if trigger == TRIGGER_CLICK_NO_DOWNLOAD:
-        return "You already opened the door. Finish the download and I will keep chatting with you there: {{app_download_url}}"
+        return "If the download got stuck, you can try again here when you are ready: {{app_download_url}}"
     if trigger == TRIGGER_SILENT_24H:
-        return "I remembered our last chat. Come back through here when you want to continue: {{app_download_url}}"
-    return "Do not let the chat lose momentum. Open this and we will continue there: {{app_download_url}}"
+        return "Whenever you want to continue, I will be here: {{app_download_url}}"
+    return "When you are ready, we can keep chatting here: {{app_download_url}}"
 
 
 def _looks_contextual(text_value: str) -> bool:
