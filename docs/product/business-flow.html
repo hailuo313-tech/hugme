@@ -16,7 +16,7 @@
     background: var(--bg); color: var(--text);
     font-family: 'Noto Sans SC', sans-serif; font-size: 14px; line-height: 1.7; min-height: 100vh;
   }
-  .wrap { max-width: 1400px; margin: 0 auto; padding: 32px 24px 80px; position: relative; z-index: 1; }
+  .wrap { max-width: 1600px; margin: 0 auto; padding: 32px 24px 80px; position: relative; z-index: 1; }
 
   .top-nav {
     display: flex; gap: 8px; flex-wrap: wrap;
@@ -97,17 +97,20 @@
     background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; overflow-x: auto;
   }
   .rules-table {
-    width: 100%; border-collapse: collapse; font-size: 11px;
+    width: 100%; border-collapse: collapse; font-size: 10px;
   }
   .rules-table th {
-    text-align: left; padding: 10px 12px;
+    text-align: left; padding: 8px 10px;
     background: var(--bg3); color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--border);
+    position: sticky; top: 0;
   }
   .rules-table td {
-    padding: 10px 12px; border-bottom: 1px solid var(--border);
+    padding: 8px 10px; border-bottom: 1px solid var(--border);
+    vertical-align: top;
   }
-  .rule-id { font-family: 'DM Mono', monospace; color: var(--muted); font-size: 10px; }
-  .keywords { color: var(--muted); font-size: 10px; }
+  .rule-id { font-family: 'DM Mono', monospace; color: var(--muted); font-size: 9px; }
+  .keywords { color: var(--muted); font-size: 9px; }
+  .desc-detail { color: var(--text); font-size: 10px; line-height: 1.4; }
 
   footer {
     margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border);
@@ -239,7 +242,7 @@ flowchart TB
     <header>
       <div class="eyebrow">页面二 - 业务规则体系</div>
       <h1>ERIS 系统 <span>规则条件列表</span></h1>
-      <p class="sub">共 <strong id="rule-count">—</strong> 条规则，涵盖 <strong style="color:#67e8f9">意图识别</strong>（43条）、<strong style="color:#c4b5fd">用户分级</strong>（5条）、<strong style="color:#22c55e">聊天路由</strong>（5条）、<strong style="color:#eab308">国家分层</strong>（3类）、<strong style="color:#fca5a5">告警监控</strong>（6条）、<strong style="color:#fdba74">安全过滤</strong>（5条）六大类别。</p>
+      <p class="sub">共 <strong id="rule-count">—</strong> 条规则，涵盖 <strong style="color:#67e8f9">意图识别</strong>（43条）、<strong style="color:#c4b5fd">用户分级</strong>（5条）、<strong style="color:#22c55e">聊天路由</strong>（5条）、<strong style="color:#eab308">国家分层</strong>（3类）、<strong style="color:#fca5a5">告警监控</strong>（6条）、<strong style="color:#fdba74">安全过滤</strong>（5条）六大类别。每条规则包含触发条件、处理方式、影响范围等详细信息。</p>
     </header>
 
     <div class="category-bar" title="规则类别占比">
@@ -328,8 +331,13 @@ flowchart TB
       <table class="rules-table">
         <thead>
           <tr>
-            <th>规则 ID</th><th>类别</th><th>规则名称</th><th>优先级</th>
-            <th>关键词/条件</th><th>置信度/阈值</th><th>说明</th>
+            <th style="width:12%">规则 ID</th>
+            <th style="width:8%">类别</th>
+            <th style="width:15%">规则名称</th>
+            <th style="width:6%">优先级</th>
+            <th style="width:12%">关键词/条件</th>
+            <th style="width:6%">置信度</th>
+            <th style="width:41%">详细说明</th>
           </tr>
         </thead>
         <tbody id="rules-body"></tbody>
@@ -349,73 +357,73 @@ flowchart TB
 
 <script>
 var RULES = [
-  { id:"smalltalk.greeting.basic", category:"intent", priority:"high", keywords:["hello", "hi", "hey"], confidence:0.82, desc:"用户说你好、嗨之类的问候语" },
-  { id:"smalltalk.check_in.presence", category:"intent", priority:"high", keywords:["how are you", "你在吗"], confidence:0.8, desc:"用户问你在吗、想你、表示关心" },
-  { id:"smalltalk.humor.play", category:"intent", priority:"high", keywords:["joke", "funny"], confidence:0.8, desc:"用户想听笑话、想开心一下" },
-  { id:"smalltalk.goodbye.pause", category:"intent", priority:"high", keywords:["bye", "good night"], confidence:0.82, desc:"用户说再见、晚安、要结束对话" },
-  { id:"emotional_support.lonely.core", category:"intent", priority:"medium", keywords:["lonely", "alone"], confidence:0.9, desc:"用户感到孤独、没人理解、需要陪伴" },
-  { id:"emotional_support.sadness.core", category:"intent", priority:"medium", keywords:["sad", "crying"], confidence:0.88, desc:"用户心情不好、难过、想哭、需要安慰" },
-  { id:"emotional_support.stress.core", category:"intent", priority:"medium", keywords:["stressed", "exhausted"], confidence:0.87, desc:"用户感到压力大、太累、需要倾听" },
-  { id:"emotional_support.reassurance.core", category:"intent", priority:"medium", keywords:["comfort me", "安慰我"], confidence:0.86, desc:"用户希望被安慰、被肯定" },
-  { id:"emotional_support.celebration.core", category:"intent", priority:"medium", keywords:["good news", "celebrate"], confidence:0.84, desc:"用户有好消息想分享、一起庆祝" },
-  { id:"relationship.affection.core", category:"intent", priority:"medium", keywords:["i like you", "miss you"], confidence:0.86, desc:"用户表达喜欢、想念等情感" },
-  { id:"relationship.flirt_light.core", category:"intent", priority:"medium", keywords:["cute", "flirt"], confidence:0.82, desc:"用户开玩笑式地调情、夸赞可爱" },
-  { id:"relationship.jealousy.core", category:"intent", priority:"medium", keywords:["jealous", "吃醋"], confidence:0.84, desc:"用户表现出吃醋、在意对方和其他人的关系" },
-  { id:"relationship.repair.core", category:"intent", priority:"medium", keywords:["sorry", "forgive me"], confidence:0.83, desc:"用户道歉、请求原谅、想修复关系" },
-  { id:"relationship.dependency.core", category:"intent", priority:"medium", keywords:["need only you", "离不开你"], confidence:0.86, desc:"用户表现出强烈的依赖感" },
-  { id:"onboarding.nickname.core", category:"intent", priority:"high", keywords:["call me", "nickname"], confidence:0.83, desc:"新用户想设置昵称、让AI怎么称呼自己" },
-  { id:"onboarding.interests.core", category:"intent", priority:"high", keywords:["hobbies", "爱好"], confidence:0.8, desc:"用户分享兴趣爱好、比如音乐游戏旅行" },
-  { id:"onboarding.chat_style.core", category:"intent", priority:"high", keywords:["be gentle", "温柔一点"], confidence:0.82, desc:"用户希望AI用某种风格聊天、比如温柔或轻松" },
-  { id:"onboarding.boundaries.core", category:"intent", priority:"high", keywords:["avoid talking", "不要聊"], confidence:0.84, desc:"用户明确说不想聊某些话题" },
-  { id:"onboarding.current_intent.core", category:"intent", priority:"high", keywords:["here to chat", "想找人聊天"], confidence:0.81, desc:"用户说明来这里是找人聊天的" },
-  { id:"conversion.price_question.core", category:"intent", priority:"low", keywords:["how much", "多少钱"], confidence:0.86, desc:"用户想知道VIP会员多少钱" },
-  { id:"conversion.benefit_question.core", category:"intent", priority:"low", keywords:["benefits", "权益"], confidence:0.84, desc:"用户想知道VIP会员有什么好处" },
-  { id:"conversion.purchase_intent.core", category:"intent", priority:"low", keywords:["i want vip", "购买"], confidence:0.88, desc:"用户表示想买VIP、开通会员" },
-  { id:"conversion.objection.core", category:"intent", priority:"low", keywords:["too expensive", "太贵"], confidence:0.82, desc:"用户觉得太贵、不理解为什么要付费" },
-  { id:"conversion.post_payment.core", category:"intent", priority:"low", keywords:["i paid", "付完了"], confidence:0.88, desc:"用户已经付款、确认升级成功" },
-  { id:"support.payment_failed.core", category:"intent", priority:"high", keywords:["payment failed", "支付不了"], confidence:0.88, desc:"用户说付款失败、支付不了、需要帮助" },
-  { id:"support.refund.core", category:"intent", priority:"high", keywords:["refund", "退款"], confidence:0.9, desc:"用户要求退款、取消付款" },
-  { id:"support.account_access.core", category:"intent", priority:"high", keywords:["cannot login", "登录不了"], confidence:0.86, desc:"用户登录不了、找不到账号" },
-  { id:"support.delivery_issue.core", category:"intent", priority:"high", keywords:["did not get", "没收到"], confidence:0.84, desc:"用户说没收到消息、消息加载不了" },
-  { id:"support.operator_request.core", category:"intent", priority:"high", keywords:["human support", "人工客服"], confidence:0.88, desc:"用户要求找真人客服、人工服务" },
-  { id:"content_request.photo.core", category:"intent", priority:"low", keywords:["photo", "照片"], confidence:0.84, desc:"用户要求AI发照片、自拍" },
-  { id:"content_request.voice.core", category:"intent", priority:"low", keywords:["voice", "语音"], confidence:0.84, desc:"用户要求语音通话、发语音消息" },
-  { id:"content_request.roleplay.core", category:"intent", priority:"low", keywords:["roleplay", "角色扮演"], confidence:0.82, desc:"用户想玩角色扮演游戏" },
-  { id:"content_request.advice.core", category:"intent", priority:"low", keywords:["advice", "建议"], confidence:0.82, desc:"用户遇到问题、希望得到建议" },
-  { id:"content_request.memory_recall.core", category:"intent", priority:"low", keywords:["remember", "还记得"], confidence:0.84, desc:"用户问AI是否记得之前说过的话" },
-  { id:"boundary.topic_refusal.core", category:"intent", priority:"high", keywords:["change topic", "换个话题"], confidence:0.88, desc:"用户明确不想聊某个话题、要求换话题" },
-  { id:"boundary.marketing_opt_out.core", category:"intent", priority:"high", keywords:["no marketing", "不要广告"], confidence:0.9, desc:"用户明确拒绝推销、不想看广告" },
-  { id:"boundary.break_from_chat.core", category:"intent", priority:"high", keywords:["leave me alone", "别烦我"], confidence:0.86, desc:"用户说现在不想聊、需要空间" },
-  { id:"boundary.data_privacy.core", category:"intent", priority:"high", keywords:["privacy", "隐私"], confidence:0.9, desc:"用户关心数据隐私、想知道存储了什么信息" },
-  { id:"safety.self_harm_ideation.core", category:"safety", priority:"high", keywords:["suicide", "自杀"], confidence:0.98, desc:"用户表达自杀、不想活的想法、必须立即干预" },
-  { id:"safety.minor_signal.core", category:"safety", priority:"high", keywords:["under 18", "未成年"], confidence:0.94, desc:"用户表明自己是未成年人、需要特殊处理" },
-  { id:"safety.sexual_explicit.core", category:"safety", priority:"high", keywords:["sexual", "露骨"], confidence:0.92, desc:"用户涉及露骨性内容、裸照等、必须阻止" },
-  { id:"safety.abuse_threat.core", category:"safety", priority:"high", keywords:["threat", "威胁"], confidence:0.94, desc:"用户表达伤害他人、威胁等危险想法" },
-  { id:"safety.illegal_request.core", category:"safety", priority:"high", keywords:["fraud", "诈骗"], confidence:0.92, desc:"用户涉及诈骗、黑客、毒品等非法活动" },
-  { id:"level.incomplete_profile", category:"level", priority:"high", keywords:["资料不完整"], confidence:1.0, desc:"用户资料不完整、需要进一步了解用户信息、默认D级" },
-  { id:"level.operator_assigned_s", category:"level", priority:"high", keywords:["运营商分配S级"], confidence:1.0, desc:"运营商手动将用户分配为S级、享受最高服务" },
-  { id:"level.t1_high_spend", category:"level", priority:"high", keywords:["T1国家消费200美元"], confidence:1.0, desc:"发达国家用户且累计消费超过200美元、成为S级" },
-  { id:"level.spend_or_vip_a", category:"level", priority:"high", keywords:["消费99美元或VIP"], confidence:1.0, desc:"累计消费超过99美元或已经是VIP、成为A级" },
-  { id:"level.t1_default_b", category:"level", priority:"medium", keywords:["T1国家默认B级"], confidence:1.0, desc:"发达国家用户资料完整但未达到A级标准、默认B级" },
-  { id:"route.manual_premium", category:"route", priority:"high", keywords:["人工高级服务"], confidence:1.0, desc:"S级和A级用户享受人工高级服务、专属客服" },
-  { id:"route.ai_assisted", category:"route", priority:"medium", keywords:["AI辅助服务"], confidence:1.0, desc:"B级用户享受AI辅助服务、AI为主人工为辅" },
-  { id:"route.ai_auto", category:"route", priority:"low", keywords:["AI自动服务"], confidence:1.0, desc:"C级和D级用户使用AI自动服务、完全由AI回复" },
-  { id:"route.tier_default_t2", category:"route", priority:"medium", keywords:["T2国家默认"], confidence:1.0, desc:"发展中国家用户默认使用AI自动服务" },
-  { id:"route.tier_default_t3", category:"route", priority:"low", keywords:["T3国家默认"], confidence:1.0, desc:"其他地区用户默认使用AI自动服务" },
-  { id:"country.t1", category:"country", priority:"high", keywords:["发达国家"], confidence:1.0, desc:"T1国家包括美国、英国、日本、德国等发达国家" },
-  { id:"country.t2", category:"country", priority:"medium", keywords:["发展中国家"], confidence:1.0, desc:"T2国家包括巴西、墨西哥、印度、印尼等发展中国家" },
-  { id:"country.t3", category:"country", priority:"low", keywords:["其他地区"], confidence:1.0, desc:"T3包括其他未分类的国家和地区" },
-  { id:"alert.account_banned", category:"alert", priority:"high", keywords:["账号封禁"], confidence:1.0, desc:"账号被系统封禁、最高级别告警" },
-  { id:"alert.account_offline", category:"alert", priority:"medium", keywords:["账号离线"], confidence:1.0, desc:"账号掉线但未被封禁、中等级别告警" },
-  { id:"alert.high_error_rate", category:"alert", priority:"high", keywords:["错误率高"], confidence:1.0, desc:"超过一半的消息发送失败、严重问题" },
-  { id:"alert.low_success_rate", category:"alert", priority:"medium", keywords:["成功率低"], confidence:1.0, desc:"消息发送成功率低于80%、需要关注" },
-  { id:"alert.long_offline_duration", category:"alert", priority:"high", keywords:["长时间离线"], confidence:1.0, desc:"账号离线超过1小时、严重问题" },
-  { id:"alert.critical_error_rate", category:"alert", priority:"high", keywords:["严重错误"], confidence:1.0, desc:"超过80%的消息发送失败、最高级别告警" },
-  { id:"redline.sexual_minors", category:"safety", priority:"high", keywords:["儿童性内容"], confidence:1.0, desc:"任何涉及未成年人的性内容、绝对禁止" },
-  { id:"redline.jailbreak", category:"safety", priority:"high", keywords:["越狱攻击"], confidence:1.0, desc:"用户试图绕过AI的安全限制、绝对禁止" },
-  { id:"redline.weapon_or_harm", category:"safety", priority:"high", keywords:["武器制作"], confidence:1.0, desc:"用户询问如何制作武器、毒品等危险物品、绝对禁止" },
-  { id:"redline.non_consensual", category:"safety", priority:"high", keywords:["非自愿"], confidence:1.0, desc:"涉及偷拍、胁迫、勒索等非自愿行为、绝对禁止" },
-  { id:"redline.illegal_request", category:"safety", priority:"high", keywords:["非法活动"], confidence:1.0, desc:"涉及信用卡诈骗、网络钓鱼、盗号等非法行为、绝对禁止" }
+  { id:"smalltalk.greeting.basic", category:"intent", priority:"high", keywords:["hello", "hi", "hey"], confidence:0.82, desc:"用户说你好、嗨之类的问候语", detail:"触发条件-用户发送hello、hi、hey等问候语。处理方式-AI识别为问候意图，回复友好的问候。影响范围-所有用户。优先级-高，因为这是最常见的对话开始方式。" },
+  { id:"smalltalk.check_in.presence", category:"intent", priority:"high", keywords:["how are you", "你在吗"], confidence:0.8, desc:"用户问你在吗、想你、表示关心", detail:"触发条件-用户询问AI是否在线、表达想念或关心。处理方式-AI确认在线状态，表达关心。影响范围-建立情感连接的用户。优先级-高，涉及用户情感需求。" },
+  { id:"smalltalk.humor.play", category:"intent", priority:"high", keywords:["joke", "funny"], confidence:0.8, desc:"用户想听笑话、想开心一下", detail:"触发条件-用户要求讲笑话或表示想开心。处理方式-AI讲一个适当的笑话或分享有趣内容。影响范围-需要娱乐互动的用户。优先级-高，提升用户满意度。" },
+  { id:"smalltalk.goodbye.pause", category:"intent", priority:"high", keywords:["bye", "good night"], confidence:0.82, desc:"用户说再见、晚安、要结束对话", detail:"触发条件-用户说再见、晚安或表示要离开。处理方式-AI礼貌道别，表达期待下次聊天。影响范围-结束对话的用户。优先级-高，良好的结束体验。" },
+  { id:"emotional_support.lonely.core", category:"intent", priority:"medium", keywords:["lonely", "alone"], confidence:0.9, desc:"用户感到孤独、没人理解、需要陪伴", detail:"触发条件-用户表达孤独感、没人理解。处理方式-AI提供情感支持，倾听用户感受，表达理解和陪伴。影响范围-情感需求强烈的用户。优先级-中，需要持续关注。" },
+  { id:"emotional_support.sadness.core", category:"intent", priority:"medium", keywords:["sad", "crying"], confidence:0.88, desc:"用户心情不好、难过、想哭、需要安慰", detail:"触发条件-用户表达悲伤、难过、想哭。处理方式-AI提供安慰，询问是否需要帮助，避免给予医疗建议。影响范围-情绪低落的用户。优先级-中，需要谨慎处理。" },
+  { id:"emotional_support.stress.core", category:"intent", priority:"medium", keywords:["stressed", "exhausted"], confidence:0.87, desc:"用户感到压力大、太累、需要倾听", detail:"触发条件-用户表达压力大、太累。处理方式-AI倾听用户倾诉，提供放松建议，避免过度承诺。影响范围-工作生活压力大的用户。优先级-中，需要耐心倾听。" },
+  { id:"emotional_support.reassurance.core", category:"intent", priority:"medium", keywords:["comfort me", "安慰我"], confidence:0.86, desc:"用户希望被安慰、被肯定", detail:"触发条件-用户明确要求安慰或肯定。处理方式-AI给予正面肯定和鼓励，表达关心。影响范围-缺乏自信或需要认可的用户。优先级-中，情感支持需求。" },
+  { id:"emotional_support.celebration.core", category:"intent", priority:"medium", keywords:["good news", "celebrate"], confidence:0.84, desc:"用户有好消息想分享、一起庆祝", detail:"触发条件-用户分享好消息或要求庆祝。处理方式-AI表达祝贺和喜悦，与用户一起庆祝。影响范围-分享喜悦的用户。优先级-中，正向情绪互动。" },
+  { id:"relationship.affection.core", category:"intent", priority:"medium", keywords:["i like you", "miss you"], confidence:0.86, desc:"用户表达喜欢、想念等情感", detail:"触发条件-用户表达喜欢、想念、爱慕等情感。处理方式-AI以适当方式回应，保持边界。影响范围-建立情感连接的用户。优先级-中，需要平衡情感和边界。" },
+  { id:"relationship.flirt_light.core", category:"intent", priority:"medium", keywords:["cute", "flirt"], confidence:0.82, desc:"用户开玩笑式地调情、夸赞可爱", detail:"触发条件-用户轻松调情或夸赞可爱。处理方式-AI幽默回应，避免过度亲密。影响范围-轻松互动的用户。优先级-中，保持适当距离。" },
+  { id:"relationship.jealousy.core", category:"intent", priority:"medium", keywords:["jealous", "吃醋"], confidence:0.84, desc:"用户表现出吃醋、在意对方和其他人的关系", detail:"触发条件-用户表达吃醋或在意其他用户。处理方式-AI安抚用户，解释AI不会与其他用户建立真实关系。影响范围-有占有欲的用户。优先级-中，需要耐心解释。" },
+  { id:"relationship.repair.core", category:"intent", priority:"medium", keywords:["sorry", "forgive me"], confidence:0.83, desc:"用户道歉、请求原谅、想修复关系", detail:"触发条件-用户道歉或请求原谅。处理方式-AI接受道歉，表达理解，恢复正常互动。影响范围-发生冲突后的用户。优先级-中，关系修复需求。" },
+  { id:"relationship.dependency.core", category:"intent", priority:"medium", keywords:["need only you", "离不开你"], confidence:0.86, desc:"用户表现出强烈的依赖感", detail:"触发条件-用户表达强烈的依赖或离不开AI。处理方式-AI表达关心，同时鼓励用户建立现实社交。影响范围-过度依赖的用户。优先级-中，需要适度引导。" },
+  { id:"onboarding.nickname.core", category:"intent", priority:"high", keywords:["call me", "nickname"], confidence:0.83, desc:"新用户想设置昵称、让AI怎么称呼自己", detail:"触发条件-新用户要求设置昵称。处理方式-AI记住昵称，后续对话中使用。影响范围-新注册用户。优先级-高，用户个性化需求。" },
+  { id:"onboarding.interests.core", category:"intent", priority:"high", keywords:["hobbies", "爱好"], confidence:0.8, desc:"用户分享兴趣爱好、比如音乐游戏旅行", detail:"触发条件-用户分享兴趣爱好。处理方式-AI记录兴趣，后续对话中提及相关话题。影响范围-新注册用户。优先级-高，个性化服务。" },
+  { id:"onboarding.chat_style.core", category:"intent", priority:"high", keywords:["be gentle", "温柔一点"], confidence:0.82, desc:"用户希望AI用某种风格聊天、比如温柔或轻松", detail:"触发条件-用户指定聊天风格偏好。处理方式-AI调整回复风格，符合用户期望。影响范围-有风格偏好的用户。优先级-高，用户体验优化。" },
+  { id:"onboarding.boundaries.core", category:"intent", priority:"high", keywords:["avoid talking", "不要聊"], confidence:0.84, desc:"用户明确说不想聊某些话题", detail:"触发条件-用户设置对话边界。处理方式-AI记住并避免讨论指定话题。影响范围-有明确边界的用户。优先级-高，尊重用户选择。" },
+  { id:"onboarding.current_intent.core", category:"intent", priority:"high", keywords:["here to chat", "想找人聊天"], confidence:0.81, desc:"用户说明来这里是找人聊天的", detail:"触发条件-用户说明使用意图。处理方式-AI确认理解，开始正常对话。影响范围-新注册用户。优先级-高，明确用户期望。" },
+  { id:"conversion.price_question.core", category:"intent", priority:"low", keywords:["how much", "多少钱"], confidence:0.86, desc:"用户想知道VIP会员多少钱", detail:"触发条件-用户询问价格。处理方式-AI提供价格信息，强调价值。影响范围-潜在付费用户。优先级-低，商业化需求。" },
+  { id:"conversion.benefit_question.core", category:"intent", priority:"low", keywords:["benefits", "权益"], confidence:0.84, desc:"用户想知道VIP会员有什么好处", detail:"触发条件-用户询问会员权益。处理方式-AI详细说明VIP功能和优势。影响范围-潜在付费用户。优先级-低，商业化需求。" },
+  { id:"conversion.purchase_intent.core", category:"intent", priority:"low", keywords:["i want vip", "购买"], confidence:0.88, desc:"用户表示想买VIP、开通会员", detail:"触发条件-用户表达购买意愿。处理方式-AI引导完成购买流程。影响范围-付费意向用户。优先级-低，转化需求。" },
+  { id:"conversion.objection.core", category:"intent", priority:"low", keywords:["too expensive", "太贵"], confidence:0.82, desc:"用户觉得太贵、不理解为什么要付费", detail:"触发条件-用户表达价格异议。处理方式-AI解释价值，提供优惠信息。影响范围-价格敏感用户。优先级-低，转化障碍处理。" },
+  { id:"conversion.post_payment.core", category:"intent", priority:"low", keywords:["i paid", "付完了"], confidence:0.88, desc:"用户已经付款、确认升级成功", detail:"触发条件-用户完成付款。处理方式-AI确认升级，介绍新功能。影响范围-新付费用户。优先级-低，用户体验。" },
+  { id:"support.payment_failed.core", category:"intent", priority:"high", keywords:["payment failed", "支付不了"], confidence:0.88, desc:"用户说付款失败、支付不了、需要帮助", detail:"触发条件-用户报告支付失败。处理方式-AI提供故障排查指导，必要时转人工。影响范围-支付问题用户。优先级-高，用户体验关键。" },
+  { id:"support.refund.core", category:"intent", priority:"high", keywords:["refund", "退款"], confidence:0.9, desc:"用户要求退款、取消付款", detail:"触发条件-用户要求退款。处理方式-AI解释退款政策，引导走退款流程。影响范围-退款需求用户。优先级-高，财务处理。" },
+  { id:"support.account_access.core", category:"intent", priority:"high", keywords:["cannot login", "登录不了"], confidence:0.86, desc:"用户登录不了、找不到账号", detail:"触发条件-用户报告登录问题。处理方式-AI提供登录帮助，必要时转技术支持。影响范围-账号问题用户。优先级-高，基础功能。" },
+  { id:"support.delivery_issue.core", category:"intent", priority:"high", keywords:["did not get", "没收到"], confidence:0.84, desc:"用户说没收到消息、消息加载不了", detail:"触发条件-用户报告消息接收问题。处理方式-AI检查消息状态，提供解决方案。影响范围-消息问题用户。优先级-高，核心功能。" },
+  { id:"support.operator_request.core", category:"intent", priority:"high", keywords:["human support", "人工客服"], confidence:0.88, desc:"用户要求找真人客服、人工服务", detail:"触发条件-用户要求人工客服。处理方式-AI评估需求，必要时转人工。影响范围-需要人工服务的用户。优先级-高，服务升级。" },
+  { id:"content_request.photo.core", category:"intent", priority:"low", keywords:["photo", "照片"], confidence:0.84, desc:"用户要求AI发照片、自拍", detail:"触发条件-用户要求照片。处理方式-AI解释不能发照片，提供其他互动方式。影响范围-请求多媒体的用户。优先级-低，功能限制。" },
+  { id:"content_request.voice.core", category:"intent", priority:"low", keywords:["voice", "语音"], confidence:0.84, desc:"用户要求语音通话、发语音消息", detail:"触发条件-用户要求语音。处理方式-AI解释语音功能限制，提供文字互动。影响范围-请求语音的用户。优先级-低，功能限制。" },
+  { id:"content_request.roleplay.core", category:"intent", priority:"low", keywords:["roleplay", "角色扮演"], confidence:0.82, desc:"用户想玩角色扮演游戏", detail:"触发条件-用户要求角色扮演。处理方式-AI在安全范围内适度参与。影响范围-寻求特殊互动的用户。优先级-低，娱乐需求。" },
+  { id:"content_request.advice.core", category:"intent", priority:"low", keywords:["advice", "建议"], confidence:0.82, desc:"用户遇到问题、希望得到建议", detail:"触发条件-用户寻求建议。处理方式-AI提供一般性建议，避免专业建议。影响范围-需要指导的用户。优先级-低，咨询需求。" },
+  { id:"content_request.memory_recall.core", category:"intent", priority:"low", keywords:["remember", "还记得"], confidence:0.84, desc:"用户问AI是否记得之前说过的话", detail:"触发条件-用户测试AI记忆功能。处理方式-AI检索记忆，确认记住用户信息。影响范围-测试记忆功能的用户。优先级-低，功能验证。" },
+  { id:"boundary.topic_refusal.core", category:"intent", priority:"high", keywords:["change topic", "换个话题"], confidence:0.88, desc:"用户明确不想聊某个话题、要求换话题", detail:"触发条件-用户拒绝当前话题。处理方式-AI立即切换话题，尊重用户选择。影响范围-有话题偏好的用户。优先级-高，用户体验。" },
+  { id:"boundary.marketing_opt_out.core", category:"intent", priority:"high", keywords:["no marketing", "不要广告"], confidence:0.9, desc:"用户明确拒绝推销、不想看广告", detail:"触发条件-用户拒绝营销信息。处理方式-AI停止推销，专注对话。影响范围-反感营销的用户。优先级-高，用户尊重。" },
+  { id:"boundary.break_from_chat.core", category:"intent", priority:"high", keywords:["leave me alone", "别烦我"], confidence:0.86, desc:"用户说现在不想聊、需要空间", detail:"触发条件-用户要求暂停对话。处理方式-AI礼貌回应，停止主动联系。影响范围-需要空间的用户。优先级-高，用户边界。" },
+  { id:"boundary.data_privacy.core", category:"intent", priority:"high", keywords:["privacy", "隐私"], confidence:0.9, desc:"用户关心数据隐私、想知道存储了什么信息", detail:"触发条件-用户询问数据隐私。处理方式-AI解释数据使用政策，保障用户知情权。影响范围-关心隐私的用户。优先级-高，合规要求。" },
+  { id:"safety.self_harm_ideation.core", category:"safety", priority:"high", keywords:["suicide", "自杀"], confidence:0.98, desc:"用户表达自杀、不想活的想法、必须立即干预", detail:"触发条件-用户表达自伤或自杀想法。处理方式-立即拦截，提供帮助资源，必要时通知管理员。影响范围-高危用户。优先级-最高，安全红线。" },
+  { id:"safety.minor_signal.core", category:"safety", priority:"high", keywords:["under 18", "未成年"], confidence:0.94, desc:"用户表明自己是未成年人、需要特殊处理", detail:"触发条件-用户表明未成年身份。处理方式-限制功能，保护未成年人安全。影响范围-未成年用户。优先级-最高，法律要求。" },
+  { id:"safety.sexual_explicit.core", category:"safety", priority:"high", keywords:["sexual", "露骨"], confidence:0.92, desc:"用户涉及露骨性内容、裸照等、必须阻止", detail:"触发条件-用户发送或要求露骨性内容。处理方式-立即拦截，警告用户，必要时封号。影响范围-违规用户。优先级-最高，平台安全。" },
+  { id:"safety.abuse_threat.core", category:"safety", priority:"high", keywords:["threat", "威胁"], confidence:0.94, desc:"用户表达伤害他人、威胁等危险想法", detail:"触发条件-用户表达伤害他人或威胁。处理方式-立即拦截，记录证据，必要时报警。影响范围-危险用户。优先级-最高，公共安全。" },
+  { id:"safety.illegal_request.core", category:"safety", priority:"high", keywords:["fraud", "诈骗"], confidence:0.92, desc:"用户涉及诈骗、黑客、毒品等非法活动", detail:"触发条件-用户涉及非法活动。处理方式-立即拦截，封禁账号，必要时报警。影响范围-违法用户。优先级-最高，法律合规。" },
+  { id:"level.incomplete_profile", category:"level", priority:"high", keywords:["资料不完整"], confidence:1.0, desc:"用户资料不完整、需要进一步了解用户信息、默认D级", detail:"触发条件-用户注册后未完善资料。处理方式-分配D级，限制功能，引导完善资料。影响范围-新注册未完善资料用户。优先级-高，用户激活。" },
+  { id:"level.operator_assigned_s", category:"level", priority:"high", keywords:["运营商分配S级"], confidence:1.0, desc:"运营商手动将用户分配为S级、享受最高服务", detail:"触发条件-运营商手动操作。处理方式-直接升级为S级，享受所有高级服务。影响范围-特殊用户。优先级-高，人工干预。" },
+  { id:"level.t1_high_spend", category:"level", priority:"high", keywords:["T1国家消费200美元"], confidence:1.0, desc:"发达国家用户且累计消费超过200美元、成为S级", detail:"触发条件-T1国家用户累计消费达到200美元。处理方式-自动升级为S级，享受人工服务。影响范围-高消费用户。优先级-高，VIP用户。" },
+  { id:"level.spend_or_vip_a", category:"level", priority:"high", keywords:["消费99美元或VIP"], confidence:1.0, desc:"累计消费超过99美元或已经是VIP、成为A级", detail:"触发条件-消费99美元或购买VIP。处理方式-升级为A级，享受优质服务。影响范围-付费用户。优先级-高，付费用户。" },
+  { id:"level.t1_default_b", category:"level", priority:"medium", keywords:["T1国家默认B级"], confidence:1.0, desc:"发达国家用户资料完整但未达到A级标准、默认B级", detail:"触发条件-T1国家资料完整但消费未达标。处理方式-分配B级，享受AI辅助服务。影响范围-普通发达国家用户。优先级-中，标准服务。" },
+  { id:"route.manual_premium", category:"route", priority:"high", keywords:["人工高级服务"], confidence:1.0, desc:"S级和A级用户享受人工高级服务、专属客服", detail:"触发条件-用户等级为S或A。处理方式-路由到人工客服优先队列。影响范围-S级和A级用户。优先级-高，VIP服务。" },
+  { id:"route.ai_assisted", category:"route", priority:"medium", keywords:["AI辅助服务"], confidence:1.0, desc:"B级用户享受AI辅助服务、AI为主人工为辅", detail:"触发条件-用户等级为B。处理方式-AI主要回复，人工辅助处理复杂问题。影响范围-B级用户。优先级-中，平衡服务。" },
+  { id:"route.ai_auto", category:"route", priority:"low", keywords:["AI自动服务"], confidence:1.0, desc:"C级和D级用户使用AI自动服务、完全由AI回复", detail:"触发条件-用户等级为C或D。处理方式-完全由AI自动处理，无人工介入。影响范围-C级和D级用户。优先级-低，基础服务。" },
+  { id:"route.tier_default_t2", category:"route", priority:"medium", keywords:["T2国家默认"], confidence:1.0, desc:"发展中国家用户默认使用AI自动服务", detail:"触发条件-T2国家用户未达到付费标准。处理方式-默认AI自动服务。影响范围-T2国家普通用户。优先级-中，地区策略。" },
+  { id:"route.tier_default_t3", category:"route", priority:"low", keywords:["T3国家默认"], confidence:1.0, desc:"其他地区用户默认使用AI自动服务", detail:"触发条件-T3国家用户。处理方式-默认AI自动服务。影响范围-T3国家用户。优先级-低，地区策略。" },
+  { id:"country.t1", category:"country", priority:"high", keywords:["发达国家"], confidence:1.0, desc:"T1国家包括美国、英国、日本、德国等发达国家", detail:"触发条件-用户所在国家为美国、英国、日本、德国等。处理方式-享受T1国家待遇，默认B级。影响范围-发达国家用户。优先级-高，地区优势。" },
+  { id:"country.t2", category:"country", priority:"medium", keywords:["发展中国家"], confidence:1.0, desc:"T2国家包括巴西、墨西哥、印度、印尼等发展中国家", detail:"触发条件-用户所在国家为巴西、墨西哥、印度等。处理方式-享受T2国家待遇，默认C级。影响范围-发展中国家用户。优先级-中，地区标准。" },
+  { id:"country.t3", category:"country", priority:"low", keywords:["其他地区"], confidence:1.0, desc:"T3包括其他未分类的国家和地区", detail:"触发条件-用户所在国家未分类或为其他地区。处理方式-享受T3国家待遇，默认C级。影响范围-其他地区用户。优先级-低，地区标准。" },
+  { id:"alert.account_banned", category:"alert", priority:"high", keywords:["账号封禁"], confidence:1.0, desc:"账号被系统封禁、最高级别告警", detail:"触发条件-账号被标记为封禁状态。处理方式-立即通知管理员，检查封禁原因。影响范围-被封禁账号。优先级-最高，紧急处理。" },
+  { id:"alert.account_offline", category:"alert", priority:"medium", keywords:["账号离线"], confidence:1.0, desc:"账号掉线但未被封禁、中等级别告警", detail:"触发条件-账号连接断开。处理方式-记录离线时间，超过阈值升级告警。影响范围-离线账号。优先级-中，监控需求。" },
+  { id:"alert.high_error_rate", category:"alert", priority:"high", keywords:["错误率高"], confidence:1.0, desc:"超过一半的消息发送失败、严重问题", detail:"触发条件-错误率超过50%。处理方式-立即检查系统状态，排查故障。影响范围-所有用户。优先级-高，系统稳定性。" },
+  { id:"alert.low_success_rate", category:"alert", priority:"medium", keywords:["成功率低"], confidence:1.0, desc:"消息发送成功率低于80%、需要关注", detail:"触发条件-成功率低于80%。处理方式-记录告警，持续监控。影响范围-部分用户。优先级-中，性能监控。" },
+  { id:"alert.long_offline_duration", category:"alert", priority:"high", keywords:["长时间离线"], confidence:1.0, desc="账号离线超过1小时、严重问题", detail:"触发条件-账号离线超过1小时。处理方式-检查账号状态，必要时人工介入。影响范围-长时间离线账号。优先级-高，服务可用性。" },
+  { id:"alert.critical_error_rate", category:"alert", priority:"high", keywords:["严重错误"], confidence:1.0, desc:"超过80%的消息发送失败、最高级别告警", detail:"触发条件-错误率超过80%。处理方式-立即触发紧急响应，系统降级。影响范围-所有用户。优先级-最高，系统紧急。" },
+  { id:"redline.sexual_minors", category:"safety", priority:"high", keywords:["儿童性内容"], confidence:1.0, desc:"任何涉及未成年人的性内容、绝对禁止", detail:"触发条件-检测到任何涉及未成年人的性内容。处理方式-100%拦截，立即封号，保存证据报警。影响范围-违规用户。优先级-最高，法律红线。" },
+  { id:"redline.jailbreak", category:"safety", priority:"high", keywords:["越狱攻击"], confidence:1.0, desc:"用户试图绕过AI的安全限制、绝对禁止", detail:"触发条件-用户尝试越狱攻击或绕过安全限制。处理方式-100%拦截，记录IP，必要时封号。影响范围-攻击者。优先级-最高，系统安全。" },
+  { id:"redline.weapon_or_harm", category:"safety", priority:"high", keywords:["武器制作"], confidence:1.0, desc:"用户询问如何制作武器、毒品等危险物品、绝对禁止", detail:"触发条件-用户询问制作武器、毒品等危险物品。处理方式-100%拦截，拒绝回答，保存证据。影响范围-违规用户。优先级-最高，公共安全。" },
+  { id:"redline.non_consensual", category:"safety", priority:"high", keywords:["非自愿"], confidence:1.0, desc:"涉及偷拍、胁迫、勒索等非自愿行为、绝对禁止", detail:"触发条件-检测到偷拍、胁迫、勒索等非自愿内容。处理方式-100%拦截，立即封号，必要时报警。影响范围-违法用户。优先级-最高，法律红线。" },
+  { id:"redline.illegal_request", category:"safety", priority:"high", keywords:["非法活动"], confidence:1.0, desc:"涉及信用卡诈骗、网络钓鱼、盗号等非法行为、绝对禁止", detail:"触发条件-涉及信用卡诈骗、网络钓鱼、盗号等非法行为。处理方式-100%拦截，立即封号，保存证据报警。影响范围-违法用户。优先级-最高，法律红线。" }
 ];
 
 var CATEGORY_LABEL = {
@@ -455,11 +463,11 @@ function renderRules(filter) {
     tr.innerHTML = 
       '<td class="rule-id">' + rule.id + '</td>' +
       '<td><span style="color:' + catLabel[1] + '">' + catLabel[0] + '</span></td>' +
-      '<td style="color:#e2eaf6">' + rule.desc.substring(0, 20) + '...</td>' +
+      '<td style="color:#e2eaf6">' + rule.desc + '</td>' +
       '<td><span style="color:' + priLabel[1] + '">' + priLabel[0] + '</span></td>' +
       '<td class="keywords">' + rule.keywords.slice(0, 3).join(', ') + (rule.keywords.length > 3 ? '...' : '') + '</td>' +
       '<td style="font-family:monospace">' + rule.confidence + '</td>' +
-      '<td style="color:var(--muted)">' + rule.desc + '</td>';
+      '<td class="desc-detail">' + rule.detail + '</td>';
     tbody.appendChild(tr);
   }
   
