@@ -715,23 +715,30 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
         log=log,
         source="outbound_assistant",
     )
-    async with AsyncSessionLocal() as db:
-        try:
-            await schedule_download_followups_after_reply(
-                db,
-                user_id=user_id,
-                external_user_id=external_id,
-                conversation_id=conv_id,
-                chat_id=int(sender_id),
-                assistant_message_id=assistant_msg_id,
-                trace_id=trace_id,
-                account_id=str(account_id),
-            )
-        except Exception as exc:
-            await db.rollback()
-            log.bind(error_type=type(exc).__name__).warning(
-                "mtproto.app_download_nurture.schedule_failed"
-            )
+    should_schedule_nurture = not (
+        app_download_decision is not None
+        and getattr(app_download_decision, "intent", None) == "asset_keyword_request"
+    )
+    if should_schedule_nurture:
+        async with AsyncSessionLocal() as db:
+            try:
+                await schedule_download_followups_after_reply(
+                    db,
+                    user_id=user_id,
+                    external_user_id=external_id,
+                    conversation_id=conv_id,
+                    chat_id=int(sender_id),
+                    assistant_message_id=assistant_msg_id,
+                    trace_id=trace_id,
+                    account_id=str(account_id),
+                )
+            except Exception as exc:
+                await db.rollback()
+                log.bind(error_type=type(exc).__name__).warning(
+                    "mtproto.app_download_nurture.schedule_failed"
+                )
+    else:
+        log.info("mtproto.app_download_nurture.skip_asset_keyword")
     if app_download_decision is not None:
         for asset in app_download_decision.assets:
             media_sent = await send_mtproto_asset(

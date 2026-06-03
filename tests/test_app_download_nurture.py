@@ -60,7 +60,7 @@ class _FakeSession:
 
 
 @pytest.mark.asyncio
-async def test_first_message_idle_followup_is_queued_with_context(monkeypatch):
+async def test_first_message_idle_followup_is_single_soft_reminder(monkeypatch):
     db = _FakeSession()
 
     async def _url(_db):
@@ -98,10 +98,14 @@ async def test_first_message_idle_followup_is_queued_with_context(monkeypatch):
         account_id="44444444-4444-4444-4444-444444444444",
     )
 
-    assert queued >= 1
-    insert_params = [params for sql, params in db.executed if "INSERT INTO message_schedules" in sql][0]
+    inserts = [params for sql, params in db.executed if "INSERT INTO message_schedules" in sql]
+    assert queued == 1
+    assert len(inserts) == 1
+    insert_params = inserts[0]
     assert insert_params["message_type"] == nurture.APP_DOWNLOAD_MESSAGE_TYPE
-    assert "I like women over 30" in insert_params["content"]
+    assert "I like women over 30" not in insert_params["content"]
+    assert "You said" not in insert_params["content"]
+    assert "No rush" in insert_params["content"]
     assert "https://app.example/download" in insert_params["content"]
     assert '"delivery_mode": "app_download_nurture"' in insert_params["metadata"]
     assert '"trigger": "first_message_idle_3m"' in insert_params["metadata"]
@@ -170,6 +174,7 @@ async def test_clicked_no_download_scan_is_recent_and_dedupes_failed(monkeypatch
     scan_sql = db.executed[0][0]
     insert_sql = [sql for sql, _ in db.executed if "INSERT INTO message_schedules" in sql][0]
     assert "INTERVAL '24 hours'" in scan_sql
+    assert "INTERVAL '30 minutes'" in scan_sql
     assert "'app_link_clicked_followup'" not in scan_sql
     assert "ROW_NUMBER() OVER" in scan_sql
     assert "ms.metadata->>'conversation_id' = c.conversation_id" in scan_sql
