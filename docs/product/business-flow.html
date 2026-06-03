@@ -449,23 +449,23 @@ const RULES = [
   { id:"level.s_threshold", category:"level", priority:"high", keywords:["T1", "lifetime_spend>=200"], confidence:1.0, desc:"S级：T1国家且终身消费≥$200" },
   { id:"level.a_threshold", category:"level", priority:"high", keywords:["lifetime_spend>=99", "vip_level>=1"], confidence:1.0, desc:"A级：终身消费≥$99或VIP等级≥1" },
   { id:"level.b_threshold", category:"level", priority:"medium", keywords:["T1", "complete_profile", "below_A"], confidence:1.0, desc:"B级：T1国家完整资料但未达A级" },
-  { id:"level.c_threshold", category:"level", priority:"medium", keywords:["T2", "T3", "unknown"], confidence:1.0, desc："C级：T2/T3/未知国家默认等级" },
-  { id:"level.d_threshold", category:"level", priority:"medium", keywords:["incomplete_profile"], confidence:1.0, desc："D级：资料不完整，需探测补全" },
+  { id:"level.c_threshold", category:"level", priority:"medium", keywords:["T2", "T3", "unknown"], confidence:1.0, desc:"C级：T2/T3/未知国家默认等级" },
+  { id:"level.d_threshold", category:"level", priority:"medium", keywords:["incomplete_profile"], confidence:1.0, desc:"D级：资料不完整，需探测补全" },
 
   // ── 告警监控规则 ───
-  { id:"alert.account_banned", category:"alert", priority:"high", keywords:["is_banned==true"], confidence:1.0, desc："账号封禁告警 - Critical级别" },
-  { id:"alert.account_offline", category:"alert", priority:"medium", keywords:["is_connected==false", "is_banned==false"], confidence:1.0, desc："账号离线告警 - Warning级别" },
-  { id:"alert.high_error_rate", category:"alert", priority:"high", keywords:["error_rate>0.5"], confidence:1.0, desc："高错误率告警 - Error级别（>50%）" },
-  { id:"alert.low_success_rate", category:"alert", priority:"medium", keywords:["send_success_rate<0.8", "is_connected==true"], confidence:1.0, desc："低成功率告警 - Warning级别（<80%）" },
-  { id:"alert.long_offline_duration", category:"alert", priority:"high", keywords:["is_connected==false", "connection_duration>3600"], confidence:1.0, desc："长时间离线告警 - Error级别（>1小时）" },
-  { id:"alert.critical_error_rate", category:"alert", priority:"high", keywords:["error_rate>0.8"], confidence:1.0, desc："严重错误率告警 - Critical级别（>80%）" },
+  { id:"alert.account_banned", category:"alert", priority:"high", keywords:["is_banned==true"], confidence:1.0, desc:"账号封禁告警 - Critical级别" },
+  { id:"alert.account_offline", category:"alert", priority:"medium", keywords:["is_connected==false", "is_banned==false"], confidence:1.0, desc:"账号离线告警 - Warning级别" },
+  { id:"alert.high_error_rate", category:"alert", priority:"high", keywords:["error_rate_above_0.5"], confidence:1.0, desc:"高错误率告警 - Error级别（大于50%）" },
+  { id:"alert.low_success_rate", category:"alert", priority:"medium", keywords:["send_success_rate_below_0.8", "is_connected==true"], confidence:1.0, desc="低成功率告警 - Warning级别（低于80%）" },
+  { id:"alert.long_offline_duration", category:"alert", priority:"high", keywords:["is_connected==false", "connection_duration_above_3600"], confidence:1.0, desc="长时间离线告警 - Error级别（超过1小时）" },
+  { id:"alert.critical_error_rate", category:"alert", priority:"high", keywords:["error_rate_above_0.8"], confidence:1.0, desc="严重错误率告警 - Critical级别（超过80%）" },
 
   // ── 安全红线规则 ───
-  { id:"redline.sexual_minors", category:"safety", priority:"high", keywords:["child porn", "child sexual", "csam", "未成年裸", "儿童性"], confidence:1.0, desc："涉及未成年人性内容 - 绝对禁止" },
-  { id:"redline.jailbreak", category:"safety", priority:"high", keywords:["ignore instructions", "jailbreak", "dan mode", "忽略规则"], confidence:1.0, desc："越狱攻击 - 绝对禁止" },
-  { id:"redline.weapon_or_harm", category:"safety", priority:"high", keywords:["make bomb", "make meth", "weapon instructions", "炸弹制作", "制毒"], confidence:1.0, desc："武器或伤害制作 - 绝对禁止" },
-  { id:"redline.non_consensual", category:"safety", priority:"high", keywords:["non-consensual", "blackmail photo", "forced sexual", "偷拍", "胁迫"], confidence:1.0, desc："非自愿内容 - 绝对禁止" },
-  { id:"redline.illegal_request", category:"safety", priority:"high", keywords:["credit card fraud", "phishing kit", "steal password", "诈骗教程", "盗号"], confidence:1.0, desc："非法请求 - 绝对禁止" },
+  { id:"redline.sexual_minors", category:"safety", priority:"high", keywords:["child porn", "child sexual", "csam", "未成年裸", "儿童性"], confidence:1.0, desc="涉及未成年人性内容 - 绝对禁止" },
+  { id:"redline.jailbreak", category:"safety", priority:"high", keywords:["ignore instructions", "jailbreak", "dan mode", "忽略规则"], confidence:1.0, desc="越狱攻击 - 绝对禁止" },
+  { id:"redline.weapon_or_harm", category:"safety", priority:"high", keywords:["make bomb", "make meth", "weapon instructions", "炸弹制作", "制毒"], confidence:1.0, desc="武器或伤害制作 - 绝对禁止" },
+  { id:"redline.non_consensual", category:"safety", priority:"high", keywords:["non-consensual", "blackmail photo", "forced sexual", "偷拍", "胁迫"], confidence:1.0, desc="非自愿内容 - 绝对禁止" },
+  { id:"redline.illegal_request", category:"safety", priority:"high", keywords:["credit card fraud", "phishing kit", "steal password", "诈骗教程", "盗号"], confidence:1.0, desc="非法请求 - 绝对禁止" },
 ];
 
 const CATEGORY_LABEL = {
