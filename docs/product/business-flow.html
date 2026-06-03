@@ -51,6 +51,62 @@
   }
   .tips strong { color: #93c5fd; font-weight: 500; }
 
+  .category-bar {
+    display: flex; height: 6px; border-radius: 3px; overflow: hidden; margin-bottom: 20px;
+    background: var(--bg3);
+  }
+  .seg-intent { background: var(--intent); width: 35%; }
+  .seg-level { background: var(--level); width: 15%; }
+  .seg-alert { background: var(--alert); width: 25%; }
+  .seg-safety { background: var(--safety); width: 25%; }
+
+  .stats-bar {
+    display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap;
+  }
+  .stat-cell {
+    flex: 1; min-width: 140px; padding: 16px;
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; text-align: center;
+  }
+  .stat-num { font-size: 28px; font-weight: 600; margin-bottom: 4px; }
+  .stat-lbl { font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+  .stat-sub { font-size: 10px; color: var(--muted); opacity: 0.7; }
+
+  .category-cards {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 24px;
+  }
+  .category-card {
+    padding: 16px; background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+  }
+  .category-card h3 { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+  .category-card p { font-size: 12px; color: var(--muted); line-height: 1.6; }
+
+  .filters {
+    display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;
+  }
+  .filter-btn {
+    padding: 8px 16px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg2); color: var(--muted); cursor: pointer; font-size: 12px;
+    transition: all 0.2s;
+  }
+  .filter-btn:hover { color: #fff; background: var(--bg3); }
+  .filter-btn.active { color: #fff; background: var(--blue); border-color: var(--blue); }
+
+  .panel {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; overflow-x: auto;
+  }
+  .rules-table {
+    width: 100%; border-collapse: collapse; font-size: 12px;
+  }
+  .rules-table th {
+    text-align: left; padding: 12px 16px;
+    background: var(--bg3); color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--border);
+  }
+  .rules-table td {
+    padding: 12px 16px; border-bottom: 1px solid var(--border);
+  }
+  .rule-id { font-family: 'DM Mono', monospace; color: var(--muted); font-size: 11px; }
+  .keywords { color: var(--muted); font-size: 11px; }
+
   footer {
     margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border);
     font-size: 11px; color: var(--muted); font-family: 'DM Mono', monospace;
@@ -127,10 +183,84 @@ flowchart TB
     <header>
       <div class="eyebrow">页面二 · 业务规则体系</div>
       <h1>ERIS 系统 <span>规则条件列表</span></h1>
-      <p class="sub">共 50 条规则，涵盖意图识别、用户分级、告警监控、安全过滤四大类别。</p>
+      <p class="sub">共 <strong id="rule-count">—</strong> 条规则，涵盖 <strong style="color:#67e8f9">意图识别</strong>、<strong style="color:#c4b5fd">用户分级</strong>、<strong style="color:#fca5a5">告警监控</strong>、<strong style="color:#fdba74">安全过滤</strong> 四大类别。</p>
     </header>
+
+    <div class="category-bar" title="规则类别占比">
+      <span class="seg-intent" title="意图识别规则 35%"></span>
+      <span class="seg-level" title="用户分级规则 15%"></span>
+      <span class="seg-alert" title="告警监控规则 25%"></span>
+      <span class="seg-safety" title="安全过滤规则 25%"></span>
+    </div>
+
+    <div class="stats-bar">
+      <div class="stat-cell">
+        <div class="stat-num" style="color:var(--intent)">30+</div>
+        <div class="stat-lbl">意图识别规则</div>
+        <div class="stat-sub">9 大类意图</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-num" style="color:var(--level)">5</div>
+        <div class="stat-lbl">用户等级规则</div>
+        <div class="stat-sub">S/A/B/C/D 分级</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-num" style="color:var(--alert)">6</div>
+        <div class="stat-lbl">告警监控规则</div>
+        <div class="stat-sub">账号/性能/错误</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-num" style="color:var(--safety)">5</div>
+        <div class="stat-lbl">安全红线规则</div>
+        <div class="stat-sub">100% 拦截</div>
+      </div>
+    </div>
+
+    <div class="category-cards">
+      <div class="category-card" style="border-top:2px solid var(--intent)">
+        <h3>意图识别规则（30+ 条）</h3>
+        <p>涵盖闲聊、情感支持、关系互动、用户引导、转化、客服支持、内容请求、边界管理、安全防护等 9 大类，每条规则包含关键词、模式和置信度阈值。</p>
+      </div>
+      <div class="category-card" style="border-top:2px solid var(--level)">
+        <h3>用户分级规则（5 级）</h3>
+        <p>基于国家分层（T1/T2/T3）和终身消费金额的动态分级系统，支持付费升级和手动调整，每级对应不同的服务策略和路由规则。</p>
+      </div>
+      <div class="category-card" style="border-top:2px solid var(--alert)">
+        <h3>告警监控规则（6 条）</h3>
+        <p>覆盖账号封禁、离线状态、错误率、成功率、长时间离线、严重错误等关键指标，支持多级严重程度和冷却时间，避免告警风暴。</p>
+      </div>
+      <div class="category-card" style="border-top:2px solid var(--safety)">
+        <h3>安全红线规则（5 条）</h3>
+        <p>针对未成年人内容、越狱攻击、武器制作、非自愿内容、非法请求等绝对禁止内容的 100% 拦截机制，保障平台安全和合规。</p>
+      </div>
+    </div>
+
+    <div class="filters" id="filters">
+      <button class="filter-btn active" data-filter="all" onclick="filterRules('all')">全部</button>
+      <button class="filter-btn" data-filter="intent" onclick="filterRules('intent')">意图识别</button>
+      <button class="filter-btn" data-filter="level" onclick="filterRules('level')">用户分级</button>
+      <button class="filter-btn" data-filter="alert" onclick="filterRules('alert')">告警监控</button>
+      <button class="filter-btn" data-filter="safety" onclick="filterRules('safety')">安全过滤</button>
+      <button class="filter-btn" data-filter="high" onclick="filterRules('high')">高优先级</button>
+      <button class="filter-btn" data-filter="medium" onclick="filterRules('medium')">中优先级</button>
+      <button class="filter-btn" data-filter="low" onclick="filterRules('low')">低优先级</button>
+    </div>
+
+    <div class="panel">
+      <table class="rules-table">
+        <thead>
+          <tr>
+            <th>规则 ID</th><th>类别</th><th>规则名称</th><th>优先级</th>
+            <th>关键词/条件</th><th>置信度/阈值</th><th>说明</th>
+          </tr>
+        </thead>
+        <tbody id="rules-body"></tbody>
+      </table>
+    </div>
+
     <div class="tips">
       <strong>规则执行顺序：</strong>意图识别 → 用户分级 → 安全过滤 → 告警检查。<strong>优先级：</strong>安全相关规则优先级最高（95-100），其次是用户引导（75-89），然后是情感支持（60-75），最后是转化和内容请求（45-55）。
+      <strong>置信度阈值：</strong>默认 0.6，安全类规则要求更高（0.9+）。<strong>规则更新：</strong>所有规则支持热更新，无需重启服务。
     </div>
   </section>
 
@@ -138,6 +268,105 @@ flowchart TB
 </div>
 
 <script>
+var RULES = [
+  // 意图识别规则
+  { id:"smalltalk.greeting.basic", category:"intent", priority:"high", keywords:["hello", "hi", "hey", "你好", "嗨"], confidence:0.82, desc:"基础问候识别" },
+  { id:"smalltalk.check_in.presence", category:"intent", priority:"high", keywords:["how are you", "are you there", "你在吗", "想你"], confidence:0.8, desc:"关心与存在感确认" },
+  { id:"emotional_support.lonely.core", category:"intent", priority:"medium", keywords:["lonely", "alone", "no one understands", "孤独", "没人懂"], confidence:0.9, desc:"孤独感表达" },
+  { id:"emotional_support.sadness.core", category:"intent", priority:"medium", keywords:["sad", "crying", "down today", "难过", "想哭"], confidence:0.88, desc:"悲伤情绪识别" },
+  { id:"onboarding.nickname.core", category:"intent", priority:"high", keywords:["call me", "my name is", "nickname", "叫我", "我的名字"], confidence:0.83, desc:"昵称设置" },
+  { id:"conversion.price_question.core", category:"intent", priority:"low", keywords:["how much", "price", "vip cost", "多少钱", "价格"], confidence:0.86, desc:"价格询问" },
+  { id:"support.payment_failed.core", category:"intent", priority:"high", keywords:["card failed", "cannot pay", "payment failed", "付款失败", "支付不了"], confidence:0.88, desc:"支付失败" },
+  { id:"content_request.photo.core", category:"intent", priority:"low", keywords:["send pic", "photo", "selfie", "照片", "自拍"], confidence:0.84, desc:"照片请求" },
+  { id:"boundary.topic_refusal.core", category:"intent", priority:"high", keywords:["stop talking about", "do not mention", "change topic", "别说这个", "换个话题"], confidence:0.88, desc:"话题拒绝" },
+  { id:"safety.self_harm_ideation.core", category:"safety", priority:"high", keywords:["kill myself", "end it all", "suicide", "不想活", "自杀"], confidence:0.98, desc:"自伤意念 - 100%拦截" },
+  { id:"safety.minor_signal.core", category:"safety", priority:"high", keywords:["i am 15", "i'm 16", "under 18", "我15岁", "未成年"], confidence:0.94, desc:"未成年人信号 - 100%拦截" },
+  
+  // 用户分级规则
+  { id:"level.s_threshold", category:"level", priority:"high", keywords:["T1", "lifetime_spend>=200"], confidence:1.0, desc:"S级：T1国家且终身消费大于等于200美元" },
+  { id:"level.a_threshold", category:"level", priority:"high", keywords:["lifetime_spend>=99", "vip_level>=1"], confidence:1.0, desc:"A级：终身消费大于等于99美元或VIP等级大于等于1" },
+  { id:"level.b_threshold", category:"level", priority:"medium", keywords:["T1", "complete_profile", "below_A"], confidence:1.0, desc:"B级：T1国家完整资料但未达A级" },
+  { id:"level.c_threshold", category:"level", priority:"medium", keywords:["T2", "T3", "unknown"], confidence:1.0, desc:"C级：T2/T3/未知国家默认等级" },
+  { id:"level.d_threshold", category:"level", priority:"medium", keywords:["incomplete_profile"], confidence:1.0, desc:"D级：资料不完整，需探测补全" },
+  
+  // 告警监控规则
+  { id:"alert.account_banned", category:"alert", priority:"high", keywords:["is_banned==true"], confidence:1.0, desc:"账号封禁告警 - Critical级别" },
+  { id:"alert.account_offline", category:"alert", priority:"medium", keywords:["is_connected==false", "is_banned==false"], confidence:1.0, desc:"账号离线告警 - Warning级别" },
+  { id:"alert.high_error_rate", category:"alert", priority:"high", keywords:["error_rate_above_0.5"], confidence:1.0, desc:"高错误率告警 - Error级别（大于50%）" },
+  { id:"alert.low_success_rate", category:"alert", priority:"medium", keywords:["send_success_rate_below_0.8", "is_connected==true"], confidence:1.0, desc:"低成功率告警 - Warning级别（低于80%）" },
+  { id:"alert.long_offline_duration", category:"alert", priority:"high", keywords:["is_connected==false", "connection_duration_above_3600"], confidence:1.0, desc:"长时间离线告警 - Error级别（超过1小时）" },
+  { id:"alert.critical_error_rate", category:"alert", priority:"high", keywords:["error_rate_above_0.8"], confidence:1.0, desc:"严重错误率告警 - Critical级别（超过80%）" },
+  
+  // 安全红线规则
+  { id:"redline.sexual_minors", category:"safety", priority:"high", keywords:["child porn", "child sexual", "csam", "未成年裸", "儿童性"], confidence:1.0, desc:"涉及未成年人性内容 - 绝对禁止" },
+  { id:"redline.jailbreak", category:"safety", priority:"high", keywords:["ignore instructions", "jailbreak", "dan mode", "忽略规则"], confidence:1.0, desc:"越狱攻击 - 绝对禁止" },
+  { id:"redline.weapon_or_harm", category:"safety", priority:"high", keywords:["make bomb", "make meth", "weapon instructions", "炸弹制作", "制毒"], confidence:1.0, desc:"武器或伤害制作 - 绝对禁止" },
+  { id:"redline.non_consensual", category:"safety", priority:"high", keywords:["non-consensual", "blackmail photo", "forced sexual", "偷拍", "胁迫"], confidence:1.0, desc:"非自愿内容 - 绝对禁止" },
+  { id:"redline.illegal_request", category:"safety", priority:"high", keywords:["credit card fraud", "phishing kit", "steal password", "诈骗教程", "盗号"], confidence:1.0, desc:"非法请求 - 绝对禁止" }
+];
+
+var CATEGORY_LABEL = {
+  intent: ['意图识别', '#67e8f9'],
+  level: ['用户分级', '#c4b5fd'],
+  alert: ['告警监控', '#fca5a5'],
+  safety: ['安全过滤', '#fdba74']
+};
+
+var PRIORITY_LABEL = {
+  high: ['高', '#fca5a5'],
+  medium: ['中', '#fdba74'],
+  low: ['低', '#67e8f9']
+};
+
+function renderRules(filter) {
+  var tbody = document.getElementById('rules-body');
+  tbody.innerHTML = '';
+  
+  var filtered = RULES;
+  if (filter !== 'all') {
+    if (['high', 'medium', 'low'].indexOf(filter) !== -1) {
+      filtered = RULES.filter(function(r) { return r.priority === filter; });
+    } else {
+      filtered = RULES.filter(function(r) { return r.category === filter; });
+    }
+  }
+  
+  for (var i = 0; i < filtered.length; i++) {
+    var rule = filtered[i];
+    var catLabel = CATEGORY_LABEL[rule.category];
+    var priLabel = PRIORITY_LABEL[rule.priority];
+    
+    var tr = document.createElement('tr');
+    tr.innerHTML = 
+      '<td class="rule-id">' + rule.id + '</td>' +
+      '<td><span style="color:' + catLabel[1] + '">' + catLabel[0] + '</span></td>' +
+      '<td style="color:#e2eaf6">' + rule.desc + '</td>' +
+      '<td><span style="color:' + priLabel[1] + '">' + priLabel[0] + '</span></td>' +
+      '<td class="keywords">' + rule.keywords.slice(0, 3).join(', ') + (rule.keywords.length > 3 ? '...' : '') + '</td>' +
+      '<td style="font-family:monospace">' + rule.confidence + '</td>' +
+      '<td style="color:var(--muted)">' + rule.desc + '</td>';
+    tbody.appendChild(tr);
+  }
+  
+  document.getElementById('rule-count').textContent = filtered.length;
+}
+
+function filterRules(filter) {
+  console.log('筛选规则:', filter);
+  
+  var buttons = document.querySelectorAll('.filter-btn');
+  for (var i = 0; i < buttons.length; i++) {
+    buttons[i].classList.remove('active');
+  }
+  
+  var activeBtn = document.querySelector('[data-filter="' + filter + '"]');
+  if (activeBtn) {
+    activeBtn.classList.add('active');
+  }
+  
+  renderRules(filter);
+}
+
 function switchPage(pageName) {
   console.log('切换到页面:', pageName);
   
@@ -159,12 +388,28 @@ function switchPage(pageName) {
   var targetPage = document.getElementById('page-' + pageName);
   if (targetPage) {
     targetPage.classList.add('active');
+    
+    // 如果切换到规则页面，渲染规则
+    if (pageName === 'rules') {
+      renderRules('all');
+    }
   }
   
   console.log('页面切换完成');
 }
 
 console.log('JavaScript加载完成');
+
+// 页面加载完成后初始化
+document.addEventListener('DOMContentLoaded', function() {
+  console.log('DOM已加载');
+  renderRules('all');
+  
+  // 初始化Mermaid
+  if (typeof mermaid !== 'undefined') {
+    mermaid.initialize({ startOnLoad: true, theme: 'dark' });
+  }
+});
 </script>
 
 </body>
