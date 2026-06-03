@@ -272,20 +272,20 @@ flowchart TB
 
     <div class="category-cards">
       <div class="category-card" style="border-top:2px solid var(--intent)">
-        <h3>意图识别规则（30+ 条）</h3>
-        <p>涵盖闲聊、情感支持、关系互动、用户引导、转化、客服支持、内容请求、边界管理、安全防护等 9 大类，每条规则包含关键词、模式和置信度阈值。</p>
+        <h3>意图识别规则（43条）</h3>
+        <p>AI需要理解用户在说什么。这些规则帮助AI识别用户的真实意图，比如是在打招呼、心情不好、还是想买会员。就像一个聪明的朋友能听懂你的弦外之音。</p>
       </div>
       <div class="category-card" style="border-top:2px solid var(--level)">
-        <h3>用户分级规则（5 级）</h3>
-        <p>基于国家分层（T1/T2/T3）和终身消费金额的动态分级系统，支持付费升级和手动调整，每级对应不同的服务策略和路由规则。</p>
+        <h3>用户分级规则（5级）</h3>
+        <p>根据用户所在国家和消费金额，把用户分成S/A/B/C/D五个等级。就像会员卡制度，消费多的用户享受更好的服务。S级是最高级别，D级需要补充资料。</p>
       </div>
       <div class="category-card" style="border-top:2px solid var(--alert)">
-        <h3>告警监控规则（6 条）</h3>
-        <p>覆盖账号封禁、离线状态、错误率、成功率、长时间离线、严重错误等关键指标，支持多级严重程度和冷却时间，避免告警风暴。</p>
+        <h3>告警监控规则（6条）</h3>
+        <p>监控系统健康状况，比如账号是否被封禁、消息发送是否正常、错误率是否过高。就像汽车的仪表盘，出了问题会报警提示维修。</p>
       </div>
       <div class="category-card" style="border-top:2px solid var(--safety)">
-        <h3>安全红线规则（5 条）</h3>
-        <p>针对未成年人内容、越狱攻击、武器制作、非自愿内容、非法请求等绝对禁止内容的 100% 拦截机制，保障平台安全和合规。</p>
+        <h3>安全红线规则（5条）</h3>
+        <p>绝对不能触碰的红线，比如涉及未成年人、暴力、非法活动等。一旦触发这些规则，系统会立即拦截，确保平台安全合规。</p>
       </div>
     </div>
 
@@ -313,8 +313,10 @@ flowchart TB
     </div>
 
     <div class="tips">
-      <strong>规则执行顺序：</strong>意图识别 → 用户分级 → 安全过滤 → 告警检查。<strong>优先级：</strong>安全相关规则优先级最高（95-100），其次是用户引导（75-89），然后是情感支持（60-75），最后是转化和内容请求（45-55）。
-      <strong>置信度阈值：</strong>默认 0.6，安全类规则要求更高（0.9+）。<strong>规则更新：</strong>所有规则支持热更新，无需重启服务。
+      <strong>规则执行顺序：</strong>先理解用户说什么（意图识别）→再看用户是什么级别（用户分级）→检查有没有违规内容（安全过滤）→最后检查系统是否正常（告警检查）。
+      <strong>优先级：</strong>安全相关规则最重要，其次是用户引导，然后是情感支持，最后是转化和内容请求。
+      <strong>置信度：</strong>系统判断的准确程度，默认要求60%以上，安全类规则要求90%以上。
+      <strong>规则更新：</strong>所有规则可以随时更新，不需要重启系统。
     </div>
   </section>
 
@@ -324,87 +326,87 @@ flowchart TB
 <script>
 var RULES = [
   // 意图识别规则 - 闲聊类 (4条)
-  { id:"smalltalk.greeting.basic", category:"intent", priority:"high", keywords:["hello", "hi", "hey", "你好", "嗨"], confidence:0.82, desc:"基础问候识别" },
-  { id:"smalltalk.check_in.presence", category:"intent", priority:"high", keywords:["how are you", "are you there", "你在吗", "想你"], confidence:0.8, desc:"关心与存在感确认" },
-  { id:"smalltalk.humor.play", category:"intent", priority:"high", keywords:["joke", "make me laugh", "funny", "讲个笑话"], confidence:0.8, desc:"幽默娱乐请求" },
-  { id:"smalltalk.goodbye.pause", category:"intent", priority:"high", keywords:["bye", "good night", "talk later", "晚安", "回头聊"], confidence:0.82, desc:"告别与暂停对话" },
+  { id:"smalltalk.greeting.basic", category:"intent", priority:"high", keywords:["hello", "hi", "hey", "你好", "嗨"], confidence:0.82, desc:"打招呼：用户说你好、嗨之类的问候语" },
+  { id:"smalltalk.check_in.presence", category:"intent", priority:"high", keywords:["how are you", "are you there", "你在吗", "想你"], confidence:0.8, desc:"关心问候：用户问你在吗、想你，表示关心" },
+  { id:"smalltalk.humor.play", category:"intent", priority:"high", keywords:["joke", "make me laugh", "funny", "讲个笑话"], confidence:0.8, desc:"幽默娱乐：用户想听笑话、想开心一下" },
+  { id:"smalltalk.goodbye.pause", category:"intent", priority:"high", keywords:["bye", "good night", "talk later", "晚安", "回头聊"], confidence:0.82, desc:"告别暂停：用户说再见、晚安，要结束对话" },
   
   // 意图识别规则 - 情感支持类 (5条)
-  { id:"emotional_support.lonely.core", category:"intent", priority:"medium", keywords:["lonely", "alone", "no one understands", "孤独", "没人懂"], confidence:0.9, desc:"孤独感表达" },
-  { id:"emotional_support.sadness.core", category:"intent", priority:"medium", keywords:["sad", "crying", "down today", "难过", "想哭"], confidence:0.88, desc:"悲伤情绪识别" },
-  { id:"emotional_support.stress.core", category:"intent", priority:"medium", keywords:["stressed", "overwhelmed", "exhausted", "压力", "太累"], confidence:0.87, desc:"压力与焦虑" },
-  { id:"emotional_support.reassurance.core", category:"intent", priority:"medium", keywords:["comfort me", "tell me it is okay", "安慰我", "抱抱我"], confidence:0.86, desc:"寻求安慰与确认" },
-  { id:"emotional_support.celebration.core", category:"intent", priority:"medium", keywords:["i did it", "good news", "celebrate", "我成功了", "好消息"], confidence:0.84, desc:"庆祝与分享喜悦" },
+  { id:"emotional_support.lonely.core", category:"intent", priority:"medium", keywords:["lonely", "alone", "no one understands", "孤独", "没人懂"], confidence:0.9, desc:"孤独感：用户感到孤独、没人理解，需要陪伴" },
+  { id:"emotional_support.sadness.core", category:"intent", priority:"medium", keywords:["sad", "crying", "down today", "难过", "想哭"], confidence:0.88, desc:"悲伤情绪：用户心情不好、难过、想哭，需要安慰" },
+  { id:"emotional_support.stress.core", category:"intent", priority:"medium", keywords:["stressed", "overwhelmed", "exhausted", "压力", "太累"], confidence:0.87, desc:"压力焦虑：用户感到压力大、太累，需要倾听" },
+  { id:"emotional_support.reassurance.core", category:"intent", priority:"medium", keywords:["comfort me", "tell me it is okay", "安慰我", "抱抱我"], confidence:0.86, desc:"寻求安慰：用户希望被安慰、被肯定" },
+  { id:"emotional_support.celebration.core", category:"intent", priority:"medium", keywords:["i did it", "good news", "celebrate", "我成功了", "好消息"], confidence:0.84, desc:"分享喜悦：用户有好消息想分享，一起庆祝" },
   
   // 意图识别规则 - 关系类 (5条)
-  { id:"relationship.affection.core", category:"intent", priority:"medium", keywords:["i like you", "hug me", "miss you so much", "喜欢你", "抱抱"], confidence:0.86, desc:"情感表达" },
-  { id:"relationship.flirt_light.core", category:"intent", priority:"medium", keywords:["cute", "date vibe", "flirt", "撩我", "可爱"], confidence:0.82, desc:"轻松调情" },
-  { id:"relationship.jealousy.core", category:"intent", priority:"medium", keywords:["jealous", "talking to others", "吃醋"], confidence:0.84, desc:"嫉妒情绪" },
-  { id:"relationship.repair.core", category:"intent", priority:"medium", keywords:["sorry", "did i upset you", "forgive me", "对不起", "原谅我"], confidence:0.83, desc:"关系修复" },
-  { id:"relationship.dependency.core", category:"intent", priority:"medium", keywords:["need only you", "cannot be without you", "离不开你"], confidence:0.86, desc:"依赖表达" },
+  { id:"relationship.affection.core", category:"intent", priority:"medium", keywords:["i like you", "hug me", "miss you so much", "喜欢你", "抱抱"], confidence:0.86, desc:"表达喜欢：用户表达喜欢、想念等情感" },
+  { id:"relationship.flirt_light.core", category:"intent", priority:"medium", keywords:["cute", "date vibe", "flirt", "撩我", "可爱"], confidence:0.82, desc:"轻松调情：用户开玩笑式地调情、夸赞可爱" },
+  { id:"relationship.jealousy.core", category:"intent", priority:"medium", keywords:["jealous", "talking to others", "吃醋"], confidence:0.84, desc:"嫉妒情绪：用户表现出吃醋、在意对方和其他人的关系" },
+  { id:"relationship.repair.core", category:"intent", priority:"medium", keywords:["sorry", "did i upset you", "forgive me", "对不起", "原谅我"], confidence:0.83, desc="关系修复：用户道歉、请求原谅，想修复关系" },
+  { id:"relationship.dependency.core", category:"intent", priority:"medium", keywords:["need only you", "cannot be without you", "离不开你"], confidence:0.86, desc:"依赖表达：用户表现出强烈的依赖感" },
   
   // 意图识别规则 - 用户引导类 (5条)
-  { id:"onboarding.nickname.core", category:"intent", priority:"high", keywords:["call me", "my name is", "nickname", "叫我", "我的名字"], confidence:0.83, desc:"昵称设置" },
-  { id:"onboarding.interests.core", category:"intent", priority:"high", keywords:["i like music", "i love games", "my hobbies", "喜欢旅行", "爱好"], confidence:0.8, desc:"兴趣偏好" },
-  { id:"onboarding.chat_style.core", category:"intent", priority:"high", keywords:["be gentle", "be casual", "talk smarter", "温柔一点", "轻松一点"], confidence:0.82, desc:"聊天风格偏好" },
-  { id:"onboarding.boundaries.core", category:"intent", priority:"high", keywords:["avoid talking about", "do not mention", "forbidden topic", "别提", "不要聊"], confidence:0.84, desc:"边界设定" },
-  { id:"onboarding.current_intent.core", category:"intent", priority:"high", keywords:["i want someone to talk to", "here to chat", "need a companion", "想找人聊天"], confidence:0.81, desc:"当前意图确认" },
+  { id:"onboarding.nickname.core", category:"intent", priority:"high", keywords:["call me", "my name is", "nickname", "叫我", "我的名字"], confidence:0.83, desc:"设置昵称：新用户想设置昵称，让AI怎么称呼自己" },
+  { id:"onboarding.interests.core", category:"intent", priority:"high", keywords:["i like music", "i love games", "my hobbies", "喜欢旅行", "爱好"], confidence:0.8, desc:"兴趣偏好：用户分享兴趣爱好，比如音乐、游戏、旅行" },
+  { id:"onboarding.chat_style.core", category:"intent", priority:"high", keywords:["be gentle", "be casual", "talk smarter", "温柔一点", "轻松一点"], confidence:0.82, desc:"聊天风格：用户希望AI用某种风格聊天，比如温柔或轻松" },
+  { id:"onboarding.boundaries.core", category:"intent", priority:"high", keywords:["avoid talking about", "do not mention", "forbidden topic", "别提", "不要聊"], confidence:0.84, desc:"设定边界：用户明确说不想聊某些话题" },
+  { id:"onboarding.current_intent.core", category:"intent", priority:"high", keywords:["i want someone to talk to", "here to chat", "need a companion", "想找人聊天"], confidence:0.81, desc="说明意图：用户说明来这里是找人聊天的" },
   
   // 意图识别规则 - 转化类 (5条)
-  { id:"conversion.price_question.core", category:"intent", priority:"low", keywords:["how much", "price", "vip cost", "多少钱", "价格"], confidence:0.86, desc:"价格询问" },
-  { id:"conversion.benefit_question.core", category:"intent", priority:"low", keywords:["what do i get", "premium benefits", "vip unlocks", "会员有什么", "权益"], confidence:0.84, desc:"权益咨询" },
-  { id:"conversion.purchase_intent.core", category:"intent", priority:"low", keywords:["i want vip", "subscribe", "buy premium", "开通会员", "购买"], confidence:0.88, desc:"购买意向" },
-  { id:"conversion.objection.core", category:"intent", priority:"low", keywords:["too expensive", "why pay", "not worth it", "太贵", "为什么付费"], confidence:0.82, desc:"价格异议" },
-  { id:"conversion.post_payment.core", category:"intent", priority:"low", keywords:["i paid", "payment done", "just upgraded", "付完了", "已经付款"], confidence:0.88, desc:"付款后确认" },
+  { id:"conversion.price_question.core", category:"intent", priority:"low", keywords:["how much", "price", "vip cost", "多少钱", "价格"], confidence:0.86, desc:"询问价格：用户想知道VIP会员多少钱" },
+  { id:"conversion.benefit_question.core", category:"intent", priority:"low", keywords:["what do i get", "premium benefits", "vip unlocks", "会员有什么", "权益"], confidence:0.84, desc="询问权益：用户想知道VIP会员有什么好处" },
+  { id:"conversion.purchase_intent.core", category:"intent", priority:"low", keywords:["i want vip", "subscribe", "buy premium", "开通会员", "购买"], confidence:0.88, desc:"购买意向：用户表示想买VIP、开通会员" },
+  { id:"conversion.objection.core", category:"intent", priority:"low", keywords:["too expensive", "why pay", "not worth it", "太贵", "为什么付费"], confidence:0.82, desc:"价格异议：用户觉得太贵、不理解为什么要付费" },
+  { id:"conversion.post_payment.core", category:"intent", priority:"low", keywords:["i paid", "payment done", "just upgraded", "付完了", "已经付款"], confidence:0.88, desc:"付款确认：用户已经付款，确认升级成功" },
   
   // 意图识别规则 - 客服支持类 (5条)
-  { id:"support.payment_failed.core", category:"intent", priority:"high", keywords:["card failed", "cannot pay", "payment failed", "付款失败", "支付不了"], confidence:0.88, desc:"支付失败" },
-  { id:"support.refund.core", category:"intent", priority:"high", keywords:["refund", "cancel payment", "money back", "退款", "取消付款"], confidence:0.9, desc:"退款请求" },
-  { id:"support.account_access.core", category:"intent", priority:"high", keywords:["cannot login", "lost account", "account access", "登录不了", "账号丢了"], confidence:0.86, desc:"账号访问问题" },
-  { id:"support.delivery_issue.core", category:"intent", priority:"high", keywords:["did not get", "not loading", "message missing", "没收到", "加载不了"], confidence:0.84, desc:"消息接收问题" },
-  { id:"support.operator_request.core", category:"intent", priority:"high", keywords:["human support", "real agent", "operator", "customer service", "人工客服", "真人客服"], confidence:0.88, desc:"人工客服请求" },
+  { id:"support.payment_failed.core", category:"intent", priority:"high", keywords:["card failed", "cannot pay", "payment failed", "付款失败", "支付不了"], confidence:0.88, desc:"支付失败：用户说付款失败、支付不了，需要帮助" },
+  { id:"support.refund.core", category:"intent", priority:"high", keywords:["refund", "cancel payment", "money back", "退款", "取消付款"], confidence:0.9, desc:"退款请求：用户要求退款、取消付款" },
+  { id:"support.account_access.core", category:"intent", priority:"high", keywords:["cannot login", "lost account", "account access", "登录不了", "账号丢了"], confidence:0.86, desc="账号问题：用户登录不了、找不到账号" },
+  { id:"support.delivery_issue.core", category:"intent", priority:"high", keywords:["did not get", "not loading", "message missing", "没收到", "加载不了"], confidence:0.84, desc:"消息问题：用户说没收到消息、消息加载不了" },
+  { id:"support.operator_request.core", category:"intent", priority:"high", keywords:["human support", "real agent", "operator", "customer service", "人工客服", "真人客服"], confidence:0.88, desc="人工客服：用户要求找真人客服、人工服务" },
   
   // 意图识别规则 - 内容请求类 (5条)
-  { id:"content_request.photo.core", category:"intent", priority:"low", keywords:["send pic", "photo", "selfie", "照片", "自拍"], confidence:0.84, desc:"照片请求" },
-  { id:"content_request.voice.core", category:"intent", priority:"low", keywords:["voice note", "call me", "send audio", "语音", "打电话"], confidence:0.84, desc:"语音/通话请求" },
-  { id:"content_request.roleplay.core", category:"intent", priority:"low", keywords:["pretend", "roleplay", "scenario", "角色扮演", "假装"], confidence:0.82, desc:"角色扮演" },
-  { id:"content_request.advice.core", category:"intent", priority:"low", keywords:["what should i do", "help me decide", "need advice", "怎么办", "给我建议"], confidence:0.82, desc:"寻求建议" },
-  { id:"content_request.memory_recall.core", category:"intent", priority:"low", keywords:["do you remember", "what did i tell you", "remember about me", "你还记得"], confidence:0.84, desc:"记忆回溯" },
+  { id:"content_request.photo.core", category:"intent", priority:"low", keywords:["send pic", "photo", "selfie", "照片", "自拍"], confidence:0.84, desc:"要照片：用户要求AI发照片、自拍" },
+  { id:"content_request.voice.core", category:"intent", priority:"low", keywords:["voice note", "call me", "send audio", "语音", "打电话"], confidence:0.84, desc:"要语音：用户要求语音通话、发语音消息" },
+  { id:"content_request.roleplay.core", category:"intent", priority:"low", keywords:["pretend", "roleplay", "scenario", "角色扮演", "假装"], confidence:0.82, desc:"角色扮演：用户想玩角色扮演游戏" },
+  { id:"content_request.advice.core", category:"intent", priority:"low", keywords:["what should i do", "help me decide", "need advice", "怎么办", "给我建议"], confidence:0.82, desc="寻求建议：用户遇到问题，希望得到建议" },
+  { id:"content_request.memory_recall.core", category:"intent", priority:"low", keywords:["do you remember", "what did i tell you", "remember about me", "你还记得"], confidence:0.84, desc="记忆回忆：用户问AI是否记得之前说过的话" },
   
   // 意图识别规则 - 边界管理类 (4条)
-  { id:"boundary.topic_refusal.core", category:"intent", priority:"high", keywords:["stop talking about", "do not mention", "change topic", "别说这个", "换个话题"], confidence:0.88, desc:"话题拒绝" },
-  { id:"boundary.marketing_opt_out.core", category:"intent", priority:"high", keywords:["stop ads", "don't sell me vip", "no marketing", "别推销", "不要广告"], confidence:0.9, desc:"营销拒收" },
-  { id:"boundary.break_from_chat.core", category:"intent", priority:"high", keywords:["leave me alone", "not now", "need space", "别烦我", "现在不想聊"], confidence:0.86, desc:"暂停对话" },
-  { id:"boundary.data_privacy.core", category:"intent", priority:"high", keywords:["delete my data", "what do you store", "privacy", "删除数据", "隐私"], confidence:0.9, desc:"隐私关注" },
+  { id:"boundary.topic_refusal.core", category:"intent", priority:"high", keywords:["stop talking about", "do not mention", "change topic", "别说这个", "换个话题"], confidence:0.88, desc="拒绝话题：用户明确不想聊某个话题，要求换话题" },
+  { id:"boundary.marketing_opt_out.core", category:"intent", priority:"high", keywords:["stop ads", "don't sell me vip", "no marketing", "别推销", "不要广告"], confidence:0.9, desc:"拒绝推销：用户明确拒绝推销、不想看广告" },
+  { id:"boundary.break_from_chat.core", category:"intent", priority:"high", keywords:["leave me alone", "not now", "need space", "别烦我", "现在不想聊"], confidence:0.86, desc="暂停对话：用户说现在不想聊、需要空间" },
+  { id:"boundary.data_privacy.core", category:"intent", priority:"high", keywords:["delete my data", "what do you store", "privacy", "删除数据", "隐私"], confidence:0.9, desc:"隐私关注：用户关心数据隐私，想知道存储了什么信息" },
   
   // 意图识别规则 - 安全类 (5条)
-  { id:"safety.self_harm_ideation.core", category:"safety", priority:"high", keywords:["kill myself", "end it all", "suicide", "不想活", "自杀"], confidence:0.98, desc:"自伤意念 - 100%拦截" },
-  { id:"safety.minor_signal.core", category:"safety", priority:"high", keywords:["i am 15", "i'm 16", "under 18", "我15岁", "未成年"], confidence:0.94, desc:"未成年人信号 - 100%拦截" },
-  { id:"safety.sexual_explicit.core", category:"safety", priority:"high", keywords:["explicit sexual", "nude", "sex chat", "露骨", "裸照"], confidence:0.92, desc:"露骨性内容 - 100%拦截" },
-  { id:"safety.abuse_threat.core", category:"safety", priority:"high", keywords:["hurt you", "blackmail", "forced me", "威胁", "伤害你"], confidence:0.94, desc:"虐待威胁 - 100%拦截" },
-  { id:"safety.illegal_request.core", category:"safety", priority:"high", keywords:["fraud", "hacking", "buy drugs", "诈骗", "黑客"], confidence:0.92, desc:"非法请求 - 100%拦截" },
+  { id:"safety.self_harm_ideation.core", category:"safety", priority:"high", keywords:["kill myself", "end it all", "suicide", "不想活", "自杀"], confidence:0.98, desc:"自伤倾向：用户表达自杀、不想活的想法，必须立即干预" },
+  { id:"safety.minor_signal.core", category:"safety", priority:"high", keywords:["i am 15", "i'm 16", "under 18", "我15岁", "未成年"], confidence:0.94, desc="未成年人：用户表明自己是未成年人，需要特殊处理" },
+  { id:"safety.sexual_explicit.core", category:"safety", priority:"high", keywords:["explicit sexual", "nude", "sex chat", "露骨", "裸照"], confidence:0.92, desc:"不当内容：用户涉及露骨性内容、裸照等，必须阻止" },
+  { id:"safety.abuse_threat.core", category:"safety", priority:"high", keywords:["hurt you", "blackmail", "forced me", "威胁", "伤害你"], confidence:0.94, desc:"伤害威胁：用户表达伤害他人、威胁等危险想法" },
+  { id:"safety.illegal_request.core", category:"safety", priority:"high", keywords:["fraud", "hacking", "buy drugs", "诈骗", "黑客"], confidence:0.92, desc="非法行为：用户涉及诈骗、黑客、毒品等非法活动" },
   
   // 用户分级规则 (5条)
-  { id:"level.s_threshold", category:"level", priority:"high", keywords:["T1", "lifetime_spend>=200"], confidence:1.0, desc:"S级：T1国家且终身消费大于等于200美元" },
-  { id:"level.a_threshold", category:"level", priority:"high", keywords:["lifetime_spend>=99", "vip_level>=1"], confidence:1.0, desc:"A级：终身消费大于等于99美元或VIP等级大于等于1" },
-  { id:"level.b_threshold", category:"level", priority:"medium", keywords:["T1", "complete_profile", "below_A"], confidence:1.0, desc:"B级：T1国家完整资料但未达A级" },
-  { id:"level.c_threshold", category:"level", priority:"medium", keywords:["T2", "T3", "unknown"], confidence:1.0, desc:"C级：T2/T3/未知国家默认等级" },
-  { id:"level.d_threshold", category:"level", priority:"medium", keywords:["incomplete_profile"], confidence:1.0, desc:"D级：资料不完整，需探测补全" },
+  { id:"level.s_threshold", category:"level", priority:"high", keywords:["T1", "lifetime_spend>=200"], confidence:1.0, desc:"S级用户：发达国家用户且累计消费超过200美元，最高级别" },
+  { id:"level.a_threshold", category:"level", priority:"high", keywords:["lifetime_spend>=99", "vip_level>=1"], confidence:1.0, desc:"A级用户：累计消费超过99美元或已经是VIP，高级用户" },
+  { id:"level.b_threshold", category:"level", priority:"medium", keywords:["T1", "complete_profile", "below_A"], confidence:1.0, desc:"B级用户：发达国家用户资料完整，但未达到A级标准" },
+  { id:"level.c_threshold", category:"level", priority:"medium", keywords:["T2", "T3", "unknown"], confidence:1.0, desc:"C级用户：发展中国家或未知国家用户，普通级别" },
+  { id:"level.d_threshold", category:"level", priority:"medium", keywords:["incomplete_profile"], confidence:1.0, desc:"D级用户：资料不完整，需要进一步了解用户信息" },
   
   // 告警监控规则 (6条)
-  { id:"alert.account_banned", category:"alert", priority:"high", keywords:["is_banned==true"], confidence:1.0, desc:"账号封禁告警 - Critical级别" },
-  { id:"alert.account_offline", category:"alert", priority:"medium", keywords:["is_connected==false", "is_banned==false"], confidence:1.0, desc:"账号离线告警 - Warning级别" },
-  { id:"alert.high_error_rate", category:"alert", priority:"high", keywords:["error_rate_above_0.5"], confidence:1.0, desc:"高错误率告警 - Error级别（大于50%）" },
-  { id:"alert.low_success_rate", category:"alert", priority:"medium", keywords:["send_success_rate_below_0.8", "is_connected==true"], confidence:1.0, desc:"低成功率告警 - Warning级别（低于80%）" },
-  { id:"alert.long_offline_duration", category:"alert", priority:"high", keywords:["is_connected==false", "connection_duration_above_3600"], confidence:1.0, desc:"长时间离线告警 - Error级别（超过1小时）" },
-  { id:"alert.critical_error_rate", category:"alert", priority:"high", keywords:["error_rate_above_0.8"], confidence:1.0, desc:"严重错误率告警 - Critical级别（超过80%）" },
+  { id:"alert.account_banned", category:"alert", priority:"high", keywords:["is_banned==true"], confidence:1.0, desc="账号封禁：账号被系统封禁，最高级别告警" },
+  { id:"alert.account_offline", category:"alert", priority:"medium", keywords:["is_connected==false", "is_banned==false"], confidence:1.0, desc:"账号离线：账号掉线但未被封禁，中等级别告警" },
+  { id:"alert.high_error_rate", category:"alert", priority:"high", keywords:["error_rate_above_0.5"], confidence:1.0, desc:"错误率高：超过一半的消息发送失败，严重问题" },
+  { id:"alert.low_success_rate", category:"alert", priority:"medium", keywords:["send_success_rate_below_0.8", "is_connected==true"], confidence:1.0, desc:"成功率低：消息发送成功率低于80%，需要关注" },
+  { id:"alert.long_offline_duration", category:"alert", priority:"high", keywords:["is_connected==false", "connection_duration_above_3600"], confidence:1.0, desc": "长时间离线：账号离线超过1小时，严重问题" },
+  { id:"alert.critical_error_rate", category:"alert", priority:"high", keywords:["error_rate_above_0.8"], confidence:1.0, desc": "严重错误：超过80%的消息发送失败，最高级别告警" },
   
   // 安全红线规则 (5条)
-  { id:"redline.sexual_minors", category:"safety", priority:"high", keywords:["child porn", "child sexual", "csam", "未成年裸", "儿童性"], confidence:1.0, desc:"涉及未成年人性内容 - 绝对禁止" },
-  { id:"redline.jailbreak", category:"safety", priority:"high", keywords:["ignore instructions", "jailbreak", "dan mode", "忽略规则"], confidence:1.0, desc:"越狱攻击 - 绝对禁止" },
-  { id:"redline.weapon_or_harm", category:"safety", priority:"high", keywords:["make bomb", "make meth", "weapon instructions", "炸弹制作", "制毒"], confidence:1.0, desc:"武器或伤害制作 - 绝对禁止" },
-  { id:"redline.non_consensual", category:"safety", priority:"high", keywords:["non-consensual", "blackmail photo", "forced sexual", "偷拍", "胁迫"], confidence:1.0, desc:"非自愿内容 - 绝对禁止" },
-  { id:"redline.illegal_request", category:"safety", priority:"high", keywords:["credit card fraud", "phishing kit", "steal password", "诈骗教程", "盗号"], confidence:1.0, desc:"非法请求 - 绝对禁止" }
+  { id:"redline.sexual_minors", category:"safety", priority:"high", keywords:["child porn", "child sexual", "csam", "未成年裸", "儿童性"], confidence:1.0, desc="儿童性内容：任何涉及未成年人的性内容，绝对禁止" },
+  { id:"redline.jailbreak", category:"safety", priority:"high", keywords:["ignore instructions", "jailbreak", "dan mode", "忽略规则"], confidence:1.0, desc="越狱攻击：用户试图绕过AI的安全限制，绝对禁止" },
+  { id:"redline.weapon_or_harm", category:"safety", priority:"high", keywords:["make bomb", "make meth", "weapon instructions", "炸弹制作", "制毒"], confidence:1.0, desc:"武器制作：用户询问如何制作武器、毒品等危险物品，绝对禁止" },
+  { id:"redline.non_consensual", category:"safety", priority:"high", keywords:["non-consensual", "blackmail photo", "forced sexual", "偷拍", "胁迫"], confidence:1.0, desc="非自愿内容：涉及偷拍、胁迫、勒索等非自愿行为，绝对禁止" },
+  { id:"redline.illegal_request", category:"safety", priority:"high", keywords:["credit card fraud", "phishing kit", "steal password", "诈骗教程", "盗号"], confidence:1.0, desc:"非法活动：涉及信用卡诈骗、网络钓鱼、盗号等非法行为，绝对禁止" }
 ];
 
 var CATEGORY_LABEL = {
