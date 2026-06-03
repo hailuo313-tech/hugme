@@ -355,9 +355,8 @@ async def _handle_required_profile_intake(
                 user_id=user_id,
             )
         if not country_code:
-            retry = _profile_copy("country_retry", text_content, PROFILE_COUNTRY_RETRY)
-            await _send_tg(chat_id, retry, trace_id, typing_delay=True)
-            return retry
+            log.info("tg.profile.country_still_missing_continue_chat")
+            return None
         await write_country_code(
             db,
             user_id=user_id,

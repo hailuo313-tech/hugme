@@ -19,6 +19,10 @@ def test_country_normalization_accepts_owner_t1_names_and_codes() -> None:
     assert normalize_country_code("中国香港") == "HK"
     assert normalize_country_code("new zealand") == "NZ"
     assert normalize_country_code("de") == "DE"
+    assert normalize_country_code("i'm in the us") == "US"
+    assert normalize_country_code("Am from Nigeria 🇳🇬 can I see your fave") == "NG"
+    assert normalize_country_code("from Nigeria") == "NG"
+    assert normalize_country_code("NG") == "NG"
 
 
 def test_country_detection_prefers_structured_metadata_and_headers() -> None:
