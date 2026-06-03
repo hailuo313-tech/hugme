@@ -73,6 +73,17 @@ PROFILE_COUNTRY_RETRY = (
 )
 PROFILE_AGE_QUESTION = "Thanks. How old are you?"
 PROFILE_AGE_RETRY = "Lmao you completely ignored my question! How old are you anyway? Tell me a number so I know if you're a big boy or just a baby. 😜"
+TELEGRAM_ONBOARDING_NICKNAME_QUESTION = (
+    "Hey there! Just clearing my inbox. What do I call you babe? 😘"
+)
+TELEGRAM_ONBOARDING_INTENT_QUESTION = (
+    "Cool! So what brings a guy like you to my chat tonight? Looking for some fun or just lonely? 😜"
+)
+TELEGRAM_ONBOARDING_SKIPPED_STEPS = {
+    "interests": "skipped",
+    "chat_style": "skipped",
+    "forbidden_topics": "skipped",
+}
 
 _PROFILE_COPY = {
     "es": {
@@ -404,7 +415,7 @@ async def _handle_required_profile_intake(
         log.bind(age=age).info("tg.profile.age_collected")
         if onboarding_done:
             return None
-        next_question = _build_next_question(1, language=language) or ""
+        next_question = TELEGRAM_ONBOARDING_NICKNAME_QUESTION
         if next_question:
             prefs = await _get_profile_prefs(db, user_id)
             prefs["onboarding_pending"] = True
@@ -515,6 +526,11 @@ async def _handle_onboarding(
     if current_step >= ONBOARDING_STEPS + 1:
         return ""
 
+    if current_step in (1, 2, 3):
+        prefs["onboarding_skipped_steps"] = TELEGRAM_ONBOARDING_SKIPPED_STEPS
+        prefs["onboarding_step"] = 4
+        current_step = 4
+
     # 确定本次应提交的步骤
     submit_step = current_step + 1
     if submit_step > ONBOARDING_STEPS:
@@ -529,7 +545,7 @@ async def _handle_onboarding(
             {"v": json.dumps(prefs, ensure_ascii=False), "uid": user_id}
         )
         await db.commit()
-        q1 = _build_next_question(1, language=language) or ""
+        q1 = TELEGRAM_ONBOARDING_NICKNAME_QUESTION
         await _send_tg(chat_id, q1, trace_id, typing_delay=True)
         log.info("onboarding.tg.sent_q1")
         return q1
@@ -553,7 +569,8 @@ async def _handle_onboarding(
             {"nick": nickname, "uid": user_id}
         )
         prefs.pop("onboarding_pending", None)
-        prefs["onboarding_step"] = 1
+        prefs["onboarding_skipped_steps"] = TELEGRAM_ONBOARDING_SKIPPED_STEPS
+        prefs["onboarding_step"] = 4
         log.bind(nickname=nickname).info("onboarding.tg.step1_done")
 
     elif submit_step == 2:
@@ -614,14 +631,18 @@ async def _handle_onboarding(
     await db.commit()
 
     # ── 发下一个问题 or 完成消息 ──────────────────────
-    next_step = submit_step + 1
     if submit_step == ONBOARDING_STEPS:
+        next_step = None
         nick_row = (await db.execute(
             text("SELECT nickname FROM users WHERE id=:uid"), {"uid": user_id}
         )).fetchone()
         nickname = (nick_row[0] if nick_row else None) or _fallback_nickname(language)
         reply = _build_completion_message(nickname, language)
+    elif submit_step == 1:
+        next_step = ONBOARDING_STEPS
+        reply = TELEGRAM_ONBOARDING_INTENT_QUESTION
     else:
+        next_step = submit_step + 1
         nick_row = (await db.execute(
             text("SELECT nickname FROM users WHERE id=:uid"), {"uid": user_id}
         )).fetchone()
