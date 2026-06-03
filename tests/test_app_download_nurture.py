@@ -140,6 +140,40 @@ async def test_stale_guard_skips_when_user_replied_after_queue():
 
 
 @pytest.mark.asyncio
+async def test_asset_keyword_followup_queues_three_minute_warmup(monkeypatch):
+    db = _FakeSession()
+
+    async def _url(_db):
+        return "https://app.example/download"
+
+    monkeypatch.setattr(nurture, "resolve_app_download_url", _url)
+
+    queued = await nurture.schedule_asset_keyword_followup_after_reply(
+        db,
+        user_id="11111111-1111-1111-1111-111111111111",
+        external_user_id="tg_123",
+        conversation_id="22222222-2222-2222-2222-222222222222",
+        chat_id=123,
+        assistant_message_id="33333333-3333-3333-3333-333333333333",
+        trace_id="trace",
+        account_id="44444444-4444-4444-4444-444444444444",
+    )
+
+    inserts = [params for sql, params in db.executed if "INSERT INTO message_schedules" in sql]
+    assert queued == 1
+    assert len(inserts) == 1
+    insert_params = inserts[0]
+    assert insert_params["message_type"] == nurture.APP_DOWNLOAD_MESSAGE_TYPE
+    assert nurture.ASSET_KEYWORD_APP_DOWNLOAD_COPY in insert_params["content"]
+    assert "https://app.example/download" in insert_params["content"]
+    assert insert_params["priority"] == 90
+    assert (insert_params["send_at"] - datetime.now(timezone.utc)).total_seconds() <= 180
+    assert '"trigger": "asset_keyword_idle_3m"' in insert_params["metadata"]
+    assert '"category_key": "app_download_after_warmup"' in insert_params["metadata"]
+    assert '"source": "asset_keyword_request"' in insert_params["metadata"]
+
+
+@pytest.mark.asyncio
 async def test_clicked_no_download_scan_is_recent_and_dedupes_failed(monkeypatch):
     class _ClickedSession(_FakeSession):
         async def execute(self, statement, params=None):
