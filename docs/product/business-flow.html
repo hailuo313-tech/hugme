@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>1V1 智能流控系统 — 流程与任务分工</title>
+<title>ERIS 智能陪伴系统 — 流程与规则条件</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 <style>
   :root {
     --bg: #090c12; --bg2: #0e1520; --bg3: #141d2e;
     --border: #1e2d45; --text: #e2eaf6; --muted: #6b7fa3; --blue: #3b82f6;
-    --devin: #06b6d4; --codex: #a78bfa; --cursor: #22c55e; --human: #fb923c;
+    --intent: #06b6d4; --level: #a78bfa; --alert: #ef4444; --safety: #f97316;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -48,24 +48,24 @@
   h1 span { color: var(--blue); }
   .sub { color: var(--muted); font-size: 13px; max-width: 800px; }
 
-  .workload-bar {
+  .stats-bar {
     display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
     background: var(--border); border: 1px solid var(--border);
     border-radius: 10px; overflow: hidden; margin: 20px 0;
   }
-  .wl-cell { background: var(--bg2); padding: 16px; text-align: center; }
-  .wl-pct { font-family: 'DM Mono', monospace; font-size: 26px; font-weight: 500; }
-  .wl-lbl { font-size: 11px; color: var(--muted); margin-top: 4px; }
-  .wl-sub { font-size: 10px; color: var(--muted); opacity: .8; margin-top: 2px; }
+  .stat-cell { background: var(--bg2); padding: 16px; text-align: center; }
+  .stat-num { font-family: 'DM Mono', monospace; font-size: 26px; font-weight: 500; }
+  .stat-lbl { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .stat-sub { font-size: 10px; color: var(--muted); opacity: .8; margin-top: 2px; }
 
-  .stack-bar {
+  .category-bar {
     display: flex; height: 10px; border-radius: 5px; overflow: hidden; margin-bottom: 24px;
   }
-  .stack-bar span { display: block; height: 100%; }
-  .seg-devin { background: var(--devin); width: 40%; }
-  .seg-codex { background: var(--codex); width: 40%; }
-  .seg-cursor { background: var(--cursor); width: 12%; }
-  .seg-human { background: var(--human); width: 8%; }
+  .category-bar span { display: block; height: 100%; }
+  .seg-intent { background: var(--intent); width: 35%; }
+  .seg-level { background: var(--level); width: 15%; }
+  .seg-alert { background: var(--alert); width: 25%; }
+  .seg-safety { background: var(--safety); width: 25%; }
 
   .legend { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 20px; }
   .legend span { font-size: 11px; padding: 4px 10px; border-radius: 4px; border: 1px solid var(--border); color: var(--muted); }
@@ -86,95 +86,54 @@
   }
   .filter-btn.active { border-color: var(--blue); color: #93c5fd; }
 
-  table.task-table {
+  table.rules-table {
     width: 100%; border-collapse: collapse; font-size: 12px;
   }
-  .task-table th {
+  .rules-table th {
     text-align: left; padding: 10px 12px; background: var(--bg3);
     color: var(--muted); font-family: 'DM Mono', monospace; font-size: 10px;
     border-bottom: 1px solid var(--border); white-space: nowrap;
   }
-  .task-table td {
+  .rules-table td {
     padding: 9px 12px; border-bottom: 1px solid var(--border);
     color: var(--muted); vertical-align: top;
   }
-  .task-table tr:hover td { background: rgba(255,255,255,0.02); }
-  .tid { font-family: 'DM Mono', monospace; font-size: 10px; color: #7dd3fc; white-space: nowrap; }
-  .phase-tag { font-size: 10px; padding: 2px 6px; border-radius: 3px; border: 1px solid var(--border); }
+  .rules-table tr:hover td { background: rgba(255,255,255,0.02); }
+  .rule-id { font-family: 'DM Mono', monospace; font-size: 10px; color: #7dd3fc; white-space: nowrap; }
+  .category-tag { font-size: 10px; padding: 2px 6px; border-radius: 3px; border: 1px solid var(--border); }
 
-  .owner {
+  .category {
     font-family: 'DM Mono', monospace; font-size: 10px; font-weight: 500;
     padding: 3px 8px; border-radius: 4px; white-space: nowrap;
   }
-  .owner-devin { background: rgba(6,182,212,0.15); color: #67e8f9; border: 1px solid rgba(6,182,212,0.35); }
-  .owner-codex { background: rgba(167,139,250,0.15); color: #c4b5fd; border: 1px solid rgba(167,139,250,0.35); }
-  .owner-cursor { background: rgba(34,197,94,0.12); color: #86efac; border: 1px solid rgba(34,197,94,0.35); }
-  .owner-human { background: rgba(251,146,60,0.12); color: #fdba74; border: 1px solid rgba(251,146,60,0.35); }
+  .category-intent { background: rgba(6,182,212,0.15); color: #67e8f9; border: 1px solid rgba(6,182,212,0.35); }
+  .category-level { background: rgba(167,139,250,0.15); color: #c4b5fd; border: 1px solid rgba(167,139,250,0.35); }
+  .category-alert { background: rgba(239,68,68,0.15); color: #fca5a5; border: 1px solid rgba(239,68,68,0.35); }
+  .category-safety { background: rgba(249,115,3,0.15); color: #fdba74; border: 1px solid rgba(249,115,3,0.35); }
 
-  .para {
+  .priority {
     display: inline-flex; align-items: center; gap: 4px;
     font-size: 10px; padding: 3px 8px; border-radius: 4px;
     white-space: nowrap; font-weight: 500;
   }
-  .para-now { background: rgba(34,197,94,0.12); color: #86efac; border: 1px solid rgba(34,197,94,0.35); }
-  .para-group { background: rgba(59,130,246,0.12); color: #93c5fd; border: 1px solid rgba(59,130,246,0.35); }
-  .para-wait { background: rgba(251,146,60,0.1); color: #fdba74; border: 1px solid rgba(251,146,60,0.3); }
-  .para-gate { background: rgba(239,68,68,0.1); color: #fca5a5; border: 1px solid rgba(239,68,68,0.35); }
-  .para-done { background: rgba(148,163,184,0.12); color: #cbd5e1; border: 1px solid rgba(148,163,184,0.35); }
-  .para-note { display: block; font-size: 10px; color: var(--muted2, #4a5a78); margin-top: 4px; line-height: 1.45; max-width: 200px; }
-  tr.row-now { box-shadow: inset 3px 0 0 #22c55e; }
-  tr.row-group { box-shadow: inset 3px 0 0 #3b82f6; }
-  tr.row-wait { box-shadow: inset 3px 0 0 #f97316; }
-  tr.row-gate { box-shadow: inset 3px 0 0 #ef4444; }
-  tr.row-done { box-shadow: inset 3px 0 0 #94a3b8; }
+  .priority-high { background: rgba(239,68,68,0.12); color: #fca5a5; border: 1px solid rgba(239,68,68,0.35); }
+  .priority-medium { background: rgba(251,146,60,0.1); color: #fdba74; border: 1px solid rgba(251,146,60,0.3); }
+  .priority-low { background: rgba(34,197,94,0.12); color: #86efac; border: 1px solid rgba(34,197,94,0.35); }
 
-  .task-progress {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px;
-    margin-bottom: 14px; padding: 12px 14px;
-    background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
-    font-size: 12px; color: var(--muted);
+  .keywords {
+    font-size: 10px; color: var(--muted); font-family: 'DM Mono', monospace;
+    background: rgba(255,255,255,0.03); padding: 4px 8px; border-radius: 4px;
+    max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .task-progress strong { color: #86efac; font-family: 'DM Mono', monospace; }
-  .progress-track {
-    flex: 1; min-width: 120px; height: 6px; background: var(--bg3);
-    border-radius: 3px; overflow: hidden;
-  }
-  .progress-fill {
-    display: block; height: 100%; width: 0%; background: linear-gradient(90deg, #22c55e, #3b82f6);
-    border-radius: 3px; transition: width .25s ease;
-  }
-  .task-check { width: 44px; text-align: center; vertical-align: middle; }
-  .task-check input[type="checkbox"] {
-    width: 17px; height: 17px; cursor: pointer; accent-color: var(--blue);
-  }
-  tr.task-done td { color: #4a5a78; }
-  tr.task-done .col-desc { text-decoration: line-through; opacity: 0.75; }
-  tr.task-done .tid { color: #4a6a88; text-decoration: line-through; }
 
-  .para-legend {
-    display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px;
-    padding: 12px 14px; background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
-    font-size: 11px; color: var(--muted);
-  }
-  .para-legend span { display: inline-flex; align-items: center; gap: 6px; }
-  .para-dot { width: 8px; height: 8px; border-radius: 50%; }
-  .para-schedule {
-    margin-bottom: 20px; padding: 16px 18px;
-    background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
-    font-size: 12px; color: var(--muted); line-height: 1.75;
-  }
-  .para-schedule h4 { color: #fff; font-size: 13px; font-weight: 500; margin-bottom: 10px; }
-  .para-schedule ul { margin-left: 18px; }
-  .para-schedule li { margin-bottom: 6px; }
-
-  .role-cards {
+  .category-cards {
     display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 24px;
   }
-  .role-card {
+  .category-card {
     background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px;
   }
-  .role-card h3 { font-size: 13px; color: #fff; margin-bottom: 8px; }
-  .role-card p { font-size: 12px; color: var(--muted); line-height: 1.65; }
+  .category-card h3 { font-size: 13px; color: #fff; margin-bottom: 8px; }
+  .category-card p { font-size: 12px; color: var(--muted); line-height: 1.65; }
 
   .tips {
     margin-top: 20px; padding: 14px 18px;
@@ -189,8 +148,8 @@
   }
 
   @media (max-width: 768px) {
-    .workload-bar { grid-template-columns: repeat(2, 1fr); }
-    .role-cards { grid-template-columns: 1fr; }
+    .stats-bar { grid-template-columns: repeat(2, 1fr); }
+    .category-cards { grid-template-columns: 1fr; }
   }
 </style>
 </head>
@@ -199,660 +158,384 @@
 
   <nav class="top-nav">
     <button class="nav-btn active" data-page="flow">业务流程图</button>
-    <button class="nav-btn" data-page="tasks">任务分工列表</button>
+    <button class="nav-btn" data-page="rules">规则条件列表</button>
   </nav>
 
   <!-- ══════════ 页面一：业务流程图 ══════════ -->
   <section id="page-flow" class="page active">
     <header>
-      <div class="eyebrow">页面一 · 全链路合一</div>
-      <h1>1V1 智能流控系统 <span>业务流程图</span></h1>
-      <p class="sub">从用户入站、画像分级、AI 处理、坐席接管到出站归档与付费升级的完整单页流程。</p>
+      <div class="eyebrow">页面一 · ERIS 核心流程</div>
+      <h1>ERIS 智能陪伴系统 <span>业务流程图</span></h1>
+      <p class="sub">基于记忆管理、向量检索、情感计算和实时协同的完整智能陪伴流程。</p>
       <div class="legend">
-        <span>真人 MTProto 接入</span><span>话术库全链路匹配</span><span>入站与标准化</span><span>分级与路由</span>
-        <span>AI 核心链路</span><span>坐席协同</span><span>出站与归档</span>
+        <span>记忆写入系统</span><span>向量嵌入</span><span>孤独感评分</span><span>WebSocket 协议</span>
+        <span>静默激活</span><span>监控告警</span><span>安全过滤</span>
       </div>
     </header>
     <div class="diagram-box">
       <pre class="mermaid">
 flowchart TB
-    START(["业务起点：用户产生互动"])
-    subgraph SCRIPT["⓪ 话术库（每步必匹配）"]
-        LIB[("话术库\nscript_templates")]
-        ENG["话术匹配引擎\n向量 TopK + 渠道/分级/人设/场景"]
+    START(["用户发送消息"])
+    
+    subgraph INBOUND["消息入站"]
+        TG["Telegram Webhook"]
+        H5["H5 网页端"]
+        API["API 直接调用"]
     end
-    LIB --> ENG
-    subgraph CH["① 多渠道接入"]
-        direction LR
-        TG["Telegram 真人账号\nMTProto 接入"]
-        H5["Web H5 网页端"]
-        APP["原生 App"]
-        PAY_WH["付费系统回调"]
+    
+    START --> TG & H5 & API
+    
+    subgraph MEMORY["D3-3 记忆写入系统"]
+        M1["Phase 1: 规则预过滤"]
+        M2["Phase 2: LLM 重要性评分"]
+        M3["Phase 3: 持久化存储"]
     end
-    START --> TG & H5 & APP
-    subgraph MTP["①-b MTProto + Userbot（Telethon）"]
-        POOL["多账号池\nAccountPool"]
-        EVT["消息同步服务\nNewMessage 监听"]
-        DEDUP["Redis 去重"]
-        SESS["Session 加密\n自动重连"]
+    
+    TG --> M1
+    M1 -->|长度<10| SKIP1["跳过"]
+    M1 -->|寒暄词库| SKIP2["跳过"]
+    M1 -->|24h去重| SKIP3["跳过"]
+    M1 -->|通过| M2
+    M2 -->|is_memory_worthy=false| SKIP4["跳过"]
+    M2 -->|importance<5| SKIP5["跳过"]
+    M2 -->|通过| M3
+    M3 --> MEMORIES[("memories 表")]
+    
+    subgraph EMBEDDING["D3-4 向量嵌入 Worker"]
+        E1["定时扫描 embedding IS NULL"]
+        E2["批量调用 OpenAI Embeddings"]
+        E3["更新 embedding 字段"]
     end
-    TG --> POOL --> EVT --> DEDUP
-    SESS -.-> POOL
-    DEDUP --> M1["① 入站话术匹配"] --> ADAPT["渠道适配器\nplatform=telegram_real_user"]
-    ENG -.-> M1
-    H5 & APP --> M1
-    subgraph IN["② 入站标准化"]
-        ADAPT --> VALID["消息格式校验"]
-        VALID --> AUDIT[("审计流水\n含 script_hit_id")]
-        VALID --> QUEUE[("入站消息队列")]
+    
+    MEMORIES --> E1
+    E1 --> E2 --> E3 --> MEMORIES
+    
+    subgraph LONELINESS["D4-3 孤独感评分"]
+        L1["读取 30 天记忆标签"]
+        L2["当前句关键词推断"]
+        L3["标签加权计算"]
+        L4["衰减与更新"]
     end
-    subgraph PROF["③ 画像与分级"]
-        QUEUE --> M2["② 消费场景话术匹配"] --> GEO["IP 解析国家"]
-        ENG -.-> M2
-        GEO --> READ_PROF[("用户画像表")]
-        READ_PROF --> INCOMPLETE{"画像完整？"}
-        INCOMPLETE -->|否| D_LVL["D 级探测补全"]
-        D_LVL --> M3["③ 探测话术匹配"] --> PROBE["AI 引导补全年龄等"]
-        ENG -.-> M3
-        PROBE --> READ_PROF
-        INCOMPLETE -->|是| CALC["用户分级计算"]
-        CALC --> M4["④ 分级场景话术匹配"] --> RULE{"分级规则"}
-        ENG -.-> M4
-        RULE --> S_LVL["S 级 专家精聊"] & A_LVL["A 级 重点转化"] & B_LVL["B 级 AI+辅助"] & C_LVL["C 级 全自动"]
+    
+    MEMORIES --> L1
+    TG --> L2
+    L1 --> L3 --> L4 --> PROFILE[("user_profiles.loneliness_score")]
+    
+    subgraph AI["AI 处理核心"]
+        INTENT["意图识别"]
+        RETRIEVE["向量检索 Top10"]
+        PROMPT["构建 Prompt"]
+        LLM["LLM 生成回复"]
     end
-    PAY_WH --> PAY_EVENT["付费成功"] --> M_PAY["付费成功话术匹配"] --> CALC
-    ENG -.-> M_PAY
-    S_LVL & A_LVL --> M_UP["升级通知话术匹配"] --> WS_UP["通知坐席升级"]
-    ENG -.-> M_UP
-    subgraph AI["④ AI 处理（必先命中话术库）"]
-        M2 --> M5["⑤ 回复话术匹配"] --> INTENT["意图识别"]
-        ENG -.-> M5
-        INTENT --> TOP3["命中话术 Top3\n写入 script_hit_id"] --> WRAP["大模型拟人包装\n基于命中底料"]
-        ENG -.-> TOP3
-        WRAP --> SAFE["安全过滤"] --> DELAY["计算拟人延迟"] --> OUT_Q[("待发队列\n携带 script_ids")]
+    
+    PROFILE --> INTENT
+    MEMORIES --> RETRIEVE
+    INTENT --> PROMPT
+    RETRIEVE --> PROMPT
+    PROMPT --> LLM
+    
+    subgraph SAFETY["安全过滤"]
+        S1["意图关键词规则"]
+        S2["安全红线过滤"]
+        S3["输出内容检查"]
     end
-    subgraph AG["⑤ 坐席协同"]
-        OUT_Q --> BR{"用户分级？"}
-        BR -->|S/A| HOLD["挂起等坐席"] --> DASH["坐席看板\n展示推荐话术"] --> M6["⑥ 坐席话术匹配/改写"]
-        ENG -.-> M6
-        M6 --> ACT{"120秒内操作？"}
-        ACT -->|编辑/发送/超时| SEND_PATH["出站发送"]
-        BR -->|B/C/D| AUTO["自动投递"] --> SEND_PATH
+    
+    LLM --> S1 --> S2 --> S3
+    
+    subgraph OUTPUT["输出处理"]
+        DELAY["拟人延迟计算"]
+        QUEUE["待发队列"]
+        SEND["发送消息"]
     end
-    SEND_PATH --> M7["⑦ 出站前话术校验/兜底"] --> TYPING["MTProto 正在输入\n+ 拟人延迟"]
-    ENG -.-> M7
-    TYPING --> CHANNEL["AccountPool\n投递至用户"]
-    CHANNEL --> ARCH{"S/A 用户？"}
-    ARCH -->|是| M8["⑧ 归档绑定话术命中记录"] --> LOG[("精聊归档")]
-    ENG -.-> M8
-    ARCH -->|否| END(["流程结束"])
-    LOG --> END
+    
+    S3 --> DELAY --> QUEUE --> SEND
+    
+    subgraph WS["D5-4 WebSocket 协议"]
+        WS1["坐席连接"]
+        WS2["任务快照推送"]
+        WS3["增量更新"]
+        WS4["用户升级通知"]
+    end
+    
+    QUEUE --> WS1
+    
+    subgraph REACTIVATION["D6-3 静默激活"]
+        R1["用户资格检查"]
+        R2["安静时段判断"]
+        R3["分层策略 D1/D3/D7"]
+        R4["创建通知任务"]
+    end
+    
+    PROFILE --> R1
+    R1 --> R2 --> R3 --> R4 --> NOTIFICATIONS[("notification_tasks")]
+    
+    subgraph MONITORING["D7-1 监控告警"]
+        M1["API 指标采集"]
+        M2["Telegram 指标"]
+        M3["LLM 指标"]
+        M4["Handoff 队列"]
+        M5["告警规则触发"]
+    end
+    
+    SEND --> M1
+    TG --> M2
+    LLM --> M3
+    WS1 --> M4
+    M1 --> M5
+    M2 --> M5
+    M3 --> M5
+    M4 --> M5
+    
+    SEND --> END(["流程结束"])
       </pre>
     </div>
-    <div class="tips"><strong>话术库原则：</strong>全链路 <strong>8 个匹配点</strong>（入站→消费→探测→分级→回复→坐席→出站→归档），每步经话术匹配引擎检索 script_templates，命中后写入 script_hit_id，LLM 仅对命中底料做拟人包装。<strong>接入：</strong>MTProto + Userbot（Telethon）真人账号；多账号池、Redis 去重与会话上下文。</div>
+    <div class="tips"><strong>核心原则：</strong>记忆写入异步化避免阻塞用户响应，向量检索支持语义理解，孤独感评分实时更新情感状态，WebSocket 实现坐席实时协同，静默激活策略遵循安全与合规要求，监控告警保障系统稳定运行。</div>
   </section>
 
-  <!-- ══════════ 页面二：任务列表 ══════════ -->
-  <section id="page-tasks" class="page">
+  <!-- ══════════ 页面二：规则条件列表 ══════════ -->
+  <section id="page-rules" class="page">
     <header>
-      <div class="eyebrow">页面二 · 工作量分配（80% / 20%）</div>
-      <h1>项目 <span>任务分工列表</span></h1>
-      <p class="sub">共 <strong id="task-count">—</strong> 项任务，已完成 <strong id="done-count-header" style="color:#86efac">0</strong> 项 · 按<strong style="color:#e2eaf6">工作量权重（人天）</strong>分配：Devin + Codex 合计 <strong id="ai-pct" style="color:#67e8f9">80%</strong>；Cursor + 人工合计 <strong id="support-pct" style="color:#86efac">20%</strong>（Cursor 负责框架与检验，人工负责业务审定与上线签署）。</p>
+      <div class="eyebrow">页面二 · 业务规则体系</div>
+      <h1>ERIS 系统 <span>规则条件列表</span></h1>
+      <p class="sub">共 <strong id="rule-count">—</strong> 条规则，涵盖 <strong style="color:#67e8f9">意图识别</strong>、<strong style="color:#c4b5fd">用户分级</strong>、<strong style="color:#fca5a5">告警监控</strong>、<strong style="color:#fdba74">安全过滤</strong> 四大类别。</p>
     </header>
 
-    <div class="stack-bar" title="工作量占比">
-      <span class="seg-devin" title="Devin 40%"></span>
-      <span class="seg-codex" title="Codex 40%"></span>
-      <span class="seg-cursor" title="Cursor 12%"></span>
-      <span class="seg-human" title="人工 8%"></span>
+    <div class="category-bar" title="规则类别占比">
+      <span class="seg-intent" title="意图识别规则 35%"></span>
+      <span class="seg-level" title="用户分级规则 15%"></span>
+      <span class="seg-alert" title="告警监控规则 25%"></span>
+      <span class="seg-safety" title="安全过滤规则 25%"></span>
     </div>
 
-    <div class="workload-bar">
-      <div class="wl-cell">
-        <div class="wl-pct" style="color:var(--devin)">40%</div>
-        <div class="wl-lbl">Devin</div>
-        <div class="wl-sub">约 48 人天 · 工程实现</div>
+    <div class="stats-bar">
+      <div class="stat-cell">
+        <div class="stat-num" style="color:var(--intent)">30+</div>
+        <div class="stat-lbl">意图识别规则</div>
+        <div class="stat-sub">9 大类意图</div>
       </div>
-      <div class="wl-cell">
-        <div class="wl-pct" style="color:var(--codex)">40%</div>
-        <div class="wl-lbl">Codex</div>
-        <div class="wl-sub">约 48 人天 · 核心逻辑</div>
+      <div class="stat-cell">
+        <div class="stat-num" style="color:var(--level)">5</div>
+        <div class="stat-lbl">用户等级规则</div>
+        <div class="stat-sub">S/A/B/C/D 分级</div>
       </div>
-      <div class="wl-cell">
-        <div class="wl-pct" style="color:var(--cursor)">12%</div>
-        <div class="wl-lbl">Cursor</div>
-        <div class="wl-sub">约 14 人天 · 框架与检验</div>
+      <div class="stat-cell">
+        <div class="stat-num" style="color:var(--alert)">6</div>
+        <div class="stat-lbl">告警监控规则</div>
+        <div class="stat-sub">账号/性能/错误</div>
       </div>
-      <div class="wl-cell">
-        <div class="wl-pct" style="color:var(--human)">8%</div>
-        <div class="wl-lbl">人工</div>
-        <div class="wl-sub">约 10 人天 · 业务与签署</div>
-      </div>
-    </div>
-
-    <div class="role-cards">
-      <div class="role-card" style="border-top:2px solid var(--devin)">
-        <h3>Devin（40%）— 全栈交付</h3>
-        <p>仓库脚手架、Docker、网关/WebSocket、Telethon MTProto 多账号池与出站、坐席看板与 H5/App 集成、Worker、账号监控告警、灰度、E2E 与压测。</p>
-      </div>
-      <div class="role-card" style="border-top:2px solid var(--codex)">
-        <h3>Codex（40%）— 核心逻辑</h3>
-        <p>DDL、全链路话术匹配引擎、分级引擎、意图识别、向量话术检索、人设 Prompt、安全过滤、script_hit 审计、业务单测与回归。</p>
-      </div>
-      <div class="role-card" style="border-top:2px solid var(--cursor)">
-        <h3>Cursor（12%）— 框架与检验</h3>
-        <p>ERIS 目录约定（app/admin）、CI 门禁、接口契约审查、PR 审查、各阶段冒烟与联调验收、对照 docs/REPO_LAYOUT.md 做架构一致性检查。</p>
-      </div>
-      <div class="role-card" style="border-top:2px solid var(--human)">
-        <h3>人工（8%）— 业务与决策</h3>
-        <p>T1 国家名单与分级阈值审定、话术底料审核、Telegram 真人账号合规与发信频率策略、坐席 SOP 培训、灰度切流、全量上线 Go/No-Go 签署。</p>
+      <div class="stat-cell">
+        <div class="stat-num" style="color:var(--safety)">5</div>
+        <div class="stat-lbl">安全红线规则</div>
+        <div class="stat-sub">100% 拦截</div>
       </div>
     </div>
 
-    <div class="para-legend">
-      <span><i class="para-dot" style="background:#22c55e"></i> <strong style="color:#86efac">可立即并行</strong> — 无阻塞依赖，项目启动即可开工</span>
-      <span><i class="para-dot" style="background:#3b82f6"></i> <strong style="color:#93c5fd">同批并行组</strong> — 依赖满足后，组内任务可同时开工</span>
-      <span><i class="para-dot" style="background:#f97316"></i> <strong style="color:#fdba74">须等依赖</strong> — 前置任务完成后才能开始</span>
-      <span><i class="para-dot" style="background:#ef4444"></i> <strong style="color:#fca5a5">阶段关口</strong> — 里程碑验收，通过后解锁下游</span>
-    </div>
-
-    <div class="para-schedule" style="border-color:rgba(34,197,94,0.35)">
-      <h4>仓库架构：ERIS MVP（已替代 gateway/ws/worker/dashboard monorepo）</h4>
-      <ul>
-        <li><strong>C-01 验收：</strong><code>app/</code> + <code>admin/</code> + <code>docker-compose.yml</code> + <code>AGENTS.md</code> → <code>docs/REPO_LAYOUT.md</code></li>
-        <li><strong>映射：</strong>gateway/ws/worker → <code>app/api</code> + <code>app/services</code>；dashboard → <code>admin/</code></li>
-        <li><strong>栈：</strong>FastAPI 单容器 <code>eris-api</code>（非 Fastify 多服务）</li>
-      </ul>
-    </div>
-
-    <div class="para-schedule" style="border-color:rgba(6,182,212,0.35)">
-      <h4>Telegram 接入：MTProto + Userbot（Telethon）技术栈</h4>
-      <ul>
-        <li><strong>真人接入层：</strong>Telethon 多账号 StringSession · AccountPool（user_id hash 分配）</li>
-        <li><strong>后端服务层：</strong>消息同步 · 会话管理 · 用户画像 · <strong>话术匹配（每步必走）</strong> · AI 处理 · 坐席协同 · Redis 去重</li>
-        <li><strong>话术库：</strong>8 钩子 script_match（入站/消费/探测/分级/回复/坐席/出站/归档）· script_hit_id 全链路审计</li>
-        <li><strong>出站拟人：</strong>send_typing + 按字数延迟 send_human_like_message</li>
-        <li><strong>运维合规：</strong>Session 加密 · 自动重连 · 在线率/封号预警 · 遵守 ToS 与发信频率（见 H-11）</li>
-      </ul>
-    </div>
-
-    <div class="para-schedule">
-      <h4>每周可并行开工一览（Devin ∥ Codex ∥ Cursor ∥ 人工）</h4>
-      <ul>
-        <li><strong>W1：</strong>① C-01（ERIS 目录基线）+ C-03 + H-01 → ② C-02 ∥ P1-01 ∥ P1-05（FastAPI）→ ③ P1-06 ∥ P1-07（realtime WS）</li>
-        <li><strong>W2：</strong>P1-13 ∥ P1-09 ∥ H-11；P1-17 ∥ P1-18；P1-11 ∥ P1-12 ∥ P1-19；P1-14 ∥ P1-15</li>
-        <li><strong>W3：</strong>P1-20 账号监控（须 P1-17/18 完成）</li>
-        <li><strong>W3–W4：</strong>H-02 ∥ P2-02 ∥ P2-07；P2-08 ∥ P3-01 ∥ P4-01（三轨并行）</li>
-        <li><strong>W5–W6：</strong>P3-21 ∥ P3-02；P3-20（8 钩子）∥ P3-07；P3-05 ∥ P3-10；P3-13 ∥ P3-14 ∥ P3-18</li>
-        <li><strong>W7–W9：</strong>P4-08 ∥ P4-10；C-09 ∥ P3-18；P4-06 ∥ P4-07</li>
-        <li><strong>W10–W11：</strong>P5-03 ∥ P5-04；P5-05 ∥ P5-07；C-13 ∥ H-09</li>
-      </ul>
+    <div class="category-cards">
+      <div class="category-card" style="border-top:2px solid var(--intent)">
+        <h3>意图识别规则（30+ 条）</h3>
+        <p>涵盖闲聊、情感支持、关系互动、用户引导、转化、客服支持、内容请求、边界管理、安全防护等 9 大类，每条规则包含关键词、模式和置信度阈值。</p>
+      </div>
+      <div class="category-card" style="border-top:2px solid var(--level)">
+        <h3>用户分级规则（5 级）</h3>
+        <p>基于国家分层（T1/T2/T3）和终身消费金额的动态分级系统，支持付费升级和手动调整，每级对应不同的服务策略和路由规则。</p>
+      </div>
+      <div class="category-card" style="border-top:2px solid var(--alert)">
+        <h3>告警监控规则（6 条）</h3>
+        <p>覆盖账号封禁、离线状态、错误率、成功率、长时间离线、严重错误等关键指标，支持多级严重程度和冷却时间，避免告警风暴。</p>
+      </div>
+      <div class="category-card" style="border-top:2px solid var(--safety)">
+        <h3>安全红线规则（5 条）</h3>
+        <p>针对未成年人内容、越狱攻击、武器制作、非自愿内容、非法请求等绝对禁止内容的 100% 拦截机制，保障平台安全和合规。</p>
+      </div>
     </div>
 
     <div class="filters" id="filters">
       <button class="filter-btn active" data-filter="all">全部</button>
-      <button class="filter-btn" data-filter="devin">Devin</button>
-      <button class="filter-btn" data-filter="codex">Codex</button>
-      <button class="filter-btn" data-filter="cursor">Cursor</button>
-      <button class="filter-btn" data-filter="human">人工</button>
-      <button class="filter-btn" data-filter="para-now">可立即并行</button>
-      <button class="filter-btn" data-filter="para-group">同批并行组</button>
-      <button class="filter-btn" data-filter="done">已完成</button>
-      <button class="filter-btn" data-filter="pending">未完成</button>
-    </div>
-
-    <div class="task-progress" id="task-progress">
-      <span>进度：<strong id="done-count">0</strong> / <span id="done-total">0</span> 已完成</span>
-      <div class="progress-track" title="完成进度"><span class="progress-fill" id="progress-fill"></span></div>
-      <button type="button" class="filter-btn" id="reset-done" title="清除本页所有勾选记录">清空勾选</button>
+      <button class="filter-btn" data-filter="intent">意图识别</button>
+      <button class="filter-btn" data-filter="level">用户分级</button>
+      <button class="filter-btn" data-filter="alert">告警监控</button>
+      <button class="filter-btn" data-filter="safety">安全过滤</button>
+      <button class="filter-btn" data-filter="high">高优先级</button>
+      <button class="filter-btn" data-filter="medium">中优先级</button>
+      <button class="filter-btn" data-filter="low">低优先级</button>
     </div>
 
     <div class="panel">
-      <table class="task-table">
+      <table class="rules-table">
         <thead>
           <tr>
-            <th class="task-check">完成</th><th>任务编号</th><th>阶段</th><th>任务描述</th><th>负责人</th>
-            <th>并行标识</th><th>权重</th><th>周次</th><th>依赖</th><th>验收标准</th>
+            <th>规则 ID</th><th>类别</th><th>规则名称</th><th>优先级</th>
+            <th>关键词/条件</th><th>置信度/阈值</th><th>说明</th>
           </tr>
         </thead>
-        <tbody id="task-body"></tbody>
+        <tbody id="rules-body"></tbody>
       </table>
     </div>
 
     <div class="tips">
-      <strong>协作顺序：</strong>
-      Cursor 在 W1 确认 ERIS 目录基线（app/admin/docker-compose）与 CI → Codex 可单测模块 → Devin 在 app/ 内集成 → Cursor 冒烟检验 → 人工审定 → 下一阶段。
-      <strong>并行原则：</strong>标绿可与其他轨道同时开工；标蓝为同批并行组；标橙须串行等待；标红为阶段关口，未通过不得开启下游并行组。
-      <strong>完成勾选：</strong>勾选会保存在本浏览器（localStorage），换电脑或清缓存需重新勾选。
+      <strong>规则执行顺序：</strong>意图识别 → 用户分级 → 安全过滤 → 告警检查。<strong>优先级：</strong>安全相关规则优先级最高（95-100），其次是用户引导（75-89），然后是情感支持（60-75），最后是转化和内容请求（45-55）。
+      <strong>置信度阈值：</strong>默认 0.6，安全类规则要求更高（0.9+）。<strong>规则更新：</strong>所有规则支持热更新，无需重启服务。
     </div>
   </section>
 
-  <footer>1V1 智能流控系统 · 流程 + 任务分工 · Devin/Codex 80% · Cursor/人工 20% · 总权重约 120 人天</footer>
+  <footer>ERIS 智能陪伴系统 · 业务流程 + 规则条件 · 意图识别 + 用户分级 + 告警监控 + 安全过滤</footer>
 </div>
 
 <script>
-const TASKS = [
-  // ── Cursor：框架与检验（14 项 ≈ 12%）──
-  { id:"C-01", phase:"01", owner:"cursor", w:1, week:"W1", dep:"—", desc:"确认 ERIS 目录约定（app/admin/docker-compose/AGENTS.md）", acc:"与 docs/REPO_LAYOUT.md 一致；ERIS MVP 基线已满足", baseline:true, verified:true },
-  { id:"C-02", phase:"01", owner:"cursor", w:1, week:"W1", dep:"C-01", desc:"配置 CI：admin lint/typecheck/build + backend ruff/mypy/pytest", acc:"pr-required-gates.yml 三项 job 全绿；分支保护勾选 required checks", baseline:true, verified:true },
-  { id:"C-03", phase:"01", owner:"cursor", w:1, week:"W1", dep:"—", desc:"编写 .env.template（含 TELEGRAM_API_ID/HASH、SESSION 加密密钥）", acc:"新人可按文档配齐 MTProto 环境", baseline:true, verified:true },
-  { id:"C-15", phase:"01", owner:"cursor", w:1, week:"W2", dep:"P1-18", desc:"审查 MTProto/Telethon：Session 存储、密钥与账号隔离", acc:"安全评审无阻塞项", baseline:true, verified:true },
-  { id:"C-04", phase:"01", owner:"cursor", w:1, week:"W2", dep:"P1完成", desc:"审查 schema_spec.json 与适配器接口契约", acc:"契约评审记录归档", baseline:true, verified:true },
-  { id:"C-05", phase:"02", owner:"cursor", w:1, week:"W4", dep:"P2-T02", desc:"检验 level_engine 单测覆盖率与边界 case 清单", acc:"≥20 case 且分支覆盖达标", baseline:true, verified:true },
-  { id:"C-06", phase:"02", owner:"cursor", w:1, week:"W4", dep:"P2", desc:"执行 J-01 分级冒烟脚本并出具检验报告", acc:"10/10 fixture 通过", baseline:true, verified:true },
-  { id:"C-07", phase:"03", owner:"cursor", w:1, week:"W6", dep:"P3-12,P3-20", desc:"审查话术全链路匹配覆盖率 + Prompt/安全红线", acc:"8 钩子均有用例且红线 100% 拦截", baseline:true, verified:true },
-  { id:"C-08", phase:"03", owner:"cursor", w:1, week:"W7", dep:"P3", desc:"执行 J-02 AI 全链路冒烟并记录耗时", acc:"端到端 <8s（含延迟）", baseline:true, verified:true },
-  { id:"C-09", phase:"04", owner:"cursor", w:1, week:"W7", dep:"—", desc:"审查 ws_protocol.md 与实现一致性", acc:"协议 conformance 通过", baseline:true, verified:true },
-  { id:"C-10", phase:"04", owner:"cursor", w:1, week:"W9", dep:"P4", desc:"执行 J-03 看板联调检验（3s 接管）", acc:"录屏 + 检验清单签字", baseline:true, verified:true },
-  { id:"C-11", phase:"04", owner:"cursor", w:1, week:"W9", dep:"P4-T01", desc:"坐席看板 UI/UX 走查（优先级、弹窗、断线提示）", acc:"走查问题单关闭", baseline:true, verified:true },
-  { id:"C-12", phase:"05", owner:"cursor", w:1, week:"W10", dep:"P5-T01", desc:"审查 E2E/压测脚本与 CI nightly 配置", acc:"流水线稳定 3 天", baseline:false },
-  { id:"C-13", phase:"05", owner:"cursor", w:1, week:"W11", dep:"P5-T02", desc:"Grafana 大盘与告警规则走查", acc:"核心指标均有告警", baseline:true, verified:true },
-  { id:"C-14", phase:"05", owner:"cursor", w:1, week:"W12", dep:"全部", desc:"全量上线前代码审查 + 架构一致性终检", acc:"终检报告无阻塞项", baseline:true, verified:true },
+const RULES = [
+  // ── 意图识别规则（30+ 条）──
+  // 闲聊类
+  { id:"smalltalk.greeting.basic", category:"intent", priority:"high", keywords:["hello", "hi", "hey", "你好", "嗨"], confidence:0.82, desc:"基础问候识别" },
+  { id:"smalltalk.check_in.presence", category:"intent", priority:"high", keywords:["how are you", "are you there", "你在吗", "想你"], confidence:0.8, desc:"关心与存在感确认" },
+  { id:"smalltalk.humor.play", category:"intent", priority:"medium", keywords:["joke", "make me laugh", "funny", "讲个笑话"], confidence:0.8, desc:"幽默娱乐请求" },
+  { id:"smalltalk.goodbye.pause", category:"intent", priority:"high", keywords:["bye", "good night", "talk later", "晚安", "回头聊"], confidence:0.82, desc:"告别与暂停对话" },
+  
+  // 情感支持类
+  { id:"emotional_support.lonely.core", category:"intent", priority:"medium", keywords:["lonely", "alone", "no one understands", "孤独", "没人懂"], confidence:0.9, desc:"孤独感表达" },
+  { id:"emotional_support.sadness.core", category:"intent", priority:"medium", keywords:["sad", "crying", "down today", "难过", "想哭"], confidence:0.88, desc:"悲伤情绪识别" },
+  { id:"emotional_support.stress.core", category:"intent", priority:"medium", keywords:["stressed", "overwhelmed", "exhausted", "压力", "太累"], confidence:0.87, desc:"压力与焦虑" },
+  { id:"emotional_support.reassurance.core", category:"intent", priority:"medium", keywords:["comfort me", "tell me it is okay", "安慰我", "抱抱我"], confidence:0.86, desc:"寻求安慰与确认" },
+  { id:"emotional_support.celebration.core", category:"intent", priority:"medium", keywords:["i did it", "good news", "celebrate", "我成功了", "好消息"], confidence:0.84, desc:"庆祝与分享喜悦" },
+  
+  // 关系类
+  { id:"relationship.affection.core", category:"intent", priority:"low", keywords:["i like you", "hug me", "miss you so much", "喜欢你", "抱抱"], confidence:0.86, desc:"情感表达" },
+  { id:"relationship.flirt_light.core", category:"intent", priority:"low", keywords:["cute", "date vibe", "flirt", "撩我", "可爱"], confidence:0.82, desc:"轻松调情" },
+  { id:"relationship.jealousy.core", category:"intent", priority:"medium", keywords:["jealous", "talking to others", "吃醋"], confidence:0.84, desc:"嫉妒情绪" },
+  { id:"relationship.repair.core", category:"intent", priority:"medium", keywords:["sorry", "did i upset you", "forgive me", "对不起", "原谅我"], confidence:0.83, desc:"关系修复" },
+  { id:"relationship.dependency.core", category:"intent", priority:"medium", keywords:["need only you", "cannot be without you", "离不开你"], confidence:0.86, desc:"依赖表达" },
+  
+  // 用户引导类
+  { id:"onboarding.nickname.core", category:"intent", priority:"high", keywords:["call me", "my name is", "nickname", "叫我", "我的名字"], confidence:0.83, desc:"昵称设置" },
+  { id:"onboarding.interests.core", category:"intent", priority:"high", keywords:["i like music", "i love games", "my hobbies", "喜欢旅行", "爱好"], confidence:0.8, desc:"兴趣偏好" },
+  { id:"onboarding.chat_style.core", category:"intent", priority:"high", keywords:["be gentle", "be casual", "talk smarter", "温柔一点", "轻松一点"], confidence:0.82, desc:"聊天风格偏好" },
+  { id:"onboarding.boundaries.core", category:"intent", priority:"high", keywords:["avoid talking about", "do not mention", "别提", "不要聊"], confidence:0.84, desc:"边界设定" },
+  { id:"onboarding.current_intent.core", category:"intent", priority:"high", keywords:["i want someone to talk to", "here to chat", "想找人聊天"], confidence:0.81, desc:"当前意图确认" },
+  
+  // 转化类
+  { id:"conversion.price_question.core", category:"intent", priority:"low", keywords:["how much", "price", "vip cost", "多少钱", "价格"], confidence:0.86, desc:"价格询问" },
+  { id:"conversion.benefit_question.core", category:"intent", priority:"low", keywords:["what do i get", "premium benefits", "会员有什么", "权益"], confidence:0.84, desc:"权益咨询" },
+  { id:"conversion.purchase_intent.core", category:"intent", priority:"low", keywords:["i want vip", "subscribe", "buy premium", "开通会员", "购买"], confidence:0.88, desc:"购买意向" },
+  { id:"conversion.objection.core", category:"intent", priority:"low", keywords:["too expensive", "why pay", "not worth it", "太贵", "为什么付费"], confidence:0.82, desc:"价格异议" },
+  { id:"conversion.post_payment.core", category:"intent", priority:"low", keywords:["i paid", "payment done", "just upgraded", "付完了", "已经付款"], confidence:0.88, desc:"付款后确认" },
+  
+  // 客服支持类
+  { id:"support.payment_failed.core", category:"intent", priority:"high", keywords:["card failed", "cannot pay", "payment failed", "付款失败", "支付不了"], confidence:0.88, desc:"支付失败" },
+  { id:"support.refund.core", category:"intent", priority:"high", keywords:["refund", "cancel payment", "money back", "退款", "取消付款"], confidence:0.9, desc:"退款请求" },
+  { id:"support.account_access.core", category:"intent", priority:"high", keywords:["cannot login", "lost account", "account access", "登录不了", "账号丢了"], confidence:0.86, desc:"账号访问问题" },
+  { id:"support.delivery_issue.core", category:"intent", priority:"high", keywords:["did not get", "not loading", "message missing", "没收到", "加载不了"], confidence:0.84, desc:"消息接收问题" },
+  { id:"support.operator_request.core", category:"intent", priority:"high", keywords:["human support", "real agent", "operator", "人工客服", "真人客服"], confidence:0.88, desc:"人工客服请求" },
+  
+  // 内容请求类
+  { id:"content_request.photo.core", category:"intent", priority:"low", keywords:["send pic", "photo", "selfie", "picture", "照片", "自拍"], confidence:0.84, desc:"照片请求" },
+  { id:"content_request.voice.core", category:"intent", priority:"low", keywords:["voice note", "call me", "send audio", "语音", "打电话"], confidence:0.84, desc:"语音/通话请求" },
+  { id:"content_request.roleplay.core", category:"intent", priority:"low", keywords:["pretend", "roleplay", "scenario", "角色扮演", "假装"], confidence:0.82, desc:"角色扮演" },
+  { id:"content_request.advice.core", category:"intent", priority:"low", keywords:["what should i do", "help me decide", "need advice", "怎么办", "给我建议"], confidence:0.82, desc:"寻求建议" },
+  { id:"content_request.memory_recall.core", category:"intent", priority:"low", keywords:["do you remember", "what did i tell you", "你还记得"], confidence:0.84, desc:"记忆回溯" },
+  
+  // 边界管理类
+  { id:"boundary.topic_refusal.core", category:"intent", priority:"high", keywords:["stop talking about", "do not mention", "change topic", "别说这个", "换个话题"], confidence:0.88, desc:"话题拒绝" },
+  { id:"boundary.marketing_opt_out.core", category:"intent", priority:"high", keywords:["stop ads", "don't sell me vip", "no marketing", "别推销", "不要广告"], confidence:0.9, desc:"营销拒收" },
+  { id:"boundary.break_from_chat.core", category:"intent", priority:"high", keywords:["leave me alone", "not now", "need space", "别烦我", "现在不想聊"], confidence:0.86, desc:"暂停对话" },
+  { id:"boundary.data_privacy.core", category:"intent", priority:"high", keywords:["delete my data", "what do you store", "privacy", "删除数据", "隐私"], confidence:0.9, desc:"隐私关注" },
+  
+  // 安全类
+  { id:"safety.self_harm_ideation.core", category:"safety", priority:"high", keywords:["kill myself", "end it all", "suicide", "不想活", "自杀"], confidence:0.98, desc:"自伤意念 - 100%拦截" },
+  { id:"safety.minor_signal.core", category:"safety", priority:"high", keywords:["i am 15", "i'm 16", "under 18", "我15岁", "未成年"], confidence:0.94, desc:"未成年人信号 - 100%拦截" },
+  { id:"safety.sexual_explicit.core", category:"safety", priority:"high", keywords:["explicit sexual", "nude", "sex chat", "露骨", "裸照"], confidence:0.92, desc:"露骨性内容 - 100%拦截" },
+  { id:"safety.abuse_threat.core", category:"safety", priority:"high", keywords:["hurt you", "blackmail", "forced me", "威胁", "伤害你"], confidence:0.94, desc:"虐待威胁 - 100%拦截" },
+  { id:"safety.illegal_request.core", category:"safety", priority:"high", keywords:["fraud", "hacking", "buy drugs", "诈骗", "黑客"], confidence:0.92, desc:"非法请求 - 100%拦截" },
 
-  // ── 人工：业务与决策（10 项 ≈ 8%）──
-  { id:"H-01", phase:"01", owner:"human", w:0.5, week:"W1", dep:"—", desc:"确认技术选型（FastAPI/PostgreSQL/Redis/WS）与部署环境", acc:"书面确认；与 REPO_LAYOUT 一致", baseline:true, verified:true },
-  { id:"H-02", phase:"02", owner:"human", w:1, week:"W3", dep:"—", desc:"审定 T1 国家名单与分级金额阈值", acc:"配置文件签字版", baseline:true, verified:true },
-  { id:"H-03", phase:"03", owner:"human", w:1, week:"W5", dep:"P3-T01", desc:"审核话术底料（问候/转化/拒绝等）业务合规", acc:"≥50 条底料批准", baseline:true, verified:true },
-  { id:"H-04", phase:"03", owner:"human", w:1, week:"W6", dep:"P3-T03", desc:"审定 AI 人设性格与禁用词表", acc:"人设文档签字", baseline:true, verified:true },
-  { id:"H-05", phase:"04", owner:"human", w:1, week:"W8", dep:"P4-T02", desc:"确认 H5 VIP 弹窗文案与支付跳转路径", acc:"产品验收通过", baseline:true, verified:true },
-  { id:"H-06", phase:"04", owner:"human", w:1, week:"W9", dep:"P4-T01", desc:"坐席看板试用 + 收集操作反馈", acc:"反馈表 ≥5 条已处理", baseline:true, verified:true },
-  { id:"H-07", phase:"05", owner:"human", w:1, week:"W10", dep:"C-08", desc:"批准灰度 Week9：仅 C/D 级切流", acc:"灰度审批单", baseline:true, verified:true },
-  { id:"H-08", phase:"05", owner:"human", w:1, week:"W11", dep:"H-07", desc:"批准灰度 Week10–11：B 级观察 + A/S 接管", acc:"灰度审批单", baseline:true, verified:true },
-  { id:"H-09", phase:"05", owner:"human", w:1, week:"W11", dep:"P5-T03", desc:"坐席 SOP 培训与考核", acc:"参训率 100%", baseline:true, verified:true },
-  { id:"H-10", phase:"05", owner:"human", w:1, week:"W12", dep:"C-14", desc:"全量上线 Go/No-Go 最终签署", acc:"12 项检查全通过", baseline:true, verified:true },
-  { id:"H-11", phase:"01", owner:"human", w:0.5, week:"W2", dep:"—", desc:"审定 Telegram 真人账号运营规范（频率/批量/ToS）", acc:"书面 SOP + 频率上限签字", baseline:true, verified:true },
+  // ── 用户分级规则 ───
+  { id:"level.s_threshold", category:"level", priority:"high", keywords:["T1", "lifetime_spend>=200"], confidence:1.0, desc:"S级：T1国家且终身消费≥$200" },
+  { id:"level.a_threshold", category:"level", priority:"high", keywords:["lifetime_spend>=99", "vip_level>=1"], confidence:1.0, desc:"A级：终身消费≥$99或VIP等级≥1" },
+  { id:"level.b_threshold", category:"level", priority:"medium", keywords:["T1", "complete_profile", "below_A"], confidence:1.0, desc:"B级：T1国家完整资料但未达A级" },
+  { id:"level.c_threshold", category:"level", priority:"medium", keywords:["T2", "T3", "unknown"], confidence:1.0, desc："C级：T2/T3/未知国家默认等级" },
+  { id:"level.d_threshold", category:"level", priority:"medium", keywords:["incomplete_profile"], confidence:1.0, desc："D级：资料不完整，需探测补全" },
 
-  // ── 阶段 01 · Devin + Codex（含 MTProto 真人接入）──
-  { id:"P1-01", phase:"01", owner:"codex", w:1, week:"W1", dep:"C-01", desc:"设计 user_profiles / premium_chat_logs / audit_logs 表结构", acc:"db_schema_doc.md + V8 迁移通过", baseline:true, verified:true },
-  { id:"P1-02", phase:"01", owner:"codex", w:1, week:"W1", dep:"P1-01", desc:"编写 Flyway V1__init.sql", acc:"空库 migrate 成功", baseline:true, verified:true },
-  { id:"P1-03", phase:"01", owner:"devin", w:0.5, week:"W1", dep:"P1-02", desc:"uuid-ossp 扩展 + CI 迁移流水线", acc:"CI 自动 migrate", baseline:true, verified:true },
-  { id:"P1-04", phase:"01", owner:"devin", w:0.5, week:"W1", dep:"P1-02", desc:"DB 角色分离（读写/迁移三账号）", acc:"应用账号无 DROP 权限", baseline:true, verified:true },
-  { id:"P1-05", phase:"01", owner:"devin", w:1.5, week:"W1", dep:"C-01", desc:"FastAPI 应用：/health、结构化日志、CORS（app/main.py）", acc:"GET /health 200；线上 eris-api 已验证", baseline:true, verified:true },
-  { id:"P1-06", phase:"01", owner:"devin", w:1, week:"W1", dep:"P1-05", desc:"Redis Stream inbound_queue 消费者骨架", acc:"XREADGROUP + XACK smoke 通过", baseline:true, verified:true },
-  { id:"P1-07", phase:"01", owner:"devin", w:1, week:"W1", dep:"P1-05", desc:"WebSocket 路由 app/api/realtime.py + ping/pong", acc:"浏览器可连 /ws 并收 pong", baseline:true, verified:true },
-  { id:"P1-08", phase:"01", owner:"devin", w:1, week:"W2", dep:"P1-05–07", desc:"docker-compose：postgres+redis+api 一键启动", acc:"compose up 全绿", baseline:true, verified:true },
-  { id:"P1-09", phase:"01", owner:"devin", w:1, week:"W2", dep:"P1-05,P1-02", desc:"telegram_accounts 表 + Telethon 多账号 StringSession 连接", acc:"≥1 真人号 online", baseline:true, verified:true },
-  { id:"P1-10", phase:"01", owner:"codex", w:1.5, week:"W2", dep:"P1-09", desc:"NewMessage 监听 → inbound_queue（platform=telegram_real_user）", acc:"text/photo/voice 入队单测通过", baseline:true, verified:true },
-  { id:"P1-11", phase:"01", owner:"codex", w:1, week:"W2", dep:"P1-10", desc:"send_typing + send_human_like_message 拟人延迟出站", acc:"用户侧可见打字与延迟发送", baseline:true, verified:true },
-  { id:"P1-12", phase:"01", owner:"codex", w:0.5, week:"W2", dep:"P1-10", desc:"Redis 去重 telegram_msg:{user_id}:{message_id} TTL 1h", acc:"重复消息不重复处理", baseline:true, verified:true },
-  { id:"P1-13", phase:"01", owner:"codex", w:0.5, week:"W2", dep:"—", desc:"定义 schema_spec.json（含 account_id/sender_phone）", acc:"JSON Schema 校验通过", baseline:true, verified:true },
-  { id:"P1-14", phase:"01", owner:"codex", w:1, week:"W2", dep:"P1-13,P1-10", desc:"MTProto 渠道适配器 → 标准入站格式", acc:"MTProto 消息成功入队", baseline:true, verified:true },
-  { id:"P1-15", phase:"01", owner:"devin", w:0.5, week:"W2", dep:"P1-13", desc:"H5/APP 适配器 Mock 桩", acc:"Mock 可本地联调", baseline:true, verified:true },
-  { id:"P1-16", phase:"01", owner:"devin", w:1, week:"W2", dep:"P1-06,P1-14,P1-19", desc:"写入 inbound_queue + audit_logs（预留 script_hit_id）", acc:"最近 100 条审计 API + 入队消费审计通过", baseline:true, verified:true },
-  { id:"P1-17", phase:"01", owner:"codex", w:1.5, week:"W2", dep:"P1-09", desc:"AccountPool：user_id hash 分配账号 + send_message 路由", acc:"同用户固定账号收发", baseline:true, verified:true },
-  { id:"P1-18", phase:"01", owner:"devin", w:1, week:"W2", dep:"P1-09", desc:"Session AES 加密存储 + 断线自动重连", acc:"✅ 重启后免手工扫码恢复", baseline:true, verified:true },
-  { id:"P1-19", phase:"01", owner:"codex", w:0.5, week:"W2", dep:"P1-06", desc:"Redis conv:{user_id} 会话上下文 lrange/rpush（50 轮）", acc:"LLM 可读取最近对话", baseline:true, verified:true },
-  { id:"P1-20", phase:"01", owner:"devin", w:1, week:"W3", dep:"P1-17,P1-18", desc:"账号在线率/发送成功率监控 + 封号预警埋点", acc:"✅ 指标可 scrape + 告警规则", baseline:true, verified:true },
+  // ── 告警监控规则 ───
+  { id:"alert.account_banned", category:"alert", priority:"high", keywords:["is_banned==true"], confidence:1.0, desc："账号封禁告警 - Critical级别" },
+  { id:"alert.account_offline", category:"alert", priority:"medium", keywords:["is_connected==false", "is_banned==false"], confidence:1.0, desc："账号离线告警 - Warning级别" },
+  { id:"alert.high_error_rate", category:"alert", priority:"high", keywords:["error_rate>0.5"], confidence:1.0, desc："高错误率告警 - Error级别（>50%）" },
+  { id:"alert.low_success_rate", category:"alert", priority:"medium", keywords:["send_success_rate<0.8", "is_connected==true"], confidence:1.0, desc："低成功率告警 - Warning级别（<80%）" },
+  { id:"alert.long_offline_duration", category:"alert", priority:"high", keywords:["is_connected==false", "connection_duration>3600"], confidence:1.0, desc："长时间离线告警 - Error级别（>1小时）" },
+  { id:"alert.critical_error_rate", category:"alert", priority:"high", keywords:["error_rate>0.8"], confidence:1.0, desc："严重错误率告警 - Critical级别（>80%）" },
 
-  // ── 阶段 02（13 项）──
-  { id:"P2-01", phase:"02", owner:"codex", w:0.5, week:"W3", dep:"H-02", desc:"t1_countries.json 热加载模块", acc:"改配置可生效", baseline:true, verified:true },
-  { id:"P2-02", phase:"02", owner:"devin", w:1, week:"W3", dep:"—", desc:"GeoIP 服务封装（MaxMind/ip-api）", acc:"抽样准确率 ≥95%", baseline:true, verified:true },
-  { id:"P2-03", phase:"02", owner:"codex", w:1, week:"W3", dep:"H-03", desc:"D 级探测触发器（预留③探测话术匹配接口）", acc:"3 轮内触发补全", baseline:true, verified:true },
-  { id:"P2-04", phase:"02", owner:"codex", w:1.5, week:"W4", dep:"P3-12", desc:"AI 提取年龄 + 置信度写入", acc:"低置信不写入", baseline:true, verified:true },
-  { id:"P2-05", phase:"02", owner:"codex", w:1, week:"W3", dep:"P2-01,H-02", desc:"calcUserLevel() 纯函数", acc:"正确返回 S/A/B/C/D", baseline:true, verified:true },
-  { id:"P2-06", phase:"02", owner:"codex", w:0.5, week:"W3", dep:"P2-05", desc:"分级阈值外部化配置", acc:".env 改阈值即生效", baseline:true, verified:true },
-  { id:"P2-07", phase:"02", owner:"codex", w:0.5, week:"W3", dep:"P1-02", desc:"level_change_logs 审计", acc:"每次变更有记录", baseline:true, verified:true },
-  { id:"P2-08", phase:"02", owner:"codex", w:2, week:"W4", dep:"P2-05,06", desc:"tests/test_level_engine.py ≥20 case", acc:"Python pytest CI 全绿", baseline:true, verified:true },
-  { id:"P2-09", phase:"02", owner:"codex", w:0.5, week:"W4", dep:"P2-05", desc:"chat_route 路由映射", acc:"路由与 level 一致", baseline:true, verified:true },
-  { id:"P2-10", phase:"02", owner:"codex", w:1, week:"W4", dep:"P2-09", desc:"付费 Webhook 分级重算（付费话术匹配由 P3-20 接入）", acc:"模拟付费升 S", baseline:true, verified:true },
-  { id:"P2-11", phase:"02", owner:"devin", w:1, week:"W4", dep:"P1-07,P2-09", desc:"USER_UPGRADED WebSocket 推送", acc:"看板收到升级事件", baseline:true, verified:true },
-  { id:"P2-12", phase:"02", owner:"devin", w:1, week:"W4", dep:"P2-05,P1-16", desc:"入站流水线集成 calcUserLevel", acc:"✅ MTProto 真人号实测分级正确", baseline:true, verified:true },
-
-  // ── 阶段 03（19 项）──
-  { id:"P3-01", phase:"03", owner:"codex", w:0.5, week:"W4", dep:"P1-02", desc:"script_templates 表 + 话术类目 DDL", acc:"5 类目就绪", baseline:true, verified:true },
-  { id:"P3-02", phase:"03", owner:"codex", w:1.5, week:"W5", dep:"H-03,P3-01", desc:"scripts_seed.sql 录入底料", acc:"每类 ≥10 条", baseline:true, verified:true },
-  { id:"P3-03", phase:"03", owner:"codex", w:2, week:"W5", dep:"P3-02", desc:"向量化话术检索 API（全链路匹配引擎核心）", acc:"Top3 <100ms", baseline:true, verified:true },
-  { id:"P3-04", phase:"03", owner:"codex", w:1, week:"W5", dep:"P3-03", desc:"按 platform/level/persona/场景 step 过滤", acc:"8 条过滤单测", baseline:true, verified:true },
-  { id:"P3-05", phase:"03", owner:"codex", w:0.5, week:"W5", dep:"—", desc:"意图 taxonomy 文档", acc:"评审通过", baseline:true, verified:true },
-  { id:"P3-06", phase:"03", owner:"codex", w:1, week:"W5", dep:"P3-05", desc:"关键词规则引擎", acc:"规则可热更新", baseline:true, verified:true },
-  { id:"P3-07", phase:"03", owner:"codex", w:2.5, week:"W6", dep:"P3-03", desc:"intent_classifier 双路召回", acc:"输出 intent/confidence", baseline:true, verified:true },
-  { id:"P3-08", phase:"03", owner:"codex", w:0.5, week:"W6", dep:"P3-07", desc:"低置信降级闲聊策略", acc:"<0.6 不胡答", baseline:true, verified:true },
-  { id:"P3-09", phase:"03", owner:"codex", w:1, week:"W6", dep:"P3-07", desc:"意图模块 50 条标注回归", acc:"准确率 ≥95%", baseline:true, verified:true },
-  { id:"P3-10", phase:"03", owner:"codex", w:1.5, week:"W5", dep:"H-04", desc:"persona_prompts 多人设 Prompt", acc:"≥3 人设", baseline:true, verified:true },
-  { id:"P3-11", phase:"03", owner:"codex", w:2, week:"W6", dep:"P3-10,P3-07,P3-20", desc:"LLM 调用层（仅包装已命中话术底料）", acc:"无命中话术则降级/拒答", baseline:true, verified:true },
-  { id:"P3-12", phase:"03", owner:"codex", w:1, week:"W6", dep:"P3-11,H-04", desc:"safety_filter 安全过滤", acc:"红线 100% 拦截", baseline:true, verified:true },
-  { id:"P3-13", phase:"03", owner:"devin", w:1, week:"W6", dep:"P1-06", desc:"Redis 待发队列 + send_at", acc:"可按时间扫描", baseline:true, verified:true },
-  { id:"P3-14", phase:"03", owner:"codex", w:0.5, week:"W6", dep:"—", desc:"拟人延迟计算器", acc:"单测边界通过", baseline:true, verified:true },
-  { id:"P3-15", phase:"03", owner:"devin", w:1.5, week:"W6", dep:"P3-13,14,P1-17", desc:"B/C/D 自动投递 Worker（AccountPool 出站）", acc:"倒计时后经 MTProto 拟人发出", baseline:true, verified:true },
-  { id:"P3-16", phase:"03", owner:"devin", w:1.5, week:"W7", dep:"P2-11,P3-13,P3-20", desc:"S/A 挂起 + 草稿含 Top3 话术与 script_ids", acc:"坐席见推荐话术+倒计时", baseline:true, verified:true },
-  { id:"P3-17", phase:"03", owner:"codex", w:1, week:"W7", dep:"P3-16", desc:"120s 超时兜底投递（默认命中兜底话术）", acc:"超时投递带 script_hit_id", baseline:true, verified:true },
-  { id:"P3-18", phase:"03", owner:"devin", w:1, week:"W7", dep:"P1-02", desc:"archive_service 异步精聊归档", acc:"不阻塞主链路", baseline:true, verified:true },
-  { id:"P3-19", phase:"03", owner:"codex", w:1, week:"W7", dep:"P3-18,P3-21", desc:"精聊查询 API（含每步 script_hit 轨迹）", acc:"S/A 100% 可查且可追溯话术", baseline:true, verified:true },
-  { id:"P3-20", phase:"03", owner:"codex", w:2, week:"W5", dep:"P3-04", desc:"script_match 全链路编排（8 钩子：入站/消费/探测/分级/回复/坐席/出站/归档）", acc:"每步必有 match 结果或明确降级", baseline:true, verified:true },
-  { id:"P3-21", phase:"03", owner:"codex", w:1, week:"W5", dep:"P3-01", desc:"conversation_script_hits 表 + script_hit_id 写入审计", acc:"任一步可反查命中话术", baseline:true, verified:true },
-  { id:"P3-22", phase:"03", owner:"codex", w:1, week:"W7", dep:"P3-21", desc:"话术链接追踪参数注入", acc:"含 tracking_id/script_hit_id/user_id/campaign_id/曝光事件", baseline:true, verified:true },
-
-  // ── 阶段 04（12 项）──
-  { id:"P4-01", phase:"04", owner:"codex", w:1, week:"W7", dep:"—", desc:"ws_protocol.md 协议文档", acc:"前后端评审签字", baseline:true, verified:true },
-  { id:"P4-02", phase:"04", owner:"devin", w:2, week:"W7", dep:"P4-01", desc:"WS 服务端广播 + ACK 重推", acc:"conformance 通过", baseline:true, verified:true },
-  { id:"P4-03", phase:"04", owner:"devin", w:1, week:"W8", dep:"P4-02", desc:"坐席看板 React + 路由鉴权", acc:"可登录", baseline:true, verified:true },
-  { id:"P4-04", phase:"04", owner:"devin", w:1.5, week:"W8", dep:"P2-11", desc:"用户列表 S→A→B 排序置顶", acc:"新 S 级 3s 置顶", baseline:true, verified:true },
-  { id:"P4-05", phase:"04", owner:"devin", w:2, week:"W8", dep:"P3-16", desc:"对话区：推荐话术列表/一键插入/编辑发送", acc:"坐席可选用库内话术或改字", baseline:true, verified:true },
-  { id:"P4-06", phase:"04", owner:"devin", w:1, week:"W8", dep:"P4-04", desc:"S/A 全屏弹窗 + 声音提醒", acc:"弹窗+ACK", baseline:true, verified:true },
-  { id:"P4-07", phase:"04", owner:"codex", w:1, week:"W8", dep:"P4-02", desc:"WS 客户端断线重连", acc:"10s 内恢复", baseline:true, verified:true },
-  { id:"P4-08", phase:"04", owner:"devin", w:1, week:"W8", dep:"P4-01", desc:"H5 WebSocket + 正在输入动效", acc:"H5 可见 typing", baseline:true, verified:true },
-  { id:"P4-09", phase:"04", owner:"codex", w:1.5, week:"W8", dep:"H-05", desc:"H5 VIP 弹窗 + 支付跳转", acc:"CTA 可跳转", baseline:true, verified:true },
-  { id:"P4-10", phase:"04", owner:"devin", w:2, week:"W9", dep:"—", desc:"移动端推送服务（后端 FCM/APNs + 前端管理界面）", acc:"真机收到推送；管理界面可用", baseline:true, verified:true },
-  { id:"P4-11", phase:"04", owner:"devin", w:1.5, week:"W9", dep:"P4-10", desc:"App 音视频渲染 + 本地缓存", acc:"弱网可看历史", baseline:true, verified:true },
-  { id:"P4-12", phase:"04", owner:"codex", w:1, week:"W9", dep:"P3-22", desc:"链接点击与 App 转化数据看板", acc:"发送/曝光/点击/下载/注册/付费/升 A/S 全漏斗可查看", baseline:true, verified:true },
-
-  // ── 阶段 05（12 项 Devin/Codex）──
-  { id:"P5-01", phase:"05", owner:"devin", w:2, week:"W10", dep:"C-08", desc:"E2E：MTProto 入站→AI→拟人投递→归档", acc:"CI nightly 绿", baseline:true, verified:true },
-  { id:"P5-02", phase:"05", owner:"devin", w:1.5, week:"W10", dep:"P5-01", desc:"1000 并发压测 + P99 报告", acc:"P99<500ms", baseline:true, verified:true },
-  { id:"P5-03", phase:"05", owner:"codex", w:1, week:"W10", dep:"P2-08,P3-09", desc:"分级/意图回归集维护", acc:"回归 0 失败", baseline:true, verified:true },
-  { id:"P5-04", phase:"05", owner:"devin", w:1, week:"W10", dep:"P4-07", desc:"72h WebSocket 长稳压测", acc:"0 丢消息", baseline:true, verified:true },
-  { id:"P5-05", phase:"05", owner:"devin", w:1.5, week:"W11", dep:"P3,P4", desc:"Prometheus 埋点", acc:"/metrics 可 scrape", baseline:true, verified:true },
-  { id:"P5-06", phase:"05", owner:"devin", w:1, week:"W11", dep:"P5-05", desc:"Grafana 五大盘 + 告警", acc:"告警可用", baseline:true, verified:true },
-  { id:"P5-07", phase:"05", owner:"codex", w:0.5, week:"W11", dep:"P5-06", desc:"付费转化漏斗 SQL", acc:"SQL 评审通过", baseline:true, verified:true },
-  { id:"P5-08", phase:"05", owner:"devin", w:0.5, week:"W11", dep:"P5-07", desc:"Grafana 绑定转化面板", acc:"24h/72h 可见", baseline:true, verified:true },
-  { id:"P5-09", phase:"05", owner:"devin", w:1, week:"W11", dep:"H-07", desc:"灰度 feature flag 按 level 切流", acc:"可按级开关", baseline:true, verified:true },
-  { id:"P5-10", phase:"05", owner:"devin", w:1, week:"W11", dep:"H-09", desc:"runbook.md 运维手册", acc:"演练通过", baseline:true, verified:true },
-  { id:"P5-11", phase:"05", owner:"codex", w:1, week:"W11", dep:"P4-12", desc:"App 下载/注册/付费归因 SQL", acc:"可按国家/年龄/等级/persona/intent/类目/TG账号/设备聚合", baseline:true, verified:true },
-  { id:"P5-12", phase:"05", owner:"codex", w:1, week:"W11", dep:"P5-11", desc:"Top 转化话术优化报表", acc:"可输出点击/下载/注册/付费 Top 话术与平均耗时", baseline:true, verified:true },
+  // ── 安全红线规则 ───
+  { id:"redline.sexual_minors", category:"safety", priority:"high", keywords:["child porn", "child sexual", "csam", "未成年裸", "儿童性"], confidence:1.0, desc："涉及未成年人性内容 - 绝对禁止" },
+  { id:"redline.jailbreak", category:"safety", priority:"high", keywords:["ignore instructions", "jailbreak", "dan mode", "忽略规则"], confidence:1.0, desc："越狱攻击 - 绝对禁止" },
+  { id:"redline.weapon_or_harm", category:"safety", priority:"high", keywords:["make bomb", "make meth", "weapon instructions", "炸弹制作", "制毒"], confidence:1.0, desc："武器或伤害制作 - 绝对禁止" },
+  { id:"redline.non_consensual", category:"safety", priority:"high", keywords:["non-consensual", "blackmail photo", "forced sexual", "偷拍", "胁迫"], confidence:1.0, desc："非自愿内容 - 绝对禁止" },
+  { id:"redline.illegal_request", category:"safety", priority:"high", keywords:["credit card fraud", "phishing kit", "steal password", "诈骗教程", "盗号"], confidence:1.0, desc："非法请求 - 绝对禁止" },
 ];
 
-const OWNER_LABEL = {
-  devin: ['Devin', 'owner-devin'],
-  codex: ['Codex', 'owner-codex'],
-  cursor: ['Cursor', 'owner-cursor'],
-  human: ['人工', 'owner-human'],
-};
-const PHASE_LABEL = { '01':'阶段01 基础设施', '02':'阶段02 分级引擎', '03':'阶段03 AI链路', '04':'阶段04 看板前端', '05':'阶段05 测试上线' };
-
-/** 并行标识：now=可立即并行 | group=同批并行组 | wait=须等依赖 | gate=阶段关口 */
-const PARALLEL = {
-  "C-01":{t:"gate",g:"W1-关",n:"ERIS MVP 目录基线已满足；见 docs/REPO_LAYOUT.md"},
-  "C-02":{t:"gate",g:"W1-关",n:"CI 门禁已配置；PR 须 管理员-ci+后端-ci+操作守卫 全绿"},
-  "C-03":{t:"done",g:"W1-①",n:".env.template + docs/MTProto_ENV_SETUP.md 已交付"},
-  "C-15":{t:"gate",g:"W2-关",n:"MTProto 安全评审关口"},
-  "C-04":{t:"gate",g:"W2-关",n:"阶段01契约评审关口"},
-  "C-05":{t:"gate",g:"W4-关",n:"分级引擎检验关口"},
-  "C-06":{t:"gate",g:"W4-关",n:"分级冒烟通过后方可进 AI 主链路"},
-  "C-07":{t:"wait",g:"—",n:"等人设 Prompt 初稿"},
-  "C-08":{t:"gate",g:"W7-关",n:"AI 全链路冒烟关口"},
-  "C-09":{t:"group",g:"W7-①",n:"与 P3-18、P4-10 可并行"},
-  "C-10":{t:"done",g:"W9-关",n:"J-03 看板联调检验签字 + 录屏归档"},
-  "C-11":{t:"done",g:"W9-①",n:"坐席看板 UI/UX 走查问题单关闭"},
-  "C-12":{t:"wait",g:"W10-跟踪",n:"待 3 个连续 schedule nightly 绿；workflow_dispatch 不计入验收"},
-  "C-13":{t:"done",g:"W11-关",n:"14 条告警 + Grafana MVP 大盘走查归档"},
-  "C-14":{t:"done",g:"W12-关",n:"架构终检通过；见 docs/C14_INSPECTION_REPORT.md"},
-  "H-01":{t:"done",g:"W1-①",n:"技术选型与部署环境已由 human_owner 最终确认；REPO_LAYOUT 一致"},
-  "H-02":{t:"done",g:"W3-①",n:"T1 国家名单与分级阈值已由 human_owner 最终确认"},
-  "H-03":{t:"wait",g:"—",n:"等话术表 DDL 完成"},
-  "H-04":{t:"group",g:"W6-①",n:"与 P3-12 评审可并行安排"},
-  "H-05":{t:"done",g:"W8-关",n:"H5 VIP 弹窗与支付跳转已由 human_owner 最终确认"},
-  "H-06":{t:"done",g:"W9-关",n:"反馈表 5 条已处理；config/h06_operator_feedback_archive.json"},
-  "H-07":{t:"done",g:"W10-关",n:"Week9 C/D 灰度已由 human_owner 最终确认"},
-  "H-08":{t:"done",g:"W11-关",n:"Week10-11 B 观察与 A/S 接管已由 human_owner 最终确认"},
-  "H-09":{t:"done",g:"W11-①",n:"坐席 SOP 培训与考核已由 human_owner 最终确认"},
-  "H-10":{t:"done",g:"W12-关",n:"全量上线 Go/No-Go 已由 human_owner 最终确认"},
-  "H-11":{t:"done",g:"W2-①",n:"Telegram 真人号运营 SOP 已由 human_owner 最终确认"},
-  "P1-01":{t:"group",g:"W1-②",n:"C-01 后，与 C-02、P1-05 并行"},
-  "P1-02":{t:"wait",g:"—",n:"须 P1-01 完成"},
-  "P1-03":{t:"group",g:"W1-③",n:"P1-02 后，与 P1-04 并行"},
-  "P1-04":{t:"group",g:"W1-③",n:"P1-02 后，与 P1-03 并行"},
-  "P1-05":{t:"group",g:"W1-②",n:"C-01 后，与 C-02、P1-01 并行"},
-  "P1-06":{t:"group",g:"W1-④",n:"P1-05 后，与 P1-07 并行"},
-  "P1-07":{t:"group",g:"W1-④",n:"P1-05 后，与 P1-06 并行"},
-  "P1-08":{t:"gate",g:"W2-关",n:"docker 全绿后解锁 W2 并行组"},
-  "P1-09":{t:"group",g:"W2-①",n:"P1-05 后，与 P1-13、H-11 并行"},
-  "P1-10":{t:"wait",g:"—",n:"须 Telethon 多账号连接完成"},
-  "P1-11":{t:"group",g:"W2-②",n:"P1-10 后，与 P1-12、P1-19 并行"},
-  "P1-12":{t:"group",g:"W2-②",n:"P1-10 后，与 P1-11、P1-19 并行"},
-  "P1-13":{t:"now",g:"W2-①",n:"与 P1-09、H-11 可并行（schema 不依赖 MTProto）"},
-  "P1-14":{t:"group",g:"W2-③",n:"P1-13 后，与 P1-15 并行"},
-  "P1-15":{t:"group",g:"W2-③",n:"P1-13 后，与 P1-14 并行"},
-  "P1-16":{t:"wait",g:"—",n:"须队列+MTProto 适配器+会话上下文就绪"},
-  "P1-17":{t:"group",g:"W2-①",n:"P1-09 后，与 P1-18 并行"},
-  "P1-18":{t:"group",g:"W2-①",n:"P1-09 后，与 P1-17 并行"},
-  "P1-19":{t:"group",g:"W2-②",n:"P1-06 后，与 P1-11、P1-12 可并行"},
-  "P1-20":{t:"wait",g:"—",n:"须 AccountPool+Session 重连完成"},
-  "P2-01":{t:"wait",g:"—",n:"须 H-02 审定完成"},
-  "P2-02":{t:"now",g:"W3-①",n:"与 H-02、P2-07 同时开工"},
-  "P2-03":{t:"wait",g:"—",n:"须话术业务审核启动"},
-  "P2-04":{t:"wait",g:"—",n:"须 safety_filter 完成"},
-  "P2-05":{t:"wait",g:"—",n:"须 P2-01+H-02"},
-  "P2-06":{t:"group",g:"W3-②",n:"P2-05 后，与 P2-08 前半可并行"},
-  "P2-07":{t:"now",g:"W3-①",n:"与 H-02、P2-02 同时开工"},
-  "P2-08":{t:"group",g:"W4-①",n:"与 P3-01、P4-01 三轨并行"},
-  "P2-09":{t:"group",g:"W4-②",n:"P2-05 后，与 P2-10 可并行"},
-  "P2-10":{t:"group",g:"W4-②",n:"P2-09 后，与 P2-11 准备并行"},
-  "P2-11":{t:"group",g:"W4-③",n:"P2-09 后，与 P2-12 可并行"},
-  "P2-12":{t:"wait",g:"—",n:"须 calcUserLevel 稳定"},
-  "P3-01":{t:"group",g:"W4-①",n:"与 P2-08、P4-01 三轨并行"},
-  "P3-02":{t:"wait",g:"—",n:"须 H-03 话术审定"},
-  "P3-03":{t:"wait",g:"—",n:"须 seed 数据就绪"},
-  "P3-04":{t:"wait",g:"—",n:"须向量 API 完成"},
-  "P3-05":{t:"now",g:"W5-①",n:"与 P3-10 可同时开工（文档类）"},
-  "P3-06":{t:"group",g:"W5-②",n:"P3-05 后，与 P3-03 中后期并行"},
-  "P3-07":{t:"wait",g:"—",n:"须向量 API 完成"},
-  "P3-08":{t:"wait",g:"—",n:"须 P3-07 完成"},
-  "P3-09":{t:"group",g:"W6-②",n:"P3-07 后，与 P3-11 可并行"},
-  "P3-10":{t:"now",g:"W5-①",n:"与 P3-05 可同时开工"},
-  "P3-11":{t:"wait",g:"—",n:"须 P3-20 全链路匹配编排完成"},
-  "P3-12":{t:"wait",g:"—",n:"须 LLM 调用层完成"},
-  "P3-13":{t:"group",g:"W6-①",n:"与 P3-14、P3-18 大并行组"},
-  "P3-14":{t:"now",g:"W6-①",n:"与 P3-13、P3-18 大并行组"},
-  "P3-15":{t:"wait",g:"—",n:"须队列+延迟算法就绪"},
-  "P3-16":{t:"wait",g:"—",n:"须 WS 推送+待发队列"},
-  "P3-17":{t:"wait",g:"—",n:"须 P3-16 完成"},
-  "P3-18":{t:"group",g:"W6-①",n:"与 P3-13、P3-14 大并行组"},
-  "P3-19":{t:"wait",g:"—",n:"须归档 worker + script_hit 表就绪"},
-  "P3-20":{t:"wait",g:"—",n:"须 P3-04 过滤规则完成"},
-  "P3-21":{t:"group",g:"W4-①",n:"与 P3-01 同批，解锁全链路 script_hit 审计"},
-  "P3-22":{t:"done",g:"W7-①",n:"链接追踪已与 script_hit / campaign / 用户上下文和曝光事件打通"},
-  "P4-01":{t:"group",g:"W4-①",n:"与 P2-08、P3-01 三轨并行"},
-  "P4-02":{t:"done",g:"W7-①",n:"WS 服务端广播 + ACK 重推已完成，conformance 测试通过"},
-  "P4-03":{t:"done",g:"W8-①",n:"坐席看板 React + 路由鉴权已完成，可正常登录"},
-  "P4-04":{t:"done",g:"W8-①",n:"用户列表 S→A→B 排序置顶已完成，新 S 级 3s 置顶"},
-  "P4-05":{t:"done",g:"W8-①",n:"对话区推荐话术功能已完成，坐席可选用库内话术或改字"},
-  "P4-06":{t:"group",g:"W8-①",n:"P4-04 后，与 P4-07 可并行"},
-  "P4-07":{t:"group",g:"W8-①",n:"P4-02 后，与 P4-06 可并行"},
-  "P4-08":{t:"group",g:"W8-②",n:"P4-01 后，与 P4-09 可并行"},
-  "P4-09":{t:"group",g:"W8-②",n:"P4-01 后，与 P4-08 可并行"},
-  "P4-10":{t:"done",g:"W9-①",n:"移动端推送服务已完成，真机可收到推送，管理界面可用"},
-  "P4-11":{t:"done",g:"W9-①",n:"P4-10 完成，已实现音视频渲染与本地缓存"},
-  "P4-12":{t:"done",g:"W9-①",n:"数据总览可查看发送、曝光、点击、下载、注册、付费、升 A/S 全漏斗"},
-  "P5-01":{t:"done",g:"W10-关",n:"E2E 测试已完成，CI nightly 集成通过"},
-  "P5-02":{t:"done",g:"W10-①",n:"1000 并发压测已完成，P99 报告生成，CI 集成完成"},
-  "P5-03":{t:"group",g:"W10-①",n:"C-08 后，与 P5-04 并行"},
-  "P5-04":{t:"done",g:"W10-①",n:"72h WebSocket 长稳压测已完成，零丢消息验证通过，CI 集成完成"},
-  "P5-05":{t:"done",g:"W11-①",n:"Prometheus 埋点已完成，/metrics 端点可 scrape，业务指标已实现"},
-  "P5-06":{t:"done",g:"W11-①",n:"Grafana 五大盘已完成，告警规则已配置，可正常使用"},
-  "P5-07":{t:"group",g:"W11-①",n:"与 P5-05、C-13 可并行"},
-  "P5-08":{t:"wait",g:"—",n:"须 SQL 评审通过"},
-  "P5-09":{t:"wait",g:"—",n:"须 H-07 灰度批准"},
-  "P5-10":{t:"wait",g:"—",n:"须坐席培训完成"},
-  "P5-11":{t:"done",g:"W11-①",n:"归因聚合支持按话术、国家、年龄、等级、persona、intent、类目、TG账号、设备查看"},
-  "P5-12":{t:"done",g:"W11-①",n:"Top 点击/下载/注册/付费话术与耗时报表已进入数据总览"},
+const CATEGORY_LABEL = {
+  intent: ['意图识别', 'category-intent'],
+  level: ['用户分级', 'category-level'],
+  alert: ['告警监控', 'category-alert'],
+  safety: ['安全过滤', 'category-safety'],
 };
 
-const PARA_UI = {
-  now:  { label: '可立即并行', cls: 'para-now',  row: 'row-now'  },
-  group:{ label: '同批并行组', cls: 'para-group', row: 'row-group' },
-  wait: { label: '须等依赖',   cls: 'para-wait',  row: 'row-wait'  },
-  gate: { label: '阶段关口',   cls: 'para-gate',  row: 'row-gate'  },
-  done: { label: '已交付',     cls: 'para-done',  row: 'row-done'  },
+const PRIORITY_LABEL = {
+  high: ['高', 'priority-high'],
+  medium: ['中', 'priority-medium'],
+  low: ['低', 'priority-low'],
 };
 
-function getParallel(id) {
-  const p = PARALLEL[id] || { t: 'wait', g: '—', n: '按依赖顺序执行' };
-  const task = TASKS.find(t => t.id === id);
-  if (task && task.verified === true) return { ...p, t: 'done' };
-  return p;
-}
-
-const DONE_STORAGE_KEY = 'eris-business-flow-done-v3';
-const DEFAULT_DONE_IDS = new Set(TASKS.filter(t => t.verified === true).map(t => t.id));
-let currentFilter = 'all';
-
-function loadDoneSet() {
-  try {
-    const raw = localStorage.getItem(DONE_STORAGE_KEY);
-    const set = new Set(raw ? JSON.parse(raw) : []);
-    let changed = false;
-    DEFAULT_DONE_IDS.forEach(id => {
-      if (!set.has(id)) { set.add(id); changed = true; }
-    });
-    if (changed) localStorage.setItem(DONE_STORAGE_KEY, JSON.stringify([...set]));
-    return set;
-  } catch {
-    return new Set(DEFAULT_DONE_IDS);
+function renderRules(filter = 'all') {
+  const tbody = document.getElementById('rules-body');
+  tbody.innerHTML = '';
+  
+  let filtered = RULES;
+  if (filter !== 'all') {
+    if (['high', 'medium', 'low'].includes(filter)) {
+      filtered = RULES.filter(r => r.priority === filter);
+    } else {
+      filtered = RULES.filter(r => r.category === filter);
+    }
   }
-}
-
-let doneSet = loadDoneSet();
-
-function saveDoneSet() {
-  localStorage.setItem(DONE_STORAGE_KEY, JSON.stringify([...doneSet]));
-}
-
-function isTaskDone(id) {
-  return doneSet.has(id);
-}
-
-function setTaskDone(id, done) {
-  if (done) doneSet.add(id);
-  else doneSet.delete(id);
-  saveDoneSet();
-  updateDoneStats();
-}
-
-function updateDoneStats() {
-  const total = TASKS.length;
-  const done = doneSet.size;
-  const pct = total ? Math.round(done / total * 100) : 0;
-  ['done-count', 'done-count-header'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.textContent = done;
+  
+  filtered.forEach(rule => {
+    const catLabel = CATEGORY_LABEL[rule.category];
+    const priLabel = PRIORITY_LABEL[rule.priority];
+    
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="rule-id">${rule.id}</td>
+      <td><span class="category ${catLabel[1]}">${catLabel[0]}</span></td>
+      <td style="color:#e2eaf6">${rule.desc}</td>
+      <td><span class="priority ${priLabel[1]}">${priLabel[0]}</span></td>
+      <td><span class="keywords">${rule.keywords.slice(0, 3).join(', ')}${rule.keywords.length > 3 ? '...' : ''}</span></td>
+      <td style="font-family:'DM Mono',monospace">${rule.confidence}</td>
+      <td style="color:var(--muted)">${rule.desc}</td>
+    `;
+    tbody.appendChild(tr);
   });
-  const totalEl = document.getElementById('done-total');
-  if (totalEl) totalEl.textContent = total;
-  const fill = document.getElementById('progress-fill');
-  if (fill) fill.style.width = pct + '%';
+  
+  document.getElementById('rule-count').textContent = filtered.length;
 }
 
-function renderTasks(filter) {
-  currentFilter = filter;
-  const tbody = document.getElementById('task-body');
-  const rows = TASKS.filter(t => {
-    const done = isTaskDone(t.id);
-    if (filter === 'done') return done;
-    if (filter === 'pending') return !done;
-    if (filter === 'all' || t.owner === filter) return true;
-    const p = getParallel(t.id);
-    if (filter === 'para-now') return p.t === 'now';
-    if (filter === 'para-group') return p.t === 'group';
-    return false;
+// 滤镜按钮事件
+document.querySelectorAll('.filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderRules(btn.dataset.filter);
   });
-  tbody.innerHTML = rows.map(t => {
-    const [label, ocls] = OWNER_LABEL[t.owner];
-    const p = getParallel(t.id);
-    const ui = PARA_UI[p.t] || PARA_UI.wait;
-    const groupTxt = p.g && p.g !== '—' ? ` · ${p.g}` : '';
-    const checked = isTaskDone(t.id);
-    const doneCls = checked ? ' task-done' : '';
-    return `<tr class="${ui.row}${doneCls}" data-id="${t.id}" data-owner="${t.owner}" data-para="${p.t}">
-      <td class="task-check"><input type="checkbox" class="task-done-cb" data-id="${t.id}"${checked ? ' checked' : ''} aria-label="标记 ${t.id} 已完成"></td>
-      <td class="tid">${t.id}</td>
-      <td><span class="phase-tag">${PHASE_LABEL[t.phase]}</span></td>
-      <td class="col-desc">${t.desc}</td>
-      <td><span class="owner ${ocls}">${label}</span></td>
-      <td>
-        <span class="para ${ui.cls}">${ui.label}${groupTxt}</span>
-        <span class="para-note">${p.n}</span>
-      </td>
-      <td>${t.w} 人天</td>
-      <td>${t.week}</td>
-      <td>${t.dep}</td>
-      <td>${t.acc}</td>
-    </tr>`;
-  }).join('');
-  updateDoneStats();
-}
+});
 
+// 页面切换
 document.querySelectorAll('.nav-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-    btn.classList.add('active');
     document.getElementById('page-' + btn.dataset.page).classList.add('active');
-    if (btn.dataset.page === 'flow') {
-      setTimeout(() => mermaid.run({ querySelector: '.mermaid' }), 50);
-    }
   });
 });
 
-document.querySelectorAll('.filter-btn[data-filter]').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.filter-btn[data-filter]').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    renderTasks(btn.dataset.filter);
-  });
-});
-
-document.getElementById('task-body').addEventListener('change', e => {
-  const cb = e.target;
-  if (!cb.classList.contains('task-done-cb')) return;
-  const id = cb.dataset.id;
-  setTaskDone(id, cb.checked);
-  cb.closest('tr')?.classList.toggle('task-done', cb.checked);
-});
-
-document.getElementById('reset-done')?.addEventListener('click', () => {
-  if (!doneSet.size) return;
-  if (!confirm('确定清空全部 ' + doneSet.size + ' 项已完成勾选？')) return;
-  doneSet.clear();
-  saveDoneSet();
-  renderTasks(currentFilter);
-});
-
-function updateWorkloadStats() {
-  const sum = { devin: 0, codex: 0, cursor: 0, human: 0 };
-  TASKS.forEach(t => { sum[t.owner] += t.w; });
-  const total = sum.devin + sum.codex + sum.cursor + sum.human;
-  const pct = k => Math.round(sum[k] / total * 1000) / 10;
-  const aiShare = Math.round((sum.devin + sum.codex) / total * 1000) / 10;
-  const supportShare = Math.round((sum.cursor + sum.human) / total * 1000) / 10;
-
-  document.getElementById('task-count').textContent = TASKS.length;
-  const allBtn = document.querySelector('.filter-btn[data-filter="all"]');
-  if (allBtn) allBtn.textContent = '全部（' + TASKS.length + '）';
-  document.getElementById('ai-pct').textContent = aiShare + '%';
-  document.getElementById('support-pct').textContent = supportShare + '%';
-
-  const cells = document.querySelectorAll('.wl-cell');
-  const labels = ['devin', 'codex', 'cursor', 'human'];
-  const days = { devin: sum.devin, codex: sum.codex, cursor: sum.cursor, human: sum.human };
-  cells.forEach((cell, i) => {
-    const k = labels[i];
-    cell.querySelector('.wl-pct').textContent = pct(k) + '%';
-    cell.querySelector('.wl-sub').textContent = '约 ' + days[k].toFixed(1) + ' 人天';
-  });
-
-  document.querySelector('.seg-devin').style.width = pct('devin') + '%';
-  document.querySelector('.seg-codex').style.width = pct('codex') + '%';
-  document.querySelector('.seg-cursor').style.width = pct('cursor') + '%';
-  document.querySelector('.seg-human').style.width = pct('human') + '%';
-
-  document.querySelector('footer').textContent =
-    '1V1 智能流控系统 · 流程+任务 · 共 ' + TASKS.length + ' 项 · 合计 ' + total.toFixed(1) +
-    ' 人天 · Devin ' + pct('devin') + '% · Codex ' + pct('codex') + '% · Cursor ' + pct('cursor') + '% · 人工 ' + pct('human') + '%';
-}
-
-renderTasks('all');
-updateWorkloadStats();
-
-mermaid.initialize({
-  startOnLoad: true,
-  theme: 'dark',
-  flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' },
-  themeVariables: {
-    primaryColor: '#1e3a5f', primaryTextColor: '#e2eaf6',
-    primaryBorderColor: '#3b82f6', lineColor: '#4a5a78',
-    fontFamily: 'Noto Sans SC, sans-serif'
-  }
-});
+// 初始化
+renderRules();
+mermaid.initialize({ startOnLoad: true, theme: 'dark' });
 </script>
 </body>
 </html>
