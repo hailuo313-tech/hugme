@@ -346,8 +346,8 @@ async def _handle_required_profile_intake(
                 user_id=user_id,
             )
         if not country_code:
-            log.info("mtproto.profile.country_still_missing")
-            return _profile_copy("country_retry", text_value, PROFILE_COUNTRY_RETRY)
+            log.info("mtproto.profile.country_still_missing_continue_chat")
+            return None
         await write_country_code(
             db,
             user_id=user_id,

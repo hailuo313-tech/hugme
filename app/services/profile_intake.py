@@ -98,6 +98,8 @@ COUNTRY_ALIASES: dict[str, str] = {
     "新加坡": "SG",
     "HK": "HK",
     "HONG KONG": "HK",
+    "NG": "NG",
+    "NIGERIA": "NG",
     "香港": "HK",
     "中国香港": "HK",
 }
@@ -161,7 +163,7 @@ def normalize_country_code(value: Any) -> str | None:
     raw = str(value).strip()
     if not raw:
         return None
-    upper = re.sub(r"\s+", " ", raw).upper()
+    upper = re.sub(r"\s+", " ", raw.replace("’", "'")).upper()
     if upper in {"XX", "UNKNOWN", "ZZ"}:
         return None
     if upper in COUNTRY_ALIASES:
@@ -170,6 +172,25 @@ def normalize_country_code(value: Any) -> str | None:
         return upper
     for alias, code in COUNTRY_ALIASES.items():
         if len(alias) > 2 and alias in upper:
+            return code
+    contextual_code = _country_code_from_context(upper)
+    if contextual_code:
+        return contextual_code
+    return None
+
+
+def _country_code_from_context(upper: str) -> str | None:
+    contexts = (
+        r"\b(?:I AM|I'M|IM|AM)\s+(?:FROM|IN)\s+(?:THE\s+)?([A-Z]{2})\b",
+        r"\b(?:FROM|IN|LIVE IN|LIVING IN|BASED IN|LOCATED IN)\s+(?:THE\s+)?([A-Z]{2})\b",
+        r"\b(?:COUNTRY IS|MY COUNTRY IS)\s+(?:THE\s+)?([A-Z]{2})\b",
+    )
+    for pattern in contexts:
+        match = re.search(pattern, upper)
+        if not match:
+            continue
+        code = match.group(1)
+        if code not in {"XX", "UNKNOWN", "ZZ"}:
             return code
     return None
 
