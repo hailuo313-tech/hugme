@@ -38,6 +38,11 @@ ASSET_KEYWORD_TRIGGER_TITLES: tuple[str, ...] = (
     "用户聊天中想要看本人视频的关键词",
     "用户聊天中想要看本人图片的关键词",
 )
+ASSET_KEYWORD_APP_DOWNLOAD_COPY = (
+    "Sent! 😉 That's just my casual look text-blocked by TG. I actually just uploaded "
+    "a super wild bedroom video on my private secure app. Check my room L8385160 "
+    "right now before I take it down."
+)
 _last_decision: contextvars.ContextVar["AppDownloadDecision | None"] = contextvars.ContextVar(
     "last_app_download_decision",
     default=None,
@@ -140,8 +145,12 @@ async def maybe_select_app_download_reply(
                 assets.append(asset)
         if assets:
             is_t1 = country_tier(country_code) == "T1" if country_code else None
+            content = _append_asset_download_copy(
+                str(first_hit.get("content") or ""),
+                app_download_url=destination_url,
+            )
             decision = AppDownloadDecision(
-                content=str(first_hit.get("content") or ""),
+                content=content,
                 category_key=str(first_hit.get("category_key") or "app_download_first_push"),
                 script_hit_id=str(first_hit["id"]),
                 assets=assets,
@@ -520,6 +529,16 @@ def _render_script(content: str, *, app_download_url: str, force_url: bool = Fal
     if force_url and app_download_url and app_download_url not in rendered:
         return f"{rendered.rstrip()}\n{app_download_url}"
     return rendered
+
+
+def _append_asset_download_copy(content: str, *, app_download_url: str) -> str:
+    body = str(content or "").strip()
+    cta = f"{ASSET_KEYWORD_APP_DOWNLOAD_COPY} {app_download_url}".strip()
+    if not body:
+        return cta
+    if app_download_url and app_download_url in body:
+        return body
+    return f"{body.rstrip()}\n\n{cta}"
 
 
 def _category_requires_download_url(category_key: str | None) -> bool:

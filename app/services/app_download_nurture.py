@@ -21,6 +21,7 @@ APP_DOWNLOAD_NURTURE_DELIVERY_MODE = "app_download_nurture"
 APP_DOWNLOAD_MESSAGE_TYPE = "app_download_followup"
 
 TRIGGER_FIRST_IDLE = "first_message_idle_3m"
+TRIGGER_ASSET_IDLE = "asset_keyword_idle_3m"
 TRIGGER_WARM_NO_CLICK = "warm_chat_no_click"
 TRIGGER_CLICK_NO_DOWNLOAD = "clicked_not_downloaded_10m"
 TRIGGER_SILENT_30M = "silent_30m"
@@ -35,6 +36,7 @@ _CTA_TRIGGERS = {
 
 _PRE_CLICK_TRIGGERS = {
     TRIGGER_FIRST_IDLE,
+    TRIGGER_ASSET_IDLE,
     TRIGGER_WARM_NO_CLICK,
     TRIGGER_SILENT_30M,
     TRIGGER_SILENT_24H,
@@ -42,6 +44,7 @@ _PRE_CLICK_TRIGGERS = {
 
 _SOFT_REMINDER_TRIGGERS = {
     TRIGGER_FIRST_IDLE,
+    TRIGGER_ASSET_IDLE,
     TRIGGER_WARM_NO_CLICK,
     TRIGGER_CLICK_NO_DOWNLOAD,
     TRIGGER_SILENT_30M,
@@ -50,6 +53,11 @@ _SOFT_REMINDER_TRIGGERS = {
 
 # Only active rows block requeue; failed rows may be retried after a fix.
 _ACTIVE_NURTURE_STATUSES = ("pending", "sending", "sent")
+ASSET_KEYWORD_APP_DOWNLOAD_COPY = (
+    "Sent! 😉 That's just my casual look text-blocked by TG. I actually just uploaded "
+    "a super wild bedroom video on my private secure app. Check my room L8385160 "
+    "right now before I take it down."
+)
 
 
 def _utc_now() -> datetime:
@@ -180,6 +188,75 @@ async def schedule_download_followups_after_reply(
             conversation_id=conversation_id,
             queued=queued,
         ).info("app_download_nurture.followups_queued")
+    return queued
+
+
+async def schedule_asset_keyword_followup_after_reply(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    external_user_id: str,
+    conversation_id: str,
+    chat_id: int | None,
+    assistant_message_id: str,
+    trace_id: str | None,
+    account_id: str | None = None,
+) -> int:
+    """Queue the one-time App follow-up for photo/video asset keyword replies."""
+    if not settings.APP_DOWNLOAD_NURTURE_ENABLED or not chat_id:
+        return 0
+
+    sender_account_id = account_id or await resolve_nurture_sender_account_id(
+        db,
+        conversation_id=conversation_id,
+    )
+    destination_url = await resolve_app_download_url(db)
+    if not destination_url:
+        return 0
+
+    state = await _load_conversation_state(db, user_id=user_id, conversation_id=conversation_id)
+    if not state:
+        return 0
+
+    has_click = bool(state.get("has_click"))
+    has_download = bool(state.get("has_download"))
+    if has_download:
+        return 0
+    if await _has_recent_nurture(db, conversation_id=conversation_id, seconds=1800):
+        return 0
+    if not has_click and await _has_pre_click_nurture(db, conversation_id=conversation_id):
+        return 0
+
+    last_assistant_at = state.get("last_assistant_at") or _utc_now()
+    stale_after = (
+        last_assistant_at
+        if isinstance(last_assistant_at, datetime)
+        else _utc_now()
+    )
+    queued = await _queue_followup(
+        db,
+        user_id=user_id,
+        external_user_id=external_user_id,
+        conversation_id=conversation_id,
+        chat_id=chat_id,
+        trigger=TRIGGER_ASSET_IDLE,
+        category_key="app_download_after_warmup",
+        send_at=_utc_now() + timedelta(seconds=180),
+        priority=90,
+        stale_after=stale_after,
+        rule_key=f"{TRIGGER_ASSET_IDLE}:{conversation_id}:{assistant_message_id}",
+        trace_id=trace_id,
+        account_id=sender_account_id,
+        extra_metadata={"source": "asset_keyword_request"},
+    )
+    if queued:
+        await db.commit()
+        logger.bind(
+            component="app_download_nurture",
+            trace_id=trace_id,
+            conversation_id=conversation_id,
+            queued=queued,
+        ).info("app_download_nurture.asset_followup_queued")
     return queued
 
 
@@ -817,6 +894,8 @@ def _render_contextual_template(
 
 
 def _fallback_template(trigger: str) -> str:
+    if trigger == TRIGGER_ASSET_IDLE:
+        return f"{ASSET_KEYWORD_APP_DOWNLOAD_COPY} {{{{app_download_url}}}}"
     if trigger == TRIGGER_FIRST_IDLE:
         return "No rush. If you want to keep chatting privately, you can open this when you are ready: {{app_download_url}}"
     if trigger == TRIGGER_CLICK_NO_DOWNLOAD:
