@@ -49,7 +49,7 @@ PROFILE_COUNTRY_RETRY = (
     "two-letter code, like US, GB, JP, or SG."
 )
 PROFILE_AGE_QUESTION = "Thanks. How old are you?"
-PROFILE_AGE_RETRY = "Please reply with your age as a number, for example 24."
+PROFILE_AGE_RETRY = "Lmao you completely ignored my question! How old are you anyway? Tell me a number so I know if you're a big boy or just a baby. 😜"
 
 _PROFILE_COPY = {
     "es": {
