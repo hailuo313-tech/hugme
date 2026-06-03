@@ -514,28 +514,33 @@ function renderRules(filter = 'all') {
   document.getElementById('rule-count').textContent = filtered.length;
 }
 
-// 滤镜按钮事件
-document.querySelectorAll('.filter-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    renderRules(btn.dataset.filter);
+// 等待DOM完全加载
+document.addEventListener('DOMContentLoaded', function() {
+  // 初始化渲染规则
+  renderRules();
+  
+  // 滤镜按钮事件
+  document.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderRules(btn.dataset.filter);
+    });
   });
-});
 
-// 页面切换
-document.querySelectorAll('.nav-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-    document.getElementById('page-' + btn.dataset.page).classList.add('active');
+  // 页面切换
+  document.querySelectorAll('.nav-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+      document.getElementById('page-' + btn.dataset.page).classList.add('active');
+    });
   });
+  
+  // 初始化Mermaid
+  mermaid.initialize({ startOnLoad: true, theme: 'dark' });
 });
-
-// 初始化
-renderRules();
-mermaid.initialize({ startOnLoad: true, theme: 'dark' });
 </script>
 </body>
 </html>
