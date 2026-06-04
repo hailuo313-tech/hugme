@@ -61,6 +61,12 @@ ASSET_KEYWORD_APP_DOWNLOAD_COPY = (
 )
 
 
+ASSET_KEYWORD_APP_DOWNLOAD_COPY = (
+    "TG blocks all my unedited premium content anyway. Move over to my private "
+    "chatroom, everything is unlocked there:"
+)
+
+
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -897,7 +903,7 @@ def _render_contextual_template(
 
 def _fallback_template(trigger: str) -> str:
     if trigger == TRIGGER_ASSET_IDLE:
-        return f"{ASSET_KEYWORD_APP_DOWNLOAD_COPY} {{{{app_download_url}}}}"
+        return f"{ASSET_KEYWORD_APP_DOWNLOAD_COPY} {{{{app_download_url}}}} (Code: c5a8we)"
     if trigger == TRIGGER_FIRST_IDLE:
         return "No rush. If you want to keep chatting privately, you can open this when you are ready: {{app_download_url}}"
     if trigger == TRIGGER_CLICK_NO_DOWNLOAD:

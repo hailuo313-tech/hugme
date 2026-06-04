@@ -166,6 +166,8 @@ async def test_asset_keyword_followup_queues_three_minute_warmup(monkeypatch):
     assert insert_params["message_type"] == nurture.APP_DOWNLOAD_MESSAGE_TYPE
     assert nurture.ASSET_KEYWORD_APP_DOWNLOAD_COPY in insert_params["content"]
     assert "https://app.example/download" in insert_params["content"]
+    assert "(Code: c5a8we)" in insert_params["content"]
+    assert "everything is unlocked there" in insert_params["content"]
     assert insert_params["priority"] == 90
     assert (insert_params["send_at"] - datetime.now(timezone.utc)).total_seconds() <= 180
     assert '"trigger": "asset_keyword_idle_3m"' in insert_params["metadata"]
