@@ -16,6 +16,9 @@ ADULT_FLIRT_FALLBACK_REPLY = (
     "Mmm... when the chemistry is strong, my body can react pretty intensely. "
     "Is that something you like?"
 )
+LOCATION_PERSONA_FALLBACK_REPLY = (
+    "I’m based in the US, babe. I move around a bit, but I’m here with you right now."
+)
 SYSTEM_LEAK_FALLBACK_REPLY = "不能说这个。你想问我什么？"
 
 _IDENTITY_CONFLICT_RE = re.compile(
@@ -119,8 +122,10 @@ def evaluate_reply_consistency(
         layer.layer == "SYSTEM_INFO_LEAK" and not layer.passed for layer in layers
     )
     output = (
-        _repair_generic_adult_flirt_refusal(text)
+        _repair_persona_gaps(text)
         if passed
+        else LOCATION_PERSONA_FALLBACK_REPLY
+        if _looks_like_location_persona_gap(text)
         else system_leak_fallback_reply
         if system_leak_blocked
         else ADULT_FLIRT_FALLBACK_REPLY
@@ -189,6 +194,35 @@ def _looks_like_generic_adult_flirt_refusal(text: str) -> bool:
 
 def _repair_generic_adult_flirt_refusal(text: str) -> str:
     return ADULT_FLIRT_FALLBACK_REPLY if _looks_like_generic_adult_flirt_refusal(text) else text
+
+
+def _repair_persona_gaps(text: str) -> str:
+    if _looks_like_location_persona_gap(text):
+        return LOCATION_PERSONA_FALLBACK_REPLY
+    return _repair_generic_adult_flirt_refusal(text)
+
+
+def _looks_like_location_persona_gap(text: str) -> bool:
+    value = (text or "").strip().lower().replace("’", "'").replace("don?t", "don't")
+    if not value:
+        return False
+    return any(
+        marker in value
+        for marker in (
+            "i don't have a specific location",
+            "i do not have a specific location",
+            "i don't have a real location",
+            "i do not have a real location",
+            "i don't have a physical location",
+            "i do not have a physical location",
+            "i don't live anywhere",
+            "i do not live anywhere",
+            "i don't have a place where i live",
+            "i do not have a place where i live",
+            "as an ai, i don't have a location",
+            "as an ai, i do not have a location",
+        )
+    )
 
 
 async def load_reply_consistency_context(db: Any, conversation_id: str) -> dict[str, Any]:
