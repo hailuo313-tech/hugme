@@ -8,6 +8,7 @@ from services.app_download_conversion import (
     APP_DOWNLOAD_CATEGORIES,
     _FunnelState,
     _choose_category,
+    _keyword_matches,
     _relationship_stage,
     _reply_language,
     _render_script,
@@ -148,6 +149,39 @@ def test_asset_keyword_split_accepts_operator_separators() -> None:
         "custom video",
         "tape",
     ]
+
+
+def test_asset_keyword_requires_asset_request_intent() -> None:
+    assert _keyword_matches(
+        "can i see your mirror selfie",
+        "mirror selfie",
+        asset_kind="image",
+    )
+    assert _keyword_matches(
+        "send me a bedroom video",
+        "bedroom video",
+        asset_kind="video",
+    )
+    assert _keyword_matches(
+        "drop a short clip please",
+        "short clip",
+        asset_kind="video",
+    )
+    assert not _keyword_matches(
+        "your nipples is very nice fuck shiet",
+        "nipples",
+        asset_kind="image",
+    )
+    assert not _keyword_matches(
+        "you so sexy honey i love it",
+        "sexy",
+        asset_kind="video",
+    )
+    assert not _keyword_matches(
+        "i play my cock already",
+        "cock",
+        asset_kind="video",
+    )
 
 
 @pytest.mark.asyncio
