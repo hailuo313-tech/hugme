@@ -173,6 +173,18 @@ async def test_asset_keyword_followup_queues_three_minute_warmup(monkeypatch):
     assert '"source": "asset_keyword_request"' in insert_params["metadata"]
 
 
+def test_strip_legacy_user_quote_prefix():
+    assert (
+        nurture._strip_legacy_user_quote_prefix('You said: "hi". open this: https://app.example')
+        == "open this: https://app.example"
+    )
+    assert (
+        nurture._strip_legacy_user_quote_prefix('  You said: "send me ur pic". Are you there?')
+        == "Are you there?"
+    )
+    assert nurture._strip_legacy_user_quote_prefix("No rush, open this when ready") == "No rush, open this when ready"
+
+
 @pytest.mark.asyncio
 async def test_clicked_no_download_scan_is_recent_and_dedupes_failed(monkeypatch):
     class _ClickedSession(_FakeSession):
