@@ -114,6 +114,27 @@ def test_selector_promotes_direct_link_questions() -> None:
     assert intent == "app_download_direct_cta"
     assert scene_step == "pre_click"
 
+@pytest.mark.parametrize(
+    "user_text",
+    [
+        "\u4f60\u6765\u81ea\u54ea\u91cc",
+        "\u4f60\u4f4f\u54ea\u91cc",
+        "\u4f60\u5728\u54ea\u91cc",
+        "where do you live",
+        "where are you from",
+    ],
+)
+def test_selector_does_not_treat_persona_location_questions_as_direct_cta(user_text: str) -> None:
+    category, intent, scene_step = _choose_category(
+        user_text=user_text,
+        state=_FunnelState(),
+        assistant_reply_count=0,
+        user_level="C",
+    )
+
+    assert category is None
+    assert intent == "not_ready"
+    assert scene_step == "pre_click"
 
 def test_render_script_replaces_app_download_url() -> None:
     assert (

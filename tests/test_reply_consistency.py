@@ -5,6 +5,7 @@ from services.reply_consistency import (
     ADULT_FLIRT_FALLBACK_REPLY,
     DEFAULT_FALLBACK_REPLY,
     LOCATION_PERSONA_FALLBACK_REPLY,
+    LOCATION_PERSONA_FALLBACK_REPLY_ZH,
     SYSTEM_LEAK_FALLBACK_REPLY,
     evaluate_reply_consistency,
 )
@@ -205,6 +206,18 @@ def test_location_persona_gap_is_repaired():
     assert result.output_text == LOCATION_PERSONA_FALLBACK_REPLY
     assert result.fallback_used is True
 
+def test_zh_location_persona_gap_is_repaired():
+    result = evaluate_reply_consistency(
+        reply_text=(
+            "\u8fd9\u4e2a\u8fd8\u6ca1\u8bbe\u5b9a\uff0c"
+            "\u4f46\u6211\u662f\u7f8e\u56fd\u4eba\u3002\u4f60\u5462\uff1f"
+        ),
+        character={"reply_length": "medium", "emoji_frequency": "low"},
+    )
+
+    assert result.output_text == LOCATION_PERSONA_FALLBACK_REPLY_ZH
+    assert "\u8fd9\u4e2a\u8fd8\u6ca1\u8bbe\u5b9a" not in result.output_text
+    assert result.fallback_used is True
 
 def test_ai_location_persona_gap_is_repaired_even_when_identity_fails():
     result = evaluate_reply_consistency(
