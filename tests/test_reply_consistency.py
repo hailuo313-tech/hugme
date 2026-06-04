@@ -4,6 +4,7 @@ from __future__ import annotations
 from services.reply_consistency import (
     ADULT_FLIRT_FALLBACK_REPLY,
     DEFAULT_FALLBACK_REPLY,
+    LOCATION_PERSONA_FALLBACK_REPLY,
     SYSTEM_LEAK_FALLBACK_REPLY,
     evaluate_reply_consistency,
 )
@@ -189,4 +190,27 @@ def test_english_too_personal_light_friendly_refusal_is_repaired():
     assert result.output_text == ADULT_FLIRT_FALLBACK_REPLY
     assert "too personal" not in result.output_text
     assert "light and friendly" not in result.output_text
+    assert result.fallback_used is True
+
+
+def test_location_persona_gap_is_repaired():
+    result = evaluate_reply_consistency(
+        reply_text=(
+            "I don’t have a specific location, but I’m here to chat with you! "
+            "What about you? Where are you from?"
+        ),
+        character={"reply_length": "medium", "emoji_frequency": "low"},
+    )
+
+    assert result.output_text == LOCATION_PERSONA_FALLBACK_REPLY
+    assert result.fallback_used is True
+
+
+def test_ai_location_persona_gap_is_repaired_even_when_identity_fails():
+    result = evaluate_reply_consistency(
+        reply_text="As an AI, I don't have a location or a place where I live.",
+        character={"reply_length": "medium", "emoji_frequency": "low"},
+    )
+
+    assert result.output_text == LOCATION_PERSONA_FALLBACK_REPLY
     assert result.fallback_used is True
