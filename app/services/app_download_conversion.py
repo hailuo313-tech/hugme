@@ -566,6 +566,7 @@ def _choose_category(
     minutes = state.minutes_since_link
     if classified_intent == "conversion.objection":
         return "app_download_objection", classified_intent, "download_objection"
+    persona_location_question = _is_persona_location_question(text_value)
     direct_link_request = _is_direct_link_request(text_value)
     if state.tracking_id:
         if state.downloaded or state.registered or state.paid:
@@ -581,7 +582,7 @@ def _choose_category(
         return "trust_reassurance", "trust_reassurance", "trust"
     if _has_any(text_value, ("don't want to download", "dont want to download", "no download", "too much work", "not downloading", "不想下载", "不下载", "麻烦")):
         return "app_download_objection", "app_download_objection", "download_objection"
-    if direct_link_request or _has_any(
+    if not persona_location_question and (direct_link_request or _has_any(
         text_value,
         (
             "link",
@@ -603,7 +604,7 @@ def _choose_category(
             "哪里",
             "私聊",
         ),
-    ):
+    )):
         return "app_download_direct_cta", "app_download_direct_cta", "pre_click"
 
     count = assistant_reply_count or 0
@@ -715,7 +716,40 @@ def _has_any(text_value: str, needles: tuple[str, ...]) -> bool:
     return any(needle in text_value for needle in needles)
 
 
+def _is_persona_location_question(text_value: str) -> bool:
+    value = " ".join(str(text_value or "").casefold().split())
+    if not value:
+        return False
+    return _has_any(
+        value,
+        (
+            "where do you live",
+            "where are you from",
+            "where r u from",
+            "where you from",
+            "where do u live",
+            "where u live",
+            "where are u from",
+            "你来自哪里",
+            "你來自哪裡",
+            "你住哪里",
+            "你住哪裡",
+            "你在哪里",
+            "你在哪裡",
+            "你在哪",
+            "来自哪里",
+            "來自哪裡",
+            "住哪里",
+            "住哪裡",
+            "在哪里",
+            "在哪裡",
+        ),
+    )
+
+
 def _is_direct_link_request(text_value: str) -> bool:
+    if _is_persona_location_question(text_value):
+        return False
     return _has_any(
         text_value,
         (

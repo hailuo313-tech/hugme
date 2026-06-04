@@ -21,6 +21,9 @@ LOCATION_PERSONA_FALLBACK_REPLY = (
 )
 SYSTEM_LEAK_FALLBACK_REPLY = "不能说这个。你想问我什么？"
 
+LOCATION_PERSONA_FALLBACK_REPLY_ZH = "我在美国，宝贝。平时会到处跑一点，但现在我就在这儿陪你。"
+
+
 _IDENTITY_CONFLICT_RE = re.compile(
     r"(chatgpt|claude|openai|anthropic|gpt-?[0-9]|large language model|"
     r"language model|语言模型|我是\s*ai|作为\s*ai|作为一个ai)",
@@ -124,7 +127,7 @@ def evaluate_reply_consistency(
     output = (
         _repair_persona_gaps(text)
         if passed
-        else LOCATION_PERSONA_FALLBACK_REPLY
+        else _location_persona_fallback(text)
         if _looks_like_location_persona_gap(text)
         else system_leak_fallback_reply
         if system_leak_blocked
@@ -198,14 +201,22 @@ def _repair_generic_adult_flirt_refusal(text: str) -> str:
 
 def _repair_persona_gaps(text: str) -> str:
     if _looks_like_location_persona_gap(text):
-        return LOCATION_PERSONA_FALLBACK_REPLY
+        return _location_persona_fallback(text)
     return _repair_generic_adult_flirt_refusal(text)
+
+
+def _location_persona_fallback(text: str) -> str:
+    if _looks_like_zh_location_persona_gap(text):
+        return LOCATION_PERSONA_FALLBACK_REPLY_ZH
+    return LOCATION_PERSONA_FALLBACK_REPLY
 
 
 def _looks_like_location_persona_gap(text: str) -> bool:
     value = (text or "").strip().lower().replace("’", "'").replace("don?t", "don't")
     if not value:
         return False
+    if _looks_like_zh_location_persona_gap(text):
+        return True
     return any(
         marker in value
         for marker in (
@@ -223,6 +234,15 @@ def _looks_like_location_persona_gap(text: str) -> bool:
             "as an ai, i do not have a location",
         )
     )
+
+
+def _looks_like_zh_location_persona_gap(text: str) -> bool:
+    value = str(text or "").strip()
+    if not value:
+        return False
+    has_missing_fact = "这个还没设定" in value or "还没设定" in value or "还未设定" in value
+    has_location_hint = any(marker in value for marker in ("美国人", "来自", "住", "哪里", "哪裡", "在哪"))
+    return has_missing_fact and has_location_hint
 
 
 async def load_reply_consistency_context(db: Any, conversation_id: str) -> dict[str, Any]:
