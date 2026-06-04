@@ -32,6 +32,16 @@ def test_app_download_migration_seeds_explicit_funnel_categories() -> None:
     assert "ON CONFLICT (id) DO UPDATE" in sql
 
 
+def test_image_asset_keyword_migration_completes_photo_terms() -> None:
+    sql = (ROOT / "db" / "migration" / "V22__complete_image_asset_keywords.sql").read_text(
+        encoding="utf-8"
+    )
+
+    for keyword in ("photo", "photos", "picture", "pictures", "selfie", "照片", "图片"):
+        assert keyword in sql
+    assert "用户聊天中想要看本人图片的关键词" in sql
+
+
 def test_selector_uses_clicked_not_downloaded_followup_after_delay() -> None:
     category, intent, scene_step = _choose_category(
         user_text="hey",
@@ -173,6 +183,31 @@ def test_asset_keyword_split_accepts_operator_separators() -> None:
 
 
 def test_asset_keyword_requires_asset_request_intent() -> None:
+    assert _keyword_matches(
+        "i want to see your photos",
+        "photos",
+        asset_kind="image",
+    )
+    assert _keyword_matches(
+        "i want to seeyour photos",
+        "photos",
+        asset_kind="image",
+    )
+    assert _keyword_matches(
+        "photo",
+        "photo",
+        asset_kind="image",
+    )
+    assert _keyword_matches(
+        "我想看你的照片",
+        "照片",
+        asset_kind="image",
+    )
+    assert _keyword_matches(
+        "我想看你的图片",
+        "图片",
+        asset_kind="image",
+    )
     assert _keyword_matches(
         "can i see your mirror selfie",
         "mirror selfie",
