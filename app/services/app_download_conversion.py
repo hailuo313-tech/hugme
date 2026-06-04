@@ -43,6 +43,10 @@ ASSET_KEYWORD_APP_DOWNLOAD_COPY = (
     "a super wild bedroom video on my private secure app. Check my room L8385160 "
     "right now before I take it down."
 )
+ASSET_KEYWORD_APP_DOWNLOAD_COPY = (
+    "TG blocks all my unedited premium content anyway. Move over to my private "
+    "chatroom, everything is unlocked there:"
+)
 ASSET_IMAGE_KEYWORDS: tuple[str, ...] = (
     "photo",
     "photos",
@@ -660,7 +664,7 @@ def _render_script(content: str, *, app_download_url: str, force_url: bool = Fal
 
 def _append_asset_download_copy(content: str, *, app_download_url: str) -> str:
     body = str(content or "").strip()
-    cta = f"{ASSET_KEYWORD_APP_DOWNLOAD_COPY} {app_download_url}".strip()
+    cta = f"{ASSET_KEYWORD_APP_DOWNLOAD_COPY} {app_download_url} (Code: c5a8we)".strip()
     if not body:
         return cta
     if app_download_url and app_download_url in body:

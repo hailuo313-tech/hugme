@@ -459,14 +459,23 @@ def _conservative_download_nudge(decision: Any) -> str | None:
         return None
     category = str(getattr(decision, "category_key", "") or "").strip()
     if category == "app_download_direct_cta":
-        return f"If you want the private place, open it here: {url}"
+        return (
+            "Let's chat on my private app instead, way safer than here. "
+            f"Grab it real quick and text me: {url} (Enter code: c5a8we)"
+        )
     if category == "app_link_clicked_followup":
         return f"If you still want to continue somewhere more private, the link is here: {url}"
     if category == "app_download_objection":
-        return f"No pressure. If you change your mind, the link is here: {url}"
+        return (
+            "I only text close friends on my private encrypted app because TG keeps "
+            f"censoring our topics anyway. Takes like 15 seconds to set up, come over: {url}"
+        )
     if category == "trust_reassurance":
         return f"If you decide you want to try the private app, you can use this link: {url}"
-    return f"If you want a more private place later, you can open it here: {url}"
+    return (
+        "Btw, my TG is lagging crazy right now and missing texts. Drop me a line "
+        f"on my main app here, it's free and way faster: {url} (Use code: c5a8we)"
+    )
 
 
 def _first_url(text_value: str) -> str | None:

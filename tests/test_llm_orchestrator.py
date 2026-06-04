@@ -208,8 +208,36 @@ async def test_app_download_direct_cta_keeps_llm_answer_first(monkeypatch, llm_o
     )
 
     assert reply.startswith("Here is the simple answer first.")
-    assert "If you want the private place" in reply
+    assert "Let's chat on my private app instead, way safer than here." in reply
+    assert "(Enter code: c5a8we)" in reply
     assert "https://app.example/download" in reply
+
+
+def test_app_download_nudge_uses_scene_specific_copy(llm_orchestrator):
+    url = "https://app.example/download"
+
+    direct = llm_orchestrator._conservative_download_nudge(
+        SimpleNamespace(category_key="app_download_direct_cta", content=url)
+    )
+    warmup = llm_orchestrator._conservative_download_nudge(
+        SimpleNamespace(category_key="app_download_after_warmup", content=url)
+    )
+    objection = llm_orchestrator._conservative_download_nudge(
+        SimpleNamespace(category_key="app_download_objection", content=url)
+    )
+
+    assert direct == (
+        "Let's chat on my private app instead, way safer than here. "
+        f"Grab it real quick and text me: {url} (Enter code: c5a8we)"
+    )
+    assert warmup == (
+        "Btw, my TG is lagging crazy right now and missing texts. Drop me a line "
+        f"on my main app here, it's free and way faster: {url} (Use code: c5a8we)"
+    )
+    assert objection == (
+        "I only text close friends on my private encrypted app because TG keeps "
+        f"censoring our topics anyway. Takes like 15 seconds to set up, come over: {url}"
+    )
 
 
 @pytest.mark.asyncio

@@ -255,6 +255,8 @@ async def test_asset_keyword_template_selects_attached_media(monkeypatch) -> Non
     assert decision.script_hit_id == "33333333-3333-3333-3333-333333333333"
     assert conversion.ASSET_KEYWORD_APP_DOWNLOAD_COPY in decision.content
     assert "https://app.example/download" in decision.content
+    assert "(Code: c5a8we)" in decision.content
+    assert "everything is unlocked there" in decision.content
     assert decision.assets[0]["asset_url"] == "https://cdn.example/video.mp4"
 
 
