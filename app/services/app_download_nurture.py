@@ -19,6 +19,7 @@ from services.script_template_retriever import ScriptTemplateQuery, search_scrip
 
 APP_DOWNLOAD_NURTURE_DELIVERY_MODE = "app_download_nurture"
 APP_DOWNLOAD_MESSAGE_TYPE = "app_download_followup"
+_LEGACY_USER_QUOTE_PREFIX = re.compile(r'^\s*You said:\s*"[^"]*"\.\s*', re.IGNORECASE)
 
 TRIGGER_FIRST_IDLE = "first_message_idle_3m"
 TRIGGER_ASSET_IDLE = "asset_keyword_idle_3m"
@@ -788,6 +789,7 @@ async def _build_contextual_content(
         context_line=context_line,
         trigger=trigger,
     )
+    content = _strip_legacy_user_quote_prefix(content)
     meta = {
         "script_hit_id": script_hit_id,
         "scene_step": trigger,
@@ -908,6 +910,10 @@ def _fallback_template(trigger: str) -> str:
 def _looks_contextual(text_value: str) -> bool:
     lowered = text_value.lower()
     return any(word in lowered for word in ("you said", "you told", "earlier", "last time", "remember"))
+
+
+def _strip_legacy_user_quote_prefix(text_value: str) -> str:
+    return _LEGACY_USER_QUOTE_PREFIX.sub("", text_value or "").strip()
 
 
 def _clean_text(text_value: str) -> str:
