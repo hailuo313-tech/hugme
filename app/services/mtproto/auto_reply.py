@@ -35,6 +35,7 @@ from services.app_download_nurture import (
     schedule_download_followups_after_reply,
 )
 from services.content_safety import evaluate_inbound_content_safety
+from services.reply_consistency import evaluate_reply_consistency, load_reply_consistency_context
 from services.user_level_service import user_level_service
 from services.mtproto.account_routing import pin_mtproto_account_route
 from services.mtproto.human_like_send import HumanLikeSendPolicy, send_human_like_message
@@ -489,6 +490,20 @@ async def _persist_message(
     return msg_id
 
 
+async def _apply_reply_consistency(db: Any, conversation_id: str, reply_text: str, log: Any) -> str:
+    try:
+        ctx = await load_reply_consistency_context(db, conversation_id)
+    except Exception as exc:
+        log.bind(error_type=type(exc).__name__).warning("mtproto.consistency.context_failed")
+        ctx = {}
+    consistency = evaluate_reply_consistency(
+        reply_text=reply_text,
+        character=ctx.get("character"),
+    )
+    log.bind(**consistency.as_log_dict()).info("mtproto.consistency.checked")
+    return consistency.output_text
+
+
 async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: Any) -> None:
     """Handle one incoming real-user Telegram message end to end."""
     message = getattr(event, "message", event)
@@ -627,6 +642,7 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
         except LLMOrchestratorError as exc:
             log.bind(reason=str(exc)).warning("mtproto.orchestrator.failed")
             reply_text = "I am a little busy right now, talk in a bit?"
+        reply_text = await _apply_reply_consistency(db, conv_id, reply_text, log)
         if profile_followup and profile_followup not in reply_text:
             reply_text = f"{reply_text}\n\n{profile_followup}"
         app_download_decision = get_last_app_download_decision()
