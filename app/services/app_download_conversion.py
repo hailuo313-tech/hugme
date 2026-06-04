@@ -68,6 +68,9 @@ ASSET_IMAGE_KEYWORDS: tuple[str, ...] = (
     "mirror selfie",
     "your face",
     "your body",
+    "照片",
+    "图片",
+    "自拍",
 )
 ASSET_VIDEO_KEYWORDS: tuple[str, ...] = (
     "video",
@@ -114,6 +117,11 @@ ASSET_REQUEST_TERMS: tuple[str, ...] = (
     "lemme",
     "please",
     "pls",
+    "想",
+    "想看",
+    "想要",
+    "要",
+    "看",
 )
 ASSET_BLOCKED_KEYWORDS: tuple[str, ...] = (
     "cock",
@@ -512,6 +520,8 @@ def _keyword_matches(normalized_text: str, keyword: str, *, asset_kind: str | No
         return False
     if key not in normalized_text:
         return False
+    if normalized_text == key:
+        return True
     if _has_asset_request_intent(normalized_text):
         return True
     return len(key.split()) > 1 and _starts_with_request_term(key)
