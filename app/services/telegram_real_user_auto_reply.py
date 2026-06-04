@@ -13,6 +13,7 @@ from sqlalchemy import text
 
 from core.database import AsyncSessionLocal
 from services.llm_orchestrator import LLMOrchestratorError, generate_reply
+from services.reply_consistency import evaluate_reply_consistency, load_reply_consistency_context
 
 CONTEXT_MAX_MESSAGES = 20
 CONTEXT_TTL_SECONDS = 86400 * 3
@@ -188,6 +189,22 @@ async def _mark_read(
         log.bind(error_type=type(exc).__name__).warning("mtproto_auto_reply.read_ack_failed")
 
 
+async def _apply_reply_consistency(db: Any, conversation_id: str, reply_text: str, log: Any) -> str:
+    try:
+        ctx = await load_reply_consistency_context(db, conversation_id)
+    except Exception as exc:
+        log.bind(error_type=type(exc).__name__).warning(
+            "mtproto_auto_reply.consistency.context_failed"
+        )
+        ctx = {}
+    consistency = evaluate_reply_consistency(
+        reply_text=reply_text,
+        character=ctx.get("character"),
+    )
+    log.bind(**consistency.as_log_dict()).info("mtproto_auto_reply.consistency.checked")
+    return consistency.output_text
+
+
 async def handle_mtproto_inbound_auto_reply(
     *,
     client: Any,
@@ -254,6 +271,7 @@ async def handle_mtproto_inbound_auto_reply(
         except LLMOrchestratorError as exc:
             log.bind(reason=str(exc)).warning("mtproto_auto_reply.orchestrator_failed")
             reply_text = "现在有点忙，稍后再聊好吗？"
+        reply_text = await _apply_reply_consistency(db, conv_id, reply_text, log)
 
         try:
             sent = await send_human_like_message(
