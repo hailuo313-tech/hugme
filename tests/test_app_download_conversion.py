@@ -8,6 +8,7 @@ from services.app_download_conversion import (
     APP_DOWNLOAD_CATEGORIES,
     _FunnelState,
     _choose_category,
+    _keyword_matches,
     _relationship_stage,
     _reply_language,
     _render_script,
@@ -150,6 +151,39 @@ def test_asset_keyword_split_accepts_operator_separators() -> None:
     ]
 
 
+def test_asset_keyword_requires_asset_request_intent() -> None:
+    assert _keyword_matches(
+        "can i see your mirror selfie",
+        "mirror selfie",
+        asset_kind="image",
+    )
+    assert _keyword_matches(
+        "send me a bedroom video",
+        "bedroom video",
+        asset_kind="video",
+    )
+    assert _keyword_matches(
+        "drop a short clip please",
+        "short clip",
+        asset_kind="video",
+    )
+    assert not _keyword_matches(
+        "your nipples is very nice fuck shiet",
+        "nipples",
+        asset_kind="image",
+    )
+    assert not _keyword_matches(
+        "you so sexy honey i love it",
+        "sexy",
+        asset_kind="video",
+    )
+    assert not _keyword_matches(
+        "i play my cock already",
+        "cock",
+        asset_kind="video",
+    )
+
+
 @pytest.mark.asyncio
 async def test_asset_keyword_template_selects_attached_media(monkeypatch) -> None:
     class Result:
@@ -219,6 +253,8 @@ async def test_asset_keyword_template_selects_attached_media(monkeypatch) -> Non
     assert decision is not None
     assert decision.intent == "asset_keyword_request"
     assert decision.script_hit_id == "33333333-3333-3333-3333-333333333333"
+    assert conversion.ASSET_KEYWORD_APP_DOWNLOAD_COPY in decision.content
+    assert "https://app.example/download" in decision.content
     assert decision.assets[0]["asset_url"] == "https://cdn.example/video.mp4"
 
 

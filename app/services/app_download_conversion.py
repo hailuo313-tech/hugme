@@ -38,6 +38,97 @@ ASSET_KEYWORD_TRIGGER_TITLES: tuple[str, ...] = (
     "用户聊天中想要看本人视频的关键词",
     "用户聊天中想要看本人图片的关键词",
 )
+ASSET_KEYWORD_APP_DOWNLOAD_COPY = (
+    "Sent! 😉 That's just my casual look text-blocked by TG. I actually just uploaded "
+    "a super wild bedroom video on my private secure app. Check my room L8385160 "
+    "right now before I take it down."
+)
+ASSET_IMAGE_KEYWORDS: tuple[str, ...] = (
+    "photo",
+    "photos",
+    "pic",
+    "pics",
+    "picture",
+    "pictures",
+    "selfie",
+    "selfies",
+    "image",
+    "images",
+    "snapshot",
+    "snap",
+    "face",
+    "body",
+    "face pic",
+    "body pic",
+    "full body",
+    "mirror selfie",
+    "your face",
+    "your body",
+)
+ASSET_VIDEO_KEYWORDS: tuple[str, ...] = (
+    "video",
+    "videos",
+    "vid",
+    "vids",
+    "clip",
+    "clips",
+    "movie",
+    "gif",
+    "tape",
+    "recording",
+    "custom video",
+    "dirty video",
+    "short clip",
+    "private video",
+    "bedroom video",
+    "cam",
+    "webcam",
+    "video call",
+    "facetime",
+    "live",
+    "live show",
+    "private call",
+)
+ASSET_REQUEST_TERMS: tuple[str, ...] = (
+    "send",
+    "show",
+    "see",
+    "watch",
+    "look",
+    "view",
+    "share",
+    "drop",
+    "give",
+    "upload",
+    "want",
+    "wanna",
+    "need",
+    "can i",
+    "could i",
+    "may i",
+    "let me",
+    "lemme",
+    "please",
+    "pls",
+)
+ASSET_BLOCKED_KEYWORDS: tuple[str, ...] = (
+    "cock",
+    "dick",
+    "fuck",
+    "sexy",
+    "horny",
+    "hard",
+    "nipples",
+    "nipple",
+    "tits",
+    "boobs",
+    "breasts",
+    "pussy",
+    "clit",
+    "ass",
+    "booty",
+    "squirt",
+)
 _last_decision: contextvars.ContextVar["AppDownloadDecision | None"] = contextvars.ContextVar(
     "last_app_download_decision",
     default=None,
@@ -140,8 +231,12 @@ async def maybe_select_app_download_reply(
                 assets.append(asset)
         if assets:
             is_t1 = country_tier(country_code) == "T1" if country_code else None
+            content = _append_asset_download_copy(
+                str(first_hit.get("content") or ""),
+                app_download_url=destination_url,
+            )
             decision = AppDownloadDecision(
-                content=str(first_hit.get("content") or ""),
+                content=content,
                 category_key=str(first_hit.get("category_key") or "app_download_first_push"),
                 script_hit_id=str(first_hit["id"]),
                 assets=assets,
@@ -364,8 +459,9 @@ async def _match_asset_keyword_triggers(
         template_id = str(data.get("id") or "")
         if template_id in seen_template_ids:
             continue
+        asset_kind = _asset_kind_from_title(str(data.get("title") or ""))
         for keyword in _split_asset_keywords(str(data.get("content") or "")):
-            if _keyword_matches(text_value, keyword):
+            if _keyword_matches(text_value, keyword, asset_kind=asset_kind):
                 matches.append((data, keyword))
                 if template_id:
                     seen_template_ids.add(template_id)
@@ -394,9 +490,49 @@ def _split_asset_keywords(content: str) -> list[str]:
     return keywords
 
 
-def _keyword_matches(normalized_text: str, keyword: str) -> bool:
+def _asset_kind_from_title(title: str) -> str | None:
+    if "视频" in title or "video" in title.casefold():
+        return "video"
+    if "图片" in title or "photo" in title.casefold() or "image" in title.casefold():
+        return "image"
+    return None
+
+
+def _keyword_matches(normalized_text: str, keyword: str, *, asset_kind: str | None = None) -> bool:
     key = _normalize_keyword_text(keyword)
-    return bool(key and key in normalized_text)
+    if not key or key in ASSET_BLOCKED_KEYWORDS:
+        return False
+
+    allowed_keywords = _allowed_asset_keywords(asset_kind)
+    if key not in allowed_keywords:
+        return False
+    if key not in normalized_text:
+        return False
+    if _has_asset_request_intent(normalized_text):
+        return True
+    return len(key.split()) > 1 and _starts_with_request_term(key)
+
+
+def _allowed_asset_keywords(asset_kind: str | None) -> set[str]:
+    if asset_kind == "image":
+        return {_normalize_keyword_text(value) for value in ASSET_IMAGE_KEYWORDS}
+    if asset_kind == "video":
+        return {_normalize_keyword_text(value) for value in ASSET_VIDEO_KEYWORDS}
+    return {
+        _normalize_keyword_text(value)
+        for value in (*ASSET_IMAGE_KEYWORDS, *ASSET_VIDEO_KEYWORDS)
+    }
+
+
+def _has_asset_request_intent(normalized_text: str) -> bool:
+    return any(term in normalized_text for term in ASSET_REQUEST_TERMS)
+
+
+def _starts_with_request_term(normalized_text: str) -> bool:
+    return any(
+        normalized_text == term or normalized_text.startswith(f"{term} ")
+        for term in ASSET_REQUEST_TERMS
+    )
 
 
 def _normalize_keyword_text(value: str) -> str:
@@ -520,6 +656,16 @@ def _render_script(content: str, *, app_download_url: str, force_url: bool = Fal
     if force_url and app_download_url and app_download_url not in rendered:
         return f"{rendered.rstrip()}\n{app_download_url}"
     return rendered
+
+
+def _append_asset_download_copy(content: str, *, app_download_url: str) -> str:
+    body = str(content or "").strip()
+    cta = f"{ASSET_KEYWORD_APP_DOWNLOAD_COPY} {app_download_url}".strip()
+    if not body:
+        return cta
+    if app_download_url and app_download_url in body:
+        return body
+    return f"{body.rstrip()}\n\n{cta}"
 
 
 def _category_requires_download_url(category_key: str | None) -> bool:

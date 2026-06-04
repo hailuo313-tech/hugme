@@ -30,7 +30,10 @@ from services.profile_intake import (
     write_country_code,
 )
 from services.script_asset_delivery import send_mtproto_asset
-from services.app_download_nurture import schedule_download_followups_after_reply
+from services.app_download_nurture import (
+    schedule_asset_keyword_followup_after_reply,
+    schedule_download_followups_after_reply,
+)
 from services.content_safety import evaluate_inbound_content_safety
 from services.user_level_service import user_level_service
 from services.mtproto.account_routing import pin_mtproto_account_route
@@ -49,7 +52,7 @@ PROFILE_COUNTRY_RETRY = (
     "two-letter code, like US, GB, JP, or SG."
 )
 PROFILE_AGE_QUESTION = "Thanks. How old are you?"
-PROFILE_AGE_RETRY = "Please reply with your age as a number, for example 24."
+PROFILE_AGE_RETRY = "Lmao you completely ignored my question! How old are you anyway? Tell me a number so I know if you're a big boy or just a baby. 😜"
 
 _PROFILE_COPY = {
     "es": {
@@ -715,11 +718,29 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
         log=log,
         source="outbound_assistant",
     )
-    should_schedule_nurture = not (
+    is_asset_keyword_reply = (
         app_download_decision is not None
         and getattr(app_download_decision, "intent", None) == "asset_keyword_request"
     )
-    if should_schedule_nurture:
+    if is_asset_keyword_reply:
+        async with AsyncSessionLocal() as db:
+            try:
+                await schedule_asset_keyword_followup_after_reply(
+                    db,
+                    user_id=user_id,
+                    external_user_id=external_id,
+                    conversation_id=conv_id,
+                    chat_id=int(sender_id),
+                    assistant_message_id=assistant_msg_id,
+                    trace_id=trace_id,
+                    account_id=str(account_id),
+                )
+            except Exception as exc:
+                await db.rollback()
+                log.bind(error_type=type(exc).__name__).warning(
+                    "mtproto.app_download_nurture.asset_schedule_failed"
+                )
+    else:
         async with AsyncSessionLocal() as db:
             try:
                 await schedule_download_followups_after_reply(
@@ -737,8 +758,6 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
                 log.bind(error_type=type(exc).__name__).warning(
                     "mtproto.app_download_nurture.schedule_failed"
                 )
-    else:
-        log.info("mtproto.app_download_nurture.skip_asset_keyword")
     if app_download_decision is not None:
         for asset in app_download_decision.assets:
             media_sent = await send_mtproto_asset(
