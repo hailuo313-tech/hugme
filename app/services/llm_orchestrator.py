@@ -378,10 +378,33 @@ async def generate_reply(
         history_count=len(history),
     ).info("orchestrator.reply")
 
-    return _append_conservative_download_nudge(result.content, decision)
+    reply_text = _repair_short_preference_interview_followup(user_text, result.content)
+    return _append_conservative_download_nudge(reply_text, decision)
 
 
 # ── 内部 ──────────────────────────────────────────────
+
+
+_SHORT_ADULT_PREFERENCE_RE = re.compile(
+    r"^\s*(doggy|missionary|cowgirl|reverse cowgirl|spooning|rough|slow|hard|soft|"
+    r"anal|oral|bj|blowjob|top|bottom|dom|sub|dominant|submissive|from behind)\s*[.!?]*\s*$",
+    re.IGNORECASE,
+)
+_INTERVIEW_FOLLOWUP_RE = re.compile(
+    r"\s*(?:what\s+do\s+you\s+like\s+most\s+about\s+it|why\s+do\s+you\s+like\s+that|"
+    r"what\s+makes\s+you\s+like\s+that|what\s+do\s+you\s+enjoy\s+about\s+it|"
+    r"tell\s+me\s+why\s+you\s+like\s+that)\??\s*$",
+    re.IGNORECASE,
+)
+
+
+def _repair_short_preference_interview_followup(user_text: str, reply_text: str) -> str:
+    """Trim questionnaire-style follow-ups after short adult preference answers."""
+    if not _SHORT_ADULT_PREFERENCE_RE.match(user_text or ""):
+        return reply_text
+    cleaned = _INTERVIEW_FOLLOWUP_RE.sub("", (reply_text or "").strip()).strip()
+    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
+    return cleaned or reply_text
 
 
 def _append_conservative_download_nudge(
