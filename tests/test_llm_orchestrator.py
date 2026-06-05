@@ -240,6 +240,25 @@ def test_app_download_nudge_uses_scene_specific_copy(llm_orchestrator):
     )
 
 
+def test_short_preference_reply_trims_interview_followup(llm_orchestrator):
+    reply = llm_orchestrator._repair_short_preference_interview_followup(
+        "Doggy",
+        "That's a popular choice! It can be pretty intense and exciting. What do you like most about it?",
+    )
+
+    assert reply == "That's a popular choice! It can be pretty intense and exciting."
+    assert "What do you like most about it" not in reply
+
+
+def test_short_preference_repair_does_not_touch_normal_messages(llm_orchestrator):
+    reply = llm_orchestrator._repair_short_preference_interview_followup(
+        "Can you talk?",
+        "Sure. What do you like most about it?",
+    )
+
+    assert reply == "Sure. What do you like most about it?"
+
+
 @pytest.mark.asyncio
 async def test_upstream_exception_without_fallback(monkeypatch, llm_orchestrator):
     """上游 chat() 抛异常 + 未启用 fallback → 抛 LLMOrchestratorError。"""

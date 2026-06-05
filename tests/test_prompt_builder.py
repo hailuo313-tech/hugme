@@ -137,6 +137,16 @@ def test_l10_anchor_repeats_critical_rules():
     assert "不要说\"资料里写着\"" in body
 
 
+def test_short_adult_preference_answers_do_not_force_interview_questions():
+    out = build_prompt(PromptInput(user_text="Doggy"))
+    system = out.system_content
+
+    assert "short adult preference/position answer" in system
+    assert "approval + playful acknowledgement" in system
+    assert "What do you like most about it?" in system
+    assert "Why do you like that?" in system
+
+
 # ─────────────────────────────────────────────────────────────
 # L3 CHARACTER
 # ─────────────────────────────────────────────────────────────
