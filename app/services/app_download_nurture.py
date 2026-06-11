@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.config import settings
 from services.app_download_platforms import resolve_app_download_url
 from services.level_engine import country_tier
-from services.link_attribution import wrap_text_links_with_tracking
+from services.link_attribution import render_tracking_links_as_html_cta, wrap_text_links_with_tracking
 from services.profile_intake import age_from_preferences, normalize_country_code
 from services.script_template_retriever import ScriptTemplateQuery, search_script_templates
 
@@ -22,6 +22,7 @@ APP_DOWNLOAD_MESSAGE_TYPE = "app_download_followup"
 _LEGACY_USER_QUOTE_PREFIX = re.compile(r'^\s*You said:\s*"[^"]*"\.\s*', re.IGNORECASE)
 
 TRIGGER_FIRST_IDLE = "first_message_idle_3m"
+TRIGGER_SECOND_NO_CLICK = "second_round_no_click_3m"
 TRIGGER_ASSET_IDLE = "asset_keyword_idle_3m"
 TRIGGER_WARM_NO_CLICK = "warm_chat_no_click"
 TRIGGER_CLICK_NO_DOWNLOAD = "clicked_not_downloaded_10m"
@@ -37,6 +38,7 @@ _CTA_TRIGGERS = {
 
 _PRE_CLICK_TRIGGERS = {
     TRIGGER_FIRST_IDLE,
+    TRIGGER_SECOND_NO_CLICK,
     TRIGGER_ASSET_IDLE,
     TRIGGER_WARM_NO_CLICK,
     TRIGGER_SILENT_30M,
@@ -45,6 +47,7 @@ _PRE_CLICK_TRIGGERS = {
 
 _SOFT_REMINDER_TRIGGERS = {
     TRIGGER_FIRST_IDLE,
+    TRIGGER_SECOND_NO_CLICK,
     TRIGGER_ASSET_IDLE,
     TRIGGER_WARM_NO_CLICK,
     TRIGGER_CLICK_NO_DOWNLOAD,
@@ -69,6 +72,15 @@ ASSET_KEYWORD_APP_DOWNLOAD_COPY = (
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _first_idle_delay_seconds() -> int:
+    configured = int(settings.APP_DOWNLOAD_FIRST_IDLE_SECONDS)
+    return max(45, min(60, configured))
+
+
+def _second_no_click_delay_seconds() -> int:
+    return max(180, int(settings.APP_DOWNLOAD_SECOND_NO_CLICK_SECONDS))
 
 
 def _safe_int(value: Any, default: int) -> int:
@@ -153,13 +165,7 @@ async def schedule_download_followups_after_reply(
     if has_download:
         return 0
 
-    if await _has_recent_nurture(db, conversation_id=conversation_id, seconds=1800):
-        return 0
-
-    if (
-        not has_click
-        and await _has_pre_click_nurture(db, conversation_id=conversation_id)
-    ):
+    if await _has_pending_nurture(db, conversation_id=conversation_id):
         return 0
 
     next_followup = _choose_after_reply_followup(
@@ -229,9 +235,7 @@ async def schedule_asset_keyword_followup_after_reply(
     has_download = bool(state.get("has_download"))
     if has_download:
         return 0
-    if await _has_recent_nurture(db, conversation_id=conversation_id, seconds=1800):
-        return 0
-    if not has_click and await _has_pre_click_nurture(db, conversation_id=conversation_id):
+    if await _has_pending_nurture(db, conversation_id=conversation_id):
         return 0
 
     last_assistant_at = state.get("last_assistant_at") or _utc_now()
@@ -248,7 +252,7 @@ async def schedule_asset_keyword_followup_after_reply(
         chat_id=chat_id,
         trigger=TRIGGER_ASSET_IDLE,
         category_key="app_download_after_warmup",
-        send_at=_utc_now() + timedelta(seconds=180),
+        send_at=_utc_now() + timedelta(seconds=_second_no_click_delay_seconds()),
         priority=90,
         stale_after=stale_after,
         rule_key=f"{TRIGGER_ASSET_IDLE}:{conversation_id}:{assistant_message_id}",
@@ -278,9 +282,17 @@ def _choose_after_reply_followup(
         return (
             TRIGGER_FIRST_IDLE,
             "app_download_first_push",
-            max(30, settings.APP_DOWNLOAD_FIRST_IDLE_SECONDS),
+            _first_idle_delay_seconds(),
             60,
             f"{TRIGGER_FIRST_IDLE}:{{conversation_id}}",
+        )
+    if user_count == 2:
+        return (
+            TRIGGER_SECOND_NO_CLICK,
+            "app_download_after_warmup",
+            _second_no_click_delay_seconds(),
+            75,
+            f"{TRIGGER_SECOND_NO_CLICK}:{{conversation_id}}",
         )
     if 3 <= user_count <= 5:
         return (
@@ -297,6 +309,32 @@ def _choose_after_reply_followup(
         50,
         f"{TRIGGER_SILENT_30M}:{{assistant_message_id}}",
     )
+
+
+async def _has_pending_nurture(
+    db: AsyncSession,
+    *,
+    conversation_id: str,
+) -> bool:
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT 1
+                FROM message_schedules
+                WHERE metadata->>'delivery_mode' = :delivery_mode
+                  AND metadata->>'conversation_id' = :conversation_id
+                  AND status IN ('pending', 'sending')
+                LIMIT 1
+                """
+            ),
+            {
+                "delivery_mode": APP_DOWNLOAD_NURTURE_DELIVERY_MODE,
+                "conversation_id": conversation_id,
+            },
+        )
+    ).fetchone()
+    return bool(row)
 
 
 async def _has_recent_nurture(
@@ -434,7 +472,7 @@ async def queue_clicked_not_downloaded_followups(
                 """
             ),
             {
-                "delay_seconds": max(60, settings.APP_DOWNLOAD_CLICK_NO_DOWNLOAD_SECONDS),
+                "delay_seconds": max(120, settings.APP_DOWNLOAD_CLICK_NO_DOWNLOAD_SECONDS),
                 "delivery_mode": APP_DOWNLOAD_NURTURE_DELIVERY_MODE,
                 "trigger": TRIGGER_CLICK_NO_DOWNLOAD,
                 "batch_size": max(1, batch_size),
@@ -545,7 +583,7 @@ async def prepare_nurture_message_for_send(
     if metadata.get("delivery_mode") != APP_DOWNLOAD_NURTURE_DELIVERY_MODE:
         return content
 
-    return await wrap_text_links_with_tracking(
+    wrapped = await wrap_text_links_with_tracking(
         db,
         text_value=content,
         base_url=str(settings.PUBLIC_BASE_URL).rstrip("/"),
@@ -564,6 +602,7 @@ async def prepare_nurture_message_for_send(
         is_t1_country=metadata.get("is_t1_country"),
         metadata={"source": "app_download_nurture", "trace_id": trace_id},
     )
+    return render_tracking_links_as_html_cta(wrapped)
 
 
 async def persist_auto_delivery_message(
@@ -774,18 +813,15 @@ async def _build_contextual_content(
     is_t1 = country_tier(country_code) == "T1" if country_code else None
     language = _language(profile, history)
 
-    script_content: str | None = None
-    script_hit_id: str | None = None
-    if trigger not in _SOFT_REMINDER_TRIGGERS:
-        script_content, script_hit_id = await _select_script_content(
-            db,
-            category_key=category_key,
-            user_level=user_level,
-            persona_slug=persona_slug,
-            language=language,
-            query=last_user_text or trigger,
-            trace_id=trace_id,
-        )
+    script_content, script_hit_id = await _select_script_content(
+        db,
+        category_key=category_key,
+        user_level=user_level,
+        persona_slug=persona_slug,
+        language=language,
+        query=last_user_text or trigger,
+        trace_id=trace_id,
+    )
     if not script_content:
         script_content = _fallback_template(trigger)
 
@@ -905,7 +941,13 @@ def _fallback_template(trigger: str) -> str:
     if trigger == TRIGGER_ASSET_IDLE:
         return f"{ASSET_KEYWORD_APP_DOWNLOAD_COPY} {{{{app_download_url}}}} (Code: c5a8we)"
     if trigger == TRIGGER_FIRST_IDLE:
-        return "No rush. If you want to keep chatting privately, you can open this when you are ready: {{app_download_url}}"
+        return (
+            "Still there? Link's right here — 还在吗？链接在这：{{app_download_url}}"
+        )
+    if trigger == TRIGGER_SECOND_NO_CLICK:
+        return (
+            "Just checking in — if you missed it, here's the link again: {{app_download_url}}"
+        )
     if trigger == TRIGGER_CLICK_NO_DOWNLOAD:
         return "If the download got stuck, you can try again here when you are ready: {{app_download_url}}"
     if trigger == TRIGGER_SILENT_24H:

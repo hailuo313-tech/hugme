@@ -13,7 +13,7 @@ from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
-from core.database import get_db
+from core.database import AsyncSessionLocal, get_db
 from core.config import settings
 from loguru import logger
 import uuid, time, json
@@ -38,6 +38,10 @@ from api.onboarding import (
 )
 from services.llm_orchestrator import generate_reply, LLMOrchestratorError
 from services.app_download_conversion import get_last_app_download_decision
+from services.app_download_nurture import (
+    schedule_asset_keyword_followup_after_reply,
+    schedule_download_followups_after_reply,
+)
 from services.link_attribution import render_tracking_links_as_html_cta, wrap_text_links_with_tracking
 from services.script_asset_delivery import send_telegram_bot_asset
 from services.memory_writer import maybe_write_memory
@@ -941,6 +945,7 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
     bot_reply = None
     bot_reply_message_id = None
     bot_consistency_score = None
+    app_download_decision = None
 
     if not onboarding_done:
         # Onboarding 模式
@@ -1079,6 +1084,37 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
             )
             await _push_context(redis, conv_id, "assistant", bot_reply, bot_msg_id)
             log.bind(bot_msg_id=bot_msg_id).info("tg.bot_reply.persisted")
+            if tg_chat_id and onboarding_done:
+                is_asset_keyword_reply = (
+                    getattr(app_download_decision, "intent", None) == "asset_keyword_request"
+                )
+                async with AsyncSessionLocal() as nurture_db:
+                    try:
+                        if is_asset_keyword_reply:
+                            await schedule_asset_keyword_followup_after_reply(
+                                nurture_db,
+                                user_id=user_id,
+                                external_user_id=external_id,
+                                conversation_id=conv_id,
+                                chat_id=int(tg_chat_id),
+                                assistant_message_id=bot_msg_id,
+                                trace_id=trace_id,
+                            )
+                        else:
+                            await schedule_download_followups_after_reply(
+                                nurture_db,
+                                user_id=user_id,
+                                external_user_id=external_id,
+                                conversation_id=conv_id,
+                                chat_id=int(tg_chat_id),
+                                assistant_message_id=bot_msg_id,
+                                trace_id=trace_id,
+                            )
+                    except Exception as nurture_exc:
+                        await nurture_db.rollback()
+                        log.bind(error_type=type(nurture_exc).__name__).warning(
+                            "tg.app_download_nurture.schedule_failed"
+                        )
         except Exception as e:
             log.warning(f"tg.bot_reply.persist_failed err={e}")
 

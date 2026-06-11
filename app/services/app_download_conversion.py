@@ -34,6 +34,14 @@ APP_DOWNLOAD_CATEGORIES = {
 }
 
 APP_DOWNLOAD_SAFETY_TAG = "app_download_conversion"
+SCRIPT_REPLY_SKIP_LLM_CATEGORIES: frozenset[str] = frozenset(
+    {
+        "app_download_first_push",
+        "app_download_direct_cta",
+        "app_download_after_warmup",
+    }
+)
+SCRIPT_REPLY_SKIP_LLM_INTENTS: frozenset[str] = frozenset({"asset_keyword_request"})
 ASSET_KEYWORD_TRIGGER_TITLES: tuple[str, ...] = (
     "用户聊天中想要看本人视频的关键词",
     "用户聊天中想要看本人图片的关键词",
@@ -95,6 +103,11 @@ ASSET_VIDEO_KEYWORDS: tuple[str, ...] = (
     "live",
     "live show",
     "private call",
+    "视频",
+    "影片",
+    "录像",
+    "小视频",
+    "露脸视频",
 )
 ASSET_REQUEST_TERMS: tuple[str, ...] = (
     "send",
@@ -122,6 +135,19 @@ ASSET_REQUEST_TERMS: tuple[str, ...] = (
     "想要",
     "要",
     "看",
+    "发",
+    "发来",
+    "发送",
+    "给我",
+    "来个",
+    "能不能",
+    "可以",
+    "有",
+    "有没有",
+    "能发",
+    "可以发",
+    "想看下",
+    "看看",
 )
 ASSET_BLOCKED_KEYWORDS: tuple[str, ...] = (
     "cock",
@@ -182,6 +208,15 @@ def get_last_app_download_decision() -> AppDownloadDecision | None:
     return _last_decision.get()
 
 
+def conversion_decision_skips_llm(decision: AppDownloadDecision | None) -> bool:
+    """Return True when the approved script body should be sent verbatim (no LLM)."""
+    if decision is None:
+        return False
+    if decision.intent in SCRIPT_REPLY_SKIP_LLM_INTENTS:
+        return True
+    return decision.category_key in SCRIPT_REPLY_SKIP_LLM_CATEGORIES
+
+
 async def maybe_select_app_download_reply(
     *,
     db: Any,
@@ -217,8 +252,6 @@ async def maybe_select_app_download_reply(
         or _preferences(profile).get("country_code")
     )
     age = age_from_preferences(_preferences(profile))
-    if user_level == "D":
-        return None
 
     asset_triggers = await _match_asset_keyword_triggers(
         db=db,
@@ -241,11 +274,11 @@ async def maybe_select_app_download_reply(
                 if asset_key:
                     seen_asset_ids.add(asset_key)
                 assets.append(asset)
-        if assets:
+        if matched_keywords:
             is_t1 = country_tier(country_code) == "T1" if country_code else None
-            content = _append_asset_download_copy(
-                str(first_hit.get("content") or ""),
+            content = _build_asset_keyword_reply_text(
                 app_download_url=destination_url,
+                assets=_sort_assets_for_delivery(assets),
             )
             decision = AppDownloadDecision(
                 content=content,
@@ -279,6 +312,9 @@ async def maybe_select_app_download_reply(
                 asset_count=len(assets),
             ).info("app_download_conversion.asset_keyword_selected")
             return decision
+
+    if user_level == "D":
+        return None
 
     state = await _load_latest_funnel_state(
         db=db,
@@ -472,7 +508,8 @@ async def _match_asset_keyword_triggers(
         if template_id in seen_template_ids:
             continue
         asset_kind = _asset_kind_from_title(str(data.get("title") or ""))
-        for keyword in _split_asset_keywords(str(data.get("content") or "")):
+        template_keywords = _split_asset_keywords(str(data.get("content") or ""))
+        for keyword in _merge_asset_keywords(template_keywords, asset_kind):
             if _keyword_matches(text_value, keyword, asset_kind=asset_kind):
                 matches.append((data, keyword))
                 if template_id:
@@ -502,6 +539,29 @@ def _split_asset_keywords(content: str) -> list[str]:
     return keywords
 
 
+def _merge_asset_keywords(
+    template_keywords: list[str],
+    asset_kind: str | None,
+) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for keyword in [*template_keywords, *_builtin_keywords_for_asset_kind(asset_kind)]:
+        key = _normalize_keyword_text(keyword)
+        if not key or key in seen:
+            continue
+        merged.append(keyword)
+        seen.add(key)
+    return merged
+
+
+def _builtin_keywords_for_asset_kind(asset_kind: str | None) -> tuple[str, ...]:
+    if asset_kind == "video":
+        return ASSET_VIDEO_KEYWORDS
+    if asset_kind == "image":
+        return ASSET_IMAGE_KEYWORDS
+    return ()
+
+
 def _asset_kind_from_title(title: str) -> str | None:
     if "视频" in title or "video" in title.casefold():
         return "video"
@@ -514,28 +574,28 @@ def _keyword_matches(normalized_text: str, keyword: str, *, asset_kind: str | No
     key = _normalize_keyword_text(keyword)
     if not key or key in ASSET_BLOCKED_KEYWORDS:
         return False
-
-    allowed_keywords = _allowed_asset_keywords(asset_kind)
-    if key not in allowed_keywords:
-        return False
     if key not in normalized_text:
         return False
     if normalized_text == key:
         return True
     if _has_asset_request_intent(normalized_text):
         return True
+    if asset_kind and _is_media_noun_keyword(key, asset_kind):
+        if normalized_text.endswith(("吗", "?", "嘛", "么")):
+            return True
+        if len(normalized_text) <= 6:
+            return True
     return len(key.split()) > 1 and _starts_with_request_term(key)
 
 
-def _allowed_asset_keywords(asset_kind: str | None) -> set[str]:
-    if asset_kind == "image":
-        return {_normalize_keyword_text(value) for value in ASSET_IMAGE_KEYWORDS}
+def _is_media_noun_keyword(key: str, asset_kind: str) -> bool:
     if asset_kind == "video":
-        return {_normalize_keyword_text(value) for value in ASSET_VIDEO_KEYWORDS}
-    return {
-        _normalize_keyword_text(value)
-        for value in (*ASSET_IMAGE_KEYWORDS, *ASSET_VIDEO_KEYWORDS)
-    }
+        return key in {"视频", "影片", "录像", "小视频", "video", "videos", "vid", "clip", "clips"}
+    if asset_kind == "image":
+        return key in {
+            "照片", "图片", "自拍", "photo", "photos", "pic", "pics", "picture", "pictures", "selfie", "nudes",
+        }
+    return False
 
 
 def _has_asset_request_intent(normalized_text: str) -> bool:
@@ -581,10 +641,12 @@ def _choose_category(
     if state.tracking_id:
         if state.downloaded or state.registered or state.paid:
             return None, "third_party_handoff", "download_complete"
+        if state.clicked and not state.downloaded:
+            if _is_explicit_link_request(text_value):
+                return "app_download_direct_cta", "app_download_direct_cta", "pre_click"
+            return None, "clicked_pending_download", "post_click_worker"
         if _is_explicit_link_request(text_value):
             return "app_download_direct_cta", "app_download_direct_cta", "pre_click"
-        if state.clicked and not state.downloaded and (minutes is None or minutes >= 3):
-            return "app_link_clicked_followup", "app_link_clicked_followup", "clicked_not_downloaded"
         if not state.clicked and minutes is not None and minutes < 10:
             return None, "recent_link_exposed", "pre_click"
 
@@ -622,8 +684,11 @@ def _choose_category(
         return "operator_app_conversion", "operator_app_conversion", "pre_click_high_value"
     if count >= 3:
         return "app_download_after_warmup", "app_download_after_warmup", "pre_click_warm"
-    if count >= 1 and not state.tracking_id:
-        return "app_download_first_push", "app_download_first_push", "pre_click_first"
+    if not state.tracking_id:
+        if count >= 1:
+            return "app_download_first_push", "app_download_first_push", "pre_click_first"
+        if count == 0 and user_level in {"B", "C"}:
+            return "app_download_first_push", "app_download_first_push", "pre_click_first"
     return None, "not_ready", "pre_click"
 
 
@@ -673,8 +738,31 @@ def _render_script(content: str, *, app_download_url: str, force_url: bool = Fal
     return rendered
 
 
-def _append_asset_download_copy(content: str, *, app_download_url: str) -> str:
-    body = str(content or "").strip()
+_ASSET_DELIVERY_ORDER = {"image": 0, "video": 1, "voice": 2, "audio": 3}
+
+
+def _sort_assets_for_delivery(assets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(
+        assets,
+        key=lambda asset: (
+            _ASSET_DELIVERY_ORDER.get(str(asset.get("asset_type") or "").lower(), 9),
+            int(asset.get("sort_order") or 0),
+        ),
+    )
+
+
+def _build_asset_keyword_reply_text(
+    *,
+    app_download_url: str,
+    assets: list[dict[str, Any]],
+) -> str:
+    """Reply copy for keyword hits; template content holds triggers, not outgoing text."""
+    caption_parts = [
+        str(asset.get("caption") or "").strip()
+        for asset in assets
+        if str(asset.get("caption") or "").strip()
+    ]
+    body = caption_parts[0] if caption_parts else ""
     cta = f"{ASSET_KEYWORD_APP_DOWNLOAD_COPY} {app_download_url} (Code: c5a8we)".strip()
     if not body:
         return cta

@@ -59,6 +59,7 @@ from services.conversation_context import load_conversation_context
 from services.emotion_lexicon import detect_language_from_text, normalize_language
 from services.app_download_conversion import (
     clear_last_app_download_decision,
+    conversion_decision_skips_llm,
     maybe_select_app_download_reply,
 )
 from services.prompt_builder import (
@@ -305,8 +306,15 @@ async def generate_reply(
             scene_step=decision.scene_step,
             script_hit_id=decision.script_hit_id,
         ).info("orchestrator.app_download_conversion.nudge_ready")
-        if getattr(decision, "intent", None) == "asset_keyword_request":
-            return _asset_keyword_acknowledgement(user_text, decision)
+        if conversion_decision_skips_llm(decision):
+            script_reply = str(getattr(decision, "content", "") or "").strip()
+            log.bind(
+                result="conversion_script_skip_llm" if script_reply else "conversion_script_empty",
+                category_key=getattr(decision, "category_key", None),
+                intent=getattr(decision, "intent", None),
+            ).info("orchestrator.app_download_conversion.script_reply")
+            if script_reply:
+                return script_reply
 
     prompt = build_prompt(
         PromptInput(

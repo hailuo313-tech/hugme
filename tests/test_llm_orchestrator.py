@@ -122,6 +122,10 @@ async def test_asset_keyword_decision_skips_llm_refusal(monkeypatch, llm_orchest
             scene_step="asset_keyword:photo,video",
             script_hit_id="hit-asset",
             language="fr",
+            content=(
+                "TG blocks all my unedited premium content anyway. Move over to my private "
+                "chatroom, everything is unlocked there: https://app.example/download (Code: c5a8we)"
+            ),
             assets=[
                 {"asset_type": "image", "asset_url": "https://cdn.example/photo.jpg"},
                 {"asset_type": "video", "asset_url": "https://cdn.example/video.mp4"},
@@ -145,72 +149,71 @@ async def test_asset_keyword_decision_skips_llm_refusal(monkeypatch, llm_orchest
         db=None,
     )
 
-    assert "photos" in reply
-    assert "vidéo" in reply
+    assert "private chatroom" in reply
+    assert "https://app.example/download" in reply
     assert "ne peux pas" not in reply.lower()
 
 
 @pytest.mark.asyncio
-async def test_app_download_nudge_keeps_llm_answer_first(monkeypatch, llm_orchestrator):
-    async def fake_chat(*, messages, trace_id, **_kwargs):
-        return _LLMResultStub(
-            content="Yes, I can slow down. What do you actually want to talk about?"
-        )
+async def test_first_push_decision_skips_llm(monkeypatch, llm_orchestrator):
+    async def fail_chat(**_kwargs):
+        raise AssertionError("first_push must skip LLM")
 
     async def fake_download_decision(**_kwargs):
         return SimpleNamespace(
-            content=(
-                "did u get scared of a voluptuous woman? "
-                "fix it right here: https://app.example/download"
-            ),
-            category_key="app_link_clicked_followup",
-            scene_step="clicked_not_downloaded",
+            content="Open my private app here: https://app.example/download",
+            category_key="app_download_first_push",
+            intent="app_download_first_push",
+            scene_step="pre_click_first",
             script_hit_id="script-1",
         )
 
-    monkeypatch.setattr(llm_orchestrator, "llm_chat", fake_chat)
+    monkeypatch.setattr(llm_orchestrator, "llm_chat", fail_chat)
     monkeypatch.setattr(llm_orchestrator, "maybe_select_app_download_reply", fake_download_decision)
+    monkeypatch.setattr(llm_orchestrator.settings, "MEMORY_RETRIEVE_IN_PROMPT", False)
+    monkeypatch.setattr(llm_orchestrator.settings, "POLICY_SERVICE_ENABLED", False)
+    monkeypatch.setattr(llm_orchestrator.settings, "REL_STAGE_AUTO_ENABLED", False)
 
     reply = await llm_orchestrator.generate_reply(
         user_id="user-1",
         conversation_id="conv-1",
-        user_text="Can you have a serious conversation?",
-        trace_id="trace-download-nudge",
+        user_text="hi",
+        trace_id="trace-first-push",
+        db=None,
     )
 
-    assert reply.startswith("Yes, I can slow down.")
-    assert "If you still want to continue somewhere more private" in reply
-    assert "https://app.example/download" in reply
-    assert "voluptuous woman" not in reply
+    assert reply == "Open my private app here: https://app.example/download"
 
 
 @pytest.mark.asyncio
-async def test_app_download_direct_cta_keeps_llm_answer_first(monkeypatch, llm_orchestrator):
-    async def fake_chat(*, messages, trace_id, **_kwargs):
-        return _LLMResultStub(content="Here is the simple answer first.")
+async def test_app_download_direct_cta_skips_llm(monkeypatch, llm_orchestrator):
+    async def fail_chat(**_kwargs):
+        raise AssertionError("direct_cta must skip LLM")
 
     async def fake_download_decision(**_kwargs):
         return SimpleNamespace(
             content="Here is the private link: https://app.example/download",
             category_key="app_download_direct_cta",
+            intent="app_download_direct_cta",
             scene_step="pre_click",
             script_hit_id="script-2",
         )
 
-    monkeypatch.setattr(llm_orchestrator, "llm_chat", fake_chat)
+    monkeypatch.setattr(llm_orchestrator, "llm_chat", fail_chat)
     monkeypatch.setattr(llm_orchestrator, "maybe_select_app_download_reply", fake_download_decision)
+    monkeypatch.setattr(llm_orchestrator.settings, "MEMORY_RETRIEVE_IN_PROMPT", False)
+    monkeypatch.setattr(llm_orchestrator.settings, "POLICY_SERVICE_ENABLED", False)
+    monkeypatch.setattr(llm_orchestrator.settings, "REL_STAGE_AUTO_ENABLED", False)
 
     reply = await llm_orchestrator.generate_reply(
         user_id="user-1",
         conversation_id="conv-1",
         user_text="send me the app link",
         trace_id="trace-direct-cta",
+        db=None,
     )
 
-    assert reply.startswith("Here is the simple answer first.")
-    assert "Let's chat on my private app instead, way safer than here." in reply
-    assert "(Enter code: c5a8we)" in reply
-    assert "https://app.example/download" in reply
+    assert reply == "Here is the private link: https://app.example/download"
 
 
 def test_app_download_nudge_uses_scene_specific_copy(llm_orchestrator):
