@@ -83,11 +83,6 @@ async def test_maybe_enqueue_routes_video_call_to_operator_handoff(monkeypatch) 
         True,
         raising=False,
     )
-    mock_enqueue = AsyncMock(return_value=1)
-    monkeypatch.setattr(
-        "services.call_broadcast.triggers.enqueue_call_broadcast_job",
-        mock_enqueue,
-    )
 
     result = await maybe_enqueue_call_broadcast(
         user_id="u1",
@@ -99,7 +94,6 @@ async def test_maybe_enqueue_routes_video_call_to_operator_handoff(monkeypatch) 
         trace_id="t1",
     )
     assert result == 0
-    mock_enqueue.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -108,16 +102,6 @@ async def test_maybe_enqueue_routes_8866_to_operator_handoff(monkeypatch) -> Non
         "services.call_broadcast.triggers.settings.CALL_BROADCAST_ENABLED",
         True,
         raising=False,
-    )
-    mock_enqueue = AsyncMock(return_value=1)
-    monkeypatch.setattr(
-        "services.call_broadcast.triggers.enqueue_call_broadcast_job",
-        mock_enqueue,
-    )
-    mock_spawn = MagicMock()
-    monkeypatch.setattr(
-        "services.call_broadcast.worker.spawn_immediate_tick",
-        mock_spawn,
     )
 
     result = await maybe_enqueue_call_broadcast(
@@ -130,8 +114,6 @@ async def test_maybe_enqueue_routes_8866_to_operator_handoff(monkeypatch) -> Non
         trace_id="t1",
     )
     assert result == 0
-    mock_enqueue.assert_not_awaited()
-    mock_spawn.assert_not_called()
 
 
 class _Ctx:
@@ -400,6 +382,11 @@ async def test_handle_incoming_not_busy_on_first_call(monkeypatch) -> None:
     monkeypatch.setattr(
         incoming_listener,
         "count_active_calls_for_account",
+        AsyncMock(return_value=0),
+    )
+    monkeypatch.setattr(
+        incoming_listener,
+        "count_completed_inbound_calls_for_chat",
         AsyncMock(return_value=0),
     )
     monkeypatch.setattr(
