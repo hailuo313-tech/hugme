@@ -101,11 +101,10 @@ def test_serialize_chat_user_adds_chat_id() -> None:
 @pytest.mark.asyncio
 async def test_manual_calls_rejects_when_disabled(monkeypatch) -> None:
     monkeypatch.setattr(
-        "api.call_broadcast_admin.settings",
-        "CALL_BROADCAST_ENABLED",
+        "api.call_broadcast_admin.settings.CALL_BROADCAST_ENABLED",
         False,
         raising=False,
-    )  # type: ignore[attr-defined]
+    )
     db = AsyncMock()
     with pytest.raises(HTTPException) as exc:
         await enqueue_manual_call_broadcast(

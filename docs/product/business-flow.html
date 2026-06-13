@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ERIS 智能陪伴系统 — 流程与规则条件</title>
+<title>1V1 智能流控系统 — 流程与任务分工</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 <style>
@@ -192,71 +192,6 @@
     .workload-bar { grid-template-columns: repeat(2, 1fr); }
     .role-cards { grid-template-columns: 1fr; }
   }
-
-  .stats-bar {
-    display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px;
-    background: var(--border); border: 1px solid var(--border);
-    border-radius: 10px; overflow: hidden; margin: 20px 0;
-  }
-  .stat-cell { background: var(--bg2); padding: 16px; text-align: center; }
-  .stat-num { font-family: 'DM Mono', monospace; font-size: 26px; font-weight: 500; }
-  .stat-lbl { font-size: 11px; color: var(--muted); margin-top: 4px; }
-  .stat-sub { font-size: 10px; color: var(--muted); opacity: .8; margin-top: 2px; }
-  table.rules-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  .rules-table th {
-    text-align: left; padding: 10px 12px; background: var(--bg3);
-    color: var(--muted); font-family: 'DM Mono', monospace; font-size: 10px;
-    border-bottom: 1px solid var(--border); white-space: nowrap;
-  }
-  .rules-table td {
-    padding: 9px 12px; border-bottom: 1px solid var(--border);
-    color: var(--muted); vertical-align: top;
-  }
-  .rules-table tr:hover td { background: rgba(255,255,255,0.02); }
-  .rule-id { font-family: 'DM Mono', monospace; font-size: 10px; color: #7dd3fc; white-space: nowrap; }
-  .keywords {
-    font-size: 10px; color: var(--muted); font-family: 'DM Mono', monospace;
-    background: rgba(255,255,255,0.03); padding: 4px 8px; border-radius: 4px;
-    max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
-  .category {
-    font-family: 'DM Mono', monospace; font-size: 10px; font-weight: 500;
-    padding: 3px 8px; border-radius: 4px; white-space: nowrap;
-  }
-  .category-channel { background: rgba(6,182,212,0.15); color: #67e8f9; border: 1px solid rgba(6,182,212,0.35); }
-  .category-intent { background: rgba(6,182,212,0.15); color: #67e8f9; border: 1px solid rgba(6,182,212,0.35); }
-  .category-level { background: rgba(167,139,250,0.15); color: #c4b5fd; border: 1px solid rgba(167,139,250,0.35); }
-  .category-policy { background: rgba(167,139,250,0.15); color: #c4b5fd; border: 1px solid rgba(167,139,250,0.35); }
-  .category-rel { background: rgba(167,139,250,0.12); color: #d8b4fe; border: 1px solid rgba(167,139,250,0.3); }
-  .category-safety { background: rgba(239,68,68,0.15); color: #fca5a5; border: 1px solid rgba(239,68,68,0.35); }
-  .category-conversion { background: rgba(249,115,22,0.15); color: #fdba74; border: 1px solid rgba(249,115,22,0.35); }
-  .category-nurture { background: rgba(249,115,22,0.12); color: #fdba74; border: 1px solid rgba(249,115,22,0.3); }
-  .category-orchestrator { background: rgba(59,130,246,0.12); color: #93c5fd; border: 1px solid rgba(59,130,246,0.35); }
-  .category-operator { background: rgba(59,130,246,0.1); color: #93c5fd; border: 1px solid rgba(59,130,246,0.3); }
-  .category-worker { background: rgba(34,197,94,0.12); color: #86efac; border: 1px solid rgba(34,197,94,0.35); }
-  .category-deprecated { background: rgba(148,163,184,0.12); color: #cbd5e1; border: 1px solid rgba(148,163,184,0.35); }
-  .category-call_broadcast { background: rgba(236,72,153,0.15); color: #f9a8d4; border: 1px solid rgba(236,72,153,0.35); }
-  .priority {
-    display: inline-flex; align-items: center; gap: 4px;
-    font-size: 10px; padding: 3px 8px; border-radius: 4px;
-    white-space: nowrap; font-weight: 500;
-  }
-  .priority-high { background: rgba(239,68,68,0.12); color: #fca5a5; border: 1px solid rgba(239,68,68,0.35); }
-  .priority-medium { background: rgba(251,146,60,0.1); color: #fdba74; border: 1px solid rgba(251,146,60,0.3); }
-  .priority-low { background: rgba(34,197,94,0.12); color: #86efac; border: 1px solid rgba(34,197,94,0.35); }
-  .status-active { color: #86efac; font-size: 10px; font-weight: 600; }
-  .status-off { color: #94a3b8; font-size: 10px; }
-  tr.row-off td { opacity: 0.72; }
-  .category-cards {
-    display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 24px;
-  }
-  .category-card {
-    background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px;
-  }
-  .category-card h3 { font-size: 13px; color: #fff; margin-bottom: 8px; }
-  .category-card p { font-size: 12px; color: var(--muted); line-height: 1.65; }
-  @media (max-width: 768px) { .stats-bar { grid-template-columns: repeat(2, 1fr); } .category-cards { grid-template-columns: 1fr; } }
-
 </style>
 </head>
 <body>
@@ -264,1876 +199,577 @@
 
   <nav class="top-nav">
     <button class="nav-btn active" data-page="flow">业务流程图</button>
-    <button class="nav-btn" data-page="rules">规则条件列表</button>
+    <button class="nav-btn" data-page="tasks">任务分工列表</button>
   </nav>
 
   <!-- ══════════ 页面一：业务流程图 ══════════ -->
   <section id="page-flow" class="page active">
     <header>
-      <div class="eyebrow">页面一 · ERIS 核心流程</div>
-      <h1>ERIS 智能陪伴系统 <span>业务流程图</span></h1>
-      <p class="sub">反映<strong>当前线上实际接线</strong>：MTProto 直处理、Bot Webhook、Open API 三路入站，共用 <code>generate_reply</code>；<strong>MTProto 旁路</strong>支持视频通话（<code>call_broadcast</code>）；出站分通道投递；后台 Worker 负责定时发送与归档。</p>
+      <div class="eyebrow">页面一 · 全链路合一</div>
+      <h1>1V1 智能流控系统 <span>业务流程图</span></h1>
+      <p class="sub">从用户入站、画像分级、AI 处理、坐席接管到出站归档与付费升级的完整单页流程。</p>
       <div class="legend">
-        <span>MTProto 直处理（非队列）</span><span>Bot Webhook</span><span>Open API 聊天</span><span>无入站安全门（已移除）</span>
-        <span>generate_reply 共用核心</span><span>视频通话 call_broadcast</span><span>reply 话术钩子</span><span>素材关键词短路</span><span>后台 Worker 归档</span>
+        <span>真人 MTProto 接入</span><span>话术库全链路匹配</span><span>入站与标准化</span><span>分级与路由</span>
+        <span>AI 核心链路</span><span>坐席协同</span><span>出站与归档</span>
       </div>
     </header>
     <div class="diagram-box">
       <pre class="mermaid">
 flowchart TB
-    START(["用户产生互动"])
-    subgraph LIVE["① 当前上线的入站通道"]
+    START(["业务起点：用户产生互动"])
+    subgraph SCRIPT["⓪ 话术库（每步必匹配）"]
+        LIB[("话术库\nscript_templates")]
+        ENG["话术匹配引擎\n向量 TopK + 渠道/分级/人设/场景"]
+    end
+    LIB --> ENG
+    subgraph CH["① 多渠道接入"]
         direction LR
-        TG["Telegram 真人 MTProto\nhandle_mtproto_new_message 直处理"]
-        BOT["Telegram Bot Webhook\nPOST /telegram/webhook"]
-        OPEN["Open API 聊天\nPOST /api/v1/open/.../messages"]
+        TG["Telegram 真人账号\nMTProto 接入"]
+        H5["Web H5 网页端"]
+        APP["原生 App"]
+        PAY_WH["付费系统回调"]
     end
-    START --> TG & BOT & OPEN
-    subgraph MTP["MTProto 运行时（Telethon）"]
-        POOL["AccountPool 固定路由"]
-        SESS["Session 加密 · 自动重连"]
-        EVT["NewMessage 监听"]
+    START --> TG & H5 & APP
+    subgraph MTP["①-b MTProto + Userbot（Telethon）"]
+        POOL["多账号池\nAccountPool"]
+        EVT["消息同步服务\nNewMessage 监听"]
+        DEDUP["Redis 去重"]
+        SESS["Session 加密\n自动重连"]
     end
-    TG --> POOL --> EVT
+    TG --> POOL --> EVT --> DEDUP
     SESS -.-> POOL
-    subgraph PRE["② 入站预处理"]
-        PERSIST["消息持久化\nRedis 会话上下文"]
-        PROFILE["profile_intake 补全\n+calcUserLevel 写入元数据"]
+    DEDUP --> M1["① 入站话术匹配"] --> ADAPT["渠道适配器\nplatform=telegram_real_user"]
+    ENG -.-> M1
+    H5 & APP --> M1
+    subgraph IN["② 入站标准化"]
+        ADAPT --> VALID["消息格式校验"]
+        VALID --> AUDIT[("审计流水\n含 script_hit_id")]
+        VALID --> QUEUE[("入站消息队列")]
     end
-    EVT --> PERSIST
-    BOT --> PERSIST
-    OPEN --> PERSIST
-    PERSIST --> PROFILE
-    subgraph ORCH["③ generate_reply 共用核心"]
-        INTENT["意图识别"]
-        INTENT --> LONELY["孤独感评分刷新"]
-        LONELY --> POLICY["POL-01 Policy handoff\n开关开启时"]
-        POLICY --> REL["REL-01 关系阶段\n默认关闭"]
-        REL --> MEM["记忆检索"]
-        MEM --> ADC{"app_download_conversion\nreply 话术钩子"}
-        ADC -->|高意图 图/视频| KW["asset_keyword\n素材+链接\n跳过 LLM"]
-        ADC -->|已点击再要素材| KW2["asset 仅素材\n不重复塞链"]
-        ADC -->|高意图 link| CTA["direct_cta / first_push\n跳过 LLM"]
-        ADC -->|异议/信任| TR["objection / trust\n跳过 LLM"]
-        ADC -->|C/B 首条| FPUSH["first_push\n新用户首触"]
-        ADC -->|未命中| PROMPT["10 层 Prompt"]
-        PROMPT --> LLM["LLM 生成"]
-        LLM --> NUDGE["下载引导 nudge"]
+    subgraph PROF["③ 画像与分级"]
+        QUEUE --> M2["② 消费场景话术匹配"] --> GEO["IP 解析国家"]
+        ENG -.-> M2
+        GEO --> READ_PROF[("用户画像表")]
+        READ_PROF --> INCOMPLETE{"画像完整？"}
+        INCOMPLETE -->|否| D_LVL["D 级探测补全"]
+        D_LVL --> M3["③ 探测话术匹配"] --> PROBE["AI 引导补全年龄等"]
+        ENG -.-> M3
+        PROBE --> READ_PROF
+        INCOMPLETE -->|是| CALC["用户分级计算"]
+        CALC --> M4["④ 分级场景话术匹配"] --> RULE{"分级规则"}
+        ENG -.-> M4
+        RULE --> S_LVL["S 级 专家精聊"] & A_LVL["A 级 重点转化"] & B_LVL["B 级 AI+辅助"] & C_LVL["C 级 全自动"]
     end
-    PROFILE --> ORCH
-    subgraph VC["③-b 视频通话（MTProto 旁路 · CALL_BROADCAST_ENABLED）"]
-        VCHECK{"视频通话关键词\nvideo call / facetime / 视频通话 / 8866"}
-        VQ["enqueue call_broadcast_jobs\n异步，不阻塞聊天"]
-        VWK["call_broadcast_worker\n15s 轮询 · 8866 立即 tick"]
-        VSTREAM["PyTgCalls 外呼/接听\n播放 video_broadcast_assets"]
-        VPOST["可选：通话后 click_only 培育"]
+    PAY_WH --> PAY_EVENT["付费成功"] --> M_PAY["付费成功话术匹配"] --> CALC
+    ENG -.-> M_PAY
+    S_LVL & A_LVL --> M_UP["升级通知话术匹配"] --> WS_UP["通知坐席升级"]
+    ENG -.-> M_UP
+    subgraph AI["④ AI 处理（必先命中话术库）"]
+        M2 --> M5["⑤ 回复话术匹配"] --> INTENT["意图识别"]
+        ENG -.-> M5
+        INTENT --> TOP3["命中话术 Top3\n写入 script_hit_id"] --> WRAP["大模型拟人包装\n基于命中底料"]
+        ENG -.-> TOP3
+        WRAP --> SAFE["安全过滤"] --> DELAY["计算拟人延迟"] --> OUT_Q[("待发队列\n携带 script_ids")]
     end
-    PERSIST -.->|仅 MTProto| VCHECK
-    VCHECK -->|命中| VQ --> VWK --> VSTREAM --> VPOST
-    subgraph VIN["③-c 用户主动来电（INCOMING_AUTO_ANSWER）"]
-        VLISTEN["PyTgCalls INCOMING_CALL 监听"]
-        VSEQ{"第 N 次来电\nINBOUND_MANUAL_AFTER=1"}
-        VAUTO["自动接听 · play_sequence 视频"]
-        VREVIEW["坐席审核\nadmin/video-broadcast"]
+    subgraph AG["⑤ 坐席协同"]
+        OUT_Q --> BR{"用户分级？"}
+        BR -->|S/A| HOLD["挂起等坐席"] --> DASH["坐席看板\n展示推荐话术"] --> M6["⑥ 坐席话术匹配/改写"]
+        ENG -.-> M6
+        M6 --> ACT{"120秒内操作？"}
+        ACT -->|编辑/发送/超时| SEND_PATH["出站发送"]
+        BR -->|B/C/D| AUTO["自动投递"] --> SEND_PATH
     end
-    POOL -.-> VLISTEN
-    VLISTEN --> VSEQ
-    VSEQ -->|第 1 次| VAUTO --> VSTREAM
-    VSEQ -->|第 2 次起| VREVIEW
-    VREVIEW -.->|accept| VSTREAM
-    VREVIEW -.-> WS
-    subgraph OUT_MTP["④-a 出站 · MTProto"]
-        TRACK["tracking 链接归因"]
-        SEND["拟人延迟 + 发送文本"]
-        MEDIA["素材投递\nimage→video→voice"]
-        NURTURE_M["培育跟进\nschedule_*_after_reply"]
-    end
-    subgraph OUT_BOT["④-b 出站 · Bot API"]
-        BOT_TRACK["tracking 链接归因"]
-        BOT_SEND["telegram_send 发消息"]
-        NURTURE_B["培育跟进\nschedule_*_after_reply"]
-    end
-    subgraph OUT_OPEN["④-c 出站 · Open API"]
-        OPEN_RET["HTTP 返回 reply_text"]
-    end
-    KW & KW2 & CTA & TR & FPUSH & NUDGE --> TRACK --> SEND --> MEDIA --> NURTURE_M
-    KW & KW2 & CTA & TR & FPUSH & NUDGE --> BOT_TRACK --> BOT_SEND --> NURTURE_B
-    KW & KW2 & CTA & TR & FPUSH & NUDGE --> OPEN_RET
-    subgraph WK["⑤ 后台 Worker"]
-        ADW["auto_delivery_worker\n定时发送 + 培育投递"]
-        MSW["message_schedule_service\n通用定时消息"]
-        ARC["archive_worker\n发送后 script_hit 归档"]
-        VCBW["call_broadcast_worker\n视频通话 job 消费"]
-    end
-    VWK -.-> VCBW
-    NURTURE_M --> ADW
-    NURTURE_B --> ADW
-    ADW --> ARC
-    MSW --> ARC
-    subgraph OPS["⑥ 坐席协同（非入站自动挂起）"]
-        WS["WS /ws/operators/tasks"]
-        MANUAL["手动 suspend API\n草稿 + 120s fallback"]
-        POLICY -.-> WS
-        MANUAL --> WS
-    end
-    VPOST --> END(["结束"])
-    NURTURE_M --> END
-    NURTURE_B --> END
-    OPEN_RET --> END
-    ARC --> END
+    SEND_PATH --> M7["⑦ 出站前话术校验/兜底"] --> TYPING["MTProto 正在输入\n+ 拟人延迟"]
+    ENG -.-> M7
+    TYPING --> CHANNEL["AccountPool\n投递至用户"]
+    CHANNEL --> ARCH{"S/A 用户？"}
+    ARCH -->|是| M8["⑧ 归档绑定话术命中记录"] --> LOG[("精聊归档")]
+    ENG -.-> M8
+    ARCH -->|否| END(["流程结束"])
+    LOG --> END
       </pre>
     </div>
-    <div class="tips"><strong>当前线上主路径：</strong>MTProto <code>auto_reply.py</code> 直处理（不经 Redis <code>inbound_queue</code>）、Bot Webhook、Open API 三路最终都调用 <code>generate_reply</code>。<strong>话术匹配：</strong>仅在 <code>app_download_conversion</code> 的 <code>reply</code> 钩子检索 script_templates；<code>archive_worker</code> 在消息发送后归档 script_hit。<strong>视频通话：</strong>与聊天主路径<strong>并行</strong>，仅 MTProto 入站触发；见下方策略表。</div>
-    <div class="tips" style="margin-top:12px;border-color:rgba(236,72,153,0.35)"><strong>视频通话 · call_broadcast（生产已开 CALL_BROADCAST_ENABLED=1）：</strong>
-      <p style="margin:8px 0;color:var(--muted);font-size:12px">与 <code>asset_keyword</code>（发图/发视频<strong>文件</strong>）不同，本模块处理<strong>实时视频通话</strong>：Telethon + PyTgCalls 外呼或接听后播放预置视频。Bot / Open API <strong>不触发</strong>。</p>
-      <table style="width:100%;margin-top:10px;border-collapse:collapse;font-size:12px">
-        <tr style="border-bottom:1px solid var(--border)"><th style="text-align:left;padding:6px 8px;color:#f9a8d4">触发方式</th><th style="text-align:left;padding:6px 8px;color:#f9a8d4">行为</th></tr>
-        <tr><td style="padding:6px 8px;vertical-align:top"><code>用户发消息关键词</code></td><td style="padding:6px 8px;color:var(--muted)">命中 <code>video call</code> / <code>facetime</code> / <code>cam2cam</code> / <code>视频通话</code> 等 → 入队 <code>call_broadcast_jobs</code> → worker 外呼播视频；<strong>不阻塞</strong>当轮 <code>generate_reply</code></td></tr>
-        <tr><td style="padding:6px 8px;vertical-align:top"><code>测试码 8866</code></td><td style="padding:6px 8px;color:var(--muted)">消息精确匹配 <code>8866</code> → 入队后<strong>立即</strong> spawn worker tick</td></tr>
-        <tr><td style="padding:6px 8px;vertical-align:top"><code>用户主动来电</code></td><td style="padding:6px 8px;color:var(--muted)">第 <strong>1</strong> 次：自动接听，播 <code>play_sequence=1</code> 视频；第 <strong>2</strong> 次起（<code>INBOUND_MANUAL_AFTER=1</code>）：转坐席审核 <code>admin/video-broadcast</code></td></tr>
-        <tr><td style="padding:6px 8px;vertical-align:top"><code>坐席手动外呼</code></td><td style="padding:6px 8px;color:var(--muted)">后台 <code>POST /api/v1/call-broadcast/admin/manual-calls</code> 向指定用户发起通话</td></tr>
-        <tr><td style="padding:6px 8px;vertical-align:top"><code>通话后</code></td><td style="padding:6px 8px;color:var(--muted)"><code>POST_CALL_NURTURE_ENABLED=1</code> 时可衔接 click_only 培育；每账号 <code>MAX_CONCURRENT=1</code></td></tr>
-      </table>
-    </div>
-    <div class="tips" style="margin-top:12px"><strong>三方推广 · click_only 转化策略（2026-06 线上）：</strong>
-      <p style="margin:8px 0;color:var(--muted);font-size:12px">核心 KPI = <strong style="color:#86efac">CTR（click_users / link_exposed_users）</strong>。download/register 三方不可见，<code>APP_DOWNLOAD_FUNNEL_MODE=click_only</code> 下不参与决策。</p>
-      <table style="width:100%;margin-top:10px;border-collapse:collapse;font-size:12px">
-        <tr style="border-bottom:1px solid var(--border)"><th style="text-align:left;padding:6px 8px;color:#fdba74">阶段</th><th style="text-align:left;padding:6px 8px;color:#fdba74">策略</th></tr>
-        <tr><td style="padding:6px 8px;vertical-align:top"><code>未点击</code></td><td style="padding:6px 8px;color:var(--muted)"><code>first_push</code> → 培育 <strong>45–60s</strong> → <strong>+3min</strong> <code>after_warmup</code>（第 2 轮，pending 升级）→ 暖聊 3–5 轮 → <strong>30min</strong> silent_30m；高意图 <code>asset_keyword</code> / <code>direct_cta</code> / <code>operator</code> 均 skip LLM 直出链接</td></tr>
-        <tr><td style="padding:6px 8px;vertical-align:top"><code>已点击</code></td><td style="padding:6px 8px;color:var(--muted)">默认<strong>不再推链</strong>；<strong>明确再要链接</strong> → <code>direct_cta</code>（优先于收口）；再要素材 → 只发图/视频不塞新链；worker <strong>+2min</strong> <code>clicked_post_followup_2m</code>（24h/会话 1 次；pre-click failed 不挡跟进）</td></tr>
-        <tr><td style="padding:6px 8px;vertical-align:top"><code>点击后收口</code></td><td style="padding:6px 8px;color:var(--muted)"><code>clicked_followup</code> 已发送 或 首次点击超 <strong>24h</strong> → <code>click_promotion_complete</code>，停止一切自动推链</td></tr>
-        <tr><td style="padding:6px 8px;vertical-align:top"><code>D 级</code></td><td style="padding:6px 8px;color:var(--muted)">阻断脚本转化漏斗；<strong>素材关键词路径不受限</strong></td></tr>
-      </table>
-    </div>
-    <div class="tips" style="margin-top:12px"><strong>已下线/未接线（图中已移除）：</strong>8 钩子逐步匹配流水线、入站 Redis 队列消费、S/A 入站自动挂起坐席、<code>chat_route=manual_premium</code> 拦截 AI、D 级 probe 话术钩子、H5 作为独立入站通道（H5 仅 WS 传输，聊天走 Open API）、<code>/messages/inbound</code> 仅 202 落库不自动回复；<strong>2026-05-24 安全规则清空：</strong><code>content_safety</code> 入站门、<code>minor_protection</code>、<code>crisis_intervention</code> 危机短路、<code>reply_consistency</code> 出站、<code>safety.*</code> 意图、Prompt L1 安全红线、<code>CONTENT_SAFETY_*</code> 环境变量。</div>
-    <div class="tips" style="margin-top:12px;border-color:rgba(239,68,68,0.25)">
-      <strong>规则变更摘要（2026-05-24 · main e7d3cfb / PR #373）：</strong>
-      <table style="width:100%;margin-top:10px;border-collapse:collapse;font-size:12px">
-        <tr style="border-bottom:1px solid var(--border)">
-          <th style="text-align:left;padding:6px 8px;color:#fca5a5;width:50%">减少（已从主路径移除）</th>
-          <th style="text-align:left;padding:6px 8px;color:#86efac">保留 / 增加</th>
-        </tr>
-        <tr>
-          <td style="padding:6px 8px;vertical-align:top;color:var(--muted)">
-            入站 <code>content_safety</code> / 关键词红线 / Moderation 拦截<br>
-            <code>minor_protection</code> 未成年人组合拦截<br>
-            编排 <code>crisis_intervention</code>、危机话术短路<br>
-            出站 <code>reply_consistency</code><br>
-            意图 <code>safety.self_harm_ideation</code> 等 5 类<br>
-            Prompt L1 硬红线、persona <code>safety_notes</code><br>
-            compose <code>CONTENT_SAFETY_*</code> 开关
-          </td>
-          <td style="padding:6px 8px;vertical-align:top;color:var(--muted)">
-            三路入站 + <code>generate_reply</code> 核心不变<br>
-            <code>click_only</code> 转化漏斗（CTR KPI）<br>
-            培育 <code>first_push → after_warmup → silent_30m</code><br>
-            已点击 <code>clicked_post_followup_2m</code> + 收口<br>
-            意图 38 条、转化/培育规则 29 条<br>
-            规则表数据源 <code>_rules_data.json</code>（117 条 / 107 生效）<br>
-            安全模块空壳保留，待重写<br>
-            <strong>视频通话 call_broadcast</strong>（11 条规则，生产已开）
-          </td>
-        </tr>
-      </table>
-    </div>
+    <div class="tips"><strong>话术库原则：</strong>全链路 <strong>8 个匹配点</strong>（入站→消费→探测→分级→回复→坐席→出站→归档），每步经话术匹配引擎检索 script_templates，命中后写入 script_hit_id，LLM 仅对命中底料做拟人包装。<strong>接入：</strong>MTProto + Userbot（Telethon）真人账号；多账号池、Redis 去重与会话上下文。</div>
   </section>
 
-    <!-- ══════════ 页面二：规则条件列表 ══════════ -->
-  <section id="page-rules" class="page">
+  <!-- ══════════ 页面二：任务列表 ══════════ -->
+  <section id="page-tasks" class="page">
     <header>
-      <div class="eyebrow">页面二 · 线上实际规则</div>
-      <h1>ERIS 系统 <span>规则条件列表</span></h1>
-      <p class="sub">共 <strong id="rule-count">—</strong> 条规则，其中 <strong id="active-count" style="color:#86efac">—</strong> 条<strong style="color:#86efac">当前接线生效</strong>。来源对齐 <code>app/services/</code>、<code>config/</code> 与 <code>docker-compose.yml</code> 生产开关。</p>
+      <div class="eyebrow">页面二 · 工作量分配（80% / 20%）</div>
+      <h1>项目 <span>任务分工列表</span></h1>
+      <p class="sub">共 <strong id="task-count">—</strong> 项任务，已完成 <strong id="done-count-header" style="color:#86efac">0</strong> 项 · 按<strong style="color:#e2eaf6">工作量权重（人天）</strong>分配：Devin + Codex 合计 <strong id="ai-pct" style="color:#67e8f9">80%</strong>；Cursor + 人工合计 <strong id="support-pct" style="color:#86efac">20%</strong>（Cursor 负责框架与检验，人工负责业务审定与上线签署）。</p>
     </header>
 
-    <div class="stats-bar">
-      <div class="stat-cell">
-        <div class="stat-num" style="color:#67e8f9" id="stat-channel">—</div>
-        <div class="stat-lbl">入站通道</div>
-        <div class="stat-sub">MTProto / Bot / Open + 视频通话</div>
+    <div class="stack-bar" title="工作量占比">
+      <span class="seg-devin" title="Devin 40%"></span>
+      <span class="seg-codex" title="Codex 40%"></span>
+      <span class="seg-cursor" title="Cursor 12%"></span>
+      <span class="seg-human" title="人工 8%"></span>
+    </div>
+
+    <div class="workload-bar">
+      <div class="wl-cell">
+        <div class="wl-pct" style="color:var(--devin)">40%</div>
+        <div class="wl-lbl">Devin</div>
+        <div class="wl-sub">约 48 人天 · 工程实现</div>
       </div>
-      <div class="stat-cell">
-        <div class="stat-num" style="color:#f9a8d4" id="stat-call">—</div>
-        <div class="stat-lbl">视频通话</div>
-        <div class="stat-sub">call_broadcast · 生产=开</div>
+      <div class="wl-cell">
+        <div class="wl-pct" style="color:var(--codex)">40%</div>
+        <div class="wl-lbl">Codex</div>
+        <div class="wl-sub">约 48 人天 · 核心逻辑</div>
       </div>
-      <div class="stat-cell">
-        <div class="stat-num" style="color:#86efac" id="stat-safety">0</div>
-        <div class="stat-lbl">安全红线配置</div>
-        <div class="stat-sub">redlines = 0，已清空</div>
+      <div class="wl-cell">
+        <div class="wl-pct" style="color:var(--cursor)">12%</div>
+        <div class="wl-lbl">Cursor</div>
+        <div class="wl-sub">约 14 人天 · 框架与检验</div>
       </div>
-      <div class="stat-cell">
-        <div class="stat-num" style="color:#c4b5fd" id="stat-level">—</div>
-        <div class="stat-lbl">分级与策略</div>
-        <div class="stat-sub">level / policy / rel</div>
-      </div>
-      <div class="stat-cell">
-        <div class="stat-num" style="color:#fdba74" id="stat-conversion">—</div>
-        <div class="stat-lbl">转化与培育</div>
-        <div class="stat-sub">app_download + nurture</div>
+      <div class="wl-cell">
+        <div class="wl-pct" style="color:var(--human)">8%</div>
+        <div class="wl-lbl">人工</div>
+        <div class="wl-sub">约 10 人天 · 业务与签署</div>
       </div>
     </div>
 
-    <div class="category-cards">
-      <div class="category-card" style="border-top:2px solid #67e8f9">
-        <h3>入站与编排（channel / orchestrator）</h3>
-        <p>三路实际上线入站共用 <code>generate_reply</code>；H5 仅传输层。编排含意图、孤独感、记忆、app_download 话术钩子；<strong>无</strong>入站安全门与出站一致性检查。</p>
+    <div class="role-cards">
+      <div class="role-card" style="border-top:2px solid var(--devin)">
+        <h3>Devin（40%）— 全栈交付</h3>
+        <p>仓库脚手架、Docker、网关/WebSocket、Telethon MTProto 多账号池与出站、坐席看板与 H5/App 集成、Worker、账号监控告警、灰度、E2E 与压测。</p>
       </div>
-      <div class="category-card" style="border-top:2px solid #86efac">
-        <h3>安全红线配置（redlines）</h3>
-        <p>服务器 <code>config/safety_filter_redlines.json</code> 与 <code>app/config/safety_filter_redlines.json</code> 当前红线均为 <strong>0 条</strong>；页面不再展示旧的 safety 规则列表。</p>
+      <div class="role-card" style="border-top:2px solid var(--codex)">
+        <h3>Codex（40%）— 核心逻辑</h3>
+        <p>DDL、全链路话术匹配引擎、分级引擎、意图识别、向量话术检索、人设 Prompt、安全过滤、script_hit 审计、业务单测与回归。</p>
       </div>
-      <div class="category-card" style="border-top:2px solid #c4b5fd">
-        <h3>分级与接管（level / policy / operator）</h3>
-        <p><code>calcUserLevel</code> 写入 S/A/B/C/D；POL-01 七条件可建 handoff。S/A 入站<strong>不</strong>自动挂起坐席。</p>
+      <div class="role-card" style="border-top:2px solid var(--cursor)">
+        <h3>Cursor（12%）— 框架与检验</h3>
+        <p>ERIS 目录约定（app/admin）、CI 门禁、接口契约审查、PR 审查、各阶段冒烟与联调验收、对照 docs/REPO_LAYOUT.md 做架构一致性检查。</p>
       </div>
-      <div class="category-card" style="border-top:2px solid #fdba74">
-        <h3>转化培育（conversion / nurture / worker）</h3>
-        <p><strong>click_only</strong>：漏斗止于点击，CTR 为核心 KPI。高意图 <code>first_push/direct_cta/after_warmup/operator/asset</code> skip LLM 直出；培育仅未点击用户；已点击后 worker +2min <code>clicked_post_followup_2m</code>，跟进后发完即收口。</p>
+      <div class="role-card" style="border-top:2px solid var(--human)">
+        <h3>人工（8%）— 业务与决策</h3>
+        <p>T1 国家名单与分级阈值审定、话术底料审核、Telegram 真人账号合规与发信频率策略、坐席 SOP 培训、灰度切流、全量上线 Go/No-Go 签署。</p>
       </div>
-      <div class="category-card" style="border-top:2px solid #ec4899">
-        <h3>视频通话（call_broadcast）</h3>
-        <p><strong>仅 MTProto</strong>：用户消息关键词或测试码 <code>8866</code> 入队外呼；用户主动来电第 1 次自动接听，第 2 次起坐席审核。PyTgCalls 播放 <code>video_broadcast_assets</code>（play_sequence 1/2/3）。管理端 <code>admin/video-broadcast</code>。</p>
-      </div>
+    </div>
+
+    <div class="para-legend">
+      <span><i class="para-dot" style="background:#22c55e"></i> <strong style="color:#86efac">可立即并行</strong> — 无阻塞依赖，项目启动即可开工</span>
+      <span><i class="para-dot" style="background:#3b82f6"></i> <strong style="color:#93c5fd">同批并行组</strong> — 依赖满足后，组内任务可同时开工</span>
+      <span><i class="para-dot" style="background:#f97316"></i> <strong style="color:#fdba74">须等依赖</strong> — 前置任务完成后才能开始</span>
+      <span><i class="para-dot" style="background:#ef4444"></i> <strong style="color:#fca5a5">阶段关口</strong> — 里程碑验收，通过后解锁下游</span>
+    </div>
+
+    <div class="para-schedule" style="border-color:rgba(34,197,94,0.35)">
+      <h4>仓库架构：ERIS MVP（已替代 gateway/ws/worker/dashboard monorepo）</h4>
+      <ul>
+        <li><strong>C-01 验收：</strong><code>app/</code> + <code>admin/</code> + <code>docker-compose.yml</code> + <code>AGENTS.md</code> → <code>docs/REPO_LAYOUT.md</code></li>
+        <li><strong>映射：</strong>gateway/ws/worker → <code>app/api</code> + <code>app/services</code>；dashboard → <code>admin/</code></li>
+        <li><strong>栈：</strong>FastAPI 单容器 <code>eris-api</code>（非 Fastify 多服务）</li>
+      </ul>
+    </div>
+
+    <div class="para-schedule" style="border-color:rgba(6,182,212,0.35)">
+      <h4>Telegram 接入：MTProto + Userbot（Telethon）技术栈</h4>
+      <ul>
+        <li><strong>真人接入层：</strong>Telethon 多账号 StringSession · AccountPool（user_id hash 分配）</li>
+        <li><strong>后端服务层：</strong>消息同步 · 会话管理 · 用户画像 · <strong>话术匹配（每步必走）</strong> · AI 处理 · 坐席协同 · Redis 去重</li>
+        <li><strong>话术库：</strong>8 钩子 script_match（入站/消费/探测/分级/回复/坐席/出站/归档）· script_hit_id 全链路审计</li>
+        <li><strong>出站拟人：</strong>send_typing + 按字数延迟 send_human_like_message</li>
+        <li><strong>运维合规：</strong>Session 加密 · 自动重连 · 在线率/封号预警 · 遵守 ToS 与发信频率（见 H-11）</li>
+      </ul>
+    </div>
+
+    <div class="para-schedule">
+      <h4>每周可并行开工一览（Devin ∥ Codex ∥ Cursor ∥ 人工）</h4>
+      <ul>
+        <li><strong>W1：</strong>① C-01（ERIS 目录基线）+ C-03 + H-01 → ② C-02 ∥ P1-01 ∥ P1-05（FastAPI）→ ③ P1-06 ∥ P1-07（realtime WS）</li>
+        <li><strong>W2：</strong>P1-13 ∥ P1-09 ∥ H-11；P1-17 ∥ P1-18；P1-11 ∥ P1-12 ∥ P1-19；P1-14 ∥ P1-15</li>
+        <li><strong>W3：</strong>P1-20 账号监控（须 P1-17/18 完成）</li>
+        <li><strong>W3–W4：</strong>H-02 ∥ P2-02 ∥ P2-07；P2-08 ∥ P3-01 ∥ P4-01（三轨并行）</li>
+        <li><strong>W5–W6：</strong>P3-21 ∥ P3-02；P3-20（8 钩子）∥ P3-07；P3-05 ∥ P3-10；P3-13 ∥ P3-14 ∥ P3-18</li>
+        <li><strong>W7–W9：</strong>P4-08 ∥ P4-10；C-09 ∥ P3-18；P4-06 ∥ P4-07</li>
+        <li><strong>W10–W11：</strong>P5-03 ∥ P5-04；P5-05 ∥ P5-07；C-13 ∥ H-09</li>
+      </ul>
     </div>
 
     <div class="filters" id="filters">
       <button class="filter-btn active" data-filter="all">全部</button>
-      <button class="filter-btn" data-filter="active">仅生效</button>
-      <button class="filter-btn" data-filter="deprecated">已下线</button>
-      <button class="filter-btn" data-filter="channel">入站通道</button>
-      <button class="filter-btn" data-filter="intent">意图识别</button>
-      <button class="filter-btn" data-filter="level">用户分级</button>
-      <button class="filter-btn" data-filter="policy">Policy</button>
-      <button class="filter-btn" data-filter="conversion">App 转化</button>
-      <button class="filter-btn" data-filter="nurture">培育跟进</button>
-      <button class="filter-btn" data-filter="orchestrator">编排层</button>
-      <button class="filter-btn" data-filter="operator">坐席协同</button>
-      <button class="filter-btn" data-filter="worker">后台 Worker</button>
-      <button class="filter-btn" data-filter="call_broadcast">视频通话</button>
-      <button class="filter-btn" data-filter="high">高优先级</button>
+      <button class="filter-btn" data-filter="devin">Devin</button>
+      <button class="filter-btn" data-filter="codex">Codex</button>
+      <button class="filter-btn" data-filter="cursor">Cursor</button>
+      <button class="filter-btn" data-filter="human">人工</button>
+      <button class="filter-btn" data-filter="para-now">可立即并行</button>
+      <button class="filter-btn" data-filter="para-group">同批并行组</button>
+      <button class="filter-btn" data-filter="done">已完成</button>
+      <button class="filter-btn" data-filter="pending">未完成</button>
+    </div>
+
+    <div class="task-progress" id="task-progress">
+      <span>进度：<strong id="done-count">0</strong> / <span id="done-total">0</span> 已完成</span>
+      <div class="progress-track" title="完成进度"><span class="progress-fill" id="progress-fill"></span></div>
+      <button type="button" class="filter-btn" id="reset-done" title="清除本页所有勾选记录">清空勾选</button>
     </div>
 
     <div class="panel">
-      <table class="rules-table">
+      <table class="task-table">
         <thead>
           <tr>
-            <th>规则 ID</th><th>类别</th><th>状态</th><th>规则名称</th><th>优先级</th>
-            <th>关键词/条件</th><th>置信度/阈值</th><th>说明</th>
+            <th class="task-check">完成</th><th>任务编号</th><th>阶段</th><th>任务描述</th><th>负责人</th>
+            <th>并行标识</th><th>权重</th><th>周次</th><th>依赖</th><th>验收标准</th>
           </tr>
         </thead>
-        <tbody id="rules-body"></tbody>
+        <tbody id="task-body"></tbody>
       </table>
     </div>
 
     <div class="tips">
-      <strong>执行顺序（线上主路径）：</strong>入站通道 → 消息持久化 → profile_intake/分级元数据 → generate_reply（意图 → 孤独感 → POL-01 → REL-01 → 记忆 → app_download reply 钩子 → 10 层 Prompt/LLM）→ tracking → 出站 → 培育 schedule → archive_worker。
-      <strong>视频通话旁路（MTProto only）：</strong>消息持久化后异步检测关键词 → enqueue <code>call_broadcast_jobs</code> → worker/PyTgCalls 外呼；用户来电走 INCOMING_CALL 监听（第 1 次自动 / 第 2 次起坐席审核）。
-      <strong>培育默认参数（compose）：</strong><code>APP_DOWNLOAD_FUNNEL_MODE=click_only</code>、<code>APP_DOWNLOAD_FIRST_IDLE_SECONDS=50</code>（生效 45–60s）、<code>APP_DOWNLOAD_SECOND_NO_CLICK_SECONDS=180</code>、<code>APP_DOWNLOAD_CLICK_NO_DOWNLOAD_SECONDS=120</code>（点击后 +2min 跟进）、<code>APP_DOWNLOAD_SILENT_30M_SECONDS=1800</code>。
-      <strong>已下线规则</strong>保留在表中标注「未接线」，与流程图一致，避免与历史设计文档混淆。
+      <strong>协作顺序：</strong>
+      Cursor 在 W1 确认 ERIS 目录基线（app/admin/docker-compose）与 CI → Codex 可单测模块 → Devin 在 app/ 内集成 → Cursor 冒烟检验 → 人工审定 → 下一阶段。
+      <strong>并行原则：</strong>标绿可与其他轨道同时开工；标蓝为同批并行组；标橙须串行等待；标红为阶段关口，未通过不得开启下游并行组。
+      <strong>完成勾选：</strong>勾选会保存在本浏览器（localStorage），换电脑或清缓存需重新勾选。
     </div>
   </section>
 
-  <footer>ERIS 智能陪伴系统 · 业务流程 + 规则条件 · 共 117 条 · 生效 107 条</footer>
+  <footer>1V1 智能流控系统 · 流程 + 任务分工 · Devin/Codex 80% · Cursor/人工 20% · 总权重约 120 人天</footer>
 </div>
 
 <script>
-const RULES = [
-  {
-    "id": "channel.mtproto_direct",
-    "category": "channel",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "MTProto",
-      "auto_reply.py"
-    ],
-    "confidence": 1,
-    "desc": "Telegram 真人入站：NewMessage → handle_mtproto_new_message 直处理，不经 inbound_queue"
-  },
-  {
-    "id": "channel.bot_webhook",
-    "category": "channel",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "POST /telegram/webhook"
-    ],
-    "confidence": 1,
-    "desc": "Telegram Bot 入站：建档/onboarding → generate_reply → Bot API 发送"
-  },
-  {
-    "id": "channel.open_api",
-    "category": "channel",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "POST /api/v1/open/.../messages"
-    ],
-    "confidence": 1,
-    "desc": "Open API 聊天入站：同步返回 reply_text"
-  },
-  {
-    "id": "channel.h5_transport",
-    "category": "channel",
-    "priority": "low",
-    "active": true,
-    "keywords": [
-      "WS /ws/h5/chat"
-    ],
-    "confidence": 1,
-    "desc": "H5 仅 WS 传输层（ping/typing/ack）；聊天走 Open API，非独立入站"
-  },
-  {
-    "id": "channel.inbound_ingest_only",
-    "category": "channel",
-    "priority": "low",
-    "active": true,
-    "keywords": [
-      "POST /messages/inbound",
-      "202"
-    ],
-    "confidence": 1,
-    "desc": "/messages/inbound 仅落库+上下文，不自动回复"
-  },
-  {
-    "id": "channel.inbound_queue_deprecated",
-    "category": "deprecated",
-    "priority": "low",
-    "active": false,
-    "keywords": [
-      "inbound_queue",
-      "queue_consumer"
-    ],
-    "confidence": 1,
-    "desc": "【已下线】Redis Stream 入站队列：消费者未在 main.py 启动"
-  },
-  {
-    "id": "level.profile_incomplete_d",
-    "category": "level",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "profile_complete=false"
-    ],
-    "confidence": 1,
-    "desc": "画像不完整 → D 级，profile_intake 补全年龄/国家"
-  },
-  {
-    "id": "level.t1_spend_200",
-    "category": "level",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "T1",
-      "lifetime_spend>=200"
-    ],
-    "confidence": 1,
-    "desc": "T1 且终身消费 ≥ $200 → S 级"
-  },
-  {
-    "id": "level.spend_or_vip_a",
-    "category": "level",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "lifetime_spend>=99",
-      "vip_level>=1"
-    ],
-    "confidence": 1,
-    "desc": "终身消费 ≥ $99 或 VIP≥1 → A 级"
-  },
-  {
-    "id": "level.t1_default_b",
-    "category": "level",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "T1",
-      "complete",
-      "below A"
-    ],
-    "confidence": 1,
-    "desc": "T1 完整画像未达 A → B 级"
-  },
-  {
-    "id": "level.tier_default_c",
-    "category": "level",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "T2",
-      "T3",
-      "unknown"
-    ],
-    "confidence": 1,
-    "desc": "T2/T3/未知国家默认 → C 级"
-  },
-  {
-    "id": "level.chat_route_metadata",
-    "category": "level",
-    "priority": "low",
-    "active": true,
-    "keywords": [
-      "chat_route"
-    ],
-    "confidence": 1,
-    "desc": "chat_route 仅元数据；入站不拦截 AI 自动回复"
-  },
-  {
-    "id": "level.d_script_block",
-    "category": "level",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "user_level=D",
-      "except asset_keyword"
-    ],
-    "confidence": 1,
-    "desc": "D 级阻断脚本转化漏斗；素材关键词路径不受限"
-  },
-  {
-    "id": "policy.enabled_flag",
-    "category": "policy",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "POLICY_SERVICE_ENABLED"
-    ],
-    "confidence": 1,
-    "desc": "POL-01：生产 compose 默认开启"
-  },
-  {
-    "id": "policy.keyword_human",
-    "category": "policy",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "真人",
-      "人工客服",
-      "human operator"
-    ],
-    "confidence": 1,
-    "desc": "显式索要真人 → P1 handoff"
-  },
-  {
-    "id": "policy.account_risk",
-    "category": "policy",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "risk_level high/critical"
-    ],
-    "confidence": 1,
-    "desc": "users.risk_level ∈ {high,critical} → P1"
-  },
-  {
-    "id": "policy.safeguard",
-    "category": "policy",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "is_minor_suspected",
-      "handoff_count>=3"
-    ],
-    "confidence": 1,
-    "desc": "未成年疑似或 handoff_count≥3 → safeguard"
-  },
-  {
-    "id": "policy.profile_risk_score",
-    "category": "policy",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "risk_score>=75"
-    ],
-    "confidence": 1,
-    "desc": "risk_score ≥ 75 → P2"
-  },
-  {
-    "id": "policy.loneliness_high",
-    "category": "policy",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "loneliness_score>=82"
-    ],
-    "confidence": 1,
-    "desc": "孤独感 ≥ 82 → P2"
-  },
-  {
-    "id": "policy.initiation_hot",
-    "category": "policy",
-    "priority": "low",
-    "active": true,
-    "keywords": [
-      "initiation>=trigger_threshold"
-    ],
-    "confidence": 1,
-    "desc": "initiation ≥ trigger_threshold → P3"
-  },
-  {
-    "id": "policy.vip_tier",
-    "category": "policy",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "vip_level>=1"
-    ],
-    "confidence": 1,
-    "desc": "VIP≥1 → P2"
-  },
-  {
-    "id": "rel.auto_flag",
-    "category": "rel",
-    "priority": "low",
-    "active": false,
-    "keywords": [
-      "REL_STAGE_AUTO_ENABLED"
-    ],
-    "confidence": 1,
-    "desc": "REL-01 默认关闭；开启后按 initiation/VIP 自动升降 S0–S4"
-  },
-  {
-    "id": "rel.stage_thresholds",
-    "category": "rel",
-    "priority": "low",
-    "active": false,
-    "keywords": [
-      "S1:10",
-      "S2:30",
-      "S3:55",
-      "S4:78"
-    ],
-    "confidence": 1,
-    "desc": "关系阶段阈值；S5 仅危机锁定"
-  },
-  {
-    "id": "conversion.asset_keyword",
-    "category": "conversion",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "asset_keyword_request",
-      "photo",
-      "video",
-      "第1条"
-    ],
-    "confidence": 1,
-    "desc": "高意图要图/要视频：模板 content 关键词命中 → 话术+素材+链接，100% 跳过 LLM（D 级亦生效）"
-  },
-  {
-    "id": "conversion.tier_cd_first_push",
-    "category": "conversion",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "B/C",
-      "reply_count=0",
-      "no tracking"
-    ],
-    "confidence": 1,
-    "desc": "C/B 新用户首条助手回复无归因链 → app_download_first_push"
-  },
-  {
-    "id": "conversion.first_push",
-    "category": "conversion",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "reply_count>=1",
-      "no tracking"
-    ],
-    "confidence": 1,
-    "desc": "第 2 条助手回复起无归因链 → app_download_first_push"
-  },
-  {
-    "id": "conversion.after_warmup",
-    "category": "conversion",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "reply_count>=3"
-    ],
-    "confidence": 1,
-    "desc": "暖聊≥3 轮助手回复 → app_download_after_warmup"
-  },
-  {
-    "id": "conversion.direct_cta",
-    "category": "conversion",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "link",
-      "download",
-      "私聊",
-      "高意图"
-    ],
-    "confidence": 1,
-    "desc": "高意图索要 link/下载 → app_download_direct_cta，跳过 LLM"
-  },
-  {
-    "id": "attribution.mode_click_only",
-    "category": "attribution",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "APP_DOWNLOAD_FUNNEL_MODE",
-      "click_only"
-    ],
-    "confidence": 1,
-    "desc": "三方推广：可观测漏斗止于 click；download/register 不参与决策"
-  },
-  {
-    "id": "attribution.primary_kpi_ctr",
-    "category": "attribution",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "click",
-      "link_exposed",
-      "CTR"
-    ],
-    "confidence": 1,
-    "desc": "核心 KPI = click_users / link_exposed_users"
-  },
-  {
-    "id": "conversion.clicked_followup",
-    "category": "conversion",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "clicked",
-      "seconds>=120",
-      "clicked_post_followup_2m"
-    ],
-    "confidence": 1,
-    "desc": "已点击≥2 分钟 → app_link_clicked_followup（worker 扫描，24h 每会话最多 1 次）"
-  },
-  {
-    "id": "conversion.post_click_passive",
-    "category": "conversion",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "clicked_pending_download",
-      "post_click_worker"
-    ],
-    "confidence": 1,
-    "desc": "已点击且用户未明确要链接 → 对话内不自动推链"
-  },
-  {
-    "id": "conversion.post_click_explicit_link",
-    "category": "conversion",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "direct_cta",
-      "clicked"
-    ],
-    "confidence": 1,
-    "desc": "已点击 + 明确要链接 → 仅 direct_cta 重发 tracking 链"
-  },
-  {
-    "id": "conversion.complete_stop_click",
-    "category": "conversion",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "click_promotion_complete",
-      "clicked_followup_sent"
-    ],
-    "confidence": 1,
-    "desc": "click_only：clicked_followup 已发或点击超 24h → 停止自动推链"
-  },
-  {
-    "id": "conversion.objection",
-    "category": "conversion",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "不想下载",
-      "conversion.objection"
-    ],
-    "confidence": 1,
-    "desc": "下载异议 → app_download_objection"
-  },
-  {
-    "id": "conversion.trust",
-    "category": "conversion",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "scam",
-      "fake",
-      "is this real"
-    ],
-    "confidence": 1,
-    "desc": "信任疑虑 → trust_reassurance"
-  },
-  {
-    "id": "conversion.high_value_sa",
-    "category": "conversion",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "S/A",
-      "reply_count>=2"
-    ],
-    "confidence": 1,
-    "desc": "S/A 且≥2轮 → operator_app_conversion"
-  },
-  {
-    "id": "conversion.complete_stop",
-    "category": "conversion",
-    "priority": "low",
-    "active": false,
-    "keywords": [
-      "downloaded",
-      "registered",
-      "paid"
-    ],
-    "confidence": 1,
-    "desc": "【full 模式】已下载/注册/付费 → 停止下载话术"
-  },
-  {
-    "id": "conversion.script_hook_reply",
-    "category": "conversion",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "hook=reply"
-    ],
-    "confidence": 1,
-    "desc": "线上唯一自动话术钩子：hook=reply"
-  },
-  {
-    "id": "conversion.script_skip_llm",
-    "category": "conversion",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "conversion_decision_skips_llm",
-      "first_push",
-      "direct_cta",
-      "operator_app_conversion"
-    ],
-    "confidence": 1,
-    "desc": "first_push/direct_cta/after_warmup/operator_app_conversion/asset_keyword → 话术+链接直出，跳过 LLM"
-  },
-  {
-    "id": "conversion.clicked_worker_only",
-    "category": "conversion",
-    "priority": "medium",
-    "active": false,
-    "keywords": [
-      "post_click_worker",
-      "clicked_post_followup_2m"
-    ],
-    "confidence": 1,
-    "desc": "已点击后仅 worker 发 clicked_post_followup_2m；queue_clicked_not_downloaded 已禁用（无法可靠检测未安装）"
-  },
-  {
-    "id": "channel.bot_nurture",
-    "category": "channel",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "schedule_download_followups_after_reply",
-      "telegram.py"
-    ],
-    "confidence": 1,
-    "desc": "Bot Webhook 出站后调度 app_download 培育（与 MTProto 一致）"
-  },
-  {
-    "id": "nurture.first_idle",
-    "category": "nurture",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "first_message_idle_3m",
-      "45-60s",
-      "还在吗"
-    ],
-    "confidence": 1,
-    "desc": "user_count=1 且未点击 → 45–60s 软提醒 first_push「还在吗？链接在这」"
-  },
-  {
-    "id": "nurture.second_round",
-    "category": "nurture",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "second_round_no_click_3m",
-      "+180s"
-    ],
-    "confidence": 1,
-    "desc": "user_count=2 且未点击 → +3min after_warmup（补 1→3 轮空档）"
-  },
-  {
-    "id": "nurture.asset_idle",
-    "category": "nurture",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "asset_keyword_idle_3m",
-      "+180s"
-    ],
-    "confidence": 1,
-    "desc": "素材关键词回复后 +3min → after_warmup 培育"
-  },
-  {
-    "id": "nurture.warm_no_click",
-    "category": "nurture",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "warm_chat_no_click",
-      "user_count 3-5"
-    ],
-    "confidence": 1,
-    "desc": "暖聊 3–5 轮曝光链接未点击 → after_warmup 跟进"
-  },
-  {
-    "id": "nurture.pre_click_only",
-    "category": "nurture",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "has_click=false"
-    ],
-    "confidence": 1,
-    "desc": "推链培育仅当未点击；已点击用户不进 first/second/warm/silent 链"
-  },
-  {
-    "id": "nurture.clicked_post_followup",
-    "category": "nurture",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "clicked_post_followup_2m",
-      "+120s"
-    ],
-    "confidence": 1,
-    "desc": "已点击 +2min → clicked_followup（不检查 download）"
-  },
-  {
-    "id": "nurture.pending_upgrade",
-    "category": "nurture",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "superseded",
-      "user_count_advanced"
-    ],
-    "confidence": 1,
-    "desc": "user_count 前进时取消过时 pending（修 second_round 空洞）"
-  },
-  {
-    "id": "nurture.pending_dedupe",
-    "category": "nurture",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "pending",
-      "sending",
-      "same_trigger"
-    ],
-    "confidence": 1,
-    "desc": "同 trigger 的 pending/sending 不重复排队；不同阶段可升级"
-  },
-  {
-    "id": "nurture.db_scripts",
-    "category": "nurture",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "search_script_templates"
-    ],
-    "confidence": 1,
-    "desc": "培育优先检索 DB script_templates，无命中才 fallback"
-  },
-  {
-    "id": "nurture.html_cta",
-    "category": "nurture",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "render_tracking_links_as_html_cta"
-    ],
-    "confidence": 1,
-    "desc": "培育投递短链渲染 HTML「TAP HERE」可点按钮"
-  },
-  {
-    "id": "nurture.silent_30m",
-    "category": "nurture",
-    "priority": "low",
-    "active": true,
-    "keywords": [
-      "silent_30m"
-    ],
-    "confidence": 1,
-    "desc": "静默 30 分钟 → 软提醒"
-  },
-  {
-    "id": "nurture.silent_24h",
-    "category": "nurture",
-    "priority": "low",
-    "active": false,
-    "keywords": [
-      "silent_24h"
-    ],
-    "confidence": 1,
-    "desc": "【已废弃】代码未调度 silent_24h"
-  },
-  {
-    "id": "nurture.stop_if_downloaded",
-    "category": "nurture",
-    "priority": "low",
-    "active": false,
-    "keywords": [
-      "stop_if_downloaded"
-    ],
-    "confidence": 1,
-    "desc": "【click_only 废弃】不再查 download 事件"
-  },
-  {
-    "id": "worker.auto_delivery",
-    "category": "worker",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "AUTO_DELIVERY_ENABLED"
-    ],
-    "confidence": 1,
-    "desc": "auto_delivery_worker：培育/定时 MTProto 投递"
-  },
-  {
-    "id": "worker.message_schedule",
-    "category": "worker",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "MESSAGE_SCHEDULE_ENABLED"
-    ],
-    "confidence": 1,
-    "desc": "message_schedule_service：通用定时发送"
-  },
-  {
-    "id": "worker.archive",
-    "category": "worker",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "ARCHIVE_WORKER_ENABLED"
-    ],
-    "confidence": 1,
-    "desc": "archive_worker：含 script_hit_id 的发送行归档"
-  },
-  {
-    "id": "call_broadcast.enabled",
-    "category": "call_broadcast",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "CALL_BROADCAST_ENABLED"
-    ],
-    "confidence": 1,
-    "desc": "视频通话总开关（生产=1）；关闭后关键词入队、来电监听、worker 均 no-op"
-  },
-  {
-    "id": "call_broadcast.inbound_keyword",
-    "category": "call_broadcast",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "video call",
-      "facetime",
-      "视频通话",
-      "8866"
-    ],
-    "confidence": 1,
-    "desc": "MTProto 入站消息命中视频通话关键词 → fire-and-forget enqueue；不阻塞 generate_reply"
-  },
-  {
-    "id": "call_broadcast.worker_poll",
-    "category": "call_broadcast",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "call_broadcast_worker",
-      "CALL_BROADCAST_POLL_SECONDS"
-    ],
-    "confidence": 1,
-    "desc": "APScheduler 轮询 claim call_broadcast_jobs → PyTgCalls 外呼并播放预置视频"
-  },
-  {
-    "id": "call_broadcast.immediate_tick",
-    "category": "call_broadcast",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "8866",
-      "spawn_immediate_tick"
-    ],
-    "confidence": 1,
-    "desc": "测试码 8866 精确匹配：入队后立即 spawn worker tick，跳过 15s 轮询等待"
-  },
-  {
-    "id": "call_broadcast.incoming_auto_answer",
-    "category": "call_broadcast",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "CALL_BROADCAST_INCOMING_AUTO_ANSWER",
-      "INCOMING_CALL"
-    ],
-    "confidence": 1,
-    "desc": "用户主动来电：PyTgCalls 监听 INCOMING_CALL，按 play_sequence 自动接听播视频"
-  },
-  {
-    "id": "call_broadcast.inbound_manual_review",
-    "category": "call_broadcast",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "CALL_BROADCAST_INBOUND_MANUAL_AFTER",
-      "incoming-reviews"
-    ],
-    "confidence": 1,
-    "desc": "同 chat 第 2 次及以上来电 → 坐席审核 accept/reject（admin/video-broadcast）"
-  },
-  {
-    "id": "call_broadcast.video_assets",
-    "category": "call_broadcast",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "video_broadcast_assets",
-      "play_sequence"
-    ],
-    "confidence": 1,
-    "desc": "视频资产 play_sequence 1/2/3：第 1/2/3 次来电视频；外呼用 DEFAULT_VIDEO_ASSET_ID"
-  },
-  {
-    "id": "call_broadcast.max_concurrent",
-    "category": "call_broadcast",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "CALL_BROADCAST_MAX_CONCURRENT_PER_ACCOUNT"
-    ],
-    "confidence": 1,
-    "desc": "每 MTProto 账号同时仅 1 路通话；忙时 requeue 或 skip 来电"
-  },
-  {
-    "id": "call_broadcast.post_call_nurture",
-    "category": "call_broadcast",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "CALL_BROADCAST_POST_CALL_NURTURE_ENABLED"
-    ],
-    "confidence": 1,
-    "desc": "外呼 job 完成后可选 schedule_download_followups（click_only 培育链路）"
-  },
-  {
-    "id": "call_broadcast.admin_manual",
-    "category": "call_broadcast",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "manual-calls",
-      "video-broadcast"
-    ],
-    "confidence": 1,
-    "desc": "坐席后台 POST /api/v1/call-broadcast/admin/manual-calls 手动发起视频通话"
-  },
-  {
-    "id": "call_broadcast.mtproto_only",
-    "category": "call_broadcast",
-    "priority": "low",
-    "active": true,
-    "keywords": [
-      "auto_reply.py",
-      "MTProto only"
-    ],
-    "confidence": 1,
-    "desc": "仅 MTProto auto_reply 入站触发关键词入队；Bot Webhook / Open API 不走视频通话"
-  },
-  {
-    "id": "operator.crisis_handoff",
-    "category": "operator",
-    "priority": "high",
-    "active": false,
-    "keywords": [
-      "P0",
-      "WAITING_OPERATOR",
-      "crisis_intervention"
-    ],
-    "confidence": 1,
-    "desc": "【已下线】crisis_intervention 模块已移除；P0 handoff 待安全规则重写后恢复"
-  },
-  {
-    "id": "operator.manual_suspend",
-    "category": "operator",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "suspend API"
-    ],
-    "confidence": 1,
-    "desc": "手动 suspend API；入站不自动挂起 S/A"
-  },
-  {
-    "id": "operator.ws_tasks",
-    "category": "operator",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "/ws/operators/tasks"
-    ],
-    "confidence": 1,
-    "desc": "坐席看板轮询 handoff_tasks"
-  },
-  {
-    "id": "orchestrator.intent_classify",
-    "category": "orchestrator",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "intent_classifier",
-      "floor=0.6"
-    ],
-    "confidence": 0.6,
-    "desc": "意图识别驱动 app_download 与 Prompt；低置信降级"
-  },
-  {
-    "id": "orchestrator.memory_retrieve",
-    "category": "orchestrator",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "memory_retriever"
-    ],
-    "confidence": 1,
-    "desc": "记忆向量检索 + 一致性过滤"
-  },
-  {
-    "id": "orchestrator.loneliness_refresh",
-    "category": "orchestrator",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "loneliness_updater"
-    ],
-    "confidence": 1,
-    "desc": "每轮刷新 loneliness_score"
-  },
-  {
-    "id": "orchestrator.tracking_wrap",
-    "category": "orchestrator",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "wrap_text_links_with_tracking"
-    ],
-    "confidence": 1,
-    "desc": "tracking 链接归因包装"
-  },
-  {
-    "id": "deprecated.eight_hooks",
-    "category": "deprecated",
-    "priority": "low",
-    "active": false,
-    "keywords": [
-      "evaluate_all_script_hooks"
-    ],
-    "confidence": 1,
-    "desc": "【已下线】8 钩子逐步话术匹配（仅测试）"
-  },
-  {
-    "id": "deprecated.sa_auto_suspend",
-    "category": "deprecated",
-    "priority": "low",
-    "active": false,
-    "keywords": [
-      "S/A auto suspend"
-    ],
-    "confidence": 1,
-    "desc": "【已下线】S/A 入站自动挂起坐席"
-  },
-  {
-    "id": "deprecated.d_level_probe",
-    "category": "deprecated",
-    "priority": "low",
-    "active": false,
-    "keywords": [
-      "d_level_probe"
-    ],
-    "confidence": 1,
-    "desc": "【已下线】D 级 probe 话术钩子"
-  },
-  {
-    "id": "smalltalk.greeting.basic",
-    "category": "intent",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "hello",
-      "hi",
-      "hey",
-      "good morning",
-      "good evening",
-      "你好"
-    ],
-    "confidence": 0.82,
-    "desc": "意图 smalltalk.greeting"
-  },
-  {
-    "id": "smalltalk.check_in.presence",
-    "category": "intent",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "how are you",
-      "are you there",
-      "miss you",
-      "你在吗",
-      "想你"
-    ],
-    "confidence": 0.8,
-    "desc": "意图 smalltalk.check_in"
-  },
-  {
-    "id": "smalltalk.humor.play",
-    "category": "intent",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "joke",
-      "make me laugh",
-      "funny",
-      "tease me",
-      "讲个笑话"
-    ],
-    "confidence": 0.8,
-    "desc": "意图 smalltalk.humor_play"
-  },
-  {
-    "id": "smalltalk.goodbye.pause",
-    "category": "intent",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "bye",
-      "good night",
-      "talk later",
-      "sleep now",
-      "晚安",
-      "回头聊"
-    ],
-    "confidence": 0.82,
-    "desc": "意图 smalltalk.goodbye"
-  },
-  {
-    "id": "emotional_support.lonely.core",
-    "category": "intent",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "lonely",
-      "alone",
-      "no one understands",
-      "nobody cares",
-      "孤独",
-      "没人懂"
-    ],
-    "confidence": 0.9,
-    "desc": "意图 emotional_support.lonely"
-  },
-  {
-    "id": "emotional_support.sadness.core",
-    "category": "intent",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "sad",
-      "crying",
-      "down today",
-      "heart hurts",
-      "难过",
-      "想哭"
-    ],
-    "confidence": 0.88,
-    "desc": "意图 emotional_support.sadness"
-  },
-  {
-    "id": "emotional_support.stress.core",
-    "category": "intent",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "stressed",
-      "overwhelmed",
-      "exhausted",
-      "pressure",
-      "压力",
-      "太累"
-    ],
-    "confidence": 0.87,
-    "desc": "意图 emotional_support.stress"
-  },
-  {
-    "id": "emotional_support.reassurance.core",
-    "category": "intent",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "comfort me",
-      "tell me it is okay",
-      "reassure me",
-      "抱抱我",
-      "安慰我"
-    ],
-    "confidence": 0.86,
-    "desc": "意图 emotional_support.reassurance"
-  },
-  {
-    "id": "emotional_support.celebration.core",
-    "category": "intent",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "i did it",
-      "good news",
-      "celebrate",
-      "happy news",
-      "我成功了",
-      "好消息"
-    ],
-    "confidence": 0.84,
-    "desc": "意图 emotional_support.celebration"
-  },
-  {
-    "id": "relationship.affection.core",
-    "category": "intent",
-    "priority": "low",
-    "active": true,
-    "keywords": [
-      "i like you",
-      "hug me",
-      "miss you so much",
-      "you are sweet",
-      "喜欢你",
-      "抱抱"
-    ],
-    "confidence": 0.86,
-    "desc": "意图 relationship.affection"
-  },
-  {
-    "id": "relationship.flirt_light.core",
-    "category": "intent",
-    "priority": "low",
-    "active": true,
-    "keywords": [
-      "cute",
-      "date vibe",
-      "flirt",
-      "sweet teasing",
-      "撩我",
-      "可爱"
-    ],
-    "confidence": 0.82,
-    "desc": "意图 relationship.flirt_light"
-  },
-  {
-    "id": "relationship.jealousy.core",
-    "category": "intent",
-    "priority": "low",
-    "active": true,
-    "keywords": [
-      "jealous",
-      "talking to others",
-      "do you like someone else",
-      "吃醋"
-    ],
-    "confidence": 0.84,
-    "desc": "意图 relationship.jealousy"
-  },
-  {
-    "id": "relationship.repair.core",
-    "category": "intent",
-    "priority": "low",
-    "active": true,
-    "keywords": [
-      "sorry",
-      "did i upset you",
-      "forgive me",
-      "对不起",
-      "原谅我"
-    ],
-    "confidence": 0.83,
-    "desc": "意图 relationship.repair"
-  },
-  {
-    "id": "relationship.dependency.core",
-    "category": "intent",
-    "priority": "low",
-    "active": true,
-    "keywords": [
-      "need only you",
-      "cannot be without you",
-      "only person i have",
-      "离不开你"
-    ],
-    "confidence": 0.86,
-    "desc": "意图 relationship.dependency"
-  },
-  {
-    "id": "onboarding.nickname.core",
-    "category": "intent",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "call me",
-      "my name is",
-      "nickname",
-      "叫我",
-      "我的名字"
-    ],
-    "confidence": 0.83,
-    "desc": "意图 onboarding.nickname"
-  },
-  {
-    "id": "onboarding.interests.core",
-    "category": "intent",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "i like music",
-      "i love games",
-      "my hobbies",
-      "喜欢旅行",
-      "爱好"
-    ],
-    "confidence": 0.8,
-    "desc": "意图 onboarding.interests"
-  },
-  {
-    "id": "onboarding.chat_style.core",
-    "category": "intent",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "be gentle",
-      "be casual",
-      "talk smarter",
-      "温柔一点",
-      "轻松一点"
-    ],
-    "confidence": 0.82,
-    "desc": "意图 onboarding.chat_style"
-  },
-  {
-    "id": "onboarding.boundaries.core",
-    "category": "intent",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "avoid talking about",
-      "do not mention",
-      "forbidden topic",
-      "别提",
-      "不要聊"
-    ],
-    "confidence": 0.84,
-    "desc": "意图 onboarding.boundaries"
-  },
-  {
-    "id": "onboarding.current_intent.core",
-    "category": "intent",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "i want someone to talk to",
-      "here to chat",
-      "need a companion",
-      "想找人聊天"
-    ],
-    "confidence": 0.81,
-    "desc": "意图 onboarding.current_intent"
-  },
-  {
-    "id": "conversion.price_question.core",
-    "category": "intent",
-    "priority": "low",
-    "active": true,
-    "keywords": [
-      "how much",
-      "price",
-      "vip cost",
-      "subscription cost",
-      "多少钱",
-      "价格"
-    ],
-    "confidence": 0.86,
-    "desc": "意图 conversion.price_question"
-  },
-  {
-    "id": "conversion.benefit_question.core",
-    "category": "intent",
-    "priority": "low",
-    "active": true,
-    "keywords": [
-      "what do i get",
-      "premium benefits",
-      "vip unlocks",
-      "会员有什么",
-      "权益"
-    ],
-    "confidence": 0.84,
-    "desc": "意图 conversion.benefit_question"
-  },
-  {
-    "id": "conversion.purchase_intent.core",
-    "category": "intent",
-    "priority": "low",
-    "active": true,
-    "keywords": [
-      "i want vip",
-      "subscribe",
-      "buy premium",
-      "upgrade now",
-      "开通会员",
-      "购买"
-    ],
-    "confidence": 0.88,
-    "desc": "意图 conversion.purchase_intent"
-  },
-  {
-    "id": "conversion.objection.core",
-    "category": "intent",
-    "priority": "low",
-    "active": true,
-    "keywords": [
-      "too expensive",
-      "why pay",
-      "not worth it",
-      "太贵",
-      "为什么付费"
-    ],
-    "confidence": 0.82,
-    "desc": "意图 conversion.objection"
-  },
-  {
-    "id": "conversion.post_payment.core",
-    "category": "intent",
-    "priority": "low",
-    "active": true,
-    "keywords": [
-      "i paid",
-      "payment done",
-      "just upgraded",
-      "付完了",
-      "已经付款"
-    ],
-    "confidence": 0.88,
-    "desc": "意图 conversion.post_payment"
-  },
-  {
-    "id": "support.payment_failed.core",
-    "category": "intent",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "card failed",
-      "cannot pay",
-      "payment failed",
-      "付款失败",
-      "支付不了"
-    ],
-    "confidence": 0.88,
-    "desc": "意图 support.payment_failed"
-  },
-  {
-    "id": "support.refund.core",
-    "category": "intent",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "refund",
-      "cancel payment",
-      "money back",
-      "退款",
-      "取消付款"
-    ],
-    "confidence": 0.9,
-    "desc": "意图 support.refund"
-  },
-  {
-    "id": "support.account_access.core",
-    "category": "intent",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "cannot login",
-      "lost account",
-      "account access",
-      "登录不了",
-      "账号丢了"
-    ],
-    "confidence": 0.86,
-    "desc": "意图 support.account_access"
-  },
-  {
-    "id": "support.delivery_issue.core",
-    "category": "intent",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "did not get",
-      "not loading",
-      "message missing",
-      "没收到",
-      "加载不了"
-    ],
-    "confidence": 0.84,
-    "desc": "意图 support.delivery_issue"
-  },
-  {
-    "id": "support.operator_request.core",
-    "category": "intent",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "human support",
-      "real agent",
-      "operator",
-      "customer service",
-      "人工客服",
-      "真人客服"
-    ],
-    "confidence": 0.88,
-    "desc": "意图 support.operator_request"
-  },
-  {
-    "id": "content_request.photo.core",
-    "category": "intent",
-    "priority": "low",
-    "active": true,
-    "keywords": [
-      "send pic",
-      "photo",
-      "selfie",
-      "picture",
-      "照片",
-      "自拍"
-    ],
-    "confidence": 0.84,
-    "desc": "意图 content_request.photo"
-  },
-  {
-    "id": "content_request.voice.core",
-    "category": "intent",
-    "priority": "low",
-    "active": true,
-    "keywords": [
-      "voice note",
-      "call me",
-      "send audio",
-      "语音",
-      "打电话"
-    ],
-    "confidence": 0.84,
-    "desc": "意图 content_request.voice"
-  },
-  {
-    "id": "content_request.roleplay.core",
-    "category": "intent",
-    "priority": "low",
-    "active": true,
-    "keywords": [
-      "pretend",
-      "roleplay",
-      "scenario",
-      "story scene",
-      "角色扮演",
-      "假装"
-    ],
-    "confidence": 0.82,
-    "desc": "意图 content_request.roleplay"
-  },
-  {
-    "id": "content_request.advice.core",
-    "category": "intent",
-    "priority": "low",
-    "active": true,
-    "keywords": [
-      "what should i do",
-      "help me decide",
-      "need advice",
-      "怎么办",
-      "给我建议"
-    ],
-    "confidence": 0.82,
-    "desc": "意图 content_request.advice"
-  },
-  {
-    "id": "content_request.memory_recall.core",
-    "category": "intent",
-    "priority": "low",
-    "active": true,
-    "keywords": [
-      "do you remember",
-      "what did i tell you",
-      "remember about me",
-      "你还记得"
-    ],
-    "confidence": 0.84,
-    "desc": "意图 content_request.memory_recall"
-  },
-  {
-    "id": "boundary.topic_refusal.core",
-    "category": "intent",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "stop talking about",
-      "do not mention",
-      "change topic",
-      "别说这个",
-      "换个话题"
-    ],
-    "confidence": 0.88,
-    "desc": "意图 boundary.topic_refusal"
-  },
-  {
-    "id": "boundary.marketing_opt_out.core",
-    "category": "intent",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "stop ads",
-      "don't sell me vip",
-      "no marketing",
-      "别推销",
-      "不要广告"
-    ],
-    "confidence": 0.9,
-    "desc": "意图 boundary.marketing_opt_out"
-  },
-  {
-    "id": "boundary.break_from_chat.core",
-    "category": "intent",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "leave me alone",
-      "not now",
-      "need space",
-      "别烦我",
-      "现在不想聊"
-    ],
-    "confidence": 0.86,
-    "desc": "意图 boundary.break_from_chat"
-  },
-  {
-    "id": "boundary.data_privacy.core",
-    "category": "intent",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "delete my data",
-      "what do you store",
-      "privacy",
-      "删除数据",
-      "隐私"
-    ],
-    "confidence": 0.9,
-    "desc": "意图 boundary.data_privacy"
-  }
+const TASKS = [
+  // ── Cursor：框架与检验（14 项 ≈ 12%）──
+  { id:"C-01", phase:"01", owner:"cursor", w:1, week:"W1", dep:"—", desc:"确认 ERIS 目录约定（app/admin/docker-compose/AGENTS.md）", acc:"与 docs/REPO_LAYOUT.md 一致；ERIS MVP 基线已满足", baseline:true, verified:true },
+  { id:"C-02", phase:"01", owner:"cursor", w:1, week:"W1", dep:"C-01", desc:"配置 CI：admin lint/typecheck/build + backend ruff/mypy/pytest", acc:"pr-required-gates.yml 三项 job 全绿；分支保护勾选 required checks", baseline:true, verified:true },
+  { id:"C-03", phase:"01", owner:"cursor", w:1, week:"W1", dep:"—", desc:"编写 .env.template（含 TELEGRAM_API_ID/HASH、SESSION 加密密钥）", acc:"新人可按文档配齐 MTProto 环境", baseline:true, verified:true },
+  { id:"C-15", phase:"01", owner:"cursor", w:1, week:"W2", dep:"P1-18", desc:"审查 MTProto/Telethon：Session 存储、密钥与账号隔离", acc:"安全评审无阻塞项", baseline:true, verified:true },
+  { id:"C-04", phase:"01", owner:"cursor", w:1, week:"W2", dep:"P1完成", desc:"审查 schema_spec.json 与适配器接口契约", acc:"契约评审记录归档", baseline:true, verified:true },
+  { id:"C-05", phase:"02", owner:"cursor", w:1, week:"W4", dep:"P2-T02", desc:"检验 level_engine 单测覆盖率与边界 case 清单", acc:"≥20 case 且分支覆盖达标", baseline:true, verified:true },
+  { id:"C-06", phase:"02", owner:"cursor", w:1, week:"W4", dep:"P2", desc:"执行 J-01 分级冒烟脚本并出具检验报告", acc:"10/10 fixture 通过", baseline:true, verified:true },
+  { id:"C-07", phase:"03", owner:"cursor", w:1, week:"W6", dep:"P3-12,P3-20", desc:"审查话术全链路匹配覆盖率 + Prompt/安全红线", acc:"8 钩子均有用例且红线 100% 拦截", baseline:true, verified:true },
+  { id:"C-08", phase:"03", owner:"cursor", w:1, week:"W7", dep:"P3", desc:"执行 J-02 AI 全链路冒烟并记录耗时", acc:"端到端 <8s（含延迟）", baseline:true, verified:true },
+  { id:"C-09", phase:"04", owner:"cursor", w:1, week:"W7", dep:"—", desc:"审查 ws_protocol.md 与实现一致性", acc:"协议 conformance 通过", baseline:true, verified:true },
+  { id:"C-10", phase:"04", owner:"cursor", w:1, week:"W9", dep:"P4", desc:"执行 J-03 看板联调检验（3s 接管）", acc:"录屏 + 检验清单签字", baseline:true, verified:true },
+  { id:"C-11", phase:"04", owner:"cursor", w:1, week:"W9", dep:"P4-T01", desc:"坐席看板 UI/UX 走查（优先级、弹窗、断线提示）", acc:"走查问题单关闭", baseline:true, verified:true },
+  { id:"C-12", phase:"05", owner:"cursor", w:1, week:"W10", dep:"P5-T01", desc:"审查 E2E/压测脚本与 CI nightly 配置", acc:"流水线稳定 3 天", baseline:false },
+  { id:"C-13", phase:"05", owner:"cursor", w:1, week:"W11", dep:"P5-T02", desc:"Grafana 大盘与告警规则走查", acc:"核心指标均有告警", baseline:true, verified:true },
+  { id:"C-14", phase:"05", owner:"cursor", w:1, week:"W12", dep:"全部", desc:"全量上线前代码审查 + 架构一致性终检", acc:"终检报告无阻塞项", baseline:true, verified:true },
+
+  // ── 人工：业务与决策（10 项 ≈ 8%）──
+  { id:"H-01", phase:"01", owner:"human", w:0.5, week:"W1", dep:"—", desc:"确认技术选型（FastAPI/PostgreSQL/Redis/WS）与部署环境", acc:"书面确认；与 REPO_LAYOUT 一致", baseline:true, verified:true },
+  { id:"H-02", phase:"02", owner:"human", w:1, week:"W3", dep:"—", desc:"审定 T1 国家名单与分级金额阈值", acc:"配置文件签字版", baseline:true, verified:true },
+  { id:"H-03", phase:"03", owner:"human", w:1, week:"W5", dep:"P3-T01", desc:"审核话术底料（问候/转化/拒绝等）业务合规", acc:"≥50 条底料批准", baseline:true, verified:true },
+  { id:"H-04", phase:"03", owner:"human", w:1, week:"W6", dep:"P3-T03", desc:"审定 AI 人设性格与禁用词表", acc:"人设文档签字", baseline:true, verified:true },
+  { id:"H-05", phase:"04", owner:"human", w:1, week:"W8", dep:"P4-T02", desc:"确认 H5 VIP 弹窗文案与支付跳转路径", acc:"产品验收通过", baseline:true, verified:true },
+  { id:"H-06", phase:"04", owner:"human", w:1, week:"W9", dep:"P4-T01", desc:"坐席看板试用 + 收集操作反馈", acc:"反馈表 ≥5 条已处理", baseline:true, verified:true },
+  { id:"H-07", phase:"05", owner:"human", w:1, week:"W10", dep:"C-08", desc:"批准灰度 Week9：仅 C/D 级切流", acc:"灰度审批单", baseline:true, verified:true },
+  { id:"H-08", phase:"05", owner:"human", w:1, week:"W11", dep:"H-07", desc:"批准灰度 Week10–11：B 级观察 + A/S 接管", acc:"灰度审批单", baseline:true, verified:true },
+  { id:"H-09", phase:"05", owner:"human", w:1, week:"W11", dep:"P5-T03", desc:"坐席 SOP 培训与考核", acc:"参训率 100%", baseline:true, verified:true },
+  { id:"H-10", phase:"05", owner:"human", w:1, week:"W12", dep:"C-14", desc:"全量上线 Go/No-Go 最终签署", acc:"12 项检查全通过", baseline:true, verified:true },
+  { id:"H-11", phase:"01", owner:"human", w:0.5, week:"W2", dep:"—", desc:"审定 Telegram 真人账号运营规范（频率/批量/ToS）", acc:"书面 SOP + 频率上限签字", baseline:true, verified:true },
+
+  // ── 阶段 01 · Devin + Codex（含 MTProto 真人接入）──
+  { id:"P1-01", phase:"01", owner:"codex", w:1, week:"W1", dep:"C-01", desc:"设计 user_profiles / premium_chat_logs / audit_logs 表结构", acc:"db_schema_doc.md + V8 迁移通过", baseline:true, verified:true },
+  { id:"P1-02", phase:"01", owner:"codex", w:1, week:"W1", dep:"P1-01", desc:"编写 Flyway V1__init.sql", acc:"空库 migrate 成功", baseline:true, verified:true },
+  { id:"P1-03", phase:"01", owner:"devin", w:0.5, week:"W1", dep:"P1-02", desc:"uuid-ossp 扩展 + CI 迁移流水线", acc:"CI 自动 migrate", baseline:true, verified:true },
+  { id:"P1-04", phase:"01", owner:"devin", w:0.5, week:"W1", dep:"P1-02", desc:"DB 角色分离（读写/迁移三账号）", acc:"应用账号无 DROP 权限", baseline:true, verified:true },
+  { id:"P1-05", phase:"01", owner:"devin", w:1.5, week:"W1", dep:"C-01", desc:"FastAPI 应用：/health、结构化日志、CORS（app/main.py）", acc:"GET /health 200；线上 eris-api 已验证", baseline:true, verified:true },
+  { id:"P1-06", phase:"01", owner:"devin", w:1, week:"W1", dep:"P1-05", desc:"Redis Stream inbound_queue 消费者骨架", acc:"XREADGROUP + XACK smoke 通过", baseline:true, verified:true },
+  { id:"P1-07", phase:"01", owner:"devin", w:1, week:"W1", dep:"P1-05", desc:"WebSocket 路由 app/api/realtime.py + ping/pong", acc:"浏览器可连 /ws 并收 pong", baseline:true, verified:true },
+  { id:"P1-08", phase:"01", owner:"devin", w:1, week:"W2", dep:"P1-05–07", desc:"docker-compose：postgres+redis+api 一键启动", acc:"compose up 全绿", baseline:true, verified:true },
+  { id:"P1-09", phase:"01", owner:"devin", w:1, week:"W2", dep:"P1-05,P1-02", desc:"telegram_accounts 表 + Telethon 多账号 StringSession 连接", acc:"≥1 真人号 online", baseline:true, verified:true },
+  { id:"P1-10", phase:"01", owner:"codex", w:1.5, week:"W2", dep:"P1-09", desc:"NewMessage 监听 → inbound_queue（platform=telegram_real_user）", acc:"text/photo/voice 入队单测通过", baseline:true, verified:true },
+  { id:"P1-11", phase:"01", owner:"codex", w:1, week:"W2", dep:"P1-10", desc:"send_typing + send_human_like_message 拟人延迟出站", acc:"用户侧可见打字与延迟发送", baseline:true, verified:true },
+  { id:"P1-12", phase:"01", owner:"codex", w:0.5, week:"W2", dep:"P1-10", desc:"Redis 去重 telegram_msg:{user_id}:{message_id} TTL 1h", acc:"重复消息不重复处理", baseline:true, verified:true },
+  { id:"P1-13", phase:"01", owner:"codex", w:0.5, week:"W2", dep:"—", desc:"定义 schema_spec.json（含 account_id/sender_phone）", acc:"JSON Schema 校验通过", baseline:true, verified:true },
+  { id:"P1-14", phase:"01", owner:"codex", w:1, week:"W2", dep:"P1-13,P1-10", desc:"MTProto 渠道适配器 → 标准入站格式", acc:"MTProto 消息成功入队", baseline:true, verified:true },
+  { id:"P1-15", phase:"01", owner:"devin", w:0.5, week:"W2", dep:"P1-13", desc:"H5/APP 适配器 Mock 桩", acc:"Mock 可本地联调", baseline:true, verified:true },
+  { id:"P1-16", phase:"01", owner:"devin", w:1, week:"W2", dep:"P1-06,P1-14,P1-19", desc:"写入 inbound_queue + audit_logs（预留 script_hit_id）", acc:"最近 100 条审计 API + 入队消费审计通过", baseline:true, verified:true },
+  { id:"P1-17", phase:"01", owner:"codex", w:1.5, week:"W2", dep:"P1-09", desc:"AccountPool：user_id hash 分配账号 + send_message 路由", acc:"同用户固定账号收发", baseline:true, verified:true },
+  { id:"P1-18", phase:"01", owner:"devin", w:1, week:"W2", dep:"P1-09", desc:"Session AES 加密存储 + 断线自动重连", acc:"✅ 重启后免手工扫码恢复", baseline:true, verified:true },
+  { id:"P1-19", phase:"01", owner:"codex", w:0.5, week:"W2", dep:"P1-06", desc:"Redis conv:{user_id} 会话上下文 lrange/rpush（50 轮）", acc:"LLM 可读取最近对话", baseline:true, verified:true },
+  { id:"P1-20", phase:"01", owner:"devin", w:1, week:"W3", dep:"P1-17,P1-18", desc:"账号在线率/发送成功率监控 + 封号预警埋点", acc:"✅ 指标可 scrape + 告警规则", baseline:true, verified:true },
+
+  // ── 阶段 02（13 项）──
+  { id:"P2-01", phase:"02", owner:"codex", w:0.5, week:"W3", dep:"H-02", desc:"t1_countries.json 热加载模块", acc:"改配置可生效", baseline:true, verified:true },
+  { id:"P2-02", phase:"02", owner:"devin", w:1, week:"W3", dep:"—", desc:"GeoIP 服务封装（MaxMind/ip-api）", acc:"抽样准确率 ≥95%", baseline:true, verified:true },
+  { id:"P2-03", phase:"02", owner:"codex", w:1, week:"W3", dep:"H-03", desc:"D 级探测触发器（预留③探测话术匹配接口）", acc:"3 轮内触发补全", baseline:true, verified:true },
+  { id:"P2-04", phase:"02", owner:"codex", w:1.5, week:"W4", dep:"P3-12", desc:"AI 提取年龄 + 置信度写入", acc:"低置信不写入", baseline:true, verified:true },
+  { id:"P2-05", phase:"02", owner:"codex", w:1, week:"W3", dep:"P2-01,H-02", desc:"calcUserLevel() 纯函数", acc:"正确返回 S/A/B/C/D", baseline:true, verified:true },
+  { id:"P2-06", phase:"02", owner:"codex", w:0.5, week:"W3", dep:"P2-05", desc:"分级阈值外部化配置", acc:".env 改阈值即生效", baseline:true, verified:true },
+  { id:"P2-07", phase:"02", owner:"codex", w:0.5, week:"W3", dep:"P1-02", desc:"level_change_logs 审计", acc:"每次变更有记录", baseline:true, verified:true },
+  { id:"P2-08", phase:"02", owner:"codex", w:2, week:"W4", dep:"P2-05,06", desc:"tests/test_level_engine.py ≥20 case", acc:"Python pytest CI 全绿", baseline:true, verified:true },
+  { id:"P2-09", phase:"02", owner:"codex", w:0.5, week:"W4", dep:"P2-05", desc:"chat_route 路由映射", acc:"路由与 level 一致", baseline:true, verified:true },
+  { id:"P2-10", phase:"02", owner:"codex", w:1, week:"W4", dep:"P2-09", desc:"付费 Webhook 分级重算（付费话术匹配由 P3-20 接入）", acc:"模拟付费升 S", baseline:true, verified:true },
+  { id:"P2-11", phase:"02", owner:"devin", w:1, week:"W4", dep:"P1-07,P2-09", desc:"USER_UPGRADED WebSocket 推送", acc:"看板收到升级事件", baseline:true, verified:true },
+  { id:"P2-12", phase:"02", owner:"devin", w:1, week:"W4", dep:"P2-05,P1-16", desc:"入站流水线集成 calcUserLevel", acc:"✅ MTProto 真人号实测分级正确", baseline:true, verified:true },
+
+  // ── 阶段 03（19 项）──
+  { id:"P3-01", phase:"03", owner:"codex", w:0.5, week:"W4", dep:"P1-02", desc:"script_templates 表 + 话术类目 DDL", acc:"5 类目就绪", baseline:true, verified:true },
+  { id:"P3-02", phase:"03", owner:"codex", w:1.5, week:"W5", dep:"H-03,P3-01", desc:"scripts_seed.sql 录入底料", acc:"每类 ≥10 条", baseline:true, verified:true },
+  { id:"P3-03", phase:"03", owner:"codex", w:2, week:"W5", dep:"P3-02", desc:"向量化话术检索 API（全链路匹配引擎核心）", acc:"Top3 <100ms", baseline:true, verified:true },
+  { id:"P3-04", phase:"03", owner:"codex", w:1, week:"W5", dep:"P3-03", desc:"按 platform/level/persona/场景 step 过滤", acc:"8 条过滤单测", baseline:true, verified:true },
+  { id:"P3-05", phase:"03", owner:"codex", w:0.5, week:"W5", dep:"—", desc:"意图 taxonomy 文档", acc:"评审通过", baseline:true, verified:true },
+  { id:"P3-06", phase:"03", owner:"codex", w:1, week:"W5", dep:"P3-05", desc:"关键词规则引擎", acc:"规则可热更新", baseline:true, verified:true },
+  { id:"P3-07", phase:"03", owner:"codex", w:2.5, week:"W6", dep:"P3-03", desc:"intent_classifier 双路召回", acc:"输出 intent/confidence", baseline:true, verified:true },
+  { id:"P3-08", phase:"03", owner:"codex", w:0.5, week:"W6", dep:"P3-07", desc:"低置信降级闲聊策略", acc:"<0.6 不胡答", baseline:true, verified:true },
+  { id:"P3-09", phase:"03", owner:"codex", w:1, week:"W6", dep:"P3-07", desc:"意图模块 50 条标注回归", acc:"准确率 ≥95%", baseline:true, verified:true },
+  { id:"P3-10", phase:"03", owner:"codex", w:1.5, week:"W5", dep:"H-04", desc:"persona_prompts 多人设 Prompt", acc:"≥3 人设", baseline:true, verified:true },
+  { id:"P3-11", phase:"03", owner:"codex", w:2, week:"W6", dep:"P3-10,P3-07,P3-20", desc:"LLM 调用层（仅包装已命中话术底料）", acc:"无命中话术则降级/拒答", baseline:true, verified:true },
+  { id:"P3-12", phase:"03", owner:"codex", w:1, week:"W6", dep:"P3-11,H-04", desc:"safety_filter 安全过滤", acc:"红线 100% 拦截", baseline:true, verified:true },
+  { id:"P3-13", phase:"03", owner:"devin", w:1, week:"W6", dep:"P1-06", desc:"Redis 待发队列 + send_at", acc:"可按时间扫描", baseline:true, verified:true },
+  { id:"P3-14", phase:"03", owner:"codex", w:0.5, week:"W6", dep:"—", desc:"拟人延迟计算器", acc:"单测边界通过", baseline:true, verified:true },
+  { id:"P3-15", phase:"03", owner:"devin", w:1.5, week:"W6", dep:"P3-13,14,P1-17", desc:"B/C/D 自动投递 Worker（AccountPool 出站）", acc:"倒计时后经 MTProto 拟人发出", baseline:true, verified:true },
+  { id:"P3-16", phase:"03", owner:"devin", w:1.5, week:"W7", dep:"P2-11,P3-13,P3-20", desc:"S/A 挂起 + 草稿含 Top3 话术与 script_ids", acc:"坐席见推荐话术+倒计时", baseline:true, verified:true },
+  { id:"P3-17", phase:"03", owner:"codex", w:1, week:"W7", dep:"P3-16", desc:"120s 超时兜底投递（默认命中兜底话术）", acc:"超时投递带 script_hit_id", baseline:true, verified:true },
+  { id:"P3-18", phase:"03", owner:"devin", w:1, week:"W7", dep:"P1-02", desc:"archive_service 异步精聊归档", acc:"不阻塞主链路", baseline:true, verified:true },
+  { id:"P3-19", phase:"03", owner:"codex", w:1, week:"W7", dep:"P3-18,P3-21", desc:"精聊查询 API（含每步 script_hit 轨迹）", acc:"S/A 100% 可查且可追溯话术", baseline:true, verified:true },
+  { id:"P3-20", phase:"03", owner:"codex", w:2, week:"W5", dep:"P3-04", desc:"script_match 全链路编排（8 钩子：入站/消费/探测/分级/回复/坐席/出站/归档）", acc:"每步必有 match 结果或明确降级", baseline:true, verified:true },
+  { id:"P3-21", phase:"03", owner:"codex", w:1, week:"W5", dep:"P3-01", desc:"conversation_script_hits 表 + script_hit_id 写入审计", acc:"任一步可反查命中话术", baseline:true, verified:true },
+  { id:"P3-22", phase:"03", owner:"codex", w:1, week:"W7", dep:"P3-21", desc:"话术链接追踪参数注入", acc:"含 tracking_id/script_hit_id/user_id/campaign_id/曝光事件", baseline:true, verified:true },
+
+  // ── 阶段 04（12 项）──
+  { id:"P4-01", phase:"04", owner:"codex", w:1, week:"W7", dep:"—", desc:"ws_protocol.md 协议文档", acc:"前后端评审签字", baseline:true, verified:true },
+  { id:"P4-02", phase:"04", owner:"devin", w:2, week:"W7", dep:"P4-01", desc:"WS 服务端广播 + ACK 重推", acc:"conformance 通过", baseline:true, verified:true },
+  { id:"P4-03", phase:"04", owner:"devin", w:1, week:"W8", dep:"P4-02", desc:"坐席看板 React + 路由鉴权", acc:"可登录", baseline:true, verified:true },
+  { id:"P4-04", phase:"04", owner:"devin", w:1.5, week:"W8", dep:"P2-11", desc:"用户列表 S→A→B 排序置顶", acc:"新 S 级 3s 置顶", baseline:true, verified:true },
+  { id:"P4-05", phase:"04", owner:"devin", w:2, week:"W8", dep:"P3-16", desc:"对话区：推荐话术列表/一键插入/编辑发送", acc:"坐席可选用库内话术或改字", baseline:true, verified:true },
+  { id:"P4-06", phase:"04", owner:"devin", w:1, week:"W8", dep:"P4-04", desc:"S/A 全屏弹窗 + 声音提醒", acc:"弹窗+ACK", baseline:true, verified:true },
+  { id:"P4-07", phase:"04", owner:"codex", w:1, week:"W8", dep:"P4-02", desc:"WS 客户端断线重连", acc:"10s 内恢复", baseline:true, verified:true },
+  { id:"P4-08", phase:"04", owner:"devin", w:1, week:"W8", dep:"P4-01", desc:"H5 WebSocket + 正在输入动效", acc:"H5 可见 typing", baseline:true, verified:true },
+  { id:"P4-09", phase:"04", owner:"codex", w:1.5, week:"W8", dep:"H-05", desc:"H5 VIP 弹窗 + 支付跳转", acc:"CTA 可跳转", baseline:true, verified:true },
+  { id:"P4-10", phase:"04", owner:"devin", w:2, week:"W9", dep:"—", desc:"移动端推送服务（后端 FCM/APNs + 前端管理界面）", acc:"真机收到推送；管理界面可用", baseline:true, verified:true },
+  { id:"P4-11", phase:"04", owner:"devin", w:1.5, week:"W9", dep:"P4-10", desc:"App 音视频渲染 + 本地缓存", acc:"弱网可看历史", baseline:true, verified:true },
+  { id:"P4-12", phase:"04", owner:"codex", w:1, week:"W9", dep:"P3-22", desc:"链接点击与 App 转化数据看板", acc:"发送/曝光/点击/下载/注册/付费/升 A/S 全漏斗可查看", baseline:true, verified:true },
+
+  // ── 阶段 05（12 项 Devin/Codex）──
+  { id:"P5-01", phase:"05", owner:"devin", w:2, week:"W10", dep:"C-08", desc:"E2E：MTProto 入站→AI→拟人投递→归档", acc:"CI nightly 绿", baseline:true, verified:true },
+  { id:"P5-02", phase:"05", owner:"devin", w:1.5, week:"W10", dep:"P5-01", desc:"1000 并发压测 + P99 报告", acc:"P99<500ms", baseline:true, verified:true },
+  { id:"P5-03", phase:"05", owner:"codex", w:1, week:"W10", dep:"P2-08,P3-09", desc:"分级/意图回归集维护", acc:"回归 0 失败", baseline:true, verified:true },
+  { id:"P5-04", phase:"05", owner:"devin", w:1, week:"W10", dep:"P4-07", desc:"72h WebSocket 长稳压测", acc:"0 丢消息", baseline:true, verified:true },
+  { id:"P5-05", phase:"05", owner:"devin", w:1.5, week:"W11", dep:"P3,P4", desc:"Prometheus 埋点", acc:"/metrics 可 scrape", baseline:true, verified:true },
+  { id:"P5-06", phase:"05", owner:"devin", w:1, week:"W11", dep:"P5-05", desc:"Grafana 五大盘 + 告警", acc:"告警可用", baseline:true, verified:true },
+  { id:"P5-07", phase:"05", owner:"codex", w:0.5, week:"W11", dep:"P5-06", desc:"付费转化漏斗 SQL", acc:"SQL 评审通过", baseline:true, verified:true },
+  { id:"P5-08", phase:"05", owner:"devin", w:0.5, week:"W11", dep:"P5-07", desc:"Grafana 绑定转化面板", acc:"24h/72h 可见", baseline:true, verified:true },
+  { id:"P5-09", phase:"05", owner:"devin", w:1, week:"W11", dep:"H-07", desc:"灰度 feature flag 按 level 切流", acc:"可按级开关", baseline:true, verified:true },
+  { id:"P5-10", phase:"05", owner:"devin", w:1, week:"W11", dep:"H-09", desc:"runbook.md 运维手册", acc:"演练通过", baseline:true, verified:true },
+  { id:"P5-11", phase:"05", owner:"codex", w:1, week:"W11", dep:"P4-12", desc:"App 下载/注册/付费归因 SQL", acc:"可按国家/年龄/等级/persona/intent/类目/TG账号/设备聚合", baseline:true, verified:true },
+  { id:"P5-12", phase:"05", owner:"codex", w:1, week:"W11", dep:"P5-11", desc:"Top 转化话术优化报表", acc:"可输出点击/下载/注册/付费 Top 话术与平均耗时", baseline:true, verified:true },
 ];
 
-const CATEGORY_LABEL = {
-  channel: ['入站通道', 'category-channel'],
-  intent: ['意图识别', 'category-intent'],
-  level: ['用户分级', 'category-level'],
-  policy: ['Policy', 'category-policy'],
-  rel: ['关系阶段', 'category-rel'],
-  conversion: ['App 转化', 'category-conversion'],
-  attribution: ['归因', 'category-conversion'],
-  nurture: ['培育跟进', 'category-nurture'],
-  orchestrator: ['编排层', 'category-orchestrator'],
-  operator: ['坐席协同', 'category-operator'],
-  worker: ['后台 Worker', 'category-worker'],
-  call_broadcast: ['视频通话', 'category-call_broadcast'],
-  deprecated: ['已下线', 'category-deprecated'],
+const OWNER_LABEL = {
+  devin: ['Devin', 'owner-devin'],
+  codex: ['Codex', 'owner-codex'],
+  cursor: ['Cursor', 'owner-cursor'],
+  human: ['人工', 'owner-human'],
+};
+const PHASE_LABEL = { '01':'阶段01 基础设施', '02':'阶段02 分级引擎', '03':'阶段03 AI链路', '04':'阶段04 看板前端', '05':'阶段05 测试上线' };
+
+/** 并行标识：now=可立即并行 | group=同批并行组 | wait=须等依赖 | gate=阶段关口 */
+const PARALLEL = {
+  "C-01":{t:"gate",g:"W1-关",n:"ERIS MVP 目录基线已满足；见 docs/REPO_LAYOUT.md"},
+  "C-02":{t:"gate",g:"W1-关",n:"CI 门禁已配置；PR 须 管理员-ci+后端-ci+操作守卫 全绿"},
+  "C-03":{t:"done",g:"W1-①",n:".env.template + docs/MTProto_ENV_SETUP.md 已交付"},
+  "C-15":{t:"gate",g:"W2-关",n:"MTProto 安全评审关口"},
+  "C-04":{t:"gate",g:"W2-关",n:"阶段01契约评审关口"},
+  "C-05":{t:"gate",g:"W4-关",n:"分级引擎检验关口"},
+  "C-06":{t:"gate",g:"W4-关",n:"分级冒烟通过后方可进 AI 主链路"},
+  "C-07":{t:"wait",g:"—",n:"等人设 Prompt 初稿"},
+  "C-08":{t:"gate",g:"W7-关",n:"AI 全链路冒烟关口"},
+  "C-09":{t:"group",g:"W7-①",n:"与 P3-18、P4-10 可并行"},
+  "C-10":{t:"done",g:"W9-关",n:"J-03 看板联调检验签字 + 录屏归档"},
+  "C-11":{t:"done",g:"W9-①",n:"坐席看板 UI/UX 走查问题单关闭"},
+  "C-12":{t:"wait",g:"W10-跟踪",n:"待 3 个连续 schedule nightly 绿；workflow_dispatch 不计入验收"},
+  "C-13":{t:"done",g:"W11-关",n:"14 条告警 + Grafana MVP 大盘走查归档"},
+  "C-14":{t:"done",g:"W12-关",n:"架构终检通过；见 docs/C14_INSPECTION_REPORT.md"},
+  "H-01":{t:"done",g:"W1-①",n:"技术选型与部署环境已由 human_owner 最终确认；REPO_LAYOUT 一致"},
+  "H-02":{t:"done",g:"W3-①",n:"T1 国家名单与分级阈值已由 human_owner 最终确认"},
+  "H-03":{t:"wait",g:"—",n:"等话术表 DDL 完成"},
+  "H-04":{t:"group",g:"W6-①",n:"与 P3-12 评审可并行安排"},
+  "H-05":{t:"done",g:"W8-关",n:"H5 VIP 弹窗与支付跳转已由 human_owner 最终确认"},
+  "H-06":{t:"done",g:"W9-关",n:"反馈表 5 条已处理；config/h06_operator_feedback_archive.json"},
+  "H-07":{t:"done",g:"W10-关",n:"Week9 C/D 灰度已由 human_owner 最终确认"},
+  "H-08":{t:"done",g:"W11-关",n:"Week10-11 B 观察与 A/S 接管已由 human_owner 最终确认"},
+  "H-09":{t:"done",g:"W11-①",n:"坐席 SOP 培训与考核已由 human_owner 最终确认"},
+  "H-10":{t:"done",g:"W12-关",n:"全量上线 Go/No-Go 已由 human_owner 最终确认"},
+  "H-11":{t:"done",g:"W2-①",n:"Telegram 真人号运营 SOP 已由 human_owner 最终确认"},
+  "P1-01":{t:"group",g:"W1-②",n:"C-01 后，与 C-02、P1-05 并行"},
+  "P1-02":{t:"wait",g:"—",n:"须 P1-01 完成"},
+  "P1-03":{t:"group",g:"W1-③",n:"P1-02 后，与 P1-04 并行"},
+  "P1-04":{t:"group",g:"W1-③",n:"P1-02 后，与 P1-03 并行"},
+  "P1-05":{t:"group",g:"W1-②",n:"C-01 后，与 C-02、P1-01 并行"},
+  "P1-06":{t:"group",g:"W1-④",n:"P1-05 后，与 P1-07 并行"},
+  "P1-07":{t:"group",g:"W1-④",n:"P1-05 后，与 P1-06 并行"},
+  "P1-08":{t:"gate",g:"W2-关",n:"docker 全绿后解锁 W2 并行组"},
+  "P1-09":{t:"group",g:"W2-①",n:"P1-05 后，与 P1-13、H-11 并行"},
+  "P1-10":{t:"wait",g:"—",n:"须 Telethon 多账号连接完成"},
+  "P1-11":{t:"group",g:"W2-②",n:"P1-10 后，与 P1-12、P1-19 并行"},
+  "P1-12":{t:"group",g:"W2-②",n:"P1-10 后，与 P1-11、P1-19 并行"},
+  "P1-13":{t:"now",g:"W2-①",n:"与 P1-09、H-11 可并行（schema 不依赖 MTProto）"},
+  "P1-14":{t:"group",g:"W2-③",n:"P1-13 后，与 P1-15 并行"},
+  "P1-15":{t:"group",g:"W2-③",n:"P1-13 后，与 P1-14 并行"},
+  "P1-16":{t:"wait",g:"—",n:"须队列+MTProto 适配器+会话上下文就绪"},
+  "P1-17":{t:"group",g:"W2-①",n:"P1-09 后，与 P1-18 并行"},
+  "P1-18":{t:"group",g:"W2-①",n:"P1-09 后，与 P1-17 并行"},
+  "P1-19":{t:"group",g:"W2-②",n:"P1-06 后，与 P1-11、P1-12 可并行"},
+  "P1-20":{t:"wait",g:"—",n:"须 AccountPool+Session 重连完成"},
+  "P2-01":{t:"wait",g:"—",n:"须 H-02 审定完成"},
+  "P2-02":{t:"now",g:"W3-①",n:"与 H-02、P2-07 同时开工"},
+  "P2-03":{t:"wait",g:"—",n:"须话术业务审核启动"},
+  "P2-04":{t:"wait",g:"—",n:"须 safety_filter 完成"},
+  "P2-05":{t:"wait",g:"—",n:"须 P2-01+H-02"},
+  "P2-06":{t:"group",g:"W3-②",n:"P2-05 后，与 P2-08 前半可并行"},
+  "P2-07":{t:"now",g:"W3-①",n:"与 H-02、P2-02 同时开工"},
+  "P2-08":{t:"group",g:"W4-①",n:"与 P3-01、P4-01 三轨并行"},
+  "P2-09":{t:"group",g:"W4-②",n:"P2-05 后，与 P2-10 可并行"},
+  "P2-10":{t:"group",g:"W4-②",n:"P2-09 后，与 P2-11 准备并行"},
+  "P2-11":{t:"group",g:"W4-③",n:"P2-09 后，与 P2-12 可并行"},
+  "P2-12":{t:"wait",g:"—",n:"须 calcUserLevel 稳定"},
+  "P3-01":{t:"group",g:"W4-①",n:"与 P2-08、P4-01 三轨并行"},
+  "P3-02":{t:"wait",g:"—",n:"须 H-03 话术审定"},
+  "P3-03":{t:"wait",g:"—",n:"须 seed 数据就绪"},
+  "P3-04":{t:"wait",g:"—",n:"须向量 API 完成"},
+  "P3-05":{t:"now",g:"W5-①",n:"与 P3-10 可同时开工（文档类）"},
+  "P3-06":{t:"group",g:"W5-②",n:"P3-05 后，与 P3-03 中后期并行"},
+  "P3-07":{t:"wait",g:"—",n:"须向量 API 完成"},
+  "P3-08":{t:"wait",g:"—",n:"须 P3-07 完成"},
+  "P3-09":{t:"group",g:"W6-②",n:"P3-07 后，与 P3-11 可并行"},
+  "P3-10":{t:"now",g:"W5-①",n:"与 P3-05 可同时开工"},
+  "P3-11":{t:"wait",g:"—",n:"须 P3-20 全链路匹配编排完成"},
+  "P3-12":{t:"wait",g:"—",n:"须 LLM 调用层完成"},
+  "P3-13":{t:"group",g:"W6-①",n:"与 P3-14、P3-18 大并行组"},
+  "P3-14":{t:"now",g:"W6-①",n:"与 P3-13、P3-18 大并行组"},
+  "P3-15":{t:"wait",g:"—",n:"须队列+延迟算法就绪"},
+  "P3-16":{t:"wait",g:"—",n:"须 WS 推送+待发队列"},
+  "P3-17":{t:"wait",g:"—",n:"须 P3-16 完成"},
+  "P3-18":{t:"group",g:"W6-①",n:"与 P3-13、P3-14 大并行组"},
+  "P3-19":{t:"wait",g:"—",n:"须归档 worker + script_hit 表就绪"},
+  "P3-20":{t:"wait",g:"—",n:"须 P3-04 过滤规则完成"},
+  "P3-21":{t:"group",g:"W4-①",n:"与 P3-01 同批，解锁全链路 script_hit 审计"},
+  "P3-22":{t:"done",g:"W7-①",n:"链接追踪已与 script_hit / campaign / 用户上下文和曝光事件打通"},
+  "P4-01":{t:"group",g:"W4-①",n:"与 P2-08、P3-01 三轨并行"},
+  "P4-02":{t:"done",g:"W7-①",n:"WS 服务端广播 + ACK 重推已完成，conformance 测试通过"},
+  "P4-03":{t:"done",g:"W8-①",n:"坐席看板 React + 路由鉴权已完成，可正常登录"},
+  "P4-04":{t:"done",g:"W8-①",n:"用户列表 S→A→B 排序置顶已完成，新 S 级 3s 置顶"},
+  "P4-05":{t:"done",g:"W8-①",n:"对话区推荐话术功能已完成，坐席可选用库内话术或改字"},
+  "P4-06":{t:"group",g:"W8-①",n:"P4-04 后，与 P4-07 可并行"},
+  "P4-07":{t:"group",g:"W8-①",n:"P4-02 后，与 P4-06 可并行"},
+  "P4-08":{t:"group",g:"W8-②",n:"P4-01 后，与 P4-09 可并行"},
+  "P4-09":{t:"group",g:"W8-②",n:"P4-01 后，与 P4-08 可并行"},
+  "P4-10":{t:"done",g:"W9-①",n:"移动端推送服务已完成，真机可收到推送，管理界面可用"},
+  "P4-11":{t:"done",g:"W9-①",n:"P4-10 完成，已实现音视频渲染与本地缓存"},
+  "P4-12":{t:"done",g:"W9-①",n:"数据总览可查看发送、曝光、点击、下载、注册、付费、升 A/S 全漏斗"},
+  "P5-01":{t:"done",g:"W10-关",n:"E2E 测试已完成，CI nightly 集成通过"},
+  "P5-02":{t:"done",g:"W10-①",n:"1000 并发压测已完成，P99 报告生成，CI 集成完成"},
+  "P5-03":{t:"group",g:"W10-①",n:"C-08 后，与 P5-04 并行"},
+  "P5-04":{t:"done",g:"W10-①",n:"72h WebSocket 长稳压测已完成，零丢消息验证通过，CI 集成完成"},
+  "P5-05":{t:"done",g:"W11-①",n:"Prometheus 埋点已完成，/metrics 端点可 scrape，业务指标已实现"},
+  "P5-06":{t:"done",g:"W11-①",n:"Grafana 五大盘已完成，告警规则已配置，可正常使用"},
+  "P5-07":{t:"group",g:"W11-①",n:"与 P5-05、C-13 可并行"},
+  "P5-08":{t:"wait",g:"—",n:"须 SQL 评审通过"},
+  "P5-09":{t:"wait",g:"—",n:"须 H-07 灰度批准"},
+  "P5-10":{t:"wait",g:"—",n:"须坐席培训完成"},
+  "P5-11":{t:"done",g:"W11-①",n:"归因聚合支持按话术、国家、年龄、等级、persona、intent、类目、TG账号、设备查看"},
+  "P5-12":{t:"done",g:"W11-①",n:"Top 点击/下载/注册/付费话术与耗时报表已进入数据总览"},
 };
 
-const PRIORITY_LABEL = {
-  high: ['高', 'priority-high'],
-  medium: ['中', 'priority-medium'],
-  low: ['低', 'priority-low'],
+const PARA_UI = {
+  now:  { label: '可立即并行', cls: 'para-now',  row: 'row-now'  },
+  group:{ label: '同批并行组', cls: 'para-group', row: 'row-group' },
+  wait: { label: '须等依赖',   cls: 'para-wait',  row: 'row-wait'  },
+  gate: { label: '阶段关口',   cls: 'para-gate',  row: 'row-gate'  },
+  done: { label: '已交付',     cls: 'para-done',  row: 'row-done'  },
 };
 
-function renderRules(filter = 'all') {
-  const tbody = document.getElementById('rules-body');
-  tbody.innerHTML = '';
+function getParallel(id) {
+  const p = PARALLEL[id] || { t: 'wait', g: '—', n: '按依赖顺序执行' };
+  const task = TASKS.find(t => t.id === id);
+  if (task && task.verified === true) return { ...p, t: 'done' };
+  return p;
+}
 
-  let filtered = RULES;
-  if (filter === 'active') filtered = RULES.filter(r => r.active === true);
-  else if (filter === 'deprecated') filtered = RULES.filter(r => r.active === false);
-  else if (filter !== 'all') {
-    if (['high', 'medium', 'low'].includes(filter)) {
-      filtered = RULES.filter(r => r.priority === filter);
-    } else {
-      filtered = RULES.filter(r => r.category === filter);
-    }
+const DONE_STORAGE_KEY = 'eris-business-flow-done-v3';
+const DEFAULT_DONE_IDS = new Set(TASKS.filter(t => t.verified === true).map(t => t.id));
+let currentFilter = 'all';
+
+function loadDoneSet() {
+  try {
+    const raw = localStorage.getItem(DONE_STORAGE_KEY);
+    const set = new Set(raw ? JSON.parse(raw) : []);
+    let changed = false;
+    DEFAULT_DONE_IDS.forEach(id => {
+      if (!set.has(id)) { set.add(id); changed = true; }
+    });
+    if (changed) localStorage.setItem(DONE_STORAGE_KEY, JSON.stringify([...set]));
+    return set;
+  } catch {
+    return new Set(DEFAULT_DONE_IDS);
   }
-
-  filtered.forEach(rule => {
-    const catLabel = CATEGORY_LABEL[rule.category] || ['其他', 'category-intent'];
-    const priLabel = PRIORITY_LABEL[rule.priority] || PRIORITY_LABEL.low;
-    const status = rule.active ? '<span class="status-active">生效</span>' : '<span class="status-off">未接线</span>';
-    const tr = document.createElement('tr');
-    if (!rule.active) tr.classList.add('row-off');
-    tr.innerHTML = `
-      <td class="rule-id">${rule.id}</td>
-      <td><span class="category ${catLabel[1]}">${catLabel[0]}</span></td>
-      <td>${status}</td>
-      <td style="color:#e2eaf6">${rule.desc}</td>
-      <td><span class="priority ${priLabel[1]}">${priLabel[0]}</span></td>
-      <td><span class="keywords">${rule.keywords.slice(0, 3).join(', ')}${rule.keywords.length > 3 ? '...' : ''}</span></td>
-      <td style="font-family:'DM Mono',monospace">${rule.confidence}</td>
-      <td style="color:var(--muted)">${rule.desc}</td>
-    `;
-    tbody.appendChild(tr);
-  });
-
-  document.getElementById('rule-count').textContent = filtered.length;
-  updateRuleStats();
 }
 
-function updateRuleStats() {
-  const active = RULES.filter(r => r.active).length;
-  document.getElementById('active-count').textContent = active;
-  const count = (cat) => RULES.filter(r => r.category === cat && r.active).length;
-  const set = (id, n) => { const el = document.getElementById(id); if (el) el.textContent = n; };
-  set('stat-channel', count('channel') + count('orchestrator'));
-  set('stat-call', count('call_broadcast'));
-  set('stat-safety', 0);
-  set('stat-level', count('level') + count('policy') + count('rel') + count('operator'));
-  set('stat-conversion', count('conversion') + count('attribution') + count('nurture') + count('worker'));
+let doneSet = loadDoneSet();
+
+function saveDoneSet() {
+  localStorage.setItem(DONE_STORAGE_KEY, JSON.stringify([...doneSet]));
 }
 
-document.querySelectorAll('.filter-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    renderRules(btn.dataset.filter);
+function isTaskDone(id) {
+  return doneSet.has(id);
+}
+
+function setTaskDone(id, done) {
+  if (done) doneSet.add(id);
+  else doneSet.delete(id);
+  saveDoneSet();
+  updateDoneStats();
+}
+
+function updateDoneStats() {
+  const total = TASKS.length;
+  const done = doneSet.size;
+  const pct = total ? Math.round(done / total * 100) : 0;
+  ['done-count', 'done-count-header'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = done;
   });
-});
+  const totalEl = document.getElementById('done-total');
+  if (totalEl) totalEl.textContent = total;
+  const fill = document.getElementById('progress-fill');
+  if (fill) fill.style.width = pct + '%';
+}
+
+function renderTasks(filter) {
+  currentFilter = filter;
+  const tbody = document.getElementById('task-body');
+  const rows = TASKS.filter(t => {
+    const done = isTaskDone(t.id);
+    if (filter === 'done') return done;
+    if (filter === 'pending') return !done;
+    if (filter === 'all' || t.owner === filter) return true;
+    const p = getParallel(t.id);
+    if (filter === 'para-now') return p.t === 'now';
+    if (filter === 'para-group') return p.t === 'group';
+    return false;
+  });
+  tbody.innerHTML = rows.map(t => {
+    const [label, ocls] = OWNER_LABEL[t.owner];
+    const p = getParallel(t.id);
+    const ui = PARA_UI[p.t] || PARA_UI.wait;
+    const groupTxt = p.g && p.g !== '—' ? ` · ${p.g}` : '';
+    const checked = isTaskDone(t.id);
+    const doneCls = checked ? ' task-done' : '';
+    return `<tr class="${ui.row}${doneCls}" data-id="${t.id}" data-owner="${t.owner}" data-para="${p.t}">
+      <td class="task-check"><input type="checkbox" class="task-done-cb" data-id="${t.id}"${checked ? ' checked' : ''} aria-label="标记 ${t.id} 已完成"></td>
+      <td class="tid">${t.id}</td>
+      <td><span class="phase-tag">${PHASE_LABEL[t.phase]}</span></td>
+      <td class="col-desc">${t.desc}</td>
+      <td><span class="owner ${ocls}">${label}</span></td>
+      <td>
+        <span class="para ${ui.cls}">${ui.label}${groupTxt}</span>
+        <span class="para-note">${p.n}</span>
+      </td>
+      <td>${t.w} 人天</td>
+      <td>${t.week}</td>
+      <td>${t.dep}</td>
+      <td>${t.acc}</td>
+    </tr>`;
+  }).join('');
+  updateDoneStats();
+}
 
 document.querySelectorAll('.nav-btn').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -2147,7 +783,66 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
   });
 });
 
-renderRules();
+document.querySelectorAll('.filter-btn[data-filter]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filter-btn[data-filter]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderTasks(btn.dataset.filter);
+  });
+});
+
+document.getElementById('task-body').addEventListener('change', e => {
+  const cb = e.target;
+  if (!cb.classList.contains('task-done-cb')) return;
+  const id = cb.dataset.id;
+  setTaskDone(id, cb.checked);
+  cb.closest('tr')?.classList.toggle('task-done', cb.checked);
+});
+
+document.getElementById('reset-done')?.addEventListener('click', () => {
+  if (!doneSet.size) return;
+  if (!confirm('确定清空全部 ' + doneSet.size + ' 项已完成勾选？')) return;
+  doneSet.clear();
+  saveDoneSet();
+  renderTasks(currentFilter);
+});
+
+function updateWorkloadStats() {
+  const sum = { devin: 0, codex: 0, cursor: 0, human: 0 };
+  TASKS.forEach(t => { sum[t.owner] += t.w; });
+  const total = sum.devin + sum.codex + sum.cursor + sum.human;
+  const pct = k => Math.round(sum[k] / total * 1000) / 10;
+  const aiShare = Math.round((sum.devin + sum.codex) / total * 1000) / 10;
+  const supportShare = Math.round((sum.cursor + sum.human) / total * 1000) / 10;
+
+  document.getElementById('task-count').textContent = TASKS.length;
+  const allBtn = document.querySelector('.filter-btn[data-filter="all"]');
+  if (allBtn) allBtn.textContent = '全部（' + TASKS.length + '）';
+  document.getElementById('ai-pct').textContent = aiShare + '%';
+  document.getElementById('support-pct').textContent = supportShare + '%';
+
+  const cells = document.querySelectorAll('.wl-cell');
+  const labels = ['devin', 'codex', 'cursor', 'human'];
+  const days = { devin: sum.devin, codex: sum.codex, cursor: sum.cursor, human: sum.human };
+  cells.forEach((cell, i) => {
+    const k = labels[i];
+    cell.querySelector('.wl-pct').textContent = pct(k) + '%';
+    cell.querySelector('.wl-sub').textContent = '约 ' + days[k].toFixed(1) + ' 人天';
+  });
+
+  document.querySelector('.seg-devin').style.width = pct('devin') + '%';
+  document.querySelector('.seg-codex').style.width = pct('codex') + '%';
+  document.querySelector('.seg-cursor').style.width = pct('cursor') + '%';
+  document.querySelector('.seg-human').style.width = pct('human') + '%';
+
+  document.querySelector('footer').textContent =
+    '1V1 智能流控系统 · 流程+任务 · 共 ' + TASKS.length + ' 项 · 合计 ' + total.toFixed(1) +
+    ' 人天 · Devin ' + pct('devin') + '% · Codex ' + pct('codex') + '% · Cursor ' + pct('cursor') + '% · 人工 ' + pct('human') + '%';
+}
+
+renderTasks('all');
+updateWorkloadStats();
+
 mermaid.initialize({
   startOnLoad: true,
   theme: 'dark',

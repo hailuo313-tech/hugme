@@ -41,8 +41,7 @@ def test_test_code_8866_triggers_exact_match_only() -> None:
 @pytest.mark.asyncio
 async def test_maybe_enqueue_skips_when_disabled(monkeypatch) -> None:
     monkeypatch.setattr(
-        "services.call_broadcast.triggers.settings",
-        "CALL_BROADCAST_ENABLED",
+        "services.call_broadcast.triggers.settings.CALL_BROADCAST_ENABLED",
         False,
         raising=False,
     )
@@ -61,8 +60,7 @@ async def test_maybe_enqueue_skips_when_disabled(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_maybe_enqueue_skips_non_call_text(monkeypatch) -> None:
     monkeypatch.setattr(
-        "services.call_broadcast.triggers.settings",
-        "CALL_BROADCAST_ENABLED",
+        "services.call_broadcast.triggers.settings.CALL_BROADCAST_ENABLED",
         True,
         raising=False,
     )
@@ -81,8 +79,7 @@ async def test_maybe_enqueue_skips_non_call_text(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_maybe_enqueue_routes_video_call_to_operator_handoff(monkeypatch) -> None:
     monkeypatch.setattr(
-        "services.call_broadcast.triggers.settings",
-        "CALL_BROADCAST_ENABLED",
+        "services.call_broadcast.triggers.settings.CALL_BROADCAST_ENABLED",
         True,
         raising=False,
     )
@@ -108,8 +105,7 @@ async def test_maybe_enqueue_routes_video_call_to_operator_handoff(monkeypatch) 
 @pytest.mark.asyncio
 async def test_maybe_enqueue_routes_8866_to_operator_handoff(monkeypatch) -> None:
     monkeypatch.setattr(
-        "services.call_broadcast.triggers.settings",
-        "CALL_BROADCAST_ENABLED",
+        "services.call_broadcast.triggers.settings.CALL_BROADCAST_ENABLED",
         True,
         raising=False,
     )
@@ -230,8 +226,7 @@ async def test_worker_disabled_by_default(monkeypatch) -> None:
     from services.call_broadcast.worker import run_one_tick
 
     monkeypatch.setattr(
-        "services.call_broadcast.worker.settings",
-        "CALL_BROADCAST_ENABLED",
+        "services.call_broadcast.worker.settings.CALL_BROADCAST_ENABLED",
         False,
         raising=False,
     )
@@ -243,8 +238,7 @@ def test_spawn_helper_noop_when_disabled(monkeypatch) -> None:
     from services.mtproto.auto_reply import _spawn_call_broadcast_enqueue
 
     monkeypatch.setattr(
-        "services.mtproto.auto_reply.settings",
-        "CALL_BROADCAST_ENABLED",
+        "services.mtproto.auto_reply.settings.CALL_BROADCAST_ENABLED",
         False,
         raising=False,
     )
@@ -266,8 +260,7 @@ def test_spawn_helper_schedules_task_when_enabled(monkeypatch) -> None:
     from services.mtproto.auto_reply import _spawn_call_broadcast_enqueue
 
     monkeypatch.setattr(
-        "services.mtproto.auto_reply.settings",
-        "CALL_BROADCAST_ENABLED",
+        "services.mtproto.auto_reply.settings.CALL_BROADCAST_ENABLED",
         True,
         raising=False,
     )
@@ -355,8 +348,11 @@ async def test_incoming_listener_registers_when_enabled(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_handle_incoming_skips_when_busy(monkeypatch) -> None:
+    from uuid import uuid4
+
     from services.call_broadcast import incoming_listener
 
+    account_id = str(uuid4())
     monkeypatch.setattr(incoming_listener.settings, "CALL_BROADCAST_ENABLED", True, raising=False)
     monkeypatch.setattr(
         incoming_listener.settings,
@@ -382,9 +378,9 @@ async def test_handle_incoming_skips_when_busy(monkeypatch) -> None:
     run = AsyncMock()
     monkeypatch.setattr(incoming_listener, "run_call_broadcast", run)
 
-    await incoming_listener._handle_incoming_call("acc-1", _Update())
+    await incoming_listener._handle_incoming_call(account_id, _Update())
     run.assert_not_awaited()
-    assert ("acc-1", 555) not in incoming_listener._inflight_calls
+    assert (account_id, 555) not in incoming_listener._inflight_calls
 
 
 @pytest.mark.asyncio
@@ -393,6 +389,7 @@ async def test_handle_incoming_not_busy_on_first_call(monkeypatch) -> None:
 
     from services.call_broadcast import incoming_listener
 
+    account_id = str(uuid4())
     monkeypatch.setattr(incoming_listener.settings, "CALL_BROADCAST_ENABLED", True, raising=False)
     monkeypatch.setattr(
         incoming_listener.settings,
@@ -444,7 +441,7 @@ async def test_handle_incoming_not_busy_on_first_call(monkeypatch) -> None:
     class _Update:
         chat_id = 555
 
-    await incoming_listener._handle_incoming_call("acc-1", _Update())
+    await incoming_listener._handle_incoming_call(account_id, _Update())
     run.assert_awaited_once()
 
 
