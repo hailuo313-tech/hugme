@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     LLM_PRIMARY_MODEL: str = "deepseek/deepseek-v3-0324"
     LLM_FALLBACK_MODEL: str = "openai/gpt-4o-mini"
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+    # 按用途分流：chat=用户回复+坐席 AI 草稿；aux=翻译/记忆评分/年龄抽取等
+    LLM_CHAT_PROVIDER: str = "novita"
+    LLM_CHAT_MODEL: str = "deepseek/deepseek-v3-0324"
+    LLM_AUX_PROVIDER: str = "openrouter"
+    LLM_AUX_MODEL: str = "openai/gpt-4o-mini"
     TELEGRAM_BOT_TOKEN: Optional[str] = None
     # C-03 / W2 MTProto（Telethon Userbot）；W2 前可不启用运行时，但须在 .env 配齐占位
     TELEGRAM_API_ID: Optional[int] = None
@@ -30,8 +35,16 @@ class Settings(BaseSettings):
     TELEGRAM_SYSTEM_VERSION: str = "1.0"
     PUBLIC_BASE_URL: str = "https://hugme2.com"
     APP_DOWNLOAD_URL: Optional[str] = None
+    APP_DOWNLOAD_FUNNEL_MODE: str = "click_only"
+    # 同一会话硬性限制：距上一条含链接的助手消息不足 N 分钟则不得再发链接
+    APP_DOWNLOAD_LINK_COOLDOWN_MINUTES: int = 15
     APP_DOWNLOAD_CONVERSION_ENABLED: bool = True
     APP_DOWNLOAD_NURTURE_ENABLED: bool = True
+    # 培育 v3：沉默三轮视频邀请（秒）
+    APP_DOWNLOAD_NURTURE_ROUND1_SECONDS: int = 300
+    APP_DOWNLOAD_NURTURE_ROUND2_SECONDS: int = 1800
+    APP_DOWNLOAD_NURTURE_ROUND3_SECONDS: int = 86400
+    # Legacy aliases (still read if NURTURE_IDLE not overridden)
     APP_DOWNLOAD_FIRST_IDLE_SECONDS: int = 180
     APP_DOWNLOAD_WARM_NO_CLICK_SECONDS: int = 60
     APP_DOWNLOAD_CLICK_NO_DOWNLOAD_SECONDS: int = 600
@@ -190,5 +203,23 @@ class Settings(BaseSettings):
     ARCHIVE_WORKER_ENABLED: bool = False  # 是否启用异步精聊归档 Worker
     ARCHIVE_WORKER_POLL_SECONDS: int = 30  # 轮询间隔（秒）
     ARCHIVE_WORKER_SCHEDULER_MAX_INSTANCES: int = 1  # 调度器最大并发实例数
+    # Call broadcast: Telethon + PyTgCalls 视频通话（默认关，生产在 compose 显式打开）
+    CALL_BROADCAST_ENABLED: bool = False
+    CALL_BROADCAST_POLL_SECONDS: int = 15
+    CALL_BROADCAST_SCHEDULER_MAX_INSTANCES: int = 1
+    CALL_BROADCAST_MAX_CONCURRENT_PER_ACCOUNT: int = 1
+    CALL_BROADCAST_DEFAULT_DURATION_SECONDS: int = 30
+    CALL_BROADCAST_DEFAULT_VIDEO_PATH: Optional[str] = None
+    CALL_BROADCAST_DEFAULT_VIDEO_ASSET_ID: Optional[str] = None
+    CALL_BROADCAST_INCOMING_AUTO_ANSWER: bool = False
+    CALL_BROADCAST_INBOUND_MANUAL_AFTER: int = 1
+    CALL_BROADCAST_INBOUND_REVIEW_TTL_SECONDS: int = 90
+    CALL_BROADCAST_KEYWORD_REVIEW_TTL_SECONDS: int = 600
+    CALL_BROADCAST_TRANSCODE_ENABLED: bool = False
+    CALL_BROADCAST_POST_CALL_NURTURE_ENABLED: bool = True
+    CALL_BROADCAST_VIDEO_ROOT: str = "/data/videos"
+    CALL_BROADCAST_WORK_DIR: str = "/tmp/call_broadcast"
+    # 用户索要视频（文件或实时通话）时转人工，不自动拨打/发视频文件。
+    VIDEO_REQUEST_OPERATOR_HANDOFF_ENABLED: bool = True
 
 settings = Settings()

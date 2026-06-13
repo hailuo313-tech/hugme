@@ -172,6 +172,12 @@ async def test_run_call_broadcast_uses_pytgcalls(monkeypatch) -> None:
         "get_pytgcalls",
         AsyncMock(return_value=fake_pytgcalls),
     )
+    monkeypatch.setattr(
+        call_session.telegram_account_manager,
+        "get_client",
+        AsyncMock(return_value=MagicMock()),
+    )
+    monkeypatch.setattr(call_session, "_cache_call_peer", AsyncMock())
     sleep_mock = AsyncMock()
     monkeypatch.setattr(call_session.asyncio, "sleep", sleep_mock)
 
@@ -484,6 +490,16 @@ async def test_resolve_inbound_sequence_second_call_returns_none(monkeypatch) ->
         cb_jobs,
         "count_completed_inbound_calls_for_chat",
         AsyncMock(return_value=1),
+    )
+    monkeypatch.setattr(
+        cb_jobs,
+        "resolve_video_asset_by_play_sequence",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        cb_jobs,
+        "resolve_default_video_asset",
+        AsyncMock(return_value=None),
     )
 
     asset = await cb_jobs.resolve_inbound_sequence_video_asset(object(), 99)
