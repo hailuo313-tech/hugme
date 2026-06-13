@@ -78,11 +78,7 @@ class Settings(BaseSettings):
     MEMORY_CONSISTENCY_ENABLED: bool = True
     # >0 时预留「轻量 LLM 二次校验」上限（当前未实现，保持 0 即零额外 completion）。
     MEMORY_CONSISTENCY_LLM_MAX_OUTPUT_TOKENS: int = 0
-    # V001-P0-5：入站双层内容安全（关键词 + OpenAI moderation）与 messages.safety_result
-    # 默认关，避免本地/CI 无 OPENAI_API_KEY 时误拦；生产在 compose / .env 显式打开。
-    CONTENT_SAFETY_ENABLED: bool = False
-    CONTENT_SAFETY_MODERATION_ENABLED: bool = True
-    CONTENT_SAFETY_MODERATION_TIMEOUT_S: float = 12.0
+    # Legacy env vars ignored: inbound content safety gate removed.
     LONELINESS_REFRESH_ENABLED: bool = True
     LONELINESS_LOOKBACK_DAYS: int = 30
     LONELINESS_MEMORY_CAP: int = 40

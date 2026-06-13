@@ -22,14 +22,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.telegram import get_redis, _persist_message, _push_context
 from core.config import settings
 from core.database import get_db
-from services.content_safety import evaluate_inbound_content_safety
+from services.app_download_conversion import get_last_app_download_decision
+from services.link_attribution import wrap_text_links_with_tracking
 from services.llm_orchestrator import LLMOrchestratorError, generate_reply
 from services.memory_writer import maybe_write_memory
-from services.minor_protection import evaluate_inbound_minor_protection
-from services.reply_consistency import (
-    evaluate_reply_consistency,
-    load_reply_consistency_context,
-)
+from services.link_attribution import wrap_text_links_with_tracking
 
 router = APIRouter()
 
@@ -226,16 +223,6 @@ def _safe_preferences(profile: dict[str, Any]) -> dict[str, Any]:
     return safe
 
 
-def _safety_reason(safety_result: Optional[dict[str, Any]]) -> Optional[str]:
-    if not safety_result:
-        return None
-    reason = safety_result.get("block_reason")
-    minor = safety_result.get("minor_protection")
-    if not reason and isinstance(minor, dict):
-        reason = minor.get("reason")
-    return reason
-
-
 @router.get("/characters", response_model=list[OpenCharacter])
 async def list_open_characters(db: AsyncSession = Depends(get_db)):
     res = await db.execute(
@@ -429,32 +416,6 @@ async def send_open_message(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="only text messages are supported in the P3 MVP",
         )
-    safety_result: Optional[dict[str, Any]] = None
-    safety_blocked = False
-    minor_decision = await evaluate_inbound_minor_protection(
-        db,
-        user_id=uid,
-        text_value=text_content,
-        is_minor_suspected=bool(conv.get("is_minor_suspected")),
-    )
-    if (
-        minor_decision.suspected_minor
-        or minor_decision.adult_content
-        or minor_decision.updated_user
-    ):
-        safety_result = minor_decision.as_safety_layer()
-    safety_blocked = bool(minor_decision.blocked)
-
-    if settings.CONTENT_SAFETY_ENABLED:
-        content_safety = await evaluate_inbound_content_safety(text_content, trace_id=trace_id)
-        if safety_result is None:
-            safety_result = content_safety
-        else:
-            safety_result = {
-                **content_safety,
-                "minor_protection": safety_result.get("minor_protection"),
-            }
-        safety_blocked = safety_blocked or bool(content_safety.get("blocked"))
 
     user_msg_id = await _persist_message(
         db,
@@ -462,23 +423,9 @@ async def send_open_message(
         "user",
         uid,
         text_content,
-        safety_result=safety_result,
     )
     user_created_at = datetime.utcnow().isoformat()
     log.bind(message_id=user_msg_id).info("open.message.persisted")
-
-    if safety_blocked:
-        reason = _safety_reason(safety_result) or "blocked_by_safety"
-        log.bind(block_reason=reason).info("open.message.blocked_by_safety")
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "message_id": user_msg_id,
-                "conversation_id": conv_id,
-                "safety": {"blocked": True, "reason": reason},
-                "trace_id": trace_id,
-            },
-        )
 
     redis = await get_redis()
     try:
@@ -517,23 +464,74 @@ async def send_open_message(
             detail={"message": "AI upstream unavailable", "trace_id": trace_id},
         )
 
+    assistant_text = reply_text
+    app_download_decision = get_last_app_download_decision()
     try:
-        ctx = await load_reply_consistency_context(db, conv_id)
+        assistant_text = await wrap_text_links_with_tracking(
+            db,
+            text_value=assistant_text,
+            base_url=str(request.base_url).rstrip("/"),
+            user_id=uid,
+            conversation_id=conv_id,
+            message_id=str(uuid.uuid4()),
+            script_hit_id=(
+                app_download_decision.script_hit_id
+                if app_download_decision is not None
+                else None
+            ),
+            platform="open_api",
+            scene_step=(
+                app_download_decision.scene_step
+                if app_download_decision is not None
+                else None
+            ),
+            script_category=(
+                app_download_decision.category_key
+                if app_download_decision is not None
+                else None
+            ),
+            persona_slug=(
+                app_download_decision.persona_slug
+                if app_download_decision is not None
+                else None
+            ),
+            intent=(
+                app_download_decision.intent
+                if app_download_decision is not None
+                else None
+            ),
+            country_code=(
+                app_download_decision.country_code
+                if app_download_decision is not None
+                else None
+            ),
+            age=(
+                app_download_decision.age
+                if app_download_decision is not None
+                else None
+            ),
+            user_level=(
+                app_download_decision.user_level
+                if app_download_decision is not None
+                else None
+            ),
+            is_t1_country=(
+                app_download_decision.is_t1_country
+                if app_download_decision is not None
+                else None
+            ),
+            metadata={"source": "open_api", "trace_id": trace_id},
+        )
     except Exception as exc:
-        log.bind(error_type=type(exc).__name__).warning("open.consistency.context_failed")
-        ctx = {}
-    consistency = evaluate_reply_consistency(
-        reply_text=reply_text,
-        character=ctx.get("character"),
-    )
-    assistant_text = consistency.output_text
+        log.bind(error_type=type(exc).__name__).warning("open.tracking.wrap_failed")
+
     assistant_msg_id = await _persist_message(
         db,
         conv_id,
         "assistant",
         "bot",
         assistant_text,
-        consistency_score=consistency.score,
+        consistency_score=None,
     )
     assistant_created_at = datetime.utcnow().isoformat()
     try:

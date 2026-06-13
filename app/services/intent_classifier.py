@@ -31,13 +31,7 @@ INTENT_PRIORITY = {
     "fallback": 0,
 }
 
-RISK_INTENTS = {
-    "safety.self_harm_ideation": "self_harm",
-    "safety.minor_signal": "minor_signal",
-    "safety.sexual_explicit": "sexual_explicit",
-    "safety.abuse_threat": "abuse_threat",
-    "safety.illegal_request": "illegal_request",
-}
+RISK_INTENTS: dict[str, str] = {}
 
 LOW_CONFIDENCE_REPLY = "I want to understand you clearly. Could you tell me a little more?"
 
