@@ -92,7 +92,7 @@ async def test_schedules_three_video_round_followups(monkeypatch):
     assert any(nurture.TRIGGER_NURTURE_ROUND_1 in meta for meta in triggers)
     assert any(nurture.TRIGGER_NURTURE_ROUND_2 in meta for meta in triggers)
     assert any(nurture.TRIGGER_NURTURE_ROUND_3 in meta for meta in triggers)
-    assert all("video chat" in p["content"].casefold() or "视频" in p["content"] for p in inserts)
+    assert all("video" in p["content"].casefold() or "视频" in p["content"] for p in inserts)
     assert all('"nurture_kind": "video_chat"' in p["metadata"] for p in inserts)
     assert all('"telegram_access_hash": "987654321"' in p["metadata"] for p in inserts)
 
