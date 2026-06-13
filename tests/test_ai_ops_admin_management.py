@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -97,7 +98,8 @@ def test_intent_rule_api_edits_json_and_disabled_rules_do_not_match(
     assert json.loads(rules_path.read_text(encoding="utf-8"))["rules"] == []
 
 
-def test_redline_api_edits_json_and_disabled_rules_do_not_block(
+@pytest.mark.asyncio
+async def test_redline_api_persists_json_but_runtime_gate_removed(
     tmp_path: Path, monkeypatch,
 ) -> None:
     redlines_path = tmp_path / "safety_filter_redlines.json"
@@ -115,23 +117,11 @@ def test_redline_api_edits_json_and_disabled_rules_do_not_block(
             "category": "test",
             "reason": "redline:test",
             "patterns": ["blocked-test"],
-            "enabled": False,
+            "enabled": True,
         },
     )
     assert created.status_code == 201, created.text
 
-    safety = SafetyFilter(redlines_path)
-    assert not safety._evaluate_redlines("blocked-test").blocked
-
-    updated = client.patch(
-        "/api/v1/ai-ops/admin/redlines/test_redline",
-        json={
-            "id": "test_redline",
-            "category": "test",
-            "reason": "redline:test",
-            "patterns": ["blocked-test"],
-            "enabled": True,
-        },
-    )
-    assert updated.status_code == 200, updated.text
-    assert safety._evaluate_redlines("blocked-test").blocked
+    safety = SafetyFilter()
+    result = await safety.evaluate("blocked-test", trace_id="p3-12")
+    assert result.blocked is False

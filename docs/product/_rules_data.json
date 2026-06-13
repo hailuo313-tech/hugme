@@ -1,0 +1,1384 @@
+[
+  {
+    "id": "channel.mtproto_direct",
+    "category": "channel",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "MTProto",
+      "auto_reply.py"
+    ],
+    "confidence": 1,
+    "desc": "Telegram 真人入站：NewMessage → handle_mtproto_new_message 直处理，不经 inbound_queue"
+  },
+  {
+    "id": "channel.bot_webhook",
+    "category": "channel",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "POST /telegram/webhook"
+    ],
+    "confidence": 1,
+    "desc": "Telegram Bot 入站：建档/onboarding → generate_reply → Bot API 发送"
+  },
+  {
+    "id": "channel.open_api",
+    "category": "channel",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "POST /api/v1/open/.../messages"
+    ],
+    "confidence": 1,
+    "desc": "Open API 聊天入站：同步返回 reply_text"
+  },
+  {
+    "id": "channel.h5_transport",
+    "category": "channel",
+    "priority": "low",
+    "active": true,
+    "keywords": [
+      "WS /ws/h5/chat"
+    ],
+    "confidence": 1,
+    "desc": "H5 仅 WS 传输层（ping/typing/ack）；聊天走 Open API，非独立入站"
+  },
+  {
+    "id": "channel.inbound_ingest_only",
+    "category": "channel",
+    "priority": "low",
+    "active": true,
+    "keywords": [
+      "POST /messages/inbound",
+      "202"
+    ],
+    "confidence": 1,
+    "desc": "/messages/inbound 仅落库+上下文，不自动回复"
+  },
+  {
+    "id": "channel.inbound_queue_deprecated",
+    "category": "deprecated",
+    "priority": "low",
+    "active": false,
+    "keywords": [
+      "inbound_queue",
+      "queue_consumer"
+    ],
+    "confidence": 1,
+    "desc": "【已下线】Redis Stream 入站队列：消费者未在 main.py 启动"
+  },
+  {
+    "id": "level.profile_incomplete_d",
+    "category": "level",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "profile_complete=false"
+    ],
+    "confidence": 1,
+    "desc": "画像不完整 → D 级，profile_intake 补全年龄/国家"
+  },
+  {
+    "id": "level.t1_spend_200",
+    "category": "level",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "T1",
+      "lifetime_spend>=200"
+    ],
+    "confidence": 1,
+    "desc": "T1 且终身消费 ≥ $200 → S 级"
+  },
+  {
+    "id": "level.spend_or_vip_a",
+    "category": "level",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "lifetime_spend>=99",
+      "vip_level>=1"
+    ],
+    "confidence": 1,
+    "desc": "终身消费 ≥ $99 或 VIP≥1 → A 级"
+  },
+  {
+    "id": "level.t1_default_b",
+    "category": "level",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "T1",
+      "complete",
+      "below A"
+    ],
+    "confidence": 1,
+    "desc": "T1 完整画像未达 A → B 级"
+  },
+  {
+    "id": "level.tier_default_c",
+    "category": "level",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "T2",
+      "T3",
+      "unknown"
+    ],
+    "confidence": 1,
+    "desc": "T2/T3/未知国家默认 → C 级"
+  },
+  {
+    "id": "level.chat_route_metadata",
+    "category": "level",
+    "priority": "low",
+    "active": true,
+    "keywords": [
+      "chat_route"
+    ],
+    "confidence": 1,
+    "desc": "chat_route 仅元数据；入站不拦截 AI 自动回复"
+  },
+  {
+    "id": "level.d_script_block",
+    "category": "level",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "user_level=D",
+      "except asset_keyword"
+    ],
+    "confidence": 1,
+    "desc": "D 级阻断脚本转化漏斗；素材关键词路径不受限"
+  },
+  {
+    "id": "policy.enabled_flag",
+    "category": "policy",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "POLICY_SERVICE_ENABLED"
+    ],
+    "confidence": 1,
+    "desc": "POL-01：生产 compose 默认开启"
+  },
+  {
+    "id": "policy.keyword_human",
+    "category": "policy",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "真人",
+      "人工客服",
+      "human operator"
+    ],
+    "confidence": 1,
+    "desc": "显式索要真人 → P1 handoff"
+  },
+  {
+    "id": "policy.account_risk",
+    "category": "policy",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "risk_level high/critical"
+    ],
+    "confidence": 1,
+    "desc": "users.risk_level ∈ {high,critical} → P1"
+  },
+  {
+    "id": "policy.safeguard",
+    "category": "policy",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "is_minor_suspected",
+      "handoff_count>=3"
+    ],
+    "confidence": 1,
+    "desc": "未成年疑似或 handoff_count≥3 → safeguard"
+  },
+  {
+    "id": "policy.profile_risk_score",
+    "category": "policy",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "risk_score>=75"
+    ],
+    "confidence": 1,
+    "desc": "risk_score ≥ 75 → P2"
+  },
+  {
+    "id": "policy.loneliness_high",
+    "category": "policy",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "loneliness_score>=82"
+    ],
+    "confidence": 1,
+    "desc": "孤独感 ≥ 82 → P2"
+  },
+  {
+    "id": "policy.initiation_hot",
+    "category": "policy",
+    "priority": "low",
+    "active": true,
+    "keywords": [
+      "initiation>=trigger_threshold"
+    ],
+    "confidence": 1,
+    "desc": "initiation ≥ trigger_threshold → P3"
+  },
+  {
+    "id": "policy.vip_tier",
+    "category": "policy",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "vip_level>=1"
+    ],
+    "confidence": 1,
+    "desc": "VIP≥1 → P2"
+  },
+  {
+    "id": "rel.auto_flag",
+    "category": "rel",
+    "priority": "low",
+    "active": false,
+    "keywords": [
+      "REL_STAGE_AUTO_ENABLED"
+    ],
+    "confidence": 1,
+    "desc": "REL-01 默认关闭；开启后按 initiation/VIP 自动升降 S0–S4"
+  },
+  {
+    "id": "rel.stage_thresholds",
+    "category": "rel",
+    "priority": "low",
+    "active": false,
+    "keywords": [
+      "S1:10",
+      "S2:30",
+      "S3:55",
+      "S4:78"
+    ],
+    "confidence": 1,
+    "desc": "关系阶段阈值；S5 仅危机锁定"
+  },
+  {
+    "id": "conversion.asset_keyword",
+    "category": "conversion",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "asset_keyword_request",
+      "photo",
+      "video",
+      "第1条"
+    ],
+    "confidence": 1,
+    "desc": "高意图要图/要视频：模板 content 关键词命中 → 话术+素材+链接，100% 跳过 LLM（D 级亦生效）"
+  },
+  {
+    "id": "conversion.tier_cd_first_push",
+    "category": "conversion",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "B/C",
+      "reply_count=0",
+      "no tracking"
+    ],
+    "confidence": 1,
+    "desc": "C/B 新用户首条助手回复无归因链 → app_download_first_push"
+  },
+  {
+    "id": "conversion.first_push",
+    "category": "conversion",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "reply_count>=1",
+      "no tracking"
+    ],
+    "confidence": 1,
+    "desc": "第 2 条助手回复起无归因链 → app_download_first_push"
+  },
+  {
+    "id": "conversion.after_warmup",
+    "category": "conversion",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "reply_count>=3"
+    ],
+    "confidence": 1,
+    "desc": "暖聊≥3 轮助手回复 → app_download_after_warmup"
+  },
+  {
+    "id": "conversion.direct_cta",
+    "category": "conversion",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "link",
+      "download",
+      "私聊",
+      "高意图"
+    ],
+    "confidence": 1,
+    "desc": "高意图索要 link/下载 → app_download_direct_cta，跳过 LLM"
+  },
+  {
+    "id": "attribution.mode_click_only",
+    "category": "attribution",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "APP_DOWNLOAD_FUNNEL_MODE",
+      "click_only"
+    ],
+    "confidence": 1,
+    "desc": "三方推广：可观测漏斗止于 click；download/register 不参与决策"
+  },
+  {
+    "id": "attribution.primary_kpi_ctr",
+    "category": "attribution",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "click",
+      "link_exposed",
+      "CTR"
+    ],
+    "confidence": 1,
+    "desc": "核心 KPI = click_users / link_exposed_users"
+  },
+  {
+    "id": "conversion.clicked_followup",
+    "category": "conversion",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "clicked",
+      "seconds>=120",
+      "clicked_post_followup_2m"
+    ],
+    "confidence": 1,
+    "desc": "已点击≥2 分钟 → app_link_clicked_followup（worker 扫描，24h 每会话最多 1 次）"
+  },
+  {
+    "id": "conversion.post_click_passive",
+    "category": "conversion",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "clicked_pending_download",
+      "post_click_worker"
+    ],
+    "confidence": 1,
+    "desc": "已点击且用户未明确要链接 → 对话内不自动推链"
+  },
+  {
+    "id": "conversion.post_click_explicit_link",
+    "category": "conversion",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "direct_cta",
+      "clicked"
+    ],
+    "confidence": 1,
+    "desc": "已点击 + 明确要链接 → 仅 direct_cta 重发 tracking 链"
+  },
+  {
+    "id": "conversion.complete_stop_click",
+    "category": "conversion",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "click_promotion_complete",
+      "clicked_followup_sent"
+    ],
+    "confidence": 1,
+    "desc": "click_only：clicked_followup 已发或点击超 24h → 停止自动推链"
+  },
+  {
+    "id": "conversion.objection",
+    "category": "conversion",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "不想下载",
+      "conversion.objection"
+    ],
+    "confidence": 1,
+    "desc": "下载异议 → app_download_objection"
+  },
+  {
+    "id": "conversion.trust",
+    "category": "conversion",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "scam",
+      "fake",
+      "is this real"
+    ],
+    "confidence": 1,
+    "desc": "信任疑虑 → trust_reassurance"
+  },
+  {
+    "id": "conversion.high_value_sa",
+    "category": "conversion",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "S/A",
+      "reply_count>=2"
+    ],
+    "confidence": 1,
+    "desc": "S/A 且≥2轮 → operator_app_conversion"
+  },
+  {
+    "id": "conversion.complete_stop",
+    "category": "conversion",
+    "priority": "low",
+    "active": false,
+    "keywords": [
+      "downloaded",
+      "registered",
+      "paid"
+    ],
+    "confidence": 1,
+    "desc": "【full 模式】已下载/注册/付费 → 停止下载话术"
+  },
+  {
+    "id": "conversion.script_hook_reply",
+    "category": "conversion",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "hook=reply"
+    ],
+    "confidence": 1,
+    "desc": "线上唯一自动话术钩子：hook=reply"
+  },
+  {
+    "id": "conversion.script_skip_llm",
+    "category": "conversion",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "conversion_decision_skips_llm",
+      "first_push",
+      "direct_cta",
+      "operator_app_conversion"
+    ],
+    "confidence": 1,
+    "desc": "first_push/direct_cta/after_warmup/operator_app_conversion/asset_keyword → 话术+链接直出，跳过 LLM"
+  },
+  {
+    "id": "conversion.clicked_worker_only",
+    "category": "conversion",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "post_click_worker",
+      "queue_clicked_not_downloaded"
+    ],
+    "confidence": 1,
+    "desc": "已点击后跟进不在对话内发，仅 worker +2min 培育"
+  },
+  {
+    "id": "channel.bot_nurture",
+    "category": "channel",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "schedule_download_followups_after_reply",
+      "telegram.py"
+    ],
+    "confidence": 1,
+    "desc": "Bot Webhook 出站后调度 app_download 培育（与 MTProto 一致）"
+  },
+  {
+    "id": "nurture.first_idle",
+    "category": "nurture",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "first_message_idle_3m",
+      "45-60s",
+      "还在吗"
+    ],
+    "confidence": 1,
+    "desc": "user_count=1 且未点击 → 45–60s 软提醒 first_push「还在吗？链接在这」"
+  },
+  {
+    "id": "nurture.second_round",
+    "category": "nurture",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "second_round_no_click_3m",
+      "+180s"
+    ],
+    "confidence": 1,
+    "desc": "user_count=2 且未点击 → +3min after_warmup（补 1→3 轮空档）"
+  },
+  {
+    "id": "nurture.asset_idle",
+    "category": "nurture",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "asset_keyword_idle_3m",
+      "+180s"
+    ],
+    "confidence": 1,
+    "desc": "素材关键词回复后 +3min → after_warmup 培育"
+  },
+  {
+    "id": "nurture.warm_no_click",
+    "category": "nurture",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "warm_chat_no_click",
+      "user_count 3-5"
+    ],
+    "confidence": 1,
+    "desc": "暖聊 3–5 轮曝光链接未点击 → after_warmup 跟进"
+  },
+  {
+    "id": "nurture.pre_click_only",
+    "category": "nurture",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "has_click=false"
+    ],
+    "confidence": 1,
+    "desc": "推链培育仅当未点击；已点击用户不进 first/second/warm/silent 链"
+  },
+  {
+    "id": "nurture.clicked_post_followup",
+    "category": "nurture",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "clicked_post_followup_2m",
+      "+120s"
+    ],
+    "confidence": 1,
+    "desc": "已点击 +2min → clicked_followup（不检查 download）"
+  },
+  {
+    "id": "nurture.pending_upgrade",
+    "category": "nurture",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "superseded",
+      "user_count_advanced"
+    ],
+    "confidence": 1,
+    "desc": "user_count 前进时取消过时 pending（修 second_round 空洞）"
+  },
+  {
+    "id": "nurture.pending_dedupe",
+    "category": "nurture",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "pending",
+      "sending",
+      "same_trigger"
+    ],
+    "confidence": 1,
+    "desc": "同 trigger 的 pending/sending 不重复排队；不同阶段可升级"
+  },
+  {
+    "id": "nurture.db_scripts",
+    "category": "nurture",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "search_script_templates"
+    ],
+    "confidence": 1,
+    "desc": "培育优先检索 DB script_templates，无命中才 fallback"
+  },
+  {
+    "id": "nurture.html_cta",
+    "category": "nurture",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "render_tracking_links_as_html_cta"
+    ],
+    "confidence": 1,
+    "desc": "培育投递短链渲染 HTML「TAP HERE」可点按钮"
+  },
+  {
+    "id": "nurture.silent_30m",
+    "category": "nurture",
+    "priority": "low",
+    "active": true,
+    "keywords": [
+      "silent_30m"
+    ],
+    "confidence": 1,
+    "desc": "静默 30 分钟 → 软提醒"
+  },
+  {
+    "id": "nurture.silent_24h",
+    "category": "nurture",
+    "priority": "low",
+    "active": false,
+    "keywords": [
+      "silent_24h"
+    ],
+    "confidence": 1,
+    "desc": "【已废弃】代码未调度 silent_24h"
+  },
+  {
+    "id": "nurture.stop_if_downloaded",
+    "category": "nurture",
+    "priority": "low",
+    "active": false,
+    "keywords": [
+      "stop_if_downloaded"
+    ],
+    "confidence": 1,
+    "desc": "【click_only 废弃】不再查 download 事件"
+  },
+  {
+    "id": "worker.auto_delivery",
+    "category": "worker",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "AUTO_DELIVERY_ENABLED"
+    ],
+    "confidence": 1,
+    "desc": "auto_delivery_worker：培育/定时 MTProto 投递"
+  },
+  {
+    "id": "worker.message_schedule",
+    "category": "worker",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "MESSAGE_SCHEDULE_ENABLED"
+    ],
+    "confidence": 1,
+    "desc": "message_schedule_service：通用定时发送"
+  },
+  {
+    "id": "worker.archive",
+    "category": "worker",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "ARCHIVE_WORKER_ENABLED"
+    ],
+    "confidence": 1,
+    "desc": "archive_worker：含 script_hit_id 的发送行归档"
+  },
+  {
+    "id": "operator.crisis_handoff",
+    "category": "operator",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "P0",
+      "WAITING_OPERATOR"
+    ],
+    "confidence": 1,
+    "desc": "危机协议自动建 P0 handoff"
+  },
+  {
+    "id": "operator.manual_suspend",
+    "category": "operator",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "suspend API"
+    ],
+    "confidence": 1,
+    "desc": "手动 suspend API；入站不自动挂起 S/A"
+  },
+  {
+    "id": "operator.ws_tasks",
+    "category": "operator",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "/ws/operators/tasks"
+    ],
+    "confidence": 1,
+    "desc": "坐席看板轮询 handoff_tasks"
+  },
+  {
+    "id": "orchestrator.intent_classify",
+    "category": "orchestrator",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "intent_classifier",
+      "floor=0.6"
+    ],
+    "confidence": 0.6,
+    "desc": "意图识别驱动 app_download 与 Prompt；低置信降级"
+  },
+  {
+    "id": "orchestrator.memory_retrieve",
+    "category": "orchestrator",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "memory_retriever"
+    ],
+    "confidence": 1,
+    "desc": "记忆向量检索 + 一致性过滤"
+  },
+  {
+    "id": "orchestrator.loneliness_refresh",
+    "category": "orchestrator",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "loneliness_updater"
+    ],
+    "confidence": 1,
+    "desc": "每轮刷新 loneliness_score"
+  },
+  {
+    "id": "orchestrator.tracking_wrap",
+    "category": "orchestrator",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "wrap_text_links_with_tracking"
+    ],
+    "confidence": 1,
+    "desc": "tracking 链接归因包装"
+  },
+  {
+    "id": "deprecated.eight_hooks",
+    "category": "deprecated",
+    "priority": "low",
+    "active": false,
+    "keywords": [
+      "evaluate_all_script_hooks"
+    ],
+    "confidence": 1,
+    "desc": "【已下线】8 钩子逐步话术匹配（仅测试）"
+  },
+  {
+    "id": "deprecated.sa_auto_suspend",
+    "category": "deprecated",
+    "priority": "low",
+    "active": false,
+    "keywords": [
+      "S/A auto suspend"
+    ],
+    "confidence": 1,
+    "desc": "【已下线】S/A 入站自动挂起坐席"
+  },
+  {
+    "id": "deprecated.d_level_probe",
+    "category": "deprecated",
+    "priority": "low",
+    "active": false,
+    "keywords": [
+      "d_level_probe"
+    ],
+    "confidence": 1,
+    "desc": "【已下线】D 级 probe 话术钩子"
+  },
+  {
+    "id": "smalltalk.greeting.basic",
+    "category": "intent",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "hello",
+      "hi",
+      "hey",
+      "good morning",
+      "good evening",
+      "你好"
+    ],
+    "confidence": 0.82,
+    "desc": "意图 smalltalk.greeting"
+  },
+  {
+    "id": "smalltalk.check_in.presence",
+    "category": "intent",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "how are you",
+      "are you there",
+      "miss you",
+      "你在吗",
+      "想你"
+    ],
+    "confidence": 0.8,
+    "desc": "意图 smalltalk.check_in"
+  },
+  {
+    "id": "smalltalk.humor.play",
+    "category": "intent",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "joke",
+      "make me laugh",
+      "funny",
+      "tease me",
+      "讲个笑话"
+    ],
+    "confidence": 0.8,
+    "desc": "意图 smalltalk.humor_play"
+  },
+  {
+    "id": "smalltalk.goodbye.pause",
+    "category": "intent",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "bye",
+      "good night",
+      "talk later",
+      "sleep now",
+      "晚安",
+      "回头聊"
+    ],
+    "confidence": 0.82,
+    "desc": "意图 smalltalk.goodbye"
+  },
+  {
+    "id": "emotional_support.lonely.core",
+    "category": "intent",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "lonely",
+      "alone",
+      "no one understands",
+      "nobody cares",
+      "孤独",
+      "没人懂"
+    ],
+    "confidence": 0.9,
+    "desc": "意图 emotional_support.lonely"
+  },
+  {
+    "id": "emotional_support.sadness.core",
+    "category": "intent",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "sad",
+      "crying",
+      "down today",
+      "heart hurts",
+      "难过",
+      "想哭"
+    ],
+    "confidence": 0.88,
+    "desc": "意图 emotional_support.sadness"
+  },
+  {
+    "id": "emotional_support.stress.core",
+    "category": "intent",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "stressed",
+      "overwhelmed",
+      "exhausted",
+      "pressure",
+      "压力",
+      "太累"
+    ],
+    "confidence": 0.87,
+    "desc": "意图 emotional_support.stress"
+  },
+  {
+    "id": "emotional_support.reassurance.core",
+    "category": "intent",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "comfort me",
+      "tell me it is okay",
+      "reassure me",
+      "抱抱我",
+      "安慰我"
+    ],
+    "confidence": 0.86,
+    "desc": "意图 emotional_support.reassurance"
+  },
+  {
+    "id": "emotional_support.celebration.core",
+    "category": "intent",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "i did it",
+      "good news",
+      "celebrate",
+      "happy news",
+      "我成功了",
+      "好消息"
+    ],
+    "confidence": 0.84,
+    "desc": "意图 emotional_support.celebration"
+  },
+  {
+    "id": "relationship.affection.core",
+    "category": "intent",
+    "priority": "low",
+    "active": true,
+    "keywords": [
+      "i like you",
+      "hug me",
+      "miss you so much",
+      "you are sweet",
+      "喜欢你",
+      "抱抱"
+    ],
+    "confidence": 0.86,
+    "desc": "意图 relationship.affection"
+  },
+  {
+    "id": "relationship.flirt_light.core",
+    "category": "intent",
+    "priority": "low",
+    "active": true,
+    "keywords": [
+      "cute",
+      "date vibe",
+      "flirt",
+      "sweet teasing",
+      "撩我",
+      "可爱"
+    ],
+    "confidence": 0.82,
+    "desc": "意图 relationship.flirt_light"
+  },
+  {
+    "id": "relationship.jealousy.core",
+    "category": "intent",
+    "priority": "low",
+    "active": true,
+    "keywords": [
+      "jealous",
+      "talking to others",
+      "do you like someone else",
+      "吃醋"
+    ],
+    "confidence": 0.84,
+    "desc": "意图 relationship.jealousy"
+  },
+  {
+    "id": "relationship.repair.core",
+    "category": "intent",
+    "priority": "low",
+    "active": true,
+    "keywords": [
+      "sorry",
+      "did i upset you",
+      "forgive me",
+      "对不起",
+      "原谅我"
+    ],
+    "confidence": 0.83,
+    "desc": "意图 relationship.repair"
+  },
+  {
+    "id": "relationship.dependency.core",
+    "category": "intent",
+    "priority": "low",
+    "active": true,
+    "keywords": [
+      "need only you",
+      "cannot be without you",
+      "only person i have",
+      "离不开你"
+    ],
+    "confidence": 0.86,
+    "desc": "意图 relationship.dependency"
+  },
+  {
+    "id": "onboarding.nickname.core",
+    "category": "intent",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "call me",
+      "my name is",
+      "nickname",
+      "叫我",
+      "我的名字"
+    ],
+    "confidence": 0.83,
+    "desc": "意图 onboarding.nickname"
+  },
+  {
+    "id": "onboarding.interests.core",
+    "category": "intent",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "i like music",
+      "i love games",
+      "my hobbies",
+      "喜欢旅行",
+      "爱好"
+    ],
+    "confidence": 0.8,
+    "desc": "意图 onboarding.interests"
+  },
+  {
+    "id": "onboarding.chat_style.core",
+    "category": "intent",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "be gentle",
+      "be casual",
+      "talk smarter",
+      "温柔一点",
+      "轻松一点"
+    ],
+    "confidence": 0.82,
+    "desc": "意图 onboarding.chat_style"
+  },
+  {
+    "id": "onboarding.boundaries.core",
+    "category": "intent",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "avoid talking about",
+      "do not mention",
+      "forbidden topic",
+      "别提",
+      "不要聊"
+    ],
+    "confidence": 0.84,
+    "desc": "意图 onboarding.boundaries"
+  },
+  {
+    "id": "onboarding.current_intent.core",
+    "category": "intent",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "i want someone to talk to",
+      "here to chat",
+      "need a companion",
+      "想找人聊天"
+    ],
+    "confidence": 0.81,
+    "desc": "意图 onboarding.current_intent"
+  },
+  {
+    "id": "conversion.price_question.core",
+    "category": "intent",
+    "priority": "low",
+    "active": true,
+    "keywords": [
+      "how much",
+      "price",
+      "vip cost",
+      "subscription cost",
+      "多少钱",
+      "价格"
+    ],
+    "confidence": 0.86,
+    "desc": "意图 conversion.price_question"
+  },
+  {
+    "id": "conversion.benefit_question.core",
+    "category": "intent",
+    "priority": "low",
+    "active": true,
+    "keywords": [
+      "what do i get",
+      "premium benefits",
+      "vip unlocks",
+      "会员有什么",
+      "权益"
+    ],
+    "confidence": 0.84,
+    "desc": "意图 conversion.benefit_question"
+  },
+  {
+    "id": "conversion.purchase_intent.core",
+    "category": "intent",
+    "priority": "low",
+    "active": true,
+    "keywords": [
+      "i want vip",
+      "subscribe",
+      "buy premium",
+      "upgrade now",
+      "开通会员",
+      "购买"
+    ],
+    "confidence": 0.88,
+    "desc": "意图 conversion.purchase_intent"
+  },
+  {
+    "id": "conversion.objection.core",
+    "category": "intent",
+    "priority": "low",
+    "active": true,
+    "keywords": [
+      "too expensive",
+      "why pay",
+      "not worth it",
+      "太贵",
+      "为什么付费"
+    ],
+    "confidence": 0.82,
+    "desc": "意图 conversion.objection"
+  },
+  {
+    "id": "conversion.post_payment.core",
+    "category": "intent",
+    "priority": "low",
+    "active": true,
+    "keywords": [
+      "i paid",
+      "payment done",
+      "just upgraded",
+      "付完了",
+      "已经付款"
+    ],
+    "confidence": 0.88,
+    "desc": "意图 conversion.post_payment"
+  },
+  {
+    "id": "support.payment_failed.core",
+    "category": "intent",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "card failed",
+      "cannot pay",
+      "payment failed",
+      "付款失败",
+      "支付不了"
+    ],
+    "confidence": 0.88,
+    "desc": "意图 support.payment_failed"
+  },
+  {
+    "id": "support.refund.core",
+    "category": "intent",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "refund",
+      "cancel payment",
+      "money back",
+      "退款",
+      "取消付款"
+    ],
+    "confidence": 0.9,
+    "desc": "意图 support.refund"
+  },
+  {
+    "id": "support.account_access.core",
+    "category": "intent",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "cannot login",
+      "lost account",
+      "account access",
+      "登录不了",
+      "账号丢了"
+    ],
+    "confidence": 0.86,
+    "desc": "意图 support.account_access"
+  },
+  {
+    "id": "support.delivery_issue.core",
+    "category": "intent",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "did not get",
+      "not loading",
+      "message missing",
+      "没收到",
+      "加载不了"
+    ],
+    "confidence": 0.84,
+    "desc": "意图 support.delivery_issue"
+  },
+  {
+    "id": "support.operator_request.core",
+    "category": "intent",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "human support",
+      "real agent",
+      "operator",
+      "customer service",
+      "人工客服",
+      "真人客服"
+    ],
+    "confidence": 0.88,
+    "desc": "意图 support.operator_request"
+  },
+  {
+    "id": "content_request.photo.core",
+    "category": "intent",
+    "priority": "low",
+    "active": true,
+    "keywords": [
+      "send pic",
+      "photo",
+      "selfie",
+      "picture",
+      "照片",
+      "自拍"
+    ],
+    "confidence": 0.84,
+    "desc": "意图 content_request.photo"
+  },
+  {
+    "id": "content_request.voice.core",
+    "category": "intent",
+    "priority": "low",
+    "active": true,
+    "keywords": [
+      "voice note",
+      "call me",
+      "send audio",
+      "语音",
+      "打电话"
+    ],
+    "confidence": 0.84,
+    "desc": "意图 content_request.voice"
+  },
+  {
+    "id": "content_request.roleplay.core",
+    "category": "intent",
+    "priority": "low",
+    "active": true,
+    "keywords": [
+      "pretend",
+      "roleplay",
+      "scenario",
+      "story scene",
+      "角色扮演",
+      "假装"
+    ],
+    "confidence": 0.82,
+    "desc": "意图 content_request.roleplay"
+  },
+  {
+    "id": "content_request.advice.core",
+    "category": "intent",
+    "priority": "low",
+    "active": true,
+    "keywords": [
+      "what should i do",
+      "help me decide",
+      "need advice",
+      "怎么办",
+      "给我建议"
+    ],
+    "confidence": 0.82,
+    "desc": "意图 content_request.advice"
+  },
+  {
+    "id": "content_request.memory_recall.core",
+    "category": "intent",
+    "priority": "low",
+    "active": true,
+    "keywords": [
+      "do you remember",
+      "what did i tell you",
+      "remember about me",
+      "你还记得"
+    ],
+    "confidence": 0.84,
+    "desc": "意图 content_request.memory_recall"
+  },
+  {
+    "id": "boundary.topic_refusal.core",
+    "category": "intent",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "stop talking about",
+      "do not mention",
+      "change topic",
+      "别说这个",
+      "换个话题"
+    ],
+    "confidence": 0.88,
+    "desc": "意图 boundary.topic_refusal"
+  },
+  {
+    "id": "boundary.marketing_opt_out.core",
+    "category": "intent",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "stop ads",
+      "don't sell me vip",
+      "no marketing",
+      "别推销",
+      "不要广告"
+    ],
+    "confidence": 0.9,
+    "desc": "意图 boundary.marketing_opt_out"
+  },
+  {
+    "id": "boundary.break_from_chat.core",
+    "category": "intent",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "leave me alone",
+      "not now",
+      "need space",
+      "别烦我",
+      "现在不想聊"
+    ],
+    "confidence": 0.86,
+    "desc": "意图 boundary.break_from_chat"
+  },
+  {
+    "id": "boundary.data_privacy.core",
+    "category": "intent",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "delete my data",
+      "what do you store",
+      "privacy",
+      "删除数据",
+      "隐私"
+    ],
+    "confidence": 0.9,
+    "desc": "意图 boundary.data_privacy"
+  }
+]

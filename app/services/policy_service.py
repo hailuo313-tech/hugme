@@ -5,7 +5,7 @@
 
 七条（任一命中且通过门控则建单；同轮只建一张单，取最高优先级命中）：
 
-1. **keyword_human** — 用户显式索要真人/人工/客服（非危机；危机仍走 ``crisis_intervention``）。
+1. **keyword_human** — 用户显式索要真人/人工/客服。
 2. **account_risk_level** — ``users.risk_level`` ∈ {high, critical}。
 3. **profile_risk_score** — ``user_profiles.risk_score`` ≥ ``POLICY_RISK_SCORE_THRESHOLD``。
 4. **loneliness_high** — ``user_profiles.loneliness_score`` ≥ ``POLICY_LONELINESS_THRESHOLD``。
@@ -30,7 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 
-# ── 关键词：显式人工诉求（危机短语由 crisis_intervention 独占）────────────
+# ── 关键词：显式人工诉求 ─────────────────────────────────────────────
 
 _HUMAN_KEYWORD_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(

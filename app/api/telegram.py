@@ -13,7 +13,7 @@ from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
-from core.database import get_db
+from core.database import AsyncSessionLocal, get_db
 from core.config import settings
 from loguru import logger
 import uuid, time, json
@@ -38,13 +38,15 @@ from api.onboarding import (
 )
 from services.llm_orchestrator import generate_reply, LLMOrchestratorError
 from services.app_download_conversion import get_last_app_download_decision
+from services.app_download_nurture import (
+    schedule_asset_keyword_followup_after_reply,
+    schedule_download_followups_after_reply,
+)
 from services.link_attribution import render_tracking_links_as_html_cta, wrap_text_links_with_tracking
 from services.script_asset_delivery import send_telegram_bot_asset
 from services.memory_writer import maybe_write_memory
 from services.age_extraction import maybe_extract_and_write_age
-from services.content_safety import evaluate_inbound_content_safety
 from services.emotion_lexicon import detect_language_from_text, normalize_language
-from services.minor_protection import evaluate_inbound_minor_protection
 from services.user_level_service import user_level_service
 from services.profile_intake import (
     country_from_recent_user_messages,
@@ -55,10 +57,6 @@ from services.profile_intake import (
     read_profile_completeness,
     write_age,
     write_country_code,
-)
-from services.reply_consistency import (
-    evaluate_reply_consistency,
-    load_reply_consistency_context,
 )
 import asyncio
 import re
@@ -747,14 +745,11 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
     await db.commit()
     user_status_row = (
         await db.execute(
-            text("SELECT status, is_minor_suspected FROM users WHERE id=:uid"),
+            text("SELECT status FROM users WHERE id=:uid"),
             {"uid": user_id},
         )
     ).fetchone()
     user_status = str(user_status_row[0] or "active") if user_status_row else "active"
-    is_minor_suspected = (
-        bool(user_status_row[1]) if user_status_row and len(user_status_row) > 1 else False
-    )
     if user_status != "active":
         log.bind(user_status=user_status).info("tg.user_status_blocked")
         return JSONResponse(
@@ -788,44 +783,10 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
         await db.commit()
         log.bind(conv_id=conv_id).info("tg.conversation.created")
 
-    # ── Onboarding 状态 + 未成年人保护 + 内容安全 ────────────────
+    # ── Onboarding 状态 ────────────────
     prefs = await _get_profile_prefs(db, user_id)
     onboarding_step = prefs.get("onboarding_step", 0)
     onboarding_done = onboarding_step >= ONBOARDING_STEPS + 1
-
-    safety_result: dict | None = None
-    safety_blocked = False
-    if text_content != "[non-text]":
-        minor_decision = await evaluate_inbound_minor_protection(
-            db,
-            user_id=user_id,
-            text_value=text_content,
-            is_minor_suspected=is_minor_suspected,
-        )
-        if (
-            minor_decision.suspected_minor
-            or minor_decision.adult_content
-            or minor_decision.updated_user
-        ):
-            safety_result = minor_decision.as_safety_layer()
-        safety_blocked = bool(minor_decision.blocked)
-
-    if (
-        onboarding_done
-        and text_content != "[non-text]"
-        and settings.CONTENT_SAFETY_ENABLED
-    ):
-        content_safety_result = await evaluate_inbound_content_safety(
-            text_content, trace_id=trace_id
-        )
-        if safety_result is None:
-            safety_result = content_safety_result
-        else:
-            safety_result = {
-                **content_safety_result,
-                "minor_protection": safety_result.get("minor_protection"),
-            }
-        safety_blocked = safety_blocked or bool(content_safety_result.get("blocked"))
 
     # ── 持久化用户消息 ────────────────────────────────
     msg_id = await _persist_message(
@@ -834,29 +795,8 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
         "user",
         user_id,
         text_content,
-        safety_result=safety_result,
     )
     log.bind(msg_id=msg_id).info("tg.message.persisted")
-
-    if safety_blocked:
-        await _send_tg(
-            tg_chat_id,
-            "这个话题我没办法聊，换个方向说说？",
-            trace_id,
-        )
-        log.bind(
-            block_reason=safety_result.get("block_reason") if safety_result else None
-        ).info("tg.content_safety.blocked")
-        elapsed = (time.time() - start_ts) * 1000
-        log.bind(elapsed_ms=round(elapsed, 1)).info("tg.webhook.complete")
-        return JSONResponse(
-            {
-                "ok": True,
-                "trace_id": trace_id,
-                "message_id": msg_id,
-                "safety_blocked": True,
-            }
-        )
 
     # Redis 上下文：用户消息
     try:
@@ -941,6 +881,7 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
     bot_reply = None
     bot_reply_message_id = None
     bot_consistency_score = None
+    app_download_decision = None
 
     if not onboarding_done:
         # Onboarding 模式
@@ -964,21 +905,6 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
         except LLMOrchestratorError as exc:
             log.bind(result="failed", reason=str(exc)).warning("tg.orchestrator.failed")
             reply_text = "现在有点忙，稍后再聊好吗？"
-
-        try:
-            ctx = await load_reply_consistency_context(db, conv_id)
-        except Exception as exc:
-            log.bind(error_type=type(exc).__name__).warning(
-                "tg.consistency.context_failed"
-            )
-            ctx = {}
-        consistency = evaluate_reply_consistency(
-            reply_text=reply_text,
-            character=ctx.get("character"),
-        )
-        reply_text = consistency.output_text
-        bot_consistency_score = consistency.score
-        log.bind(**consistency.as_log_dict()).info("tg.consistency.checked")
 
         app_download_decision = get_last_app_download_decision()
         bot_reply_message_id = str(uuid.uuid4())
@@ -1079,6 +1005,37 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
             )
             await _push_context(redis, conv_id, "assistant", bot_reply, bot_msg_id)
             log.bind(bot_msg_id=bot_msg_id).info("tg.bot_reply.persisted")
+            if tg_chat_id and onboarding_done:
+                is_asset_keyword_reply = (
+                    getattr(app_download_decision, "intent", None) == "asset_keyword_request"
+                )
+                async with AsyncSessionLocal() as nurture_db:
+                    try:
+                        if is_asset_keyword_reply:
+                            await schedule_asset_keyword_followup_after_reply(
+                                nurture_db,
+                                user_id=user_id,
+                                external_user_id=external_id,
+                                conversation_id=conv_id,
+                                chat_id=int(tg_chat_id),
+                                assistant_message_id=bot_msg_id,
+                                trace_id=trace_id,
+                            )
+                        else:
+                            await schedule_download_followups_after_reply(
+                                nurture_db,
+                                user_id=user_id,
+                                external_user_id=external_id,
+                                conversation_id=conv_id,
+                                chat_id=int(tg_chat_id),
+                                assistant_message_id=bot_msg_id,
+                                trace_id=trace_id,
+                            )
+                    except Exception as nurture_exc:
+                        await nurture_db.rollback()
+                        log.bind(error_type=type(nurture_exc).__name__).warning(
+                            "tg.app_download_nurture.schedule_failed"
+                        )
         except Exception as e:
             log.warning(f"tg.bot_reply.persist_failed err={e}")
 

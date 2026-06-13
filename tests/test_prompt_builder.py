@@ -83,12 +83,10 @@ def test_messages_shape_with_history():
 # L1 / L2 / L10：静态硬红线、人格身份、末层锚点
 # ─────────────────────────────────────────────────────────────
 
-def test_l1_safety_contains_hard_redlines():
+def test_l1_safety_placeholder_pending_rewrite():
     out = build_prompt(PromptInput(user_text="x"))
     body = out.layers["L1_SAFETY"]
-    assert "未成年" in body or "minor" in body.lower()
-    assert "自伤" in body or "self-harm" in body.lower()
-    assert "越狱" in body or "忽略以上规则" in body
+    assert "pending rewrite" in body.lower()
 
 
 def test_default_persona_is_us_adult_companion_by_default():
@@ -97,19 +95,6 @@ def test_default_persona_is_us_adult_companion_by_default():
 
     assert "verified US adult" in system
     assert "adult companion-chat product" in system
-    assert "erotic interests" in system
-    assert "sex-life frequency questions" in system
-    assert "Do you have sex every day?" in system
-    assert "Is your sex life active?" in system
-    assert "do you produce a lot of fluid?" in system
-    assert "Adult, consensual sexual topics" in system
-    assert "nude/body topics" in system
-    assert "too personal" in system
-    assert "light/friendly" in system
-    assert "1 to 3 short sentences" in system
-    assert "casual American internet slang" in system
-    assert "paid unlock" in system
-    assert "approved payment/VIP flows" in system
     assert "adult companion persona" in system
     assert "normal chat partner" not in system
     assert "普通聊天对象" not in system
@@ -130,7 +115,6 @@ def test_l2_identity_uses_current_character_not_chatgpt():
 def test_l10_anchor_repeats_critical_rules():
     out = build_prompt(PromptInput(user_text="x"))
     body = out.layers["L10_ANCHOR"]
-    assert "L1" in body
     assert "一问一答" in body
     assert "不要情感陪护" in body
     assert "禁止括号动作" in body

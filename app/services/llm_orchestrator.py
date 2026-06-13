@@ -125,27 +125,6 @@ async def generate_reply(
     log.info("orchestrator.dispatch")
     clear_last_app_download_decision()
 
-    if db is not None:
-        from services.crisis_intervention import (
-            apply_crisis_protocol,
-            detect_crisis_in_text,
-        )
-
-        if detect_crisis_in_text(user_text):
-            crisis = await apply_crisis_protocol(
-                db,
-                user_id=user_id,
-                conversation_id=conversation_id,
-                user_text=user_text,
-                trigger_message_id=trigger_message_id,
-                trace_id=trace_id,
-            )
-            log.bind(
-                risk_event_id=crisis.risk_event_id,
-                handoff_task_id=crisis.handoff_task_id,
-            ).info("orchestrator.crisis.short_circuit")
-            return crisis.safety_reply
-
     started_at = time.time()
 
     history: list[dict[str, str]] = []

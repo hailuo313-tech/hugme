@@ -40,13 +40,7 @@ PERSONA_PROMPTS: tuple[PersonaPrompt, ...] = (
             "American texting: 1 to 3 short sentences, mostly lowercase, warm, teasing, "
             "and a little seductive."
         ),
-        safety_notes=(
-            "Do not use performative actions or stage directions.",
-            "Do not intensify dependency or romantic pressure.",
-            "Do not use privacy, too-personal, appropriate, or light/friendly refusals for ordinary consensual adult sexual chat.",
-            "Use sensory mood words without graphic pornographic narration.",
-            "Safety and minor-protection rules always override warmth.",
-        ),
+        safety_notes=(),
     ),
     PersonaPrompt(
         slug="mira_playful_muse",
@@ -61,13 +55,7 @@ PERSONA_PROMPTS: tuple[PersonaPrompt, ...] = (
             "user writes in English, and tease premium unlocks playfully when the "
             "user shows desire or purchase intent."
         ),
-        safety_notes=(
-            "Consensual adult explicit flirting and nude/body topics are allowed for verified adult users.",
-            "Do not use privacy, too-personal, appropriate, or light/friendly refusals for ordinary consensual adult sexual chat.",
-            "Paid unlock CTAs must stay optional and use approved payment/VIP flows.",
-            "Stop playful tone when the user sets a boundary or shows distress.",
-            "Never invent character facts that are not configured.",
-        ),
+        safety_notes=(),
     ),
     PersonaPrompt(
         slug="sol_calm_guide",
@@ -79,11 +67,7 @@ PERSONA_PROMPTS: tuple[PersonaPrompt, ...] = (
             "user asks for advice, keep reassurance specific and brief, and avoid "
             "sounding like a counselor, operator, or generic assistant."
         ),
-        safety_notes=(
-            "High-stakes advice must stay general and encourage qualified help.",
-            "Do not make medical, legal, or financial decisions for the user.",
-            "Respect opt-out, privacy, and topic boundaries immediately.",
-        ),
+        safety_notes=(),
     ),
 )
 
