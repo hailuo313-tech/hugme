@@ -42,6 +42,15 @@ class _FakeSession:
                     }
                 ]
             )
+        if "FROM user_profiles" in sql:
+            return _RowsResult([{"user_level": "C", "preferences": {"country_code": "US"}}])
+        if "SELECT sender_type, content, created_at" in sql:
+            return _RowsResult(
+                [
+                    {"sender_type": "user", "content": "hello", "created_at": None},
+                    {"sender_type": "user", "content": "still there?", "created_at": None},
+                ]
+            )
         if "UPDATE message_schedules" in sql and "superseded" in sql:
             return _RowsResult([])
         if "UPDATE message_schedules" in sql:
@@ -97,8 +106,8 @@ def test_nurture_reply_language_uses_last_three_user_messages_only():
     history = [
         {"sender_type": "assistant", "content": "还在吗？要不要打个视频聊聊？"},
         {"sender_type": "user", "content": "HI"},
-        {"sender_type": "user", "content": "步"},
-        {"sender_type": "user", "content": "结果都对上了"},
+        {"sender_type": "user", "content": "thanks"},
+        {"sender_type": "user", "content": "sounds good"},
     ]
     assert nurture._nurture_reply_language(history) == "en"
 
