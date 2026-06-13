@@ -64,6 +64,7 @@ async def test_p3_18_claim_archive_task_selects_sent_script_hit_messages():
     assert task["id"] == "source-msg-1"
     assert "WHERE status = 'sent'" in sql
     assert "metadata->>'script_hit_id' IS NOT NULL" in sql
+    assert "metadata->>'archive_skip_reason' IS NULL" in sql
     assert "conversation_script_hits" in sql
     assert session.commits == 1
 
@@ -93,3 +94,53 @@ async def test_p3_18_create_archive_record_writes_source_message_and_script_ids(
     assert params["source_message_id"] == "33333333-3333-3333-3333-333333333333"
     assert json.loads(params["metadata"]) == {"delivery_mode": "auto"}
     assert session.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_p3_18_run_one_tick_skips_orphan_conversation(monkeypatch):
+    task = {
+        "id": "source-msg-orphan",
+        "user_id": "user-1",
+        "external_user_id": "tg_1",
+        "metadata": {
+            "script_hit_id": "script-1",
+            "conversation_id": "11b0678a-cc55-47db-9b24-a45b0555a15a",
+        },
+    }
+
+    class _Session:
+        def __init__(self):
+            self.commits = 0
+
+        async def execute(self, statement, params=None):
+            sql = str(statement)
+            if "pg_try_advisory_lock" in sql:
+                return _ScalarResult(True)
+            if "SELECT c.id, c.user_id" in sql:
+                return _MappingsResult([task])
+            if "SELECT 1 FROM conversations" in sql:
+                return _MappingsResult([])
+            if "UPDATE message_schedules" in sql:
+                return _MappingsResult([])
+            return _MappingsResult()
+
+        async def commit(self):
+            self.commits += 1
+
+    session = _Session()
+
+    class _Ctx:
+        async def __aenter__(self):
+            return session
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(svc, "AsyncSessionLocal", lambda: _Ctx())
+
+    stats = await svc.run_one_tick(trace_id="trace-orphan")
+
+    assert stats["claimed"] == 1
+    assert stats["skipped_orphan"] == 1
+    assert stats["archived"] == 0
+    assert stats.get("failed", 0) == 0

@@ -485,13 +485,13 @@
     "id": "conversion.clicked_worker_only",
     "category": "conversion",
     "priority": "medium",
-    "active": true,
+    "active": false,
     "keywords": [
       "post_click_worker",
-      "queue_clicked_not_downloaded"
+      "clicked_post_followup_2m"
     ],
     "confidence": 1,
-    "desc": "已点击后跟进不在对话内发，仅 worker +2min 培育"
+    "desc": "已点击后仅 worker 发 clicked_post_followup_2m；queue_clicked_not_downloaded 已禁用（无法可靠检测未安装）"
   },
   {
     "id": "channel.bot_nurture",
@@ -691,16 +691,148 @@
     "desc": "archive_worker：含 script_hit_id 的发送行归档"
   },
   {
-    "id": "operator.crisis_handoff",
-    "category": "operator",
+    "id": "call_broadcast.enabled",
+    "category": "call_broadcast",
     "priority": "high",
     "active": true,
     "keywords": [
-      "P0",
-      "WAITING_OPERATOR"
+      "CALL_BROADCAST_ENABLED"
     ],
     "confidence": 1,
-    "desc": "危机协议自动建 P0 handoff"
+    "desc": "视频通话总开关（生产=1）；关闭后关键词入队、来电监听、worker 均 no-op"
+  },
+  {
+    "id": "call_broadcast.inbound_keyword",
+    "category": "call_broadcast",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "video call",
+      "facetime",
+      "视频通话",
+      "8866"
+    ],
+    "confidence": 1,
+    "desc": "MTProto 入站消息命中视频通话关键词 → fire-and-forget enqueue；不阻塞 generate_reply"
+  },
+  {
+    "id": "call_broadcast.worker_poll",
+    "category": "call_broadcast",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "call_broadcast_worker",
+      "CALL_BROADCAST_POLL_SECONDS"
+    ],
+    "confidence": 1,
+    "desc": "APScheduler 轮询 claim call_broadcast_jobs → PyTgCalls 外呼并播放预置视频"
+  },
+  {
+    "id": "call_broadcast.immediate_tick",
+    "category": "call_broadcast",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "8866",
+      "spawn_immediate_tick"
+    ],
+    "confidence": 1,
+    "desc": "测试码 8866 精确匹配：入队后立即 spawn worker tick，跳过 15s 轮询等待"
+  },
+  {
+    "id": "call_broadcast.incoming_auto_answer",
+    "category": "call_broadcast",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "CALL_BROADCAST_INCOMING_AUTO_ANSWER",
+      "INCOMING_CALL"
+    ],
+    "confidence": 1,
+    "desc": "用户主动来电：PyTgCalls 监听 INCOMING_CALL，按 play_sequence 自动接听播视频"
+  },
+  {
+    "id": "call_broadcast.inbound_manual_review",
+    "category": "call_broadcast",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "CALL_BROADCAST_INBOUND_MANUAL_AFTER",
+      "incoming-reviews"
+    ],
+    "confidence": 1,
+    "desc": "同 chat 第 2 次及以上来电 → 坐席审核 accept/reject（admin/video-broadcast）"
+  },
+  {
+    "id": "call_broadcast.video_assets",
+    "category": "call_broadcast",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "video_broadcast_assets",
+      "play_sequence"
+    ],
+    "confidence": 1,
+    "desc": "视频资产 play_sequence 1/2/3：第 1/2/3 次来电视频；外呼用 DEFAULT_VIDEO_ASSET_ID"
+  },
+  {
+    "id": "call_broadcast.max_concurrent",
+    "category": "call_broadcast",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "CALL_BROADCAST_MAX_CONCURRENT_PER_ACCOUNT"
+    ],
+    "confidence": 1,
+    "desc": "每 MTProto 账号同时仅 1 路通话；忙时 requeue 或 skip 来电"
+  },
+  {
+    "id": "call_broadcast.post_call_nurture",
+    "category": "call_broadcast",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "CALL_BROADCAST_POST_CALL_NURTURE_ENABLED"
+    ],
+    "confidence": 1,
+    "desc": "外呼 job 完成后可选 schedule_download_followups（click_only 培育链路）"
+  },
+  {
+    "id": "call_broadcast.admin_manual",
+    "category": "call_broadcast",
+    "priority": "medium",
+    "active": true,
+    "keywords": [
+      "manual-calls",
+      "video-broadcast"
+    ],
+    "confidence": 1,
+    "desc": "坐席后台 POST /api/v1/call-broadcast/admin/manual-calls 手动发起视频通话"
+  },
+  {
+    "id": "call_broadcast.mtproto_only",
+    "category": "call_broadcast",
+    "priority": "low",
+    "active": true,
+    "keywords": [
+      "auto_reply.py",
+      "MTProto only"
+    ],
+    "confidence": 1,
+    "desc": "仅 MTProto auto_reply 入站触发关键词入队；Bot Webhook / Open API 不走视频通话"
+  },
+  {
+    "id": "operator.crisis_handoff",
+    "category": "operator",
+    "priority": "high",
+    "active": false,
+    "keywords": [
+      "P0",
+      "WAITING_OPERATOR",
+      "crisis_intervention"
+    ],
+    "confidence": 1,
+    "desc": "【已下线】crisis_intervention 模块已移除；P0 handoff 待安全规则重写后恢复"
   },
   {
     "id": "operator.manual_suspend",

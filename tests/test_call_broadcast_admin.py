@@ -127,6 +127,9 @@ async def test_manual_calls_rejects_when_disabled(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_resolve_account_and_access_hash_prefers_match(monkeypatch) -> None:
+    from uuid import uuid4
+
+    account_uuid = str(uuid4())
     fake_entity = type("E", (), {"id": 123, "access_hash": 999})()
 
     class _Client:
@@ -136,7 +139,7 @@ async def test_resolve_account_and_access_hash_prefers_match(monkeypatch) -> Non
     async def _get_client(_account_id):
         return _Client()
 
-    fake_account = type("A", (), {"id": "acc-1", "is_active": True})()
+    fake_account = type("A", (), {"id": account_uuid, "is_active": True})()
     monkeypatch.setattr(
         "services.call_broadcast.peers.telegram_account_manager.get_active_accounts",
         AsyncMock(return_value=[fake_account]),
@@ -148,7 +151,7 @@ async def test_resolve_account_and_access_hash_prefers_match(monkeypatch) -> Non
 
     account_id, access_hash = await resolve_account_and_access_hash(
         chat_id=123,
-        preferred_account_id="acc-1",
+        preferred_account_id=account_uuid,
     )
-    assert account_id == "acc-1"
+    assert account_id == account_uuid
     assert access_hash == "999"
