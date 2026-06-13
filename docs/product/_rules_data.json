@@ -69,108 +69,6 @@
     "desc": "【已下线】Redis Stream 入站队列：消费者未在 main.py 启动"
   },
   {
-    "id": "safety.content_safety_gate",
-    "category": "safety",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "CONTENT_SAFETY_ENABLED"
-    ],
-    "confidence": 1,
-    "desc": "入站双层安全：关键词层 → OpenAI Moderation；生产 compose 默认开启"
-  },
-  {
-    "id": "safety.keyword_csam",
-    "category": "safety",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "child porn",
-      "csam"
-    ],
-    "confidence": 1,
-    "desc": "关键词拦截：未成年人性内容 / CSAM"
-  },
-  {
-    "id": "safety.keyword_nonconsensual",
-    "category": "safety",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "non-consensual intimate"
-    ],
-    "confidence": 1,
-    "desc": "关键词拦截：非自愿亲密内容"
-  },
-  {
-    "id": "safety.keyword_jailbreak",
-    "category": "safety",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "jailbreak",
-      "ignore instructions"
-    ],
-    "confidence": 1,
-    "desc": "关键词拦截：越狱/忽略规则"
-  },
-  {
-    "id": "safety.keyword_weapon",
-    "category": "safety",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "make bomb",
-      "武器制造"
-    ],
-    "confidence": 1,
-    "desc": "关键词拦截：武器/制毒制作"
-  },
-  {
-    "id": "safety.moderation_minors",
-    "category": "safety",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "sexual/minors"
-    ],
-    "confidence": 1,
-    "desc": "Moderation 拦截：sexual/minors 类目"
-  },
-  {
-    "id": "safety.moderation_self_harm_pass",
-    "category": "safety",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "self-harm"
-    ],
-    "confidence": 1,
-    "desc": "Moderation 自伤类目放行，交给危机协议"
-  },
-  {
-    "id": "safety.moderation_adult_sexual_pass",
-    "category": "safety",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "sexual>=0.9"
-    ],
-    "confidence": 0.9,
-    "desc": "成人色情 moderation 单独命中不拦截"
-  },
-  {
-    "id": "safety.crisis_short_circuit",
-    "category": "safety",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "detect_crisis_in_text"
-    ],
-    "confidence": 1,
-    "desc": "危机检测命中：安全话术 + P0 handoff + S5，短路 LLM"
-  },
-  {
     "id": "level.profile_incomplete_d",
     "category": "level",
     "priority": "high",
@@ -435,16 +333,78 @@
     "desc": "高意图索要 link/下载 → app_download_direct_cta，跳过 LLM"
   },
   {
+    "id": "attribution.mode_click_only",
+    "category": "attribution",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "APP_DOWNLOAD_FUNNEL_MODE",
+      "click_only"
+    ],
+    "confidence": 1,
+    "desc": "三方推广：可观测漏斗止于 click；download/register 不参与决策"
+  },
+  {
+    "id": "attribution.primary_kpi_ctr",
+    "category": "attribution",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "click",
+      "link_exposed",
+      "CTR"
+    ],
+    "confidence": 1,
+    "desc": "核心 KPI = click_users / link_exposed_users"
+  },
+  {
     "id": "conversion.clicked_followup",
     "category": "conversion",
     "priority": "high",
     "active": true,
     "keywords": [
       "clicked",
-      "seconds>=120"
+      "seconds>=120",
+      "clicked_post_followup_2m"
     ],
     "confidence": 1,
-    "desc": "已点击未下载≥2 分钟 → app_link_clicked_followup（batch worker 扫描）"
+    "desc": "已点击≥2 分钟 → app_link_clicked_followup（worker 扫描，24h 每会话最多 1 次）"
+  },
+  {
+    "id": "conversion.post_click_passive",
+    "category": "conversion",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "clicked_pending_download",
+      "post_click_worker"
+    ],
+    "confidence": 1,
+    "desc": "已点击且用户未明确要链接 → 对话内不自动推链"
+  },
+  {
+    "id": "conversion.post_click_explicit_link",
+    "category": "conversion",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "direct_cta",
+      "clicked"
+    ],
+    "confidence": 1,
+    "desc": "已点击 + 明确要链接 → 仅 direct_cta 重发 tracking 链"
+  },
+  {
+    "id": "conversion.complete_stop_click",
+    "category": "conversion",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "click_promotion_complete",
+      "clicked_followup_sent"
+    ],
+    "confidence": 1,
+    "desc": "click_only：clicked_followup 已发或点击超 24h → 停止自动推链"
   },
   {
     "id": "conversion.objection",
@@ -487,14 +447,14 @@
     "id": "conversion.complete_stop",
     "category": "conversion",
     "priority": "low",
-    "active": true,
+    "active": false,
     "keywords": [
       "downloaded",
       "registered",
       "paid"
     ],
     "confidence": 1,
-    "desc": "已下载/注册/付费 → 停止下载话术"
+    "desc": "【full 模式】已下载/注册/付费 → 停止下载话术"
   },
   {
     "id": "conversion.script_hook_reply",
@@ -515,10 +475,11 @@
     "keywords": [
       "conversion_decision_skips_llm",
       "first_push",
-      "direct_cta"
+      "direct_cta",
+      "operator_app_conversion"
     ],
     "confidence": 1,
-    "desc": "first_push/direct_cta/after_warmup/asset_keyword → 话术+链接直出，跳过 LLM"
+    "desc": "first_push/direct_cta/after_warmup/operator_app_conversion/asset_keyword → 话术+链接直出，跳过 LLM"
   },
   {
     "id": "conversion.clicked_worker_only",
@@ -530,7 +491,7 @@
       "queue_clicked_not_downloaded"
     ],
     "confidence": 1,
-    "desc": "已点击未下不在对话内发 clicked_followup，仅 worker +2min 培育"
+    "desc": "已点击后跟进不在对话内发，仅 worker +2min 培育"
   },
   {
     "id": "channel.bot_nurture",
@@ -594,16 +555,39 @@
     "desc": "暖聊 3–5 轮曝光链接未点击 → after_warmup 跟进"
   },
   {
-    "id": "nurture.click_no_download",
+    "id": "nurture.pre_click_only",
     "category": "nurture",
     "priority": "high",
     "active": true,
     "keywords": [
-      "clicked_not_downloaded_10m",
+      "has_click=false"
+    ],
+    "confidence": 1,
+    "desc": "推链培育仅当未点击；已点击用户不进 first/second/warm/silent 链"
+  },
+  {
+    "id": "nurture.clicked_post_followup",
+    "category": "nurture",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "clicked_post_followup_2m",
       "+120s"
     ],
     "confidence": 1,
-    "desc": "已点击未下载 +2min → app_link_clicked_followup"
+    "desc": "已点击 +2min → clicked_followup（不检查 download）"
+  },
+  {
+    "id": "nurture.pending_upgrade",
+    "category": "nurture",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "superseded",
+      "user_count_advanced"
+    ],
+    "confidence": 1,
+    "desc": "user_count 前进时取消过时 pending（修 second_round 空洞）"
   },
   {
     "id": "nurture.pending_dedupe",
@@ -612,10 +596,11 @@
     "active": true,
     "keywords": [
       "pending",
-      "sending"
+      "sending",
+      "same_trigger"
     ],
     "confidence": 1,
-    "desc": "仅 pending/sending 培育阻塞重排队；已发送可进入下一节点（兼顾 H11 频率）"
+    "desc": "同 trigger 的 pending/sending 不重复排队；不同阶段可升级"
   },
   {
     "id": "nurture.db_scripts",
@@ -654,12 +639,23 @@
     "id": "nurture.silent_24h",
     "category": "nurture",
     "priority": "low",
-    "active": true,
+    "active": false,
     "keywords": [
       "silent_24h"
     ],
     "confidence": 1,
-    "desc": "静默 24 小时 → 软提醒"
+    "desc": "【已废弃】代码未调度 silent_24h"
+  },
+  {
+    "id": "nurture.stop_if_downloaded",
+    "category": "nurture",
+    "priority": "low",
+    "active": false,
+    "keywords": [
+      "stop_if_downloaded"
+    ],
+    "confidence": 1,
+    "desc": "【click_only 废弃】不再查 download 事件"
   },
   {
     "id": "worker.auto_delivery",
@@ -761,18 +757,6 @@
     ],
     "confidence": 1,
     "desc": "每轮刷新 loneliness_score"
-  },
-  {
-    "id": "orchestrator.reply_consistency",
-    "category": "orchestrator",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "reply_consistency",
-      "0.65"
-    ],
-    "confidence": 0.65,
-    "desc": "出站一致性检查与兜底"
   },
   {
     "id": "orchestrator.tracking_wrap",
@@ -1396,80 +1380,5 @@
     ],
     "confidence": 0.9,
     "desc": "意图 boundary.data_privacy"
-  },
-  {
-    "id": "safety.self_harm_ideation.core",
-    "category": "safety",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "kill myself",
-      "end it all",
-      "suicide",
-      "不想活",
-      "自杀"
-    ],
-    "confidence": 0.98,
-    "desc": "意图 safety.self_harm_ideation"
-  },
-  {
-    "id": "safety.minor_signal.core",
-    "category": "safety",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "i am 15",
-      "i'm 16",
-      "under 18",
-      "我15岁",
-      "未成年"
-    ],
-    "confidence": 0.94,
-    "desc": "意图 safety.minor_signal"
-  },
-  {
-    "id": "safety.sexual_explicit.core",
-    "category": "safety",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "explicit sexual",
-      "nude",
-      "sex chat",
-      "露骨",
-      "裸照"
-    ],
-    "confidence": 0.92,
-    "desc": "意图 safety.sexual_explicit"
-  },
-  {
-    "id": "safety.abuse_threat.core",
-    "category": "safety",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "hurt you",
-      "blackmail",
-      "forced me",
-      "威胁",
-      "伤害你"
-    ],
-    "confidence": 0.94,
-    "desc": "意图 safety.abuse_threat"
-  },
-  {
-    "id": "safety.illegal_request.core",
-    "category": "safety",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "fraud",
-      "hacking",
-      "buy drugs",
-      "诈骗",
-      "黑客"
-    ],
-    "confidence": 0.92,
-    "desc": "意图 safety.illegal_request"
   }
 ]

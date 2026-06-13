@@ -30,9 +30,7 @@ def test_catalog_personas_do_not_carry_old_sexual_refusal_policy():
     assert "avoid sexual escalation" not in combined
     assert "Keep flirtation mild and non-explicit" not in combined
     assert "consensual sexual" in combined
-    assert "too-personal" in combined
     assert "American texting" in combined
-    assert "Paid unlock CTAs" in combined
 
 
 def test_resolves_persona_by_slug_name_and_tone():

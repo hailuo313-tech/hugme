@@ -34,8 +34,6 @@ from services.app_download_nurture import (
     schedule_asset_keyword_followup_after_reply,
     schedule_download_followups_after_reply,
 )
-from services.content_safety import evaluate_inbound_content_safety
-from services.reply_consistency import evaluate_reply_consistency, load_reply_consistency_context
 from services.user_level_service import user_level_service
 from services.mtproto.account_routing import pin_mtproto_account_route
 from services.mtproto.human_like_send import HumanLikeSendPolicy, send_human_like_message
@@ -490,20 +488,6 @@ async def _persist_message(
     return msg_id
 
 
-async def _apply_reply_consistency(db: Any, conversation_id: str, reply_text: str, log: Any) -> str:
-    try:
-        ctx = await load_reply_consistency_context(db, conversation_id)
-    except Exception as exc:
-        log.bind(error_type=type(exc).__name__).warning("mtproto.consistency.context_failed")
-        ctx = {}
-    consistency = evaluate_reply_consistency(
-        reply_text=reply_text,
-        character=ctx.get("character"),
-    )
-    log.bind(**consistency.as_log_dict()).info("mtproto.consistency.checked")
-    return consistency.output_text
-
-
 async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: Any) -> None:
     """Handle one incoming real-user Telegram message end to end."""
     message = getattr(event, "message", event)
@@ -576,28 +560,16 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
     )
     log.bind(message_id=user_msg_id).info("mtproto.inbound.persisted")
 
-    if settings.CONTENT_SAFETY_ENABLED:
-        safety_result = await evaluate_inbound_content_safety(text_value, trace_id=trace_id)
-        if safety_result.get("blocked"):
-            refusal = "这个话题我没办法聊，换个方向说说？"
-            peer = getattr(event, "chat_id", None) or sender_id
-            await send_human_like_message(
-                client,
-                peer,
-                refusal,
-                policy=_reply_delay_policy(refusal),
-            )
-            await _persist_message(
-                conv_id=conv_id,
-                sender_type="assistant",
-                sender_id=str(account_id),
-                content=refusal,
-                model_name=getattr(settings, "OPENROUTER_MODEL", None),
-            )
-            log.bind(
-                block_reason=safety_result.get("block_reason"),
-            ).info("mtproto.content_safety.blocked")
-            return
+    _spawn_call_broadcast_enqueue(
+        user_id=user_id,
+        external_user_id=external_id,
+        conversation_id=conv_id,
+        chat_id=int(sender_id),
+        account_id=str(account_id),
+        user_text=text_value,
+        trace_id=trace_id,
+        telegram_access_hash=getattr(sender, "access_hash", None),
+    )
 
     try:
         await _push_context(redis, conv_id, "user", text_value, user_msg_id)
@@ -642,7 +614,6 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
         except LLMOrchestratorError as exc:
             log.bind(reason=str(exc)).warning("mtproto.orchestrator.failed")
             reply_text = "I am a little busy right now, talk in a bit?"
-        reply_text = await _apply_reply_consistency(db, conv_id, reply_text, log)
         if profile_followup and profile_followup not in reply_text:
             reply_text = f"{reply_text}\n\n{profile_followup}"
         app_download_decision = get_last_app_download_decision()
@@ -795,3 +766,34 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
     except Exception as exc:
         log.bind(error_type=type(exc).__name__).warning("mtproto.reply.ctx_push_failed")
     log.bind(message_id=assistant_msg_id, telegram_sent_id=sent_id).info("mtproto.reply.sent")
+
+
+def _spawn_call_broadcast_enqueue(
+    *,
+    user_id: str,
+    external_user_id: str | None,
+    conversation_id: str | None,
+    chat_id: int,
+    account_id: str,
+    user_text: str | None,
+    trace_id: str | None,
+    telegram_access_hash: int | None = None,
+) -> None:
+    """Fire-and-forget video call queueing; no-op unless CALL_BROADCAST_ENABLED."""
+    if not getattr(settings, "CALL_BROADCAST_ENABLED", False):
+        return
+
+    from services.call_broadcast.triggers import maybe_enqueue_call_broadcast
+
+    asyncio.create_task(
+        maybe_enqueue_call_broadcast(
+            user_id=user_id,
+            external_user_id=external_user_id,
+            conversation_id=conversation_id,
+            chat_id=chat_id,
+            account_id=account_id,
+            user_text=user_text,
+            trace_id=trace_id,
+            telegram_access_hash=telegram_access_hash,
+        )
+    )

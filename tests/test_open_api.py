@@ -201,7 +201,7 @@ def test_create_open_conversation_rejects_inactive_character():
     assert r.status_code == 404
 
 
-def test_send_open_message_uses_existing_safety_and_orchestrator(monkeypatch):
+def test_send_open_message_uses_orchestrator(monkeypatch):
     db = MagicMock()
     db.execute = AsyncMock(
         return_value=_result(
@@ -218,19 +218,6 @@ def test_send_open_message_uses_existing_safety_and_orchestrator(monkeypatch):
     )
     client = TestClient(_app(db))
 
-    async def _minor(*args, **kwargs):
-        return SimpleNamespace(
-            suspected_minor=False,
-            adult_content=False,
-            updated_user=False,
-            blocked=False,
-            reason=None,
-            as_safety_layer=lambda: {"blocked": False},
-        )
-
-    async def _content(*args, **kwargs):
-        return {"blocked": False, "block_reason": None}
-
     async def _redis():
         return MagicMock()
 
@@ -243,23 +230,12 @@ def test_send_open_message_uses_existing_safety_and_orchestrator(monkeypatch):
     async def _reply(*args, **kwargs):
         return "AI reply"
 
-    async def _ctx(*args, **kwargs):
-        return {}
-
     persist = AsyncMock(side_effect=[MSG_ID, ASSISTANT_MSG_ID])
-    monkeypatch.setattr("api.open_api.evaluate_inbound_minor_protection", _minor)
-    monkeypatch.setattr("api.open_api.evaluate_inbound_content_safety", _content)
     monkeypatch.setattr("api.open_api.get_redis", _redis)
     monkeypatch.setattr("api.open_api._push_context", _push)
     monkeypatch.setattr("api.open_api.maybe_write_memory", _memory)
     monkeypatch.setattr("api.open_api.generate_reply", _reply)
-    monkeypatch.setattr("api.open_api.load_reply_consistency_context", _ctx)
-    monkeypatch.setattr(
-        "api.open_api.evaluate_reply_consistency",
-        lambda **kwargs: SimpleNamespace(output_text="AI reply", score=1.0),
-    )
     monkeypatch.setattr("api.open_api._persist_message", persist)
-    monkeypatch.setattr("api.open_api.settings.CONTENT_SAFETY_ENABLED", True)
 
     r = client.post(
         f"/api/v1/open/conversations/{CONV_ID}/messages",
@@ -274,59 +250,6 @@ def test_send_open_message_uses_existing_safety_and_orchestrator(monkeypatch):
     assert data["assistant_message"]["content"] == "AI reply"
     assert data["safety"] == {"blocked": False, "reason": None}
     assert persist.await_count == 2
-
-
-def test_send_open_message_safety_block_returns_public_summary(monkeypatch):
-    db = MagicMock()
-    db.execute = AsyncMock(
-        return_value=_result(
-            one=_row(
-                {
-                    "id": CONV_ID,
-                    "user_id": USER_ID,
-                    "state": "AI_ACTIVE",
-                    "is_minor_suspected": False,
-                    "user_status": "active",
-                }
-            )
-        )
-    )
-    client = TestClient(_app(db))
-
-    async def _minor(*args, **kwargs):
-        return SimpleNamespace(
-            suspected_minor=False,
-            adult_content=False,
-            updated_user=False,
-            blocked=False,
-            reason=None,
-            as_safety_layer=lambda: {"blocked": False},
-        )
-
-    async def _content(*args, **kwargs):
-        return {
-            "blocked": True,
-            "block_reason": "keyword:pattern_0",
-            "moderation": {"category_scores": {"internal": 0.99}},
-        }
-
-    monkeypatch.setattr("api.open_api.evaluate_inbound_minor_protection", _minor)
-    monkeypatch.setattr("api.open_api.evaluate_inbound_content_safety", _content)
-    monkeypatch.setattr("api.open_api._persist_message", AsyncMock(return_value=MSG_ID))
-    monkeypatch.setattr("api.open_api.settings.CONTENT_SAFETY_ENABLED", True)
-
-    r = client.post(
-        f"/api/v1/open/conversations/{CONV_ID}/messages",
-        headers={"X-User-Id": USER_ID},
-        json={"user_id": USER_ID, "content": "blocked text"},
-    )
-
-    assert r.status_code == 403, r.text
-    detail = r.json()["detail"]
-    assert detail["message_id"] == MSG_ID
-    assert detail["safety"] == {"blocked": True, "reason": "keyword:pattern_0"}
-    assert "moderation" not in detail
-    assert "category_scores" not in detail
 
 
 def test_list_open_messages_paginates_and_hides_internal_fields():

@@ -273,7 +273,7 @@
       <h1>ERIS 智能陪伴系统 <span>业务流程图</span></h1>
       <p class="sub">反映<strong>当前线上实际接线</strong>：MTProto 直处理、Bot Webhook、Open API 三路入站，共用 <code>generate_reply</code>；出站分通道投递；后台 Worker 负责定时发送与归档。</p>
       <div class="legend">
-        <span>MTProto 直处理（非队列）</span><span>Bot Webhook</span><span>Open API 聊天</span><span>content_safety 可开关</span>
+        <span>MTProto 直处理（非队列）</span><span>Bot Webhook</span><span>Open API 聊天</span>
         <span>generate_reply 共用核心</span><span>reply 话术钩子</span><span>素材关键词短路</span><span>后台 Worker 归档</span>
       </div>
     </header>
@@ -297,26 +297,23 @@ flowchart TB
     SESS -.-> POOL
     subgraph PRE["② 入站预处理"]
         PERSIST["消息持久化\nRedis 会话上下文"]
-        SAFE{"content_safety\nCONTENT_SAFETY_ENABLED"}
         PROFILE["profile_intake 补全\n+calcUserLevel 写入元数据"]
     end
     EVT --> PERSIST
     BOT --> PERSIST
     OPEN --> PERSIST
-    PERSIST --> SAFE
-    SAFE -->|拦截| REFUSE["礼貌拒绝 · 结束"]
-    SAFE -->|通过| PROFILE
+    PERSIST --> PROFILE
     subgraph ORCH["③ generate_reply 共用核心"]
-        CRISIS{"危机检测"}
-        CRISIS -->|是| CRISIS_OUT["危机话术 + P0 handoff"]
-        CRISIS -->|否| INTENT["意图识别"]
+        INTENT["意图识别"]
         INTENT --> LONELY["孤独感评分刷新"]
         LONELY --> POLICY["POL-01 Policy handoff\n开关开启时"]
         POLICY --> REL["REL-01 关系阶段\n默认关闭"]
         REL --> MEM["记忆检索 + 一致性过滤"]
         MEM --> ADC{"app_download_conversion\nreply 话术钩子"}
-        ADC -->|高意图 图/视频| KW["asset_keyword\n素材+链接\n100% 跳过 LLM"]
-        ADC -->|高意图 link| CTA["direct_cta / first_push\n链接脚本\n跳过 LLM"]
+        ADC -->|高意图 图/视频| KW["asset_keyword\n素材+链接\n跳过 LLM"]
+        ADC -->|已点击再要素材| KW2["asset 仅素材\n不重复塞链"]
+        ADC -->|高意图 link| CTA["direct_cta / first_push\n跳过 LLM"]
+        ADC -->|异议/信任| TR["objection / trust\n跳过 LLM"]
         ADC -->|C/B 首条| FPUSH["first_push\n新用户首触"]
         ADC -->|未命中| PROMPT["10 层 Prompt"]
         PROMPT --> LLM["LLM 生成"]
@@ -324,7 +321,6 @@ flowchart TB
     end
     PROFILE --> ORCH
     subgraph OUT_MTP["④-a 出站 · MTProto"]
-        CONS["reply_consistency"]
         TRACK["tracking 链接归因"]
         SEND["拟人延迟 + 发送文本"]
         MEDIA["素材投递\nimage→video→voice"]
@@ -338,10 +334,9 @@ flowchart TB
     subgraph OUT_OPEN["④-c 出站 · Open API"]
         OPEN_RET["HTTP 返回 reply_text"]
     end
-    CRISIS_OUT & KW & CTA & FPUSH & NUDGE --> CONS
-    CONS --> TRACK --> SEND --> MEDIA --> NURTURE_M
-    CRISIS_OUT & KW & CTA & FPUSH & NUDGE --> BOT_TRACK --> BOT_SEND --> NURTURE_B
-    CRISIS_OUT & KW & CTA & FPUSH & NUDGE --> OPEN_RET
+    KW & CTA & FPUSH & NUDGE --> TRACK --> SEND --> MEDIA --> NURTURE_M
+    KW & CTA & FPUSH & NUDGE --> BOT_TRACK --> BOT_SEND --> NURTURE_B
+    KW & CTA & FPUSH & NUDGE --> OPEN_RET
     subgraph WK["⑤ 后台 Worker"]
         ADW["auto_delivery_worker\n定时发送 + 培育投递"]
         MSW["message_schedule_service\n通用定时消息"]
@@ -354,7 +349,6 @@ flowchart TB
     subgraph OPS["⑥ 坐席协同（非入站自动挂起）"]
         WS["WS /ws/operators/tasks"]
         MANUAL["手动 suspend API\n草稿 + 120s fallback"]
-        CRISIS_OUT -.-> WS
         POLICY -.-> WS
         MANUAL --> WS
     end
@@ -366,13 +360,13 @@ flowchart TB
       </pre>
     </div>
     <div class="tips"><strong>当前线上主路径：</strong>MTProto <code>auto_reply.py</code> 直处理（不经 Redis <code>inbound_queue</code>）、Bot Webhook、Open API 三路最终都调用 <code>generate_reply</code>。<strong>话术匹配：</strong>仅在 <code>app_download_conversion</code> 的 <code>reply</code> 钩子检索 script_templates；<code>archive_worker</code> 在消息发送后归档 script_hit。</div>
-    <div class="tips" style="margin-top:12px"><strong>分层转化策略（2026-05 线上）：</strong>
+    <div class="tips" style="margin-top:12px"><strong>三方推广 · click_only 转化策略（2026-06 线上）：</strong>
+      <p style="margin:8px 0;color:var(--muted);font-size:12px">核心 KPI = <strong style="color:#86efac">CTR（click_users / link_exposed_users）</strong>。download/register 三方不可见，<code>APP_DOWNLOAD_FUNNEL_MODE=click_only</code> 下不参与决策。</p>
       <table style="width:100%;margin-top:10px;border-collapse:collapse;font-size:12px">
-        <tr style="border-bottom:1px solid var(--border)"><th style="text-align:left;padding:6px 8px;color:#fdba74">用户层级</th><th style="text-align:left;padding:6px 8px;color:#fdba74">策略</th></tr>
-        <tr><td style="padding:6px 8px;vertical-align:top"><code>C/B 新用户</code></td><td style="padding:6px 8px;color:var(--muted)">首条助手回复 <code>first_push</code> → 培育链 <strong>45–60s</strong> 软提醒 → <strong>+3min</strong> <code>after_warmup</code>（第 2 轮）→ <strong>30min</strong> 沉默追催</td></tr>
-        <tr><td style="padding:6px 8px;vertical-align:top"><code>高意图</code>（要图/要视频）</td><td style="padding:6px 8px;color:var(--muted)">第 1 条即 <code>asset_keyword</code> + 链接 + 素材，<strong>100% 跳过 LLM</strong>（D 级亦生效）→ +3min 素材培育</td></tr>
-        <tr><td style="padding:6px 8px;vertical-align:top"><code>高意图</code>（要 link / 暖聊≥3轮）</td><td style="padding:6px 8px;color:var(--muted)"><code>direct_cta</code> / <code>first_push</code> / <code>after_warmup</code> 脚本正文直出 + 追踪链接，<strong>跳过 LLM</strong></td></tr>
-        <tr><td style="padding:6px 8px;vertical-align:top"><code>已点未下</code></td><td style="padding:6px 8px;color:var(--muted)"><code>queue_clicked_not_downloaded</code> 扫描 → <strong>+2min</strong> 发 <code>app_link_clicked_followup</code></td></tr>
+        <tr style="border-bottom:1px solid var(--border)"><th style="text-align:left;padding:6px 8px;color:#fdba74">阶段</th><th style="text-align:left;padding:6px 8px;color:#fdba74">策略</th></tr>
+        <tr><td style="padding:6px 8px;vertical-align:top"><code>未点击</code></td><td style="padding:6px 8px;color:var(--muted)"><code>first_push</code> → 培育 <strong>45–60s</strong> → <strong>+3min</strong> <code>after_warmup</code>（第 2 轮，pending 升级）→ 暖聊 3–5 轮 → <strong>30min</strong> silent_30m；高意图 <code>asset_keyword</code> / <code>direct_cta</code> / <code>operator</code> 均 skip LLM 直出链接</td></tr>
+        <tr><td style="padding:6px 8px;vertical-align:top"><code>已点击</code></td><td style="padding:6px 8px;color:var(--muted)">默认<strong>不再推链</strong>；<strong>明确再要链接</strong> → <code>direct_cta</code>（优先于收口）；再要素材 → 只发图/视频不塞新链；worker <strong>+2min</strong> <code>clicked_post_followup_2m</code>（24h/会话 1 次；pre-click failed 不挡跟进）</td></tr>
+        <tr><td style="padding:6px 8px;vertical-align:top"><code>点击后收口</code></td><td style="padding:6px 8px;color:var(--muted)"><code>clicked_followup</code> 已发送 或 首次点击超 <strong>24h</strong> → <code>click_promotion_complete</code>，停止一切自动推链</td></tr>
         <tr><td style="padding:6px 8px;vertical-align:top"><code>D 级</code></td><td style="padding:6px 8px;color:var(--muted)">阻断脚本转化漏斗；<strong>素材关键词路径不受限</strong></td></tr>
       </table>
     </div>
@@ -394,9 +388,9 @@ flowchart TB
         <div class="stat-sub">MTProto / Bot / Open API</div>
       </div>
       <div class="stat-cell">
-        <div class="stat-num" style="color:#fca5a5" id="stat-safety">—</div>
-        <div class="stat-lbl">安全过滤</div>
-        <div class="stat-sub">content_safety + 危机</div>
+        <div class="stat-num" style="color:#fca5a5" id="stat-intent">—</div>
+        <div class="stat-lbl">意图识别</div>
+        <div class="stat-sub">intent 分类规则</div>
       </div>
       <div class="stat-cell">
         <div class="stat-num" style="color:#c4b5fd" id="stat-level">—</div>
@@ -413,11 +407,7 @@ flowchart TB
     <div class="category-cards">
       <div class="category-card" style="border-top:2px solid #67e8f9">
         <h3>入站与编排（channel / orchestrator）</h3>
-        <p>三路实际上线入站共用 <code>generate_reply</code>；H5 仅传输层。编排含意图、记忆、孤独感、一致性检查。</p>
-      </div>
-      <div class="category-card" style="border-top:2px solid #fca5a5">
-        <h3>安全过滤（safety）</h3>
-        <p><code>content_safety</code> 关键词 + Moderation；自伤 moderation 放行后由危机协议短路；成人色情单独命中不拦。</p>
+        <p>三路实际上线入站共用 <code>generate_reply</code>；H5 仅传输层。编排含意图、记忆、孤独感。</p>
       </div>
       <div class="category-card" style="border-top:2px solid #c4b5fd">
         <h3>分级与接管（level / policy / operator）</h3>
@@ -425,7 +415,7 @@ flowchart TB
       </div>
       <div class="category-card" style="border-top:2px solid #fdba74">
         <h3>转化培育（conversion / nurture / worker）</h3>
-        <p>高意图 <code>first_push/direct_cta/after_warmup/asset</code> 话术直出跳过 LLM；培育优先 DB 话术 + HTML CTA；Bot/MTProto 均调度培育；已点未下仅 worker +2min <code>clicked_followup</code>。</p>
+        <p><strong>click_only</strong>：漏斗止于点击，CTR 为核心 KPI。高意图 <code>first_push/direct_cta/after_warmup/operator/asset</code> skip LLM 直出；培育仅未点击用户；已点击后 worker +2min <code>clicked_post_followup_2m</code>，跟进后发完即收口。</p>
       </div>
     </div>
 
@@ -434,7 +424,6 @@ flowchart TB
       <button class="filter-btn" data-filter="active">仅生效</button>
       <button class="filter-btn" data-filter="deprecated">已下线</button>
       <button class="filter-btn" data-filter="channel">入站通道</button>
-      <button class="filter-btn" data-filter="safety">安全过滤</button>
       <button class="filter-btn" data-filter="intent">意图识别</button>
       <button class="filter-btn" data-filter="level">用户分级</button>
       <button class="filter-btn" data-filter="policy">Policy</button>
@@ -459,13 +448,13 @@ flowchart TB
     </div>
 
     <div class="tips">
-      <strong>执行顺序（线上主路径）：</strong>入站通道 → content_safety（可开关）→ profile_intake/分级元数据 → generate_reply（危机 → 意图 → 孤独感 → POL-01 → REL-01 → 记忆 → app_download reply 钩子）→ reply_consistency → tracking → 出站 → 培育 schedule → archive_worker。
-      <strong>培育默认参数（compose）：</strong><code>APP_DOWNLOAD_FIRST_IDLE_SECONDS=50</code>（生效 45–60s）、<code>APP_DOWNLOAD_SECOND_NO_CLICK_SECONDS=180</code>、<code>APP_DOWNLOAD_CLICK_NO_DOWNLOAD_SECONDS=120</code>、<code>APP_DOWNLOAD_SILENT_30M_SECONDS=1800</code>。
+      <strong>执行顺序（线上主路径）：</strong>入站通道 → profile_intake/分级元数据 → generate_reply（意图 → 孤独感 → POL-01 → REL-01 → 记忆 → app_download reply 钩子）→ tracking → 出站 → 培育 schedule → archive_worker。
+      <strong>培育默认参数（compose）：</strong><code>APP_DOWNLOAD_FUNNEL_MODE=click_only</code>、<code>APP_DOWNLOAD_FIRST_IDLE_SECONDS=50</code>（生效 45–60s）、<code>APP_DOWNLOAD_SECOND_NO_CLICK_SECONDS=180</code>、<code>APP_DOWNLOAD_CLICK_NO_DOWNLOAD_SECONDS=120</code>（点击后 +2min 跟进）、<code>APP_DOWNLOAD_SILENT_30M_SECONDS=1800</code>。
       <strong>已下线规则</strong>保留在表中标注「未接线」，与流程图一致，避免与历史设计文档混淆。
     </div>
   </section>
 
-  <footer>ERIS 智能陪伴系统 · 业务流程 + 规则条件 · 共 113 条 · 生效 107 条</footer>
+  <footer>ERIS 智能陪伴系统 · 业务流程 + 规则条件 · 共 106 条 · 生效 97 条</footer>
 </div>
 
 <script>
@@ -538,108 +527,6 @@ const RULES = [
     ],
     "confidence": 1,
     "desc": "【已下线】Redis Stream 入站队列：消费者未在 main.py 启动"
-  },
-  {
-    "id": "safety.content_safety_gate",
-    "category": "safety",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "CONTENT_SAFETY_ENABLED"
-    ],
-    "confidence": 1,
-    "desc": "入站双层安全：关键词层 → OpenAI Moderation；生产 compose 默认开启"
-  },
-  {
-    "id": "safety.keyword_csam",
-    "category": "safety",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "child porn",
-      "csam"
-    ],
-    "confidence": 1,
-    "desc": "关键词拦截：未成年人性内容 / CSAM"
-  },
-  {
-    "id": "safety.keyword_nonconsensual",
-    "category": "safety",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "non-consensual intimate"
-    ],
-    "confidence": 1,
-    "desc": "关键词拦截：非自愿亲密内容"
-  },
-  {
-    "id": "safety.keyword_jailbreak",
-    "category": "safety",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "jailbreak",
-      "ignore instructions"
-    ],
-    "confidence": 1,
-    "desc": "关键词拦截：越狱/忽略规则"
-  },
-  {
-    "id": "safety.keyword_weapon",
-    "category": "safety",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "make bomb",
-      "武器制造"
-    ],
-    "confidence": 1,
-    "desc": "关键词拦截：武器/制毒制作"
-  },
-  {
-    "id": "safety.moderation_minors",
-    "category": "safety",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "sexual/minors"
-    ],
-    "confidence": 1,
-    "desc": "Moderation 拦截：sexual/minors 类目"
-  },
-  {
-    "id": "safety.moderation_self_harm_pass",
-    "category": "safety",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "self-harm"
-    ],
-    "confidence": 1,
-    "desc": "Moderation 自伤类目放行，交给危机协议"
-  },
-  {
-    "id": "safety.moderation_adult_sexual_pass",
-    "category": "safety",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "sexual>=0.9"
-    ],
-    "confidence": 0.9,
-    "desc": "成人色情 moderation 单独命中不拦截"
-  },
-  {
-    "id": "safety.crisis_short_circuit",
-    "category": "safety",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "detect_crisis_in_text"
-    ],
-    "confidence": 1,
-    "desc": "危机检测命中：安全话术 + P0 handoff + S5，短路 LLM"
   },
   {
     "id": "level.profile_incomplete_d",
@@ -906,16 +793,78 @@ const RULES = [
     "desc": "高意图索要 link/下载 → app_download_direct_cta，跳过 LLM"
   },
   {
+    "id": "attribution.mode_click_only",
+    "category": "attribution",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "APP_DOWNLOAD_FUNNEL_MODE",
+      "click_only"
+    ],
+    "confidence": 1,
+    "desc": "三方推广：可观测漏斗止于 click；download/register 不参与决策"
+  },
+  {
+    "id": "attribution.primary_kpi_ctr",
+    "category": "attribution",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "click",
+      "link_exposed",
+      "CTR"
+    ],
+    "confidence": 1,
+    "desc": "核心 KPI = click_users / link_exposed_users"
+  },
+  {
     "id": "conversion.clicked_followup",
     "category": "conversion",
     "priority": "high",
     "active": true,
     "keywords": [
       "clicked",
-      "seconds>=120"
+      "seconds>=120",
+      "clicked_post_followup_2m"
     ],
     "confidence": 1,
-    "desc": "已点击未下载≥2 分钟 → app_link_clicked_followup（batch worker 扫描）"
+    "desc": "已点击≥2 分钟 → app_link_clicked_followup（worker 扫描，24h 每会话最多 1 次）"
+  },
+  {
+    "id": "conversion.post_click_passive",
+    "category": "conversion",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "clicked_pending_download",
+      "post_click_worker"
+    ],
+    "confidence": 1,
+    "desc": "已点击且用户未明确要链接 → 对话内不自动推链"
+  },
+  {
+    "id": "conversion.post_click_explicit_link",
+    "category": "conversion",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "direct_cta",
+      "clicked"
+    ],
+    "confidence": 1,
+    "desc": "已点击 + 明确要链接 → 仅 direct_cta 重发 tracking 链"
+  },
+  {
+    "id": "conversion.complete_stop_click",
+    "category": "conversion",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "click_promotion_complete",
+      "clicked_followup_sent"
+    ],
+    "confidence": 1,
+    "desc": "click_only：clicked_followup 已发或点击超 24h → 停止自动推链"
   },
   {
     "id": "conversion.objection",
@@ -958,14 +907,14 @@ const RULES = [
     "id": "conversion.complete_stop",
     "category": "conversion",
     "priority": "low",
-    "active": true,
+    "active": false,
     "keywords": [
       "downloaded",
       "registered",
       "paid"
     ],
     "confidence": 1,
-    "desc": "已下载/注册/付费 → 停止下载话术"
+    "desc": "【full 模式】已下载/注册/付费 → 停止下载话术"
   },
   {
     "id": "conversion.script_hook_reply",
@@ -986,10 +935,11 @@ const RULES = [
     "keywords": [
       "conversion_decision_skips_llm",
       "first_push",
-      "direct_cta"
+      "direct_cta",
+      "operator_app_conversion"
     ],
     "confidence": 1,
-    "desc": "first_push/direct_cta/after_warmup/asset_keyword → 话术+链接直出，跳过 LLM"
+    "desc": "first_push/direct_cta/after_warmup/operator_app_conversion/asset_keyword → 话术+链接直出，跳过 LLM"
   },
   {
     "id": "conversion.clicked_worker_only",
@@ -1001,7 +951,7 @@ const RULES = [
       "queue_clicked_not_downloaded"
     ],
     "confidence": 1,
-    "desc": "已点击未下不在对话内发 clicked_followup，仅 worker +2min 培育"
+    "desc": "已点击后跟进不在对话内发，仅 worker +2min 培育"
   },
   {
     "id": "channel.bot_nurture",
@@ -1065,16 +1015,39 @@ const RULES = [
     "desc": "暖聊 3–5 轮曝光链接未点击 → after_warmup 跟进"
   },
   {
-    "id": "nurture.click_no_download",
+    "id": "nurture.pre_click_only",
     "category": "nurture",
     "priority": "high",
     "active": true,
     "keywords": [
-      "clicked_not_downloaded_10m",
+      "has_click=false"
+    ],
+    "confidence": 1,
+    "desc": "推链培育仅当未点击；已点击用户不进 first/second/warm/silent 链"
+  },
+  {
+    "id": "nurture.clicked_post_followup",
+    "category": "nurture",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "clicked_post_followup_2m",
       "+120s"
     ],
     "confidence": 1,
-    "desc": "已点击未下载 +2min → app_link_clicked_followup"
+    "desc": "已点击 +2min → clicked_followup（不检查 download）"
+  },
+  {
+    "id": "nurture.pending_upgrade",
+    "category": "nurture",
+    "priority": "high",
+    "active": true,
+    "keywords": [
+      "superseded",
+      "user_count_advanced"
+    ],
+    "confidence": 1,
+    "desc": "user_count 前进时取消过时 pending（修 second_round 空洞）"
   },
   {
     "id": "nurture.pending_dedupe",
@@ -1083,10 +1056,11 @@ const RULES = [
     "active": true,
     "keywords": [
       "pending",
-      "sending"
+      "sending",
+      "same_trigger"
     ],
     "confidence": 1,
-    "desc": "仅 pending/sending 培育阻塞重排队；已发送可进入下一节点（兼顾 H11 频率）"
+    "desc": "同 trigger 的 pending/sending 不重复排队；不同阶段可升级"
   },
   {
     "id": "nurture.db_scripts",
@@ -1125,12 +1099,23 @@ const RULES = [
     "id": "nurture.silent_24h",
     "category": "nurture",
     "priority": "low",
-    "active": true,
+    "active": false,
     "keywords": [
       "silent_24h"
     ],
     "confidence": 1,
-    "desc": "静默 24 小时 → 软提醒"
+    "desc": "【已废弃】代码未调度 silent_24h"
+  },
+  {
+    "id": "nurture.stop_if_downloaded",
+    "category": "nurture",
+    "priority": "low",
+    "active": false,
+    "keywords": [
+      "stop_if_downloaded"
+    ],
+    "confidence": 1,
+    "desc": "【click_only 废弃】不再查 download 事件"
   },
   {
     "id": "worker.auto_delivery",
@@ -1232,18 +1217,6 @@ const RULES = [
     ],
     "confidence": 1,
     "desc": "每轮刷新 loneliness_score"
-  },
-  {
-    "id": "orchestrator.reply_consistency",
-    "category": "orchestrator",
-    "priority": "medium",
-    "active": true,
-    "keywords": [
-      "reply_consistency",
-      "0.65"
-    ],
-    "confidence": 0.65,
-    "desc": "出站一致性检查与兜底"
   },
   {
     "id": "orchestrator.tracking_wrap",
@@ -1867,87 +1840,11 @@ const RULES = [
     ],
     "confidence": 0.9,
     "desc": "意图 boundary.data_privacy"
-  },
-  {
-    "id": "safety.self_harm_ideation.core",
-    "category": "safety",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "kill myself",
-      "end it all",
-      "suicide",
-      "不想活",
-      "自杀"
-    ],
-    "confidence": 0.98,
-    "desc": "意图 safety.self_harm_ideation"
-  },
-  {
-    "id": "safety.minor_signal.core",
-    "category": "safety",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "i am 15",
-      "i'm 16",
-      "under 18",
-      "我15岁",
-      "未成年"
-    ],
-    "confidence": 0.94,
-    "desc": "意图 safety.minor_signal"
-  },
-  {
-    "id": "safety.sexual_explicit.core",
-    "category": "safety",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "explicit sexual",
-      "nude",
-      "sex chat",
-      "露骨",
-      "裸照"
-    ],
-    "confidence": 0.92,
-    "desc": "意图 safety.sexual_explicit"
-  },
-  {
-    "id": "safety.abuse_threat.core",
-    "category": "safety",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "hurt you",
-      "blackmail",
-      "forced me",
-      "威胁",
-      "伤害你"
-    ],
-    "confidence": 0.94,
-    "desc": "意图 safety.abuse_threat"
-  },
-  {
-    "id": "safety.illegal_request.core",
-    "category": "safety",
-    "priority": "high",
-    "active": true,
-    "keywords": [
-      "fraud",
-      "hacking",
-      "buy drugs",
-      "诈骗",
-      "黑客"
-    ],
-    "confidence": 0.92,
-    "desc": "意图 safety.illegal_request"
   }
 ];
 
 const CATEGORY_LABEL = {
   channel: ['入站通道', 'category-channel'],
-  safety: ['安全过滤', 'category-safety'],
   intent: ['意图识别', 'category-intent'],
   level: ['用户分级', 'category-level'],
   policy: ['Policy', 'category-policy'],
@@ -2010,7 +1907,7 @@ function updateRuleStats() {
   const count = (cat) => RULES.filter(r => r.category === cat && r.active).length;
   const set = (id, n) => { const el = document.getElementById(id); if (el) el.textContent = n; };
   set('stat-channel', count('channel') + count('orchestrator'));
-  set('stat-safety', count('safety'));
+  set('stat-intent', count('intent'));
   set('stat-level', count('level') + count('policy') + count('rel') + count('operator'));
   set('stat-conversion', count('conversion') + count('nurture') + count('worker'));
 }

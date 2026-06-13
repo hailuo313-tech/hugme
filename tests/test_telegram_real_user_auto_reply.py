@@ -2,8 +2,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from services import telegram_real_user_auto_reply as real_auto_reply
-from services.reply_consistency import ADULT_FLIRT_FALLBACK_REPLY
 from services.telegram_real_user_auto_reply import _is_managed_telegram_account, _mark_read
 
 
@@ -103,20 +101,3 @@ async def test_mark_read_prefers_event_mark_read():
     assert event.marked is True
     assert client.calls == []
     assert ("info", "mtproto_auto_reply.read_ack") in log.events
-
-
-@pytest.mark.asyncio
-async def test_real_user_auto_reply_repairs_adult_flirt_refusal(monkeypatch):
-    async def _ctx(_db, _conversation_id):
-        return {"character": {"reply_length": "medium", "emoji_frequency": "low"}}
-
-    monkeypatch.setattr(real_auto_reply, "load_reply_consistency_context", _ctx)
-
-    output = await real_auto_reply._apply_reply_consistency(
-        object(),
-        "conv-1",
-        "I'm not comfortable discussing personal matters like that. Let's talk about something else.",
-        _Log(),
-    )
-
-    assert output == ADULT_FLIRT_FALLBACK_REPLY

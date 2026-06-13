@@ -8,7 +8,6 @@ from fastapi.testclient import TestClient
 
 from api.notifications import router
 from core.database import get_db
-from services.minor_protection import MINOR_BLOCK_DETAIL
 
 USER_ID = "00000000-0000-0000-0000-000000000901"
 
@@ -122,22 +121,35 @@ def test_send_now_rejects_unsupported_type_before_insert():
     db.commit.assert_not_awaited()
 
 
-def test_send_now_blocks_suspected_minor():
+def test_send_now_allows_suspected_minor_after_protection_removed():
     db = MagicMock()
-    db.execute = AsyncMock(return_value=_result(mappings_one=_active_user(is_minor_suspected=True)))
+    db.execute = AsyncMock(
+        side_effect=[
+            _result(mappings_one=_active_user(is_minor_suspected=True)),
+            _result(one=None),
+            _result(mappings_one={"daily_count": 0, "weekly_count": 0}),
+            _result(mappings_one=None),
+            _result(),
+            _result(),
+        ]
+    )
+    db.commit = AsyncMock()
     client = TestClient(_app(db))
 
-    r = client.post(
-        "/api/v1/notifications/send-now",
-        json={
-            "user_id": USER_ID,
-            "channel": "telegram",
-            "notification_type": "silent_reactivation",
-        },
-    )
+    with (
+        patch("api.notifications.settings.TELEGRAM_BOT_TOKEN", "token"),
+        patch("api.notifications.send_telegram_text", new=AsyncMock(return_value=7788)),
+    ):
+        r = client.post(
+            "/api/v1/notifications/send-now",
+            json={
+                "user_id": USER_ID,
+                "channel": "telegram",
+                "notification_type": "silent_reactivation",
+            },
+        )
 
-    assert r.status_code == 409
-    assert r.json()["detail"] == MINOR_BLOCK_DETAIL
+    assert r.status_code == 200, r.text
 
 
 def test_send_now_marks_failed_when_bot_token_missing():

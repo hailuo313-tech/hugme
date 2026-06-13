@@ -58,8 +58,10 @@ from services.memory_retriever import retrieve as memory_retrieve
 from services.conversation_context import load_conversation_context
 from services.emotion_lexicon import detect_language_from_text, normalize_language
 from services.app_download_conversion import (
+    build_asset_keyword_acknowledgement,
     clear_last_app_download_decision,
     conversion_decision_skips_llm,
+    looks_like_asset_keyword_manifest,
     maybe_select_app_download_reply,
 )
 from services.prompt_builder import (
@@ -125,27 +127,6 @@ async def generate_reply(
     )
     log.info("orchestrator.dispatch")
     clear_last_app_download_decision()
-
-    if db is not None:
-        from services.crisis_intervention import (
-            apply_crisis_protocol,
-            detect_crisis_in_text,
-        )
-
-        if detect_crisis_in_text(user_text):
-            crisis = await apply_crisis_protocol(
-                db,
-                user_id=user_id,
-                conversation_id=conversation_id,
-                user_text=user_text,
-                trigger_message_id=trigger_message_id,
-                trace_id=trace_id,
-            )
-            log.bind(
-                risk_event_id=crisis.risk_event_id,
-                handoff_task_id=crisis.handoff_task_id,
-            ).info("orchestrator.crisis.short_circuit")
-            return crisis.safety_reply
 
     started_at = time.time()
 
@@ -308,6 +289,13 @@ async def generate_reply(
         ).info("orchestrator.app_download_conversion.nudge_ready")
         if conversion_decision_skips_llm(decision):
             script_reply = str(getattr(decision, "content", "") or "").strip()
+            if getattr(decision, "intent", None) == "asset_keyword_request":
+                if not script_reply or looks_like_asset_keyword_manifest(script_reply):
+                    script_reply = build_asset_keyword_acknowledgement(
+                        user_text,
+                        assets=list(getattr(decision, "assets", []) or []),
+                        language=getattr(decision, "language", None),
+                    )
             log.bind(
                 result="conversion_script_skip_llm" if script_reply else "conversion_script_empty",
                 category_key=getattr(decision, "category_key", None),
@@ -435,53 +423,11 @@ def _append_conservative_download_nudge(
 
 
 def _asset_keyword_acknowledgement(user_text: str, decision: Any) -> str:
-    asset_types = {str(asset.get("asset_type") or "").lower() for asset in getattr(decision, "assets", [])}
-    has_image = "image" in asset_types
-    has_video = "video" in asset_types
-    if has_image and has_video:
-        en = "Sure, I’m sending the photos and video here."
-    elif has_image:
-        en = "Sure, I’m sending the photos here."
-    elif has_video:
-        en = "Sure, I’m sending the video here."
-    else:
-        en = "Sure, I’m sending it here."
-
-    lang = normalize_language(getattr(decision, "language", None) or detect_language_from_text(user_text) or "en")
-    translations = {
-        "fr": {
-            "both": "Oui, je t’envoie les photos et la vidéo ici.",
-            "image": "Oui, je t’envoie les photos ici.",
-            "video": "Oui, je t’envoie la vidéo ici.",
-            "other": "Oui, je t’envoie ça ici.",
-        },
-        "es": {
-            "both": "Sí, te envío las fotos y el video aquí.",
-            "image": "Sí, te envío las fotos aquí.",
-            "video": "Sí, te envío el video aquí.",
-            "other": "Sí, te lo envío aquí.",
-        },
-        "pt": {
-            "both": "Sim, vou te mandar as fotos e o vídeo aqui.",
-            "image": "Sim, vou te mandar as fotos aqui.",
-            "video": "Sim, vou te mandar o vídeo aqui.",
-            "other": "Sim, vou te mandar aqui.",
-        },
-        "ja": {
-            "both": "うん、写真と動画をここに送るね。",
-            "image": "うん、写真をここに送るね。",
-            "video": "うん、動画をここに送るね。",
-            "other": "うん、ここに送るね。",
-        },
-        "ko": {
-            "both": "응, 사진이랑 영상을 여기로 보낼게.",
-            "image": "응, 사진을 여기로 보낼게.",
-            "video": "응, 영상을 여기로 보낼게.",
-            "other": "응, 여기로 보낼게.",
-        },
-    }
-    key = "both" if has_image and has_video else "image" if has_image else "video" if has_video else "other"
-    return translations.get(lang, {}).get(key, en)
+    return build_asset_keyword_acknowledgement(
+        user_text,
+        assets=list(getattr(decision, "assets", []) or []),
+        language=getattr(decision, "language", None),
+    )
 
 
 def _conservative_download_nudge(decision: Any) -> str | None:
@@ -880,6 +826,8 @@ _SYSTEM_LEAK_PATTERN = re.compile(
 
 def _is_system_leaked_content(content: str) -> bool:
     """检测 assistant 历史消息是否包含系统提示泄漏特征（前缀或正文注释）。"""
+    if looks_like_asset_keyword_manifest(content):
+        return True
     stripped = content.lstrip()
     if any(stripped.startswith(prefix) for prefix in _SYSTEM_LEAK_PREFIXES):
         return True
