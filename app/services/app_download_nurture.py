@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from datetime import datetime, timedelta, timezone
@@ -16,6 +17,7 @@ from services.level_engine import country_tier
 from services.link_attribution import wrap_text_links_with_tracking
 from services.profile_intake import age_from_preferences, normalize_country_code
 from services.script_template_retriever import ScriptTemplateQuery, search_script_templates
+from services.telegram_peer_cache import resolve_cached_telegram_peer
 
 
 APP_DOWNLOAD_NURTURE_DELIVERY_MODE = "app_download_nurture"
@@ -118,22 +120,84 @@ def _round_category_key(round_num: int) -> str:
     return f"nurture_video_round_{round_num}"
 
 
+def _normalize_nurture_language(detected: str | None) -> str:
+    value = str(detected or "en").lower()
+    if value.startswith("zh"):
+        return "zh"
+    if value in {"es", "pt"}:
+        return value
+    return "en"
+
+
+_ES_NURTURE_RE = re.compile(
+    r"\b(hola|quiero|mi\s+vida|llamada|videollamada|ver|mañana|depois)\b",
+    re.IGNORECASE | re.UNICODE,
+)
+_PT_NURTURE_RE = re.compile(
+    r"\b(oi|quero|você|voce|chamada|vídeo|video|cadê|cade|amanhã|amanha)\b",
+    re.IGNORECASE | re.UNICODE,
+)
+
+
+def detect_nurture_language_from_text(text_value: str | None) -> str:
+    text = str(text_value or "").strip()
+    if not text:
+        return "en"
+    if re.search(r"[\u4e00-\u9fff]", text):
+        return "zh"
+    if _ES_NURTURE_RE.search(text):
+        return "es"
+    if _PT_NURTURE_RE.search(text):
+        return "pt"
+    return _normalize_nurture_language(detect_language_from_text(text, default="en"))
+
+
+async def persist_user_nurture_language(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    conversation_id: str,
+    language: str,
+) -> None:
+    await db.execute(
+        text(
+            """
+            UPDATE user_profiles
+            SET preferences = COALESCE(preferences, '{}'::jsonb)
+                || jsonb_build_object('nurture_language', CAST(:language AS text)),
+                updated_at = NOW()
+            WHERE user_id = CAST(:user_id AS uuid)
+            """
+        ),
+        {
+            "user_id": user_id,
+            "language": _normalize_nurture_language(language),
+        },
+    )
+
+
 def _video_chat_round_copy(round_num: int, language: str) -> str:
     copies: dict[int, dict[str, str]] = {
         1: {
-            "en": "Hey, still there? Want to video chat for a sec?",
-            "zh": "还在吗？要不要打个视频聊聊？",
+            "en": "Still here? Tap call on my profile for a quick video.",
+            "zh": "我还在呢，点我资料页的视频通话打过来，聊一小会儿？",
+            "es": "Sigo aquí. Toca videollamada en mi perfil si quieres hablar ahora.",
+            "pt": "Ainda estou aqui. Toca em chamada de vídeo no meu perfil se quiser conversar.",
         },
         2: {
-            "en": "You went quiet on me… still down for a quick video call?",
-            "zh": "你怎么不说话了…还想视频聊吗？",
+            "en": "I was waiting for you. Tap call on my profile — I'll pick up.",
+            "zh": "我刚刚还在等你，点我资料页的视频通话打过来，我会接。",
+            "es": "Te estaba esperando. Toca videollamada en mi perfil y te contesto.",
+            "pt": "Eu estava te esperando. Toca na chamada do meu perfil que eu atendo.",
         },
         3: {
-            "en": "Been thinking about you — want to video chat tonight?",
-            "zh": "想你了呢，今晚要不要视频聊会儿？",
+            "en": "I liked talking with you yesterday. Tap call on my profile tonight if you're free.",
+            "zh": "昨天聊得挺开心，今晚有空就点我资料页的视频打过来。",
+            "es": "Me gustó hablar contigo ayer. Esta noche toca videollamada en mi perfil si puedes.",
+            "pt": "Gostei de falar com você ontem. Hoje à noite toca em chamada no meu perfil se puder.",
         },
     }
-    lang = "zh" if str(language or "").lower().startswith("zh") else "en"
+    lang = _normalize_nurture_language(language)
     return copies.get(round_num, copies[1]).get(lang, copies[round_num]["en"])
 
 
@@ -162,6 +226,17 @@ async def schedule_nurture_after_reply(
         db,
         conversation_id=conversation_id,
     )
+    cached_peer = await resolve_cached_telegram_peer(
+        db,
+        conversation_id=conversation_id,
+        user_id=user_id,
+        account_id=sender_account_id,
+        chat_id=chat_id,
+    )
+    if cached_peer:
+        sender_account_id = sender_account_id or cached_peer.get("account_id")
+        if telegram_access_hash is None and cached_peer.get("access_hash") is not None:
+            telegram_access_hash = int(cached_peer["access_hash"])
 
     state = await _load_conversation_state(db, user_id=user_id, conversation_id=conversation_id)
     if not state:
@@ -171,6 +246,21 @@ async def schedule_nurture_after_reply(
 
     last_assistant_at = state.get("last_assistant_at") or _utc_now()
     stale_after = last_assistant_at if isinstance(last_assistant_at, datetime) else _utc_now()
+
+    lock_holder = await _pending_nurture_sender_lock(
+        db,
+        conversation_id=conversation_id,
+        sender_account_id=sender_account_id,
+    )
+    if lock_holder:
+        logger.bind(
+            component="app_download_nurture",
+            trace_id=trace_id,
+            conversation_id=conversation_id,
+            lock_holder=lock_holder,
+            sender_account_id=sender_account_id,
+        ).info("app_download_nurture.sender_lock_skip")
+        return 0
 
     await _cancel_superseded_round_followups(
         db,
@@ -228,6 +318,7 @@ async def schedule_download_followups_after_reply(
     assistant_message_id: str,
     trace_id: str | None,
     account_id: str | None = None,
+    telegram_access_hash: int | None = None,
 ) -> int:
     return await schedule_nurture_after_reply(
         db,
@@ -238,6 +329,7 @@ async def schedule_download_followups_after_reply(
         assistant_message_id=assistant_message_id,
         trace_id=trace_id,
         account_id=account_id,
+        telegram_access_hash=telegram_access_hash,
         source="reply",
     )
 
@@ -252,6 +344,7 @@ async def schedule_asset_keyword_followup_after_reply(
     assistant_message_id: str,
     trace_id: str | None,
     account_id: str | None = None,
+    telegram_access_hash: int | None = None,
 ) -> int:
     return await schedule_nurture_after_reply(
         db,
@@ -262,6 +355,7 @@ async def schedule_asset_keyword_followup_after_reply(
         assistant_message_id=assistant_message_id,
         trace_id=trace_id,
         account_id=account_id,
+        telegram_access_hash=telegram_access_hash,
         source="asset_keyword",
     )
 
@@ -313,7 +407,7 @@ async def _build_video_round_content(
     country_code = normalize_country_code((profile or {}).get("country_code") or _prefs(profile).get("country_code"))
     age = age_from_preferences(_prefs(profile))
     is_t1 = country_tier(country_code) == "T1" if country_code else None
-    language = _nurture_reply_language(history)
+    language = _nurture_reply_language(history, profile=profile)
     category_key = _round_category_key(round_num)
     trigger = _round_trigger(round_num)
 
@@ -325,6 +419,7 @@ async def _build_video_round_content(
         language=language,
         query=_last_user_text(history) or trigger,
         trace_id=trace_id,
+        ab_seed=conversation_id,
     )
     content = (script_content or _video_chat_round_copy(round_num, language)).strip()
     content = _strip_legacy_user_quote_prefix(content)
@@ -501,16 +596,18 @@ async def should_skip_stale_nurture_message(
 
     stale_after = _coerce_datetime(metadata.get("cancel_if_user_message_after"))
     if stale_after:
-        replied = (
+        from services.nurture_reply_handler import is_spam_reply
+
+        rows = (
             await db.execute(
                 text(
                     """
-                    SELECT 1
+                    SELECT content
                     FROM messages
                     WHERE conversation_id = CAST(:conversation_id AS uuid)
                       AND sender_type = 'user'
                       AND created_at > CAST(:stale_after AS timestamptz)
-                    LIMIT 1
+                    ORDER BY created_at ASC
                     """
                 ),
                 {
@@ -518,9 +615,11 @@ async def should_skip_stale_nurture_message(
                     "stale_after": stale_after,
                 },
             )
-        ).fetchone()
-        if replied:
-            return "user_replied_after_queue"
+        ).fetchall()
+        for row in rows:
+            content = row[0] if not hasattr(row, "_mapping") else row._mapping.get("content")
+            if content and not is_spam_reply(str(content)):
+                return "user_replied_after_queue"
 
     return None
 
@@ -781,7 +880,7 @@ async def _build_contextual_content(
     country_code = normalize_country_code((profile or {}).get("country_code") or _prefs(profile).get("country_code"))
     age = age_from_preferences(_prefs(profile))
     is_t1 = country_tier(country_code) == "T1" if country_code else None
-    language = _nurture_reply_language(history)
+    language = _nurture_reply_language(history, profile=profile)
 
     script_content: str | None = None
     script_hit_id: str | None = None
@@ -818,6 +917,14 @@ async def _build_contextual_content(
     return content, meta
 
 
+def _pick_ab_script_hit(hits: list[Any], *, seed: str) -> Any | None:
+    if not hits:
+        return None
+    digest = hashlib.md5(str(seed or "").encode("utf-8")).hexdigest()
+    idx = int(digest, 16) % len(hits)
+    return hits[idx]
+
+
 async def _select_script_content(
     db: AsyncSession,
     *,
@@ -827,6 +934,7 @@ async def _select_script_content(
     language: str,
     query: str,
     trace_id: str | None,
+    ab_seed: str | None = None,
 ) -> tuple[str | None, str | None]:
     try:
         result = await search_script_templates(
@@ -839,7 +947,7 @@ async def _select_script_content(
                 hook="reply",
                 category_key=category_key,
                 language=language,
-                limit=1,
+                limit=8,
             ),
             trace_id=trace_id,
         )
@@ -849,9 +957,49 @@ async def _select_script_content(
             error_type=type(exc).__name__,
         ).warning("app_download_nurture.script_search_failed")
         return None, None
-    if not result.hits:
+    hit = _pick_ab_script_hit(result.hits, seed=ab_seed or category_key)
+    if not hit:
         return None, None
-    return result.hits[0].content, result.hits[0].id
+    return hit.content, hit.id
+
+
+async def _pending_nurture_sender_lock(
+    db: AsyncSession,
+    *,
+    conversation_id: str,
+    sender_account_id: str | None,
+) -> str | None:
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT metadata->>'sender_account_id' AS sender_account_id
+                FROM message_schedules
+                WHERE metadata->>'delivery_mode' = :delivery_mode
+                  AND metadata->>'conversation_id' = :conversation_id
+                  AND metadata->>'nurture_kind' = :nurture_kind
+                  AND metadata->>'trigger' = ANY(:triggers)
+                  AND status = 'pending'
+                ORDER BY send_at ASC
+                LIMIT 1
+                """
+            ),
+            {
+                "delivery_mode": APP_DOWNLOAD_NURTURE_DELIVERY_MODE,
+                "conversation_id": conversation_id,
+                "nurture_kind": NURTURE_KIND_VIDEO_CHAT,
+                "triggers": list(_NURTURE_ROUND_TRIGGERS),
+            },
+        )
+    ).fetchone()
+    if not row:
+        return None
+    holder = str(row[0] if not hasattr(row, "_mapping") else row._mapping.get("sender_account_id") or "")
+    if not holder:
+        return None
+    if sender_account_id and holder == str(sender_account_id):
+        return None
+    return holder
 
 
 async def _load_profile(db: AsyncSession, *, user_id: str) -> dict[str, Any] | None:
@@ -933,8 +1081,12 @@ def _clean_text(text_value: str) -> str:
     return value.replace('"', "'")
 
 
-def _nurture_reply_language(history: list[dict[str, Any]]) -> str:
-    """Use the user's last 3 messages; newest message breaks ties."""
+def _nurture_reply_language(
+    history: list[dict[str, Any]],
+    *,
+    profile: dict[str, Any] | None = None,
+) -> str:
+    """Use the user's last 3 messages; profile language is fallback only."""
     user_texts: list[str] = []
     for row in reversed(history):
         if str(row.get("sender_type") or "").lower() != "user":
@@ -947,23 +1099,22 @@ def _nurture_reply_language(history: list[dict[str, Any]]) -> str:
             break
 
     if not user_texts:
+        prefs = _prefs(profile)
+        for key in ("nurture_language", "language", "lang"):
+            pref = prefs.get(key) or (profile or {}).get(key)
+            if pref:
+                return _normalize_nurture_language(str(pref))
         return "en"
 
     votes: dict[str, int] = {}
     for idx, text in enumerate(user_texts):
-        detected = detect_language_from_text(text, default="en")
-        bucket = "zh" if detected == "zh" else "en"
+        bucket = detect_nurture_language_from_text(text)
         votes[bucket] = votes.get(bucket, 0) + (3 - idx)
 
-    zh_score = votes.get("zh", 0)
-    en_score = votes.get("en", 0)
-    if zh_score > en_score:
-        return "zh"
-    if en_score > zh_score:
-        return "en"
-
-    latest = detect_language_from_text(user_texts[0], default="en")
-    return "zh" if latest == "zh" else "en"
+    ranked = sorted(votes.items(), key=lambda item: (-item[1], item[0]))
+    if len(ranked) == 1 or ranked[0][1] > ranked[1][1]:
+        return ranked[0][0]
+    return detect_nurture_language_from_text(user_texts[0])
 
 
 def _prefs(profile: dict[str, Any] | None) -> dict[str, Any]:

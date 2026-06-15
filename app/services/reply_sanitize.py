@@ -85,7 +85,10 @@ _GENERIC_AI_REFUSAL_RE = re.compile(
     r"non posso aiutarti con richieste di natura sessuale|"
     r"no puedo ayudarte con solicitudes de naturaleza sexual|"
     r"não posso ajudar com pedidos de natureza sexual|"
-    r"i don(?:'t| not) open external links"
+    r"i don(?:'t| not) open external links|"
+    r"i(?:'m| am) unable to access external links|"
+    r"unable to access external links|"
+    r"can(?:'t| not) access external links"
     r")",
     re.IGNORECASE,
 )
