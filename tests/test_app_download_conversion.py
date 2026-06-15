@@ -7,7 +7,10 @@ import services.app_download_conversion as conversion
 from services.app_download_conversion import (
     APP_DOWNLOAD_CATEGORIES,
     _FunnelState,
+    _build_asset_keyword_reply_text,
     _choose_category,
+    conversion_decision_skips_llm,
+    AppDownloadDecision,
     _keyword_matches,
     _relationship_stage,
     _reply_language,
@@ -42,7 +45,37 @@ def test_image_asset_keyword_migration_completes_photo_terms() -> None:
     assert "用户聊天中想要看本人图片的关键词" in sql
 
 
-def test_selector_uses_clicked_not_downloaded_followup_after_delay() -> None:
+def test_asset_keyword_post_click_omits_download_link() -> None:
+    body = _build_asset_keyword_reply_text(
+        app_download_url="https://app.example/download",
+        assets=[{"caption": "here you go"}],
+        include_download_link=False,
+    )
+
+    assert "https://app.example/download" not in body
+    assert "here you go" in body
+
+
+def test_objection_and_trust_skip_llm() -> None:
+    for category_key in ("app_download_objection", "trust_reassurance"):
+        assert conversion_decision_skips_llm(
+            AppDownloadDecision(
+                content="x {{app_download_url}}",
+                category_key=category_key,
+                script_hit_id="1",
+                assets=[],
+                user_level="C",
+                persona_slug=None,
+                intent=category_key,
+                scene_step="test",
+                country_code=None,
+                age=None,
+                is_t1_country=None,
+            )
+        )
+
+
+def test_selector_defers_clicked_followup_to_worker() -> None:
     category, intent, scene_step = _choose_category(
         user_text="hey",
         state=_FunnelState(
@@ -55,9 +88,46 @@ def test_selector_uses_clicked_not_downloaded_followup_after_delay() -> None:
         user_level="B",
     )
 
-    assert category == "app_link_clicked_followup"
-    assert intent == "app_link_clicked_followup"
-    assert scene_step == "clicked_not_downloaded"
+    assert category is None
+    assert intent == "clicked_pending_download"
+    assert scene_step == "post_click_worker"
+
+
+def test_clicked_explicit_link_wins_over_click_promotion_complete() -> None:
+    category, intent, scene_step = _choose_category(
+        user_text="send me the download link again",
+        state=_FunnelState(
+            tracking_id="trk_1",
+            minutes_since_link=30.0,
+            clicked=True,
+            clicked_followup_sent=True,
+            hours_since_click=1.0,
+        ),
+        assistant_reply_count=5,
+        user_level="B",
+    )
+
+    assert category == "app_download_direct_cta"
+    assert intent == "app_download_direct_cta"
+
+
+def test_click_promotion_complete_stops_passive_post_click() -> None:
+    category, intent, scene_step = _choose_category(
+        user_text="hey",
+        state=_FunnelState(
+            tracking_id="trk_1",
+            minutes_since_link=30.0,
+            clicked=True,
+            clicked_followup_sent=True,
+            hours_since_click=1.0,
+        ),
+        assistant_reply_count=5,
+        user_level="B",
+    )
+
+    assert category is None
+    assert intent == "click_promotion_complete"
+    assert scene_step == "post_click"
 
 
 def test_selector_does_not_resend_recent_unclicked_link() -> None:
@@ -92,7 +162,8 @@ def test_selector_resends_link_when_user_explicitly_asks_during_cooldown() -> No
     assert scene_step == "pre_click"
 
 
-def test_selector_stops_after_download_handoff() -> None:
+def test_selector_stops_after_download_handoff(monkeypatch) -> None:
+    monkeypatch.setattr(conversion.settings, "APP_DOWNLOAD_FUNNEL_MODE", "full")
     category, intent, scene_step = _choose_category(
         user_text="done",
         state=_FunnelState(
@@ -238,6 +309,16 @@ def test_asset_keyword_requires_asset_request_intent() -> None:
         "cock",
         asset_kind="video",
     )
+    assert _keyword_matches("nudes", "nudes", asset_kind="image")
+    assert _keyword_matches("send nudes", "nudes", asset_kind="image")
+    assert _keyword_matches("发个视频", "视频", asset_kind="video")
+    assert _keyword_matches("有视频吗", "视频", asset_kind="video")
+    assert _keyword_matches("能不能发个小视频", "小视频", asset_kind="video")
+    assert not _keyword_matches(
+        "昨天那个视频拍得真不错",
+        "视频",
+        asset_kind="video",
+    )
 
 
 @pytest.mark.asyncio
@@ -313,6 +394,7 @@ async def test_asset_keyword_template_selects_attached_media(monkeypatch) -> Non
     assert "https://app.example/download" in decision.content
     assert "(Code: c5a8we)" in decision.content
     assert "everything is unlocked there" in decision.content
+    assert "custom video" not in decision.content
     assert decision.assets[0]["asset_url"] == "https://cdn.example/video.mp4"
 
 
@@ -411,5 +493,217 @@ async def test_asset_keyword_template_combines_image_and_video_media(monkeypatch
     )
 
     assert decision is not None
-    assert [asset["asset_type"] for asset in decision.assets] == ["video", "image"]
+    assert [asset["asset_type"] for asset in decision.assets] == ["image", "video"]
     assert decision.scene_step == "asset_keyword:video,photo"
+
+
+@pytest.mark.asyncio
+async def test_asset_keyword_chinese_video_matches_builtin_keyword(monkeypatch) -> None:
+    class Result:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def fetchall(self):
+            return self._rows
+
+    class FakeDb:
+        async def execute(self, sql, params=None):
+            sql_text = str(sql)
+            if "FROM script_templates" in sql_text:
+                return Result(
+                    [
+                        SimpleNamespace(
+                            _mapping={
+                                "id": "66666666-6666-6666-6666-666666666666",
+                                "category_key": "app_download_first_push",
+                                "title": conversion.ASSET_KEYWORD_TRIGGER_TITLES[0],
+                                "content": "video, vid, custom video",
+                                "language": "en",
+                                "platform": "telegram_real_user",
+                                "user_level": None,
+                                "persona_slug": None,
+                                "hook": "reply",
+                            }
+                        )
+                    ]
+                )
+            if "FROM script_template_assets" in sql_text:
+                return Result(
+                    [
+                        SimpleNamespace(
+                            _mapping={
+                                "id": "asset-video",
+                                "asset_type": "video",
+                                "asset_url": "https://cdn.example/clip.mp4",
+                                "mime_type": "video/mp4",
+                                "caption": None,
+                                "sort_order": 0,
+                            }
+                        )
+                    ]
+                )
+            return Result([])
+
+    async def fake_resolve_app_download_url(_db):
+        return "https://app.example/download"
+
+    monkeypatch.setattr(conversion, "resolve_app_download_url", fake_resolve_app_download_url)
+    monkeypatch.setattr(conversion.settings, "APP_DOWNLOAD_CONVERSION_ENABLED", True)
+
+    decision = await maybe_select_app_download_reply(
+        db=FakeDb(),
+        user_id="11111111-1111-1111-1111-111111111111",
+        conversation_id="22222222-2222-2222-2222-222222222222",
+        user_text="发个视频",
+        profile_row={"user_level": "C"},
+        character_row=None,
+        assistant_reply_count=0,
+        trigger_message_id=None,
+        trace_id="trace-cn-video",
+        classified_intent=None,
+    )
+
+    assert decision is not None
+    assert decision.intent == "asset_keyword_request"
+    assert "视频" in decision.scene_step
+
+
+@pytest.mark.asyncio
+async def test_asset_keyword_nudes_matches_template_keyword(monkeypatch) -> None:
+    class Result:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def fetchall(self):
+            return self._rows
+
+    class FakeDb:
+        async def execute(self, sql, params=None):
+            sql_text = str(sql)
+            if "FROM script_templates" in sql_text:
+                return Result(
+                    [
+                        SimpleNamespace(
+                            _mapping={
+                                "id": "55555555-5555-5555-5555-555555555555",
+                                "category_key": "app_download_first_push",
+                                "title": conversion.ASSET_KEYWORD_TRIGGER_TITLES[1],
+                                "content": "photo, pic, Nudes",
+                                "language": "en",
+                                "platform": "telegram_real_user",
+                                "user_level": None,
+                                "persona_slug": None,
+                                "hook": "reply",
+                            }
+                        )
+                    ]
+                )
+            if "FROM script_template_assets" in sql_text:
+                return Result(
+                    [
+                        SimpleNamespace(
+                            _mapping={
+                                "id": "asset-image",
+                                "asset_type": "image",
+                                "asset_url": "https://cdn.example/nude.jpg",
+                                "mime_type": "image/jpeg",
+                                "caption": None,
+                                "sort_order": 0,
+                            }
+                        )
+                    ]
+                )
+            return Result([])
+
+    async def fake_resolve_app_download_url(_db):
+        return "https://app.example/download"
+
+    monkeypatch.setattr(conversion, "resolve_app_download_url", fake_resolve_app_download_url)
+    monkeypatch.setattr(conversion.settings, "APP_DOWNLOAD_CONVERSION_ENABLED", True)
+
+    decision = await maybe_select_app_download_reply(
+        db=FakeDb(),
+        user_id="11111111-1111-1111-1111-111111111111",
+        conversation_id="22222222-2222-2222-2222-222222222222",
+        user_text="Nudes",
+        profile_row={"user_level": "C"},
+        character_row=None,
+        assistant_reply_count=0,
+        trigger_message_id=None,
+        trace_id="trace-nudes",
+        classified_intent=None,
+    )
+
+    assert decision is not None
+    assert decision.intent == "asset_keyword_request"
+    assert decision.scene_step == "asset_keyword:Nudes"
+
+
+@pytest.mark.asyncio
+async def test_asset_keyword_bypasses_d_level_script_block(monkeypatch) -> None:
+    class Result:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def fetchall(self):
+            return self._rows
+
+    class FakeDb:
+        async def execute(self, sql, params=None):
+            sql_text = str(sql)
+            if "FROM script_templates" in sql_text:
+                return Result(
+                    [
+                        SimpleNamespace(
+                            _mapping={
+                                "id": "55555555-5555-5555-5555-555555555555",
+                                "category_key": "app_download_first_push",
+                                "title": conversion.ASSET_KEYWORD_TRIGGER_TITLES[1],
+                                "content": "photo, pic",
+                                "language": "en",
+                                "platform": "telegram_real_user",
+                                "user_level": None,
+                                "persona_slug": None,
+                                "hook": "reply",
+                            }
+                        )
+                    ]
+                )
+            if "FROM script_template_assets" in sql_text:
+                return Result(
+                    [
+                        SimpleNamespace(
+                            _mapping={
+                                "id": "asset-image",
+                                "asset_type": "image",
+                                "asset_url": "https://cdn.example/pic.jpg",
+                                "mime_type": "image/jpeg",
+                                "caption": None,
+                                "sort_order": 0,
+                            }
+                        )
+                    ]
+                )
+            return Result([])
+
+    async def fake_resolve_app_download_url(_db):
+        return "https://app.example/download"
+
+    monkeypatch.setattr(conversion, "resolve_app_download_url", fake_resolve_app_download_url)
+    monkeypatch.setattr(conversion.settings, "APP_DOWNLOAD_CONVERSION_ENABLED", True)
+
+    decision = await maybe_select_app_download_reply(
+        db=FakeDb(),
+        user_id="11111111-1111-1111-1111-111111111111",
+        conversation_id="22222222-2222-2222-2222-222222222222",
+        user_text="send me a photo",
+        profile_row={"user_level": "D"},
+        character_row=None,
+        assistant_reply_count=0,
+        trigger_message_id=None,
+        trace_id="trace-d-asset",
+        classified_intent=None,
+    )
+
+    assert decision is not None
+    assert decision.intent == "asset_keyword_request"

@@ -206,6 +206,13 @@ class BusinessMetrics:
             ['worker_name'],
             registry=self.registry
         )
+
+        self.orchestrator_context_load_total = Counter(
+            'eris_orchestrator_context_load_total',
+            'Orchestrator conversation context load attempts',
+            ['result'],
+            registry=self.registry
+        )
         
         # Error Metrics
         self.errors_total = Counter(
@@ -344,6 +351,11 @@ class BusinessMetrics:
     def update_worker_queue_size(self, worker_name: str, size: int):
         """Update worker queue size gauge"""
         self.worker_queue_size.labels(worker_name=worker_name).set(size)
+
+    def record_orchestrator_context_load(self, *, success: bool) -> None:
+        """Increment orchestrator Redis/history context load counter."""
+        result = "success" if success else "failed"
+        self.orchestrator_context_load_total.labels(result=result).inc()
     
     def increment_error(self, error_type: str, severity: str):
         """Increment error counter"""

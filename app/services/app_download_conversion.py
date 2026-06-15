@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextvars
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -10,7 +11,10 @@ from sqlalchemy import text
 from core.config import settings
 from services.app_download_platforms import resolve_app_download_url
 from services.emotion_lexicon import detect_language_from_text, normalize_language
-from services.level_engine import country_tier
+from services.link_cooldown import (
+    is_conversation_link_cooldown_active,
+    is_within_link_cooldown,
+)
 from services.profile_intake import age_from_preferences, normalize_country_code
 from services.script_match_hooks import (
     ScriptMatchContext,
@@ -68,9 +72,14 @@ ASSET_IMAGE_KEYWORDS: tuple[str, ...] = (
     "mirror selfie",
     "your face",
     "your body",
+    "nudes",
     "照片",
     "图片",
     "自拍",
+    "裸体",
+    "裸照",
+    "大奶",
+    "奶子",
 )
 ASSET_VIDEO_KEYWORDS: tuple[str, ...] = (
     "video",
@@ -88,13 +97,9 @@ ASSET_VIDEO_KEYWORDS: tuple[str, ...] = (
     "short clip",
     "private video",
     "bedroom video",
-    "cam",
-    "webcam",
-    "video call",
-    "facetime",
-    "live",
-    "live show",
-    "private call",
+    "视频",
+    "小视频",
+    "录像",
 )
 ASSET_REQUEST_TERMS: tuple[str, ...] = (
     "send",
@@ -117,11 +122,19 @@ ASSET_REQUEST_TERMS: tuple[str, ...] = (
     "lemme",
     "please",
     "pls",
+    "have",
+    "got",
+    "any",
+    "do you have",
+    "you have",
     "想",
     "想看",
     "想要",
     "要",
     "看",
+    "发",
+    "有",
+    "有没有",
 )
 ASSET_BLOCKED_KEYWORDS: tuple[str, ...] = (
     "cock",
@@ -207,6 +220,23 @@ async def maybe_select_app_download_reply(
         return None
     if db is None:
         return None
+
+    from services.user_request_intent import (
+        bypasses_link_cooldown,
+        forces_app_download_script,
+        is_serious_conversation_request,
+        is_trust_reassurance_request,
+    )
+
+    force_link_script = forces_app_download_script(user_text)
+    if await is_conversation_link_cooldown_active(db, conversation_id=conversation_id) and not bypasses_link_cooldown(user_text):
+        logger.bind(
+            component="app_download_conversion",
+            trace_id=trace_id,
+            conversation_id=conversation_id,
+        ).info("app_download_conversion.link_cooldown_skip")
+        return None
+
     profile = profile_row or {}
     if _relationship_stage(profile) == "S5":
         return None
@@ -219,6 +249,50 @@ async def maybe_select_app_download_reply(
     age = age_from_preferences(_preferences(profile))
     if user_level == "D":
         return None
+
+    if force_link_script:
+        forced = await _build_forced_link_decision(
+            db,
+            user_text=user_text,
+            destination_url=destination_url,
+            profile=profile,
+            character_row=character_row,
+            conversation_id=conversation_id,
+            trigger_message_id=trigger_message_id,
+            trace_id=trace_id,
+        )
+        if forced is not None:
+            return forced
+
+    if is_trust_reassurance_request(user_text):
+        trust = await _build_category_script_decision(
+            db,
+            user_text=user_text,
+            category_key="trust_reassurance",
+            scene_step="trust_priority",
+            destination_url=destination_url,
+            profile=profile,
+            character_row=character_row,
+            conversation_id=conversation_id,
+            trigger_message_id=trigger_message_id,
+            trace_id=trace_id,
+            include_download_url=False,
+        )
+        if trust is not None:
+            return trust
+
+    if is_serious_conversation_request(user_text):
+        serious = await _build_serious_conversation_decision(
+            db,
+            user_text=user_text,
+            profile=profile,
+            character_row=character_row,
+            conversation_id=conversation_id,
+            trigger_message_id=trigger_message_id,
+            trace_id=trace_id,
+        )
+        if serious is not None:
+            return serious
 
     asset_triggers = await _match_asset_keyword_triggers(
         db=db,
@@ -241,44 +315,87 @@ async def maybe_select_app_download_reply(
                 if asset_key:
                     seen_asset_ids.add(asset_key)
                 assets.append(asset)
-        if assets:
-            is_t1 = country_tier(country_code) == "T1" if country_code else None
-            content = _append_asset_download_copy(
-                str(first_hit.get("content") or ""),
-                app_download_url=destination_url,
-            )
-            decision = AppDownloadDecision(
-                content=content,
-                category_key=str(first_hit.get("category_key") or "app_download_first_push"),
-                script_hit_id=str(first_hit["id"]),
-                assets=assets,
-                user_level=user_level,
-                persona_slug=first_hit.get("persona_slug") or _persona_slug(character_row),
-                intent="asset_keyword_request",
-                scene_step=f"asset_keyword:{','.join(matched_keywords[:4])}",
-                country_code=country_code,
-                age=age,
-                is_t1_country=is_t1,
-                language=_reply_language(profile, user_text),
-            )
-            _last_decision.set(decision)
-            await _audit_decision(
-                db=db,
-                decision=decision,
-                conversation_id=conversation_id,
-                trigger_message_id=trigger_message_id,
-                user_text=user_text,
-                trace_id=trace_id,
-            )
-            logger.bind(
-                component="app_download_conversion",
-                trace_id=trace_id,
-                category_key=decision.category_key,
-                script_hit_id=decision.script_hit_id,
-                matched_keyword=",".join(matched_keywords),
-                asset_count=len(assets),
-            ).info("app_download_conversion.asset_keyword_selected")
-            return decision
+        is_t1 = country_tier(country_code) == "T1" if country_code else None
+        content = _append_asset_download_copy(
+            str(first_hit.get("content") or ""),
+            app_download_url=destination_url,
+        )
+        decision = AppDownloadDecision(
+            content=content,
+            category_key=str(first_hit.get("category_key") or "app_download_first_push"),
+            script_hit_id=str(first_hit["id"]),
+            assets=assets,
+            user_level=user_level,
+            persona_slug=first_hit.get("persona_slug") or _persona_slug(character_row),
+            intent="asset_keyword_request",
+            scene_step=f"asset_keyword:{','.join(matched_keywords[:4])}",
+            country_code=country_code,
+            age=age,
+            is_t1_country=is_t1,
+            language=_reply_language(profile, user_text),
+        )
+        _last_decision.set(decision)
+        await _audit_decision(
+            db=db,
+            decision=decision,
+            conversation_id=conversation_id,
+            trigger_message_id=trigger_message_id,
+            user_text=user_text,
+            trace_id=trace_id,
+        )
+        logger.bind(
+            component="app_download_conversion",
+            trace_id=trace_id,
+            category_key=decision.category_key,
+            script_hit_id=decision.script_hit_id,
+            matched_keyword=",".join(matched_keywords),
+            asset_count=len(assets),
+        ).info("app_download_conversion.asset_keyword_selected")
+        return decision
+
+    asset_triggers = await _match_whitelist_asset_fallback(
+        db=db,
+        user_text=user_text,
+        user_level=user_level,
+        persona_slug=_persona_slug(character_row),
+        language=_reply_language(profile, user_text),
+    )
+    if asset_triggers:
+        first_hit, matched_keyword = asset_triggers[0]
+        assets: list[dict[str, Any]] = []
+        for asset in await _load_script_assets(db=db, script_template_id=first_hit["id"]):
+            assets.append(asset)
+        is_t1 = country_tier(country_code) == "T1" if country_code else None
+        decision = AppDownloadDecision(
+            content=_append_asset_download_copy("", app_download_url=destination_url),
+            category_key=str(first_hit.get("category_key") or "app_download_first_push"),
+            script_hit_id=str(first_hit["id"]),
+            assets=assets,
+            user_level=user_level,
+            persona_slug=first_hit.get("persona_slug") or _persona_slug(character_row),
+            intent="asset_keyword_request",
+            scene_step=f"asset_keyword:{matched_keyword}",
+            country_code=country_code,
+            age=age,
+            is_t1_country=is_t1,
+            language=_reply_language(profile, user_text),
+        )
+        _last_decision.set(decision)
+        await _audit_decision(
+            db=db,
+            decision=decision,
+            conversation_id=conversation_id,
+            trigger_message_id=trigger_message_id,
+            user_text=user_text,
+            trace_id=trace_id,
+        )
+        logger.bind(
+            component="app_download_conversion",
+            trace_id=trace_id,
+            matched_keyword=matched_keyword,
+            asset_count=len(assets),
+        ).info("app_download_conversion.asset_keyword_whitelist_fallback")
+        return decision
 
     state = await _load_latest_funnel_state(
         db=db,
@@ -407,7 +524,7 @@ async def _load_script_assets(*, db: Any, script_template_id: str) -> list[dict[
     result = await db.execute(
         text(
             """
-            SELECT id, asset_type, asset_url, mime_type, caption, sort_order
+            SELECT id, asset_type, asset_url, storage_path, mime_type, caption, sort_order
             FROM script_template_assets
             WHERE script_template_id = CAST(:id AS uuid)
               AND is_active = TRUE
@@ -510,6 +627,312 @@ def _asset_kind_from_title(title: str) -> str | None:
     return None
 
 
+def _detect_whitelist_asset_kind(user_text: str | None) -> str | None:
+    from services.video_request_handoff import (
+        is_live_video_call_request,
+        is_prerecorded_video_file_request,
+    )
+
+    text_value = _normalize_keyword_text(user_text)
+    if not text_value or is_live_video_call_request(text_value):
+        return None
+    if is_prerecorded_video_file_request(text_value):
+        return "video"
+    for keyword in ASSET_IMAGE_KEYWORDS:
+        if _keyword_matches(text_value, keyword, asset_kind="image"):
+            return "image"
+    if _has_any(
+        text_value,
+        (
+            "show me more",
+            "see more of you",
+            "want to see more",
+            "something different",
+            "private video",
+            "想看更多",
+            "再多发",
+            "发更多",
+        ),
+    ):
+        if _has_any(text_value, ("video", "videos", "vid", "clip", "视频", "录像")):
+            return "video"
+        return "image"
+    return None
+
+
+async def _match_whitelist_asset_fallback(
+    *,
+    db: Any,
+    user_text: str,
+    user_level: str,
+    persona_slug: str | None,
+    language: str,
+) -> list[tuple[dict[str, Any], str]]:
+    kind = _detect_whitelist_asset_kind(user_text)
+    if not kind:
+        return []
+    title = ASSET_KEYWORD_TRIGGER_TITLES[0 if kind == "video" else 1]
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT id, category_key, title, content, language, platform,
+                       user_level, persona_slug, hook
+                FROM script_templates
+                WHERE status = 'approved'
+                  AND title = :title
+                  AND hook = 'reply'
+                  AND (platform = 'telegram_real_user' OR platform IS NULL)
+                  AND (user_level = :user_level OR user_level IS NULL)
+                  AND (persona_slug = :persona_slug OR persona_slug IS NULL OR :persona_slug IS NULL)
+                  AND language IN (:language, 'en')
+                ORDER BY
+                  CASE WHEN language = :language THEN 0 ELSE 1 END,
+                  updated_at DESC,
+                  created_at DESC
+                LIMIT 1
+                """
+            ),
+            {
+                "title": title,
+                "user_level": user_level,
+                "persona_slug": persona_slug,
+                "language": language or "en",
+            },
+        )
+    ).first()
+    if row is None:
+        return []
+    data = dict(row._mapping)
+    matched_keyword = kind
+    text_value = _normalize_keyword_text(user_text)
+    keywords = ASSET_VIDEO_KEYWORDS if kind == "video" else ASSET_IMAGE_KEYWORDS
+    for keyword in keywords:
+        if _keyword_matches(text_value, keyword, asset_kind=kind):
+            matched_keyword = keyword
+            break
+    return [(data, matched_keyword)]
+
+
+async def _build_serious_conversation_decision(
+    db: Any,
+    *,
+    user_text: str,
+    profile: dict[str, Any],
+    character_row: dict[str, Any] | None,
+    conversation_id: str,
+    trigger_message_id: str | None,
+    trace_id: str,
+) -> AppDownloadDecision:
+    lang = _reply_language(profile, user_text)
+    replies = {
+        "en": "Got it — no games. What's really on your mind?",
+        "zh": "好，我们认真聊。你想聊什么？",
+        "es": "Entendido — sin juegos. ¿Qué tienes en mente?",
+        "pt": "Entendi — sem joguinhos. O que você quer falar de verdade?",
+        "fr": "Compris — pas de blagues. Qu'est-ce qui te préoccupe vraiment?",
+    }
+    content = replies.get(lang, replies["en"])
+    user_level = str(profile.get("user_level") or "C").upper()
+    country_code = normalize_country_code(
+        profile.get("country_code") or _preferences(profile).get("country_code")
+    )
+    age = age_from_preferences(_preferences(profile))
+    is_t1 = country_tier(country_code) == "T1" if country_code else None
+    decision = AppDownloadDecision(
+        content=content,
+        category_key="trust_reassurance",
+        script_hit_id="serious-conversation-fallback",
+        assets=[],
+        user_level=user_level,
+        persona_slug=_persona_slug(character_row),
+        intent="serious_conversation",
+        scene_step="serious_priority",
+        country_code=country_code,
+        age=age,
+        is_t1_country=is_t1,
+        language=lang,
+    )
+    _last_decision.set(decision)
+    await _audit_decision(
+        db=db,
+        decision=decision,
+        conversation_id=conversation_id,
+        trigger_message_id=trigger_message_id,
+        user_text=user_text,
+        trace_id=trace_id,
+    )
+    return decision
+
+
+async def _build_category_script_decision(
+    db: Any,
+    *,
+    user_text: str,
+    category_key: str,
+    scene_step: str,
+    destination_url: str,
+    profile: dict[str, Any],
+    character_row: dict[str, Any] | None,
+    conversation_id: str,
+    trigger_message_id: str | None,
+    trace_id: str,
+    include_download_url: bool = True,
+) -> AppDownloadDecision | None:
+    user_level = str(profile.get("user_level") or "C").upper()
+    country_code = normalize_country_code(
+        profile.get("country_code") or _preferences(profile).get("country_code")
+    )
+    age = age_from_preferences(_preferences(profile))
+    persona_slug = _persona_slug(character_row)
+    result = await search_script_templates(
+        db=db,
+        query=ScriptTemplateQuery(
+            query=_script_query(user_text, category_key, None),
+            platform="telegram_real_user",
+            user_level=user_level,
+            persona_slug=persona_slug,
+            hook="reply",
+            category_key=category_key,
+            language=_reply_language(profile, user_text),
+            limit=1,
+        ),
+        trace_id=trace_id,
+    )
+    if result.hits:
+        hit = result.hits[0]
+        raw = hit.content.replace("{{app_download_url}}", "").strip()
+        if include_download_url:
+            content = _compact_app_link_reply(
+                _render_script(hit.content, app_download_url=destination_url, force_url=False),
+                destination_url=destination_url,
+            )
+        else:
+            from services.link_cooldown import strip_links_from_reply
+
+            content = strip_links_from_reply(raw)
+            content = re.sub(r"\s*\(code:\s*c5a8we\)", "", content, flags=re.IGNORECASE).strip()
+            content = re.sub(r"\s*tap here now:?\s*$", "", content, flags=re.IGNORECASE).strip()
+        script_hit_id = str(hit.id)
+        resolved_persona = hit.persona_slug or persona_slug
+    else:
+        if category_key == "trust_reassurance":
+            content = "I'm 100% real — just a girl on her phone, not a bot."
+        else:
+            return None
+        script_hit_id = f"{category_key}-fallback"
+        resolved_persona = persona_slug
+    is_t1 = country_tier(country_code) == "T1" if country_code else None
+    decision = AppDownloadDecision(
+        content=content.strip(),
+        category_key=category_key,
+        script_hit_id=script_hit_id,
+        assets=[],
+        user_level=user_level,
+        persona_slug=resolved_persona,
+        intent=category_key,
+        scene_step=scene_step,
+        country_code=country_code,
+        age=age,
+        is_t1_country=is_t1,
+        language=_reply_language(profile, user_text),
+    )
+    _last_decision.set(decision)
+    await _audit_decision(
+        db=db,
+        decision=decision,
+        conversation_id=conversation_id,
+        trigger_message_id=trigger_message_id,
+        user_text=user_text,
+        trace_id=trace_id,
+    )
+    return decision
+
+
+async def _build_forced_link_decision(
+    db: Any,
+    *,
+    user_text: str,
+    destination_url: str,
+    profile: dict[str, Any],
+    character_row: dict[str, Any] | None,
+    conversation_id: str,
+    trigger_message_id: str | None,
+    trace_id: str,
+) -> AppDownloadDecision | None:
+    from services.user_request_intent import is_broken_link_report
+
+    user_level = str(profile.get("user_level") or "C").upper()
+    country_code = normalize_country_code(
+        profile.get("country_code") or _preferences(profile).get("country_code")
+    )
+    age = age_from_preferences(_preferences(profile))
+    persona_slug = _persona_slug(character_row)
+    category_key = "app_download_direct_cta"
+    scene_step = "app_link_broken_retry" if is_broken_link_report(user_text) else "pre_click_forced"
+    result = await search_script_templates(
+        db=db,
+        query=ScriptTemplateQuery(
+            query=_script_query(user_text, category_key, None),
+            platform="telegram_real_user",
+            user_level=user_level,
+            persona_slug=persona_slug,
+            hook="reply",
+            category_key=category_key,
+            language=_reply_language(profile, user_text),
+            limit=1,
+        ),
+        trace_id=trace_id,
+    )
+    if result.hits:
+        hit = result.hits[0]
+        content = _compact_app_link_reply(
+            _render_script(
+                hit.content,
+                app_download_url=destination_url,
+                force_url=False,
+            ),
+            destination_url=destination_url,
+        )
+        script_hit_id = str(hit.id)
+        resolved_persona = hit.persona_slug or persona_slug
+    else:
+        content = _compact_app_link_reply("", destination_url=destination_url)
+        script_hit_id = "forced-link-fallback"
+        resolved_persona = persona_slug
+    is_t1 = country_tier(country_code) == "T1" if country_code else None
+    decision = AppDownloadDecision(
+        content=content,
+        category_key=category_key,
+        script_hit_id=script_hit_id,
+        assets=[],
+        user_level=user_level,
+        persona_slug=resolved_persona,
+        intent="app_download_direct_cta",
+        scene_step=scene_step,
+        country_code=country_code,
+        age=age,
+        is_t1_country=is_t1,
+        language=_reply_language(profile, user_text),
+    )
+    _last_decision.set(decision)
+    await _audit_decision(
+        db=db,
+        decision=decision,
+        conversation_id=conversation_id,
+        trigger_message_id=trigger_message_id,
+        user_text=user_text,
+        trace_id=trace_id,
+    )
+    logger.bind(
+        component="app_download_conversion",
+        trace_id=trace_id,
+        category_key=category_key,
+        scene_step=scene_step,
+    ).info("app_download_conversion.forced_link_script")
+    return decision
+
+
 def _keyword_matches(normalized_text: str, keyword: str, *, asset_kind: str | None = None) -> bool:
     key = _normalize_keyword_text(keyword)
     if not key or key in ASSET_BLOCKED_KEYWORDS:
@@ -521,6 +944,8 @@ def _keyword_matches(normalized_text: str, keyword: str, *, asset_kind: str | No
     if key not in normalized_text:
         return False
     if normalized_text == key:
+        if asset_kind == "video" and key in {"video", "vid"}:
+            return False
         return True
     if _has_asset_request_intent(normalized_text):
         return True
@@ -576,16 +1001,16 @@ def _choose_category(
     minutes = state.minutes_since_link
     if classified_intent == "conversion.objection":
         return "app_download_objection", classified_intent, "download_objection"
+    if _is_broken_link_report(text_value):
+        return "app_download_direct_cta", "app_download_direct_cta", "app_link_broken_retry"
     persona_location_question = _is_persona_location_question(text_value)
     direct_link_request = _is_direct_link_request(text_value)
     if state.tracking_id:
-        if state.downloaded or state.registered or state.paid:
-            return None, "third_party_handoff", "download_complete"
         if _is_explicit_link_request(text_value):
             return "app_download_direct_cta", "app_download_direct_cta", "pre_click"
-        if state.clicked and not state.downloaded and (minutes is None or minutes >= 3):
-            return "app_link_clicked_followup", "app_link_clicked_followup", "clicked_not_downloaded"
-        if not state.clicked and minutes is not None and minutes < 10:
+        if state.downloaded or state.registered or state.paid:
+            return None, "third_party_handoff", "download_complete"
+        if is_within_link_cooldown(minutes):
             return None, "recent_link_exposed", "pre_click"
 
     if _has_any(text_value, ("scam", "fake", "safe", "real", "why download", "why app", "is this real")):
@@ -618,6 +1043,23 @@ def _choose_category(
         return "app_download_direct_cta", "app_download_direct_cta", "pre_click"
 
     count = assistant_reply_count or 0
+    if _has_any(
+        text_value,
+        (
+            "what are you doing",
+            "what're you doing",
+            "how are you",
+            "what's up",
+            "whats up",
+            "wyd",
+            "how r u",
+            "how are u",
+            "在干嘛",
+            "干什么",
+            "忙什么",
+        ),
+    ):
+        return None, "smalltalk", "pre_click"
     if user_level in {"A", "S"} and count >= 2:
         return "operator_app_conversion", "operator_app_conversion", "pre_click_high_value"
     if count >= 3:
@@ -669,8 +1111,19 @@ async def _audit_decision(
 def _render_script(content: str, *, app_download_url: str, force_url: bool = False) -> str:
     rendered = str(content).replace("{{app_download_url}}", app_download_url)
     if force_url and app_download_url and app_download_url not in rendered:
-        return f"{rendered.rstrip()}\n{app_download_url}"
+        return _compact_app_link_reply(rendered, destination_url=app_download_url)
     return rendered
+
+
+def _compact_app_link_reply(content: str, *, destination_url: str) -> str:
+    """One clean link line — avoids duplicate URLs and stray destination fragments."""
+    url = str(destination_url or "").strip()
+    if not url:
+        return str(content or "").strip()
+    body = str(content or "").strip()
+    if body and url in body and body.lower().count("http") <= 1:
+        return body
+    return f"TAP HERE — private room unlocked: {url} (code: c5a8we)"
 
 
 def _append_asset_download_copy(content: str, *, app_download_url: str) -> str:
@@ -792,7 +1245,17 @@ def _is_direct_link_request(text_value: str) -> bool:
     )
 
 
+def _is_broken_link_report(text_value: str) -> bool:
+    from services.user_request_intent import is_broken_link_report
+
+    return is_broken_link_report(text_value)
+
+
 def _is_explicit_link_request(text_value: str) -> bool:
+    from services.user_request_intent import is_explicit_app_link_request
+
+    if is_explicit_app_link_request(text_value):
+        return True
     return _has_any(
         text_value,
         (
@@ -807,7 +1270,5 @@ def _is_explicit_link_request(text_value: str) -> bool:
             "send me",
             "链接",
             "下载",
-            "閾炬帴",
-            "涓嬭浇",
         ),
     )

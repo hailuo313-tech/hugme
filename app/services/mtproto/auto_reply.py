@@ -17,6 +17,7 @@ from core.database import AsyncSessionLocal
 from services.memory_writer import maybe_write_memory
 from services.llm_orchestrator import LLMOrchestratorError, generate_reply
 from services.app_download_conversion import get_last_app_download_decision
+from services.link_cooldown import is_conversation_link_cooldown_active, strip_links_from_reply
 from services.link_attribution import render_tracking_links_as_html_cta, wrap_text_links_with_tracking
 from services.emotion_lexicon import detect_language_from_text, normalize_language
 from services.profile_intake import (
@@ -29,12 +30,21 @@ from services.profile_intake import (
     write_age,
     write_country_code,
 )
+from services.reply_sanitize import sanitize_outbound_reply
 from services.script_asset_delivery import send_mtproto_asset
-from services.app_download_nurture import (
-    schedule_asset_keyword_followup_after_reply,
-    schedule_download_followups_after_reply,
+from services.user_request_intent import (
+    bypasses_link_cooldown,
+    forces_app_download_script,
+    is_media_asset_request,
+    is_trust_reassurance_request,
 )
+from services.video_request_handoff import maybe_queue_live_video_call_operator_review
+from services.app_download_nurture import schedule_nurture_after_reply
+from services.nurture_reply_handler import handle_nurture_user_reply
+from services.telegram_peer_cache import upsert_telegram_peer_cache
 from services.user_level_service import user_level_service
+from services.user_reply_guard import user_allows_auto_reply
+from services.human_takeover_gate import evaluate_human_takeover_gate
 from services.mtproto.account_routing import pin_mtproto_account_route
 from services.mtproto.human_like_send import HumanLikeSendPolicy, send_human_like_message
 
@@ -239,11 +249,15 @@ async def _get_or_create_user_and_conversation(
             },
         )
 
+        if not await user_allows_auto_reply(db, user_id):
+            await db.commit()
+            return user_id, ""
+
         conv_row = (
             await db.execute(
                 text(
                     "SELECT id FROM conversations "
-                    "WHERE user_id=:uid AND state NOT IN ('CLOSED','ESCALATED') "
+                    "WHERE user_id=:uid AND state NOT IN ('CLOSED','ESCALATED','FROZEN') "
                     "ORDER BY updated_at DESC LIMIT 1"
                 ),
                 {"uid": user_id},
@@ -526,6 +540,9 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
         external_id=external_id,
         nickname=nickname,
     )
+    if not conv_id:
+        log.bind(user_id=user_id).info("mtproto.inbound.user_reply_blocked")
+        return
     log = log.bind(user_id=user_id, conv_id=conv_id, telegram_message_id=message_id)
 
     redis = await _get_redis()
@@ -539,6 +556,23 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
         log.bind(error_type=type(exc).__name__).warning("mtproto.route.pin_failed")
 
     async with AsyncSessionLocal() as db:
+        try:
+            await upsert_telegram_peer_cache(
+                db,
+                user_id=user_id,
+                conversation_id=conv_id,
+                account_id=str(account_id),
+                chat_id=int(sender_id),
+                access_hash=getattr(sender, "access_hash", None),
+                source="mtproto_inbound_message",
+                trace_id=trace_id,
+            )
+            await db.commit()
+        except Exception as exc:
+            await db.rollback()
+            log.bind(error_type=type(exc).__name__).warning(
+                "mtproto.peer_cache.upsert_failed"
+            )
         try:
             await _persist_technical_country_hint(
                 db,
@@ -559,6 +593,73 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
         content=text_value,
     )
     log.bind(message_id=user_msg_id).info("mtproto.inbound.persisted")
+
+    async with AsyncSessionLocal() as db:
+        try:
+            gate = await evaluate_human_takeover_gate(db, conv_id)
+            await db.commit()
+            if not gate.allows_auto_reply:
+                log.bind(human_gate_reason=gate.reason).info(
+                    "mtproto.inbound.human_takeover_blocked"
+                )
+                return
+            if gate.released_to_ai:
+                log.bind(human_gate_reason=gate.reason).info(
+                    "mtproto.inbound.human_takeover_released"
+                )
+        except Exception as exc:
+            await db.rollback()
+            log.bind(error_type=type(exc).__name__).warning(
+                "mtproto.inbound.human_takeover_gate_failed"
+            )
+
+    nurture_immediate_reply: str | None = None
+    async with AsyncSessionLocal() as db:
+        try:
+            nurture_action = await handle_nurture_user_reply(
+                db,
+                user_id=user_id,
+                external_user_id=external_id,
+                conversation_id=conv_id,
+                chat_id=int(sender_id),
+                account_id=str(account_id),
+                user_text=text_value,
+                trace_id=trace_id,
+                telegram_access_hash=getattr(sender, "access_hash", None),
+            )
+            await db.commit()
+            nurture_immediate_reply = nurture_action.immediate_reply_text
+            log.bind(
+                nurture_intent=nurture_action.intent,
+                nurture_valid_reply=nurture_action.valid_reply,
+                nurture_language=nurture_action.nurture_language,
+            ).info("mtproto.nurture_reply.handled")
+        except Exception as exc:
+            await db.rollback()
+            log.bind(error_type=type(exc).__name__).warning("mtproto.nurture_reply.failed")
+
+    async with AsyncSessionLocal() as db:
+        try:
+            video_job_id = await maybe_queue_live_video_call_operator_review(
+                db,
+                user_id=user_id,
+                external_user_id=external_id,
+                conversation_id=conv_id,
+                chat_id=int(sender_id),
+                account_id=str(account_id),
+                user_text=text_value,
+                trace_id=trace_id,
+                telegram_access_hash=getattr(sender, "access_hash", None),
+            )
+            if video_job_id:
+                log.bind(job_id=video_job_id).info(
+                    "mtproto.video_request_handoff.keyword_review_queued"
+                )
+        except Exception as exc:
+            await db.rollback()
+            log.bind(error_type=type(exc).__name__).warning(
+                "mtproto.video_request_handoff.failed"
+            )
 
     _spawn_call_broadcast_enqueue(
         user_id=user_id,
@@ -616,7 +717,20 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
             reply_text = "I am a little busy right now, talk in a bit?"
         if profile_followup and profile_followup not in reply_text:
             reply_text = f"{reply_text}\n\n{profile_followup}"
-        app_download_decision = get_last_app_download_decision()
+        if nurture_immediate_reply and nurture_immediate_reply not in reply_text:
+            reply_text = f"{nurture_immediate_reply}\n\n{reply_text}"
+        reply_text = sanitize_outbound_reply(reply_text, user_text=text_value)
+        link_cooldown_active = await is_conversation_link_cooldown_active(
+            db,
+            conversation_id=conv_id,
+        )
+        if link_cooldown_active and not bypasses_link_cooldown(text_value):
+            reply_text = strip_links_from_reply(reply_text)
+            app_download_decision = None
+        elif link_cooldown_active:
+            app_download_decision = get_last_app_download_decision()
+        else:
+            app_download_decision = get_last_app_download_decision()
         assistant_msg_id = str(uuid.uuid4())
         try:
             reply_text = await wrap_text_links_with_tracking(
@@ -705,46 +819,31 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
         log=log,
         source="outbound_assistant",
     )
-    is_asset_keyword_reply = (
-        app_download_decision is not None
+    nurture_source = (
+        "asset_keyword"
+        if app_download_decision is not None
         and getattr(app_download_decision, "intent", None) == "asset_keyword_request"
+        else "reply"
     )
-    if is_asset_keyword_reply:
-        async with AsyncSessionLocal() as db:
-            try:
-                await schedule_asset_keyword_followup_after_reply(
-                    db,
-                    user_id=user_id,
-                    external_user_id=external_id,
-                    conversation_id=conv_id,
-                    chat_id=int(sender_id),
-                    assistant_message_id=assistant_msg_id,
-                    trace_id=trace_id,
-                    account_id=str(account_id),
-                )
-            except Exception as exc:
-                await db.rollback()
-                log.bind(error_type=type(exc).__name__).warning(
-                    "mtproto.app_download_nurture.asset_schedule_failed"
-                )
-    else:
-        async with AsyncSessionLocal() as db:
-            try:
-                await schedule_download_followups_after_reply(
-                    db,
-                    user_id=user_id,
-                    external_user_id=external_id,
-                    conversation_id=conv_id,
-                    chat_id=int(sender_id),
-                    assistant_message_id=assistant_msg_id,
-                    trace_id=trace_id,
-                    account_id=str(account_id),
-                )
-            except Exception as exc:
-                await db.rollback()
-                log.bind(error_type=type(exc).__name__).warning(
-                    "mtproto.app_download_nurture.schedule_failed"
-                )
+    async with AsyncSessionLocal() as db:
+        try:
+            await schedule_nurture_after_reply(
+                db,
+                user_id=user_id,
+                external_user_id=external_id,
+                conversation_id=conv_id,
+                chat_id=int(sender_id),
+                assistant_message_id=assistant_msg_id,
+                trace_id=trace_id,
+                account_id=str(account_id),
+                telegram_access_hash=getattr(sender, "access_hash", None),
+                source=nurture_source,
+            )
+        except Exception as exc:
+            await db.rollback()
+            log.bind(error_type=type(exc).__name__).warning(
+                "mtproto.app_download_nurture.schedule_failed"
+            )
     if app_download_decision is not None:
         for asset in app_download_decision.assets:
             media_sent = await send_mtproto_asset(

@@ -64,7 +64,7 @@ async def test_llm_context_loader_reads_conv_user_context_first() -> None:
     await append_conversation_context(redis, user_id="u1", role="assistant", content="reply")
     await append_conversation_context(redis, user_id="u1", role="user", content="current")
 
-    history = await _load_recent_context(
+    history, load_failed = await _load_recent_context(
         redis=redis,
         user_id="u1",
         conversation_id="c1",
@@ -76,6 +76,7 @@ async def test_llm_context_loader_reads_conv_user_context_first() -> None:
         {"role": "user", "content": "previous"},
         {"role": "assistant", "content": "reply"},
     ]
+    assert load_failed is False
     assert redis.lrange_calls[0][0] == "conv:u1"
 
 
@@ -87,7 +88,7 @@ async def test_llm_context_loader_falls_back_to_legacy_ctx_when_conv_empty() -> 
         '{"role":"user","content":"current","msg_id":"m2","ts":2}',
     ]
 
-    history = await _load_recent_context(
+    history, load_failed = await _load_recent_context(
         redis=redis,
         user_id="u1",
         conversation_id="c1",
@@ -96,5 +97,6 @@ async def test_llm_context_loader_falls_back_to_legacy_ctx_when_conv_empty() -> 
     )
 
     assert history == [{"role": "user", "content": "legacy previous"}]
+    assert load_failed is False
     assert redis.lrange_calls[0][0] == "conv:u1"
     assert redis.lrange_calls[1][0] == "ctx:c1"
