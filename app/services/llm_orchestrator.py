@@ -61,11 +61,22 @@ from services.app_download_conversion import (
     clear_last_app_download_decision,
     maybe_select_app_download_reply,
 )
+from services.link_cooldown import (
+    is_conversation_link_cooldown_active,
+    reply_already_has_link_material,
+    strip_links_from_reply,
+)
+from services.prompt_history import sanitize_history_message_for_prompt
 from services.prompt_builder import (
     DEFAULT_SYSTEM_PROMPT,
     LAYER_ORDER,
     PromptInput,
     build_prompt,
+)
+from services.reply_sanitize import is_generic_ai_refusal, sanitize_outbound_reply
+from services.user_request_intent import (
+    bypasses_link_cooldown,
+    should_skip_download_nudge,
 )
 
 
@@ -81,6 +92,58 @@ class LLMOrchestratorError(RuntimeError):
 # = build_prompt(PromptInput(user_text="__placeholder__")).system_content
 
 DEFAULT_HISTORY_LIMIT = 10  # 历史消息默认条数（不含当前消息）
+
+_LLM_REFUSAL_RETRY_TEMPERATURE = 1.0
+
+
+def _finalize_reply(text_value: str, *, user_text: str | None = None) -> str:
+    return sanitize_outbound_reply(text_value, user_text=user_text)
+
+
+async def _chat_with_refusal_retry(
+    *,
+    messages: list[dict],
+    trace_id: str,
+    log: Any,
+) -> Any:
+    """Call chat once; on generic model refusal retry with warmer settings + alt provider."""
+    result = await llm_chat(
+        messages=messages,
+        trace_id=trace_id,
+        purpose="chat",
+        max_tokens=int(getattr(settings, "ORCHESTRATOR_CHAT_MAX_TOKENS", 160) or 160),
+    )
+    if result.error or not (result.content or "").strip():
+        return result
+    if not is_generic_ai_refusal(result.content):
+        return result
+
+    primary_provider = (settings.LLM_CHAT_PROVIDER or settings.LLM_PROVIDER or "openrouter").strip().lower()
+    retry_provider = "openrouter" if primary_provider == "novita" else "novita"
+    log.bind(
+        primary_model=result.model_used,
+        retry_provider=retry_provider,
+        retry_temperature=_LLM_REFUSAL_RETRY_TEMPERATURE,
+    ).info("orchestrator.refusal.retry")
+
+    retry = await llm_chat(
+        messages=messages,
+        trace_id=trace_id,
+        purpose="chat",
+        temperature=_LLM_REFUSAL_RETRY_TEMPERATURE,
+        force_model=settings.LLM_FALLBACK_MODEL,
+        provider=retry_provider,
+        max_tokens=int(getattr(settings, "ORCHESTRATOR_CHAT_MAX_TOKENS", 160) or 160),
+    )
+    if retry.content and not retry.error and not is_generic_ai_refusal(retry.content):
+        log.bind(model=retry.model_used).info("orchestrator.refusal.retry_ok")
+        return retry
+
+    log.bind(
+        retry_model=retry.model_used,
+        retry_error=retry.error,
+    ).warning("orchestrator.refusal.retry_failed")
+    return result
 
 
 # ── 公开入口 ──────────────────────────────────────────
@@ -128,14 +191,32 @@ async def generate_reply(
     started_at = time.time()
 
     history: list[dict[str, str]] = []
+    context_load_failed = False
     if redis is not None and history_limit > 0:
-        history = await _load_recent_context(
+        history, context_load_failed = await _load_recent_context(
             redis=redis,
             user_id=user_id,
             conversation_id=conversation_id,
             history_limit=history_limit,
             log=log,
         )
+        if context_load_failed:
+            try:
+                from services.business_metrics import business_metrics
+
+                business_metrics.record_orchestrator_context_load(success=False)
+            except Exception:
+                pass
+            log.bind(history_count=0).warning("orchestrator.context.load_failed_active")
+        else:
+            try:
+                from services.business_metrics import business_metrics
+
+                business_metrics.record_orchestrator_context_load(success=True)
+            except Exception:
+                pass
+            if history:
+                log.bind(history_count=len(history)).info("orchestrator.context.loaded")
 
     character_row, profile_row = await _load_db_context(db, user_id, conversation_id, log)
 
@@ -195,6 +276,10 @@ async def generate_reply(
                 log.bind(error_type=type(exc).__name__).warning(
                     "orchestrator.policy.exception"
                 )
+
+        if getattr(settings, "VIDEO_REQUEST_OPERATOR_HANDOFF_ENABLED", True):
+            # Live video-call reviews are queued in mtproto auto_reply where chat/account exist.
+            pass
 
         # REL-01：S0–S4 自动升降级（S5 不改；成功后 profile_row 供当轮 L4 使用）
         if settings.REL_STAGE_AUTO_ENABLED:
@@ -265,6 +350,20 @@ async def generate_reply(
         except Exception as exc:  # pragma: no cover
             log.bind(error_type=type(exc).__name__).warning("orchestrator.s5.load_failed")
 
+    link_cooldown_active = False
+    if db is not None:
+        link_cooldown_active = await is_conversation_link_cooldown_active(
+            db,
+            conversation_id=conversation_id,
+        )
+
+    from services.video_request_handoff import is_live_video_call_request
+
+    if is_live_video_call_request(user_text):
+        clear_last_app_download_decision()
+        log.bind(video_intent="live_call").info("orchestrator.live_video_call.ack")
+        return _finalize_reply(_live_video_call_acknowledgement(user_text), user_text=user_text)
+
     decision = await maybe_select_app_download_reply(
         db=db,
         user_id=user_id,
@@ -277,6 +376,9 @@ async def generate_reply(
         trace_id=trace_id,
         classified_intent=classified_intent,
     )
+    if link_cooldown_active and not bypasses_link_cooldown(user_text):
+        decision = None
+        clear_last_app_download_decision()
     if decision is not None:
         log.bind(
             result="success",
@@ -285,7 +387,7 @@ async def generate_reply(
             script_hit_id=decision.script_hit_id,
         ).info("orchestrator.app_download_conversion.nudge_ready")
         if getattr(decision, "intent", None) == "asset_keyword_request":
-            return _asset_keyword_acknowledgement(user_text, decision)
+            return _finalize_reply(_asset_keyword_acknowledgement(user_text, decision), user_text=user_text)
 
     prompt = build_prompt(
         PromptInput(
@@ -296,6 +398,7 @@ async def generate_reply(
             history=history,
             s5_phase=s5_phase_kw,
             current_assistant_reply_number=current_assistant_reply_number,
+            context_load_failed=context_load_failed,
         )
     )
     messages = prompt.messages
@@ -314,10 +417,11 @@ async def generate_reply(
         current_assistant_reply_number=current_assistant_reply_number,
         loneliness_score=loneliness_score_log,
         loneliness_utterance_tags=loneliness_utterance_tags,
+        context_load_failed=context_load_failed,
     ).info("orchestrator.prompt.assembled")
 
     try:
-        result = await llm_chat(messages=messages, trace_id=trace_id)
+        result = await _chat_with_refusal_retry(messages=messages, trace_id=trace_id, log=log)
     except Exception as exc:  # pragma: no cover - llm.chat 当前自吞异常，仅防御
         duration_ms = round((time.time() - started_at) * 1000, 1)
         log.bind(
@@ -357,8 +461,18 @@ async def generate_reply(
         history_count=len(history),
     ).info("orchestrator.reply")
 
-    reply_text = _repair_short_preference_interview_followup(user_text, result.content)
-    return _append_conservative_download_nudge(reply_text, decision)
+    reply_text = _finalize_reply(
+        _repair_short_preference_interview_followup(user_text, result.content),
+        user_text=user_text,
+    )
+    if link_cooldown_active and not bypasses_link_cooldown(user_text):
+        reply_text = strip_links_from_reply(reply_text)
+        log.info("orchestrator.link_cooldown.enforced")
+        return reply_text
+    return _finalize_reply(
+        _append_conservative_download_nudge(reply_text, decision, user_text=user_text),
+        user_text=user_text,
+    )
 
 
 # ── 内部 ──────────────────────────────────────────────
@@ -389,20 +503,24 @@ def _repair_short_preference_interview_followup(user_text: str, reply_text: str)
 def _append_conservative_download_nudge(
     reply_text: str,
     decision: Any | None,
+    *,
+    user_text: str = "",
 ) -> str:
     """方案 A：先保留 AI 对用户问题的自然回答，再轻轻追加下载入口。"""
-    if decision is None:
+    if decision is None or should_skip_download_nudge(user_text):
         return reply_text
     nudge = _conservative_download_nudge(decision)
     if not nudge:
-        return reply_text
-    base = (reply_text or "").strip()
+        return (reply_text or "").strip()
+    base = strip_links_from_reply((reply_text or "").strip())
     if not base:
         return nudge
+    if reply_already_has_link_material(base):
+        return base
     url = _first_url(nudge)
     if url and url in base:
         return base
-    return f"{base}\n\n{nudge}"
+    return f"{base} {nudge}"
 
 
 def _asset_keyword_acknowledgement(user_text: str, decision: Any) -> str:
@@ -455,29 +573,35 @@ def _asset_keyword_acknowledgement(user_text: str, decision: Any) -> str:
     return translations.get(lang, {}).get(key, en)
 
 
+def _live_video_call_acknowledgement(user_text: str) -> str:
+    """Warm holding reply while operator handles the live video call."""
+    lang = normalize_language(detect_language_from_text(user_text) or "en")
+    translations = {
+        "zh": "等一下宝贝，我这就给你打过来。",
+        "en": "Give me a sec babe, getting my camera ready for you.",
+        "es": "Espera un segundo cariño, estoy preparando la cámara para ti.",
+        "pt": "Espera um segundo amor, estou preparando a câmera pra você.",
+        "fr": "Attends une seconde chéri, je prépare ma caméra pour toi.",
+        "ja": "ちょっと待ってね、今カメラの準備するから。",
+        "ko": "잠깐만 기다려, 카메라 준비하고 바로 걸게.",
+    }
+    return translations.get(lang, translations["en"])
+
+
 def _conservative_download_nudge(decision: Any) -> str | None:
     url = _first_url(getattr(decision, "content", "") or "")
     if not url:
         return None
     category = str(getattr(decision, "category_key", "") or "").strip()
     if category == "app_download_direct_cta":
-        return (
-            "Let's chat on my private app instead, way safer than here. "
-            f"Grab it real quick and text me: {url} (Enter code: c5a8we)"
-        )
+        return f"Private app: {url} (code: c5a8we)"
     if category == "app_link_clicked_followup":
-        return f"If you still want to continue somewhere more private, the link is here: {url}"
+        return f"More private here: {url}"
     if category == "app_download_objection":
-        return (
-            "I only text close friends on my private encrypted app because TG keeps "
-            f"censoring our topics anyway. Takes like 15 seconds to set up, come over: {url}"
-        )
+        return f"Safer on my app: {url}"
     if category == "trust_reassurance":
-        return f"If you decide you want to try the private app, you can use this link: {url}"
-    return (
-        "Btw, my TG is lagging crazy right now and missing texts. Drop me a line "
-        f"on my main app here, it's free and way faster: {url} (Use code: c5a8we)"
-    )
+        return f"My app if you want: {url}"
+    return f"Faster on my app: {url} (code: c5a8we)"
 
 
 def _first_url(text_value: str) -> str | None:
@@ -626,7 +750,7 @@ async def _load_recent_context(
     conversation_id: str,
     history_limit: int,
     log,
-) -> list[dict[str, str]]:
+) -> tuple[list[dict[str, str]], bool]:
     """读 Redis 最近历史消息，优先使用 P1-19 ``conv:{user_id}``。
 
     新路径：``conv:{user_id}`` 用 ``RPUSH`` 写入，保留最近 50 轮（100 条）。
@@ -638,7 +762,9 @@ async def _load_recent_context(
     ``[{role, content}, ...]``，最多 ``history_limit`` 条。
 
     任何读取/解析失败都被吞掉，仅 warning，返回空列表。
+    第二个返回值：是否发生 Redis/解析错误（空历史但无异常时为 False）。
     """
+    load_failed = False
     try:
         history = await load_conversation_context(
             redis,
@@ -647,8 +773,9 @@ async def _load_recent_context(
             drop_latest=True,
         )
         if history:
-            return history
+            return _sanitize_loaded_history(history, log), False
     except Exception as exc:
+        load_failed = True
         log.bind(error_type=type(exc).__name__).warning(
             "orchestrator.conv_context.load_failed"
         )
@@ -657,13 +784,14 @@ async def _load_recent_context(
     try:
         raw_items = await redis.lrange(key, -(history_limit + 1), -1)
     except Exception as exc:  # 网络抖动 / Redis down
+        load_failed = True
         log.bind(error_type=type(exc).__name__).warning(
             "orchestrator.context.load_failed"
         )
-        return []
+        return [], True
 
     if not raw_items:
-        return []
+        return [], load_failed
 
     # 丢最末一条（当前消息，已由调用方传入 user_text 显式拼）
     history_items = raw_items[:-1] if len(raw_items) > history_limit else raw_items[:-1]
@@ -688,7 +816,26 @@ async def _load_recent_context(
             continue
         parsed.append({"role": role, "content": content})
 
-    return parsed[-history_limit:]
+    return _sanitize_loaded_history(parsed[-history_limit:], log), load_failed
+
+
+def _sanitize_loaded_history(
+    history: list[dict[str, str]],
+    log,
+) -> list[dict[str, str]]:
+    sanitized: list[dict[str, str]] = []
+    dropped = 0
+    for item in history:
+        role = item.get("role") or ""
+        content = item.get("content") or ""
+        cleaned = sanitize_history_message_for_prompt(role, content)
+        if cleaned is None:
+            dropped += 1
+            continue
+        sanitized.append({"role": role, "content": cleaned})
+    if dropped:
+        log.bind(dropped_history_messages=dropped).info("orchestrator.history.sanitized")
+    return sanitized
 
 
 def _normalize_role(role: Any) -> str | None:

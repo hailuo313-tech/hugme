@@ -179,7 +179,7 @@ async def test_app_download_nudge_keeps_llm_answer_first(monkeypatch, llm_orches
     )
 
     assert reply.startswith("Yes, I can slow down.")
-    assert "If you still want to continue somewhere more private" in reply
+    assert "More private here:" in reply
     assert "https://app.example/download" in reply
     assert "voluptuous woman" not in reply
 
@@ -208,8 +208,8 @@ async def test_app_download_direct_cta_keeps_llm_answer_first(monkeypatch, llm_o
     )
 
     assert reply.startswith("Here is the simple answer first.")
-    assert "Let's chat on my private app instead, way safer than here." in reply
-    assert "(Enter code: c5a8we)" in reply
+    assert "Private app:" in reply
+    assert "(code: c5a8we)" in reply
     assert "https://app.example/download" in reply
 
 
@@ -226,18 +226,9 @@ def test_app_download_nudge_uses_scene_specific_copy(llm_orchestrator):
         SimpleNamespace(category_key="app_download_objection", content=url)
     )
 
-    assert direct == (
-        "Let's chat on my private app instead, way safer than here. "
-        f"Grab it real quick and text me: {url} (Enter code: c5a8we)"
-    )
-    assert warmup == (
-        "Btw, my TG is lagging crazy right now and missing texts. Drop me a line "
-        f"on my main app here, it's free and way faster: {url} (Use code: c5a8we)"
-    )
-    assert objection == (
-        "I only text close friends on my private encrypted app because TG keeps "
-        f"censoring our topics anyway. Takes like 15 seconds to set up, come over: {url}"
-    )
+    assert direct == f"Private app: {url} (code: c5a8we)"
+    assert warmup == f"Faster on my app: {url} (code: c5a8we)"
+    assert objection == f"Safer on my app: {url}"
 
 
 def test_short_preference_reply_trims_interview_followup(llm_orchestrator):
@@ -1282,3 +1273,64 @@ async def test_relationship_stage_auto_adjust_updates_prompt_l4(
     assert "关系阶段：S3" in system
     assert "亲近" in system
     assert db.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_generate_reply_retries_once_on_generic_refusal(monkeypatch, llm_orchestrator):
+    calls: list[dict[str, Any]] = []
+
+    async def fake_chat(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            return _LLMResultStub(
+                content=(
+                    "I'm sorry, but I can't comply with this request. "
+                    "I'm an AI assistant designed to provide helpful and harmless responses."
+                ),
+                model_used="novita:deepseek/deepseek-v3-0324",
+            )
+        return _LLMResultStub(
+            content="You make my pulse race when you talk like that.",
+            model_used="openrouter:openai/gpt-4o-mini",
+            fallback_used=True,
+        )
+
+    monkeypatch.setattr(llm_orchestrator, "llm_chat", fake_chat)
+    monkeypatch.setattr(llm_orchestrator.settings, "LLM_CHAT_PROVIDER", "novita")
+    monkeypatch.setattr(llm_orchestrator.settings, "LLM_FALLBACK_MODEL", "openai/gpt-4o-mini")
+
+    reply = await llm_orchestrator.generate_reply(
+        user_id="user-1",
+        conversation_id="conv-1",
+        user_text="Mi fai eccitare",
+        trace_id="trace-refusal-retry",
+    )
+
+    assert len(calls) == 2
+    assert calls[1]["temperature"] == llm_orchestrator._LLM_REFUSAL_RETRY_TEMPERATURE
+    assert calls[1]["provider"] == "openrouter"
+    assert "pulse race" in reply
+
+
+@pytest.mark.asyncio
+async def test_generate_reply_replaces_refusal_when_retry_also_refuses(monkeypatch, llm_orchestrator):
+    refusal = (
+        "I'm sorry, but I can't comply with this request. "
+        "I'm an AI assistant designed to provide helpful and harmless responses."
+    )
+
+    async def fake_chat(**_kwargs):
+        return _LLMResultStub(content=refusal)
+
+    monkeypatch.setattr(llm_orchestrator, "llm_chat", fake_chat)
+    monkeypatch.setattr(llm_orchestrator.settings, "LLM_CHAT_PROVIDER", "novita")
+
+    reply = await llm_orchestrator.generate_reply(
+        user_id="user-1",
+        conversation_id="conv-1",
+        user_text="Mi fai eccitare",
+        trace_id="trace-refusal-fallback",
+    )
+
+    assert "AI assistant" not in reply
+    assert "Mi stai accendendo" in reply
