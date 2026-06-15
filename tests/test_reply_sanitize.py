@@ -7,6 +7,23 @@ from services.reply_sanitize import (
 )
 
 
+def test_is_generic_ai_refusal_detects_external_link_refusal():
+    text = (
+        "I'm unable to access external links. "
+        "What topic are you interested in discussing?"
+    )
+    assert is_generic_ai_refusal(text) is True
+
+
+def test_sanitize_replaces_external_link_refusal():
+    out = sanitize_outbound_reply(
+        "I'm unable to access external links. What topic are you interested in discussing?",
+        user_text="send me something spicy",
+    )
+    assert "unable to access external links" not in out.lower()
+    assert out == flirt_fallback_reply("send me something spicy")
+
+
 def test_is_generic_ai_refusal_detects_english_template():
     text = (
         "I'm sorry, but I can't comply with this request. "

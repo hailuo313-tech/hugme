@@ -174,7 +174,7 @@ async def test_app_download_nudge_keeps_llm_answer_first(monkeypatch, llm_orches
     reply = await llm_orchestrator.generate_reply(
         user_id="user-1",
         conversation_id="conv-1",
-        user_text="Can you have a serious conversation?",
+        user_text="I clicked the link but nothing happened",
         trace_id="trace-download-nudge",
     )
 
@@ -182,6 +182,33 @@ async def test_app_download_nudge_keeps_llm_answer_first(monkeypatch, llm_orches
     assert "More private here:" in reply
     assert "https://app.example/download" in reply
     assert "voluptuous woman" not in reply
+
+
+@pytest.mark.asyncio
+async def test_serious_conversation_skips_download_nudge(monkeypatch, llm_orchestrator):
+    async def fake_chat(*, messages, trace_id, **_kwargs):
+        return _LLMResultStub(content="Sure, we can talk seriously.")
+
+    async def fake_download_decision(**_kwargs):
+        return SimpleNamespace(
+            content="More private here: https://app.example/download",
+            category_key="app_link_clicked_followup",
+            scene_step="clicked_not_downloaded",
+            script_hit_id="script-1",
+        )
+
+    monkeypatch.setattr(llm_orchestrator, "llm_chat", fake_chat)
+    monkeypatch.setattr(llm_orchestrator, "maybe_select_app_download_reply", fake_download_decision)
+
+    reply = await llm_orchestrator.generate_reply(
+        user_id="user-1",
+        conversation_id="conv-1",
+        user_text="Can you have a serious conversation?",
+        trace_id="trace-serious-no-nudge",
+    )
+
+    assert reply == "Sure, we can talk seriously."
+    assert "https://app.example/download" not in reply
 
 
 @pytest.mark.asyncio
