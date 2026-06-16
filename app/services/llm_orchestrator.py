@@ -58,7 +58,9 @@ from services.memory_retriever import retrieve as memory_retrieve
 from services.conversation_context import load_conversation_context
 from services.emotion_lexicon import detect_language_from_text, normalize_language
 from services.app_download_conversion import (
+    apply_early_link_mandate_overlay,
     clear_last_app_download_decision,
+    decision_bypasses_link_cooldown,
     maybe_select_app_download_reply,
 )
 from services.link_cooldown import (
@@ -376,9 +378,21 @@ async def generate_reply(
         trace_id=trace_id,
         classified_intent=classified_intent,
     )
+    decision = await apply_early_link_mandate_overlay(
+        db=db,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        user_text=user_text,
+        profile_row=profile_row,
+        character_row=character_row,
+        trigger_message_id=trigger_message_id,
+        trace_id=trace_id,
+        decision=decision,
+    )
     if link_cooldown_active and not bypasses_link_cooldown(user_text):
-        decision = None
-        clear_last_app_download_decision()
+        if not decision_bypasses_link_cooldown(decision):
+            decision = None
+            clear_last_app_download_decision()
     if decision is not None:
         log.bind(
             result="success",
@@ -466,9 +480,10 @@ async def generate_reply(
         user_text=user_text,
     )
     if link_cooldown_active and not bypasses_link_cooldown(user_text):
-        reply_text = strip_links_from_reply(reply_text)
-        log.info("orchestrator.link_cooldown.enforced")
-        return reply_text
+        if not decision_bypasses_link_cooldown(decision):
+            reply_text = strip_links_from_reply(reply_text)
+            log.info("orchestrator.link_cooldown.enforced")
+            return reply_text
     return _finalize_reply(
         _append_conservative_download_nudge(reply_text, decision, user_text=user_text),
         user_text=user_text,

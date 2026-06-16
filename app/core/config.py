@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     APP_DOWNLOAD_FUNNEL_MODE: str = "click_only"
     # 同一会话硬性限制：距上一条含链接的助手消息不足 N 分钟则不得再发链接
     APP_DOWNLOAD_LINK_COOLDOWN_MINUTES: int = 15
+    # 会话前 N 条用户消息内必须至少发出一次 APP 推广链接（0=关闭）
+    APP_DOWNLOAD_EARLY_LINK_USER_MESSAGE_LIMIT: int = 5
     APP_DOWNLOAD_CONVERSION_ENABLED: bool = True
     APP_DOWNLOAD_NURTURE_ENABLED: bool = True
     # 培育 v3：沉默三轮视频邀请（秒）
@@ -220,10 +222,10 @@ class Settings(BaseSettings):
     CALL_BROADCAST_DEFAULT_VIDEO_PATH: Optional[str] = None
     CALL_BROADCAST_DEFAULT_VIDEO_ASSET_ID: Optional[str] = None
     CALL_BROADCAST_INCOMING_AUTO_ANSWER: bool = False
-    CALL_BROADCAST_INBOUND_MANUAL_AFTER: int = 1
+    CALL_BROADCAST_INBOUND_MANUAL_AFTER: int = 2
     CALL_BROADCAST_INBOUND_REVIEW_TTL_SECONDS: int = 90
     CALL_BROADCAST_KEYWORD_REVIEW_TTL_SECONDS: int = 600
-    CALL_BROADCAST_TRANSCODE_ENABLED: bool = False
+    CALL_BROADCAST_TRANSCODE_ENABLED: bool = True
     CALL_BROADCAST_POST_CALL_NURTURE_ENABLED: bool = True
     CALL_BROADCAST_VIDEO_ROOT: str = "/data/videos"
     CALL_BROADCAST_WORK_DIR: str = "/tmp/call_broadcast"

@@ -16,7 +16,10 @@ from core.config import settings
 from core.database import AsyncSessionLocal
 from services.memory_writer import maybe_write_memory
 from services.llm_orchestrator import LLMOrchestratorError, generate_reply
-from services.app_download_conversion import get_last_app_download_decision
+from services.app_download_conversion import (
+    decision_bypasses_link_cooldown,
+    get_last_app_download_decision,
+)
 from services.link_cooldown import is_conversation_link_cooldown_active, strip_links_from_reply
 from services.link_attribution import render_tracking_links_as_html_cta, wrap_text_links_with_tracking
 from services.emotion_lexicon import detect_language_from_text, normalize_language
@@ -45,7 +48,7 @@ from services.telegram_peer_cache import upsert_telegram_peer_cache
 from services.user_level_service import user_level_service
 from services.user_reply_guard import user_allows_auto_reply
 from services.human_takeover_gate import evaluate_human_takeover_gate
-from services.mtproto.account_routing import pin_mtproto_account_route
+from services.mtproto.account_routing import ensure_mtproto_account_route_for_reply
 from services.mtproto.human_like_send import HumanLikeSendPolicy, send_human_like_message
 
 
@@ -301,12 +304,28 @@ async def _profile_preferences(db: Any, *, user_id: str) -> dict[str, Any]:
     return {}
 
 
+async def _ensure_user_profile_row(db: Any, *, user_id: str) -> None:
+    await db.execute(
+        text(
+            """
+            INSERT INTO user_profiles
+            (user_id, preferences, chat_style, user_level, chat_route, updated_at)
+            VALUES (CAST(:uid AS uuid), '{}'::jsonb, 'casual', 'C', 'ai_auto', NOW())
+            ON CONFLICT (user_id) DO NOTHING
+            """
+        ),
+        {"uid": user_id},
+    )
+
+
 async def _write_profile_preferences(db: Any, *, user_id: str, preferences: dict[str, Any]) -> None:
+    await _ensure_user_profile_row(db, user_id=user_id)
     await db.execute(
         text(
             """
             UPDATE user_profiles
-            SET preferences = CAST(:prefs AS jsonb), updated_at = NOW()
+            SET preferences = COALESCE(preferences, '{}'::jsonb) || CAST(:prefs AS jsonb),
+                updated_at = NOW()
             WHERE user_id = CAST(:uid AS uuid)
             """
         ),
@@ -350,6 +369,7 @@ async def _handle_required_profile_intake(
     log: Any,
 ) -> str | None:
     """Persist profile answers when present and return a non-blocking follow-up question."""
+    await _ensure_user_profile_row(db, user_id=user_id)
     prefs = await _profile_preferences(db, user_id=user_id)
     pending = str(prefs.get("profile_intake_pending") or "").strip()
     completeness = await read_profile_completeness(db, user_id=user_id)
@@ -546,14 +566,20 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
     log = log.bind(user_id=user_id, conv_id=conv_id, telegram_message_id=message_id)
 
     redis = await _get_redis()
-    try:
-        await pin_mtproto_account_route(
-            redis,
-            user_id=user_id,
-            account_id=str(account_id),
-        )
-    except Exception as exc:
-        log.bind(error_type=type(exc).__name__).warning("mtproto.route.pin_failed")
+    route_allowed = await ensure_mtproto_account_route_for_reply(
+        redis,
+        user_id=user_id,
+        account_id=str(account_id),
+    )
+    if not route_allowed:
+        pinned = None
+        try:
+            from services.mtproto.account_routing import get_mtproto_account_route
+
+            pinned = await get_mtproto_account_route(redis, user_id=user_id)
+        except Exception:
+            pass
+        log.bind(pinned_account_id=pinned).info("mtproto.inbound.route_skip")
 
     async with AsyncSessionLocal() as db:
         try:
@@ -594,6 +620,23 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
     )
     log.bind(message_id=user_msg_id).info("mtproto.inbound.persisted")
 
+    # Keyword video requests must queue on whichever account received the message,
+    # even when account routing skips LLM auto-reply on secondary MTProto accounts.
+    await _try_queue_live_video_keyword_review(
+        user_id=user_id,
+        external_id=external_id,
+        conv_id=conv_id,
+        sender_id=sender_id,
+        account_id=str(account_id),
+        text_value=text_value,
+        trace_id=trace_id,
+        access_hash=getattr(sender, "access_hash", None),
+        log=log,
+    )
+
+    if not route_allowed:
+        return
+
     async with AsyncSessionLocal() as db:
         try:
             gate = await evaluate_human_takeover_gate(db, conv_id)
@@ -614,6 +657,7 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
             )
 
     nurture_immediate_reply: str | None = None
+    nurture_intent: str | None = None
     async with AsyncSessionLocal() as db:
         try:
             nurture_action = await handle_nurture_user_reply(
@@ -629,6 +673,7 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
             )
             await db.commit()
             nurture_immediate_reply = nurture_action.immediate_reply_text
+            nurture_intent = nurture_action.intent
             log.bind(
                 nurture_intent=nurture_action.intent,
                 nurture_valid_reply=nurture_action.valid_reply,
@@ -638,28 +683,9 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
             await db.rollback()
             log.bind(error_type=type(exc).__name__).warning("mtproto.nurture_reply.failed")
 
-    async with AsyncSessionLocal() as db:
-        try:
-            video_job_id = await maybe_queue_live_video_call_operator_review(
-                db,
-                user_id=user_id,
-                external_user_id=external_id,
-                conversation_id=conv_id,
-                chat_id=int(sender_id),
-                account_id=str(account_id),
-                user_text=text_value,
-                trace_id=trace_id,
-                telegram_access_hash=getattr(sender, "access_hash", None),
-            )
-            if video_job_id:
-                log.bind(job_id=video_job_id).info(
-                    "mtproto.video_request_handoff.keyword_review_queued"
-                )
-        except Exception as exc:
-            await db.rollback()
-            log.bind(error_type=type(exc).__name__).warning(
-                "mtproto.video_request_handoff.failed"
-            )
+    if nurture_intent == "spam":
+        log.info("mtproto.inbound.spam_skip_reply")
+        return
 
     _spawn_call_broadcast_enqueue(
         user_id=user_id,
@@ -724,13 +750,11 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
             db,
             conversation_id=conv_id,
         )
+        app_download_decision = get_last_app_download_decision()
         if link_cooldown_active and not bypasses_link_cooldown(text_value):
-            reply_text = strip_links_from_reply(reply_text)
-            app_download_decision = None
-        elif link_cooldown_active:
-            app_download_decision = get_last_app_download_decision()
-        else:
-            app_download_decision = get_last_app_download_decision()
+            if not decision_bypasses_link_cooldown(app_download_decision):
+                reply_text = strip_links_from_reply(reply_text)
+                app_download_decision = None
         assistant_msg_id = str(uuid.uuid4())
         try:
             reply_text = await wrap_text_links_with_tracking(
@@ -865,6 +889,47 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
     except Exception as exc:
         log.bind(error_type=type(exc).__name__).warning("mtproto.reply.ctx_push_failed")
     log.bind(message_id=assistant_msg_id, telegram_sent_id=sent_id).info("mtproto.reply.sent")
+
+
+async def _try_queue_live_video_keyword_review(
+    *,
+    user_id: str,
+    external_id: str,
+    conv_id: str,
+    sender_id: str,
+    account_id: str,
+    text_value: str,
+    trace_id: str,
+    access_hash: int | None,
+    log: Any,
+) -> str | None:
+    try:
+        async with AsyncSessionLocal() as db:
+            try:
+                video_job_id = await maybe_queue_live_video_call_operator_review(
+                    db,
+                    user_id=user_id,
+                    external_user_id=external_id,
+                    conversation_id=conv_id,
+                    chat_id=int(sender_id),
+                    account_id=account_id,
+                    user_text=text_value,
+                    trace_id=trace_id,
+                    telegram_access_hash=access_hash,
+                )
+                if video_job_id:
+                    log.bind(job_id=video_job_id).info(
+                        "mtproto.video_request_handoff.keyword_review_queued"
+                    )
+                return video_job_id
+            except Exception:
+                await db.rollback()
+                raise
+    except Exception as exc:
+        log.bind(error_type=type(exc).__name__).warning(
+            "mtproto.video_request_handoff.failed"
+        )
+        return None
 
 
 def _spawn_call_broadcast_enqueue(

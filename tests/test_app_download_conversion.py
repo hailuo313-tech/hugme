@@ -6,10 +6,13 @@ import pytest
 import services.app_download_conversion as conversion
 from services.app_download_conversion import (
     APP_DOWNLOAD_CATEGORIES,
+    EARLY_LINK_MANDATE_SCENE,
     _FunnelState,
     _build_asset_keyword_reply_text,
     _choose_category,
+    apply_early_link_mandate_overlay,
     conversion_decision_skips_llm,
+    decision_bypasses_link_cooldown,
     AppDownloadDecision,
     _keyword_matches,
     _relationship_stage,
@@ -707,3 +710,151 @@ async def test_asset_keyword_bypasses_d_level_script_block(monkeypatch) -> None:
 
     assert decision is not None
     assert decision.intent == "asset_keyword_request"
+
+
+def test_early_link_mandate_decision_bypasses_link_cooldown() -> None:
+    decision = AppDownloadDecision(
+        content="TAP HERE — private room unlocked: https://app.example/download (code: c5a8we)",
+        category_key="app_download_first_push",
+        script_hit_id="1",
+        assets=[],
+        user_level="C",
+        persona_slug=None,
+        intent="early_link_mandate",
+        scene_step=EARLY_LINK_MANDATE_SCENE,
+        country_code=None,
+        age=None,
+        is_t1_country=None,
+    )
+    assert decision_bypasses_link_cooldown(decision)
+
+
+@pytest.mark.asyncio
+async def test_early_link_mandate_within_first_five_user_messages(monkeypatch) -> None:
+    class Result:
+        def __init__(self, row=None, rows=None):
+            self._row = row
+            self._rows = rows or []
+
+        def fetchone(self):
+            return self._row
+
+        def fetchall(self):
+            return self._rows
+
+    class FakeDb:
+        async def execute(self, sql, params=None):
+            sql_text = str(sql)
+            if "COUNT(*) AS user_message_count" in sql_text:
+                return Result(row=SimpleNamespace(_mapping={"user_message_count": 2}))
+            if "FROM messages" in sql_text and "sender_type = 'assistant'" in sql_text:
+                return Result(row=None)
+            if "FROM attribution_links" in sql_text:
+                return Result(row=None)
+            if "FROM script_templates" in sql_text:
+                return Result(rows=[])
+            return Result()
+
+    async def fake_resolve_app_download_url(_db):
+        return "https://app.example/download"
+
+    monkeypatch.setattr(conversion, "resolve_app_download_url", fake_resolve_app_download_url)
+    monkeypatch.setattr(conversion.settings, "APP_DOWNLOAD_CONVERSION_ENABLED", True)
+    monkeypatch.setattr(conversion.settings, "APP_DOWNLOAD_EARLY_LINK_USER_MESSAGE_LIMIT", 5)
+
+    decision = await maybe_select_app_download_reply(
+        db=FakeDb(),
+        user_id="11111111-1111-1111-1111-111111111111",
+        conversation_id="22222222-2222-2222-2222-222222222222",
+        user_text="hey",
+        profile_row={"user_level": "C"},
+        character_row=None,
+        assistant_reply_count=0,
+        trigger_message_id=None,
+        trace_id="trace-early-link",
+        classified_intent=None,
+    )
+
+    assert decision is not None
+    assert decision.intent == "early_link_mandate"
+    assert decision.scene_step == EARLY_LINK_MANDATE_SCENE
+    assert "https://app.example/download" in decision.content
+
+
+@pytest.mark.asyncio
+async def test_early_link_mandate_skipped_after_link_already_sent(monkeypatch) -> None:
+    class Result:
+        def __init__(self, row=None, rows=None):
+            self._row = row
+            self._rows = rows or []
+
+        def fetchone(self):
+            return self._row
+
+        def fetchall(self):
+            return self._rows
+
+    class FakeDb:
+        async def execute(self, sql, params=None):
+            sql_text = str(sql)
+            if "COUNT(*) AS user_message_count" in sql_text:
+                return Result(row=SimpleNamespace(_mapping={"user_message_count": 2}))
+            if "FROM messages" in sql_text and "sender_type = 'assistant'" in sql_text:
+                return Result(row=SimpleNamespace(_mapping={"?column?": 1}))
+            return Result()
+
+    async def fake_resolve_app_download_url(_db):
+        return "https://app.example/download"
+
+    monkeypatch.setattr(conversion, "resolve_app_download_url", fake_resolve_app_download_url)
+    monkeypatch.setattr(conversion.settings, "APP_DOWNLOAD_CONVERSION_ENABLED", True)
+    monkeypatch.setattr(conversion.settings, "APP_DOWNLOAD_EARLY_LINK_USER_MESSAGE_LIMIT", 5)
+
+    decision = await apply_early_link_mandate_overlay(
+        db=FakeDb(),
+        user_id="11111111-1111-1111-1111-111111111111",
+        conversation_id="22222222-2222-2222-2222-222222222222",
+        user_text="hey",
+        profile_row={"user_level": "C"},
+        character_row=None,
+        trigger_message_id=None,
+        trace_id="trace-early-link-skip",
+        decision=None,
+        destination_url="https://app.example/download",
+    )
+
+    assert decision is None
+
+
+@pytest.mark.asyncio
+async def test_early_link_mandate_skipped_after_fifth_user_message(monkeypatch) -> None:
+    class Result:
+        def __init__(self, row=None):
+            self._row = row
+
+        def fetchone(self):
+            return self._row
+
+    class FakeDb:
+        async def execute(self, sql, params=None):
+            sql_text = str(sql)
+            if "COUNT(*) AS user_message_count" in sql_text:
+                return Result(row=SimpleNamespace(_mapping={"user_message_count": 6}))
+            return Result()
+
+    monkeypatch.setattr(conversion.settings, "APP_DOWNLOAD_EARLY_LINK_USER_MESSAGE_LIMIT", 5)
+
+    decision = await apply_early_link_mandate_overlay(
+        db=FakeDb(),
+        user_id="11111111-1111-1111-1111-111111111111",
+        conversation_id="22222222-2222-2222-2222-222222222222",
+        user_text="hey",
+        profile_row={"user_level": "C"},
+        character_row=None,
+        trigger_message_id=None,
+        trace_id="trace-early-link-late",
+        decision=None,
+        destination_url="https://app.example/download",
+    )
+
+    assert decision is None
