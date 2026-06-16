@@ -20,6 +20,7 @@ from services.telegram_send import telegram_chat_id_from_external
 from services.app_download_nurture import (
     APP_DOWNLOAD_MESSAGE_TYPE,
     APP_DOWNLOAD_NURTURE_DELIVERY_MODE,
+    maybe_mark_nurture_cycle_completed,
     persist_auto_delivery_message,
     prepare_nurture_message_for_send,
     resolve_nurture_sender_account_id,
@@ -823,6 +824,19 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
                             message_id=message_id,
                             status="sent",
                         )
+                        if _is_app_download_nurture_message(message):
+                            nurture_meta = message.get("metadata") or {}
+                            if nurture_meta.get("nurture_kind") == "video_chat" and user_id:
+                                try:
+                                    await maybe_mark_nurture_cycle_completed(
+                                        session,
+                                        user_id=str(user_id),
+                                    )
+                                except Exception as mark_error:
+                                    log.bind(
+                                        message_id=message_id,
+                                        error_type=type(mark_error).__name__,
+                                    ).warning("auto_delivery_worker.nurture_cycle_mark_failed")
                         stats["sent"] = 1
                         log.bind(message_id=message_id).info("auto_delivery_worker.tick.sent")
                     else:

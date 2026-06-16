@@ -23,8 +23,9 @@ from services.call_broadcast.incoming_review import (
     reject_operator_review,
 )
 from services.call_broadcast.incoming_review_registry import snapshot_pending
-from services.call_broadcast.jobs import enqueue_call_broadcast_job
+from services.call_broadcast.jobs import enqueue_call_broadcast_job, resolve_inbound_call_context
 from services.call_broadcast.ffmpeg_pipeline import (
+    normalize_video_for_telegram_call,
     probe_video_duration_seconds,
     resolve_playback_duration_seconds,
 )
@@ -160,20 +161,25 @@ _CALL_HISTORY_RECORDS_SQL = """
             j.external_user_id,
             j.chat_id,
             j.account_id,
+            j.status,
             j.trigger_source,
             j.started_at,
             j.ended_at,
             j.created_at,
             COALESCE(j.ended_at, j.started_at, j.created_at) AS call_at,
             v.title AS video_title,
-            GREATEST(
-                1,
-                COALESCE(
-                    NULLIF(EXTRACT(EPOCH FROM (j.ended_at - j.started_at))::int, 0),
-                    v.duration_seconds,
-                    30
-                )
-            )::int AS duration_seconds,
+            CASE
+                WHEN j.status = 'completed' THEN
+                    GREATEST(
+                        1,
+                        COALESCE(
+                            NULLIF(EXTRACT(EPOCH FROM (j.ended_at - j.started_at))::int, 0),
+                            v.duration_seconds,
+                            30
+                        )
+                    )::int
+                ELSE 0
+            END AS duration_seconds,
             u.id AS resolved_user_id,
             u.nickname,
             u.external_id AS user_external_id,
@@ -188,7 +194,6 @@ _CALL_HISTORY_RECORDS_SQL = """
             OR (j.external_user_id IS NOT NULL AND u.external_id = j.external_user_id)
             OR (u.external_id = 'tg_' || j.chat_id::text)
         )
-        WHERE j.status = 'completed'
     ),
     numbered AS (
         SELECT
@@ -209,6 +214,7 @@ _CALL_HISTORY_RECORDS_SQL = """
             'tg_' || numbered.chat_id::text
         ) AS external_id,
         numbered.chat_id,
+        numbered.status,
         numbered.trigger_source,
         numbered.started_at,
         numbered.ended_at,
@@ -305,11 +311,27 @@ def _serialize_incoming_review(row: Any, live: dict[str, Any] | None = None) -> 
             metadata = {}
     if isinstance(metadata, dict):
         item["inbound_call_number"] = metadata.get("inbound_call_number")
+        item["completed_inbound_calls"] = metadata.get("completed_inbound_calls")
         item["matched_keyword"] = metadata.get("matched_keyword")
     if item.get("trigger_source") is not None:
         item["trigger_source"] = str(item["trigger_source"])
     if live:
         item["seconds_remaining"] = live.get("seconds_remaining")
+        if live.get("inbound_call_number") is not None:
+            item["inbound_call_number"] = int(live["inbound_call_number"])
+    return item
+
+
+async def _enrich_incoming_review_call_counts(
+    db: AsyncSession,
+    item: dict[str, Any],
+) -> dict[str, Any]:
+    chat_id = item.get("chat_id")
+    if chat_id is None:
+        return item
+    call_ctx = await resolve_inbound_call_context(db, int(chat_id))
+    item["completed_inbound_calls"] = int(call_ctx["completed_inbound_calls"])
+    item["inbound_call_number"] = int(call_ctx["inbound_call_number"])
     return item
 
 
@@ -346,10 +368,14 @@ async def list_incoming_call_reviews(
         mapping = dict(row._mapping)
         await hydrate_pending_review_from_job(db, str(mapping.get("id")))
     live_by_job = {item["job_id"]: item for item in snapshot_pending()}
-    items = [
-        _serialize_incoming_review(row, live_by_job.get(str(dict(row._mapping).get("id"))))
-        for row in rows
-    ]
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        mapping = dict(row._mapping)
+        serialized = _serialize_incoming_review(
+            row,
+            live_by_job.get(str(mapping.get("id"))),
+        )
+        items.append(await _enrich_incoming_review_call_counts(db, serialized))
     logger.bind(
         operator_id=operator.get("sub"),
         pending=len(items),
@@ -442,6 +468,25 @@ async def upload_video_broadcast_asset(
     target = _video_broadcast_dir() / filename
     target.write_bytes(content)
 
+    try:
+        normalized_path, ffmpeg_profile = await normalize_video_for_telegram_call(
+            str(target),
+            trace_id=f"upload-{asset_id}",
+            in_place=True,
+        )
+        target = Path(normalized_path)
+    except Exception as exc:
+        if target.is_file():
+            target.unlink(missing_ok=True)
+        logger.bind(error_type=type(exc).__name__, error=str(exc)[:500]).warning(
+            "call_broadcast.admin.upload_normalize_failed"
+        )
+        detail = str(exc).strip() or "video normalize failed"
+        raise HTTPException(
+            status_code=422,
+            detail=f"视频标准化失败，未写入素材库：{detail[:240]}",
+        ) from exc
+
     probed = await probe_video_duration_seconds(str(target))
     duration = int(
         resolve_playback_duration_seconds(
@@ -467,10 +512,11 @@ async def upload_video_broadcast_asset(
             text(
                 """
                 INSERT INTO video_broadcast_assets (
-                    id, title, file_path, duration_seconds, play_sequence, status, metadata
+                    id, title, file_path, duration_seconds, play_sequence, status, metadata,
+                    ffmpeg_profile
                 ) VALUES (
                     CAST(:id AS uuid), :title, :file_path, :duration_seconds, :play_sequence,
-                    'active', CAST(:metadata AS jsonb)
+                    'active', CAST(:metadata AS jsonb), CAST(:ffmpeg_profile AS jsonb)
                 )
                 RETURNING id, title, file_path, duration_seconds, ffmpeg_profile, play_sequence,
                           status, metadata, created_at, updated_at
@@ -482,7 +528,11 @@ async def upload_video_broadcast_asset(
                 "file_path": str(target),
                 "duration_seconds": duration,
                 "play_sequence": sequence,
-                "metadata": f'{{"source":"admin_upload","play_sequence":{sequence}}}',
+                "metadata": json.dumps(
+                    {"source": "admin_upload", "play_sequence": sequence},
+                    ensure_ascii=False,
+                ),
+                "ffmpeg_profile": json.dumps(ffmpeg_profile, ensure_ascii=False),
             },
         )
     ).fetchone()

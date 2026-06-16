@@ -104,6 +104,18 @@ async def count_completed_inbound_calls_for_chat(db: AsyncSession, chat_id: int)
     return int(_row_mapping(row).get("cnt") or 0)
 
 
+async def resolve_inbound_call_context(
+    db: AsyncSession,
+    chat_id: int,
+) -> dict[str, int]:
+    """Return completed auto-answer inbound calls and the next call ordinal for operators."""
+    completed = await count_completed_inbound_calls_for_chat(db, chat_id)
+    return {
+        "completed_inbound_calls": completed,
+        "inbound_call_number": completed + 1,
+    }
+
+
 async def resolve_video_asset_by_play_sequence(
     db: AsyncSession,
     play_sequence: int,
@@ -384,6 +396,7 @@ async def create_inbound_operator_review_job(
     trace_id: str,
     telegram_access_hash: int | None = None,
     inbound_call_number: int,
+    completed_inbound_calls: int | None = None,
 ) -> str | None:
     user_id = f"tg_{chat_id}"
     rule_key = f"call:inbound_operator_review:{chat_id}:{account_id}:{int(time.time() * 1000)}"
@@ -391,6 +404,8 @@ async def create_inbound_operator_review_job(
         "source": "incoming_operator_review",
         "inbound_call_number": inbound_call_number,
     }
+    if completed_inbound_calls is not None:
+        metadata["completed_inbound_calls"] = completed_inbound_calls
     if telegram_access_hash is not None:
         metadata["telegram_access_hash"] = str(int(telegram_access_hash))
     row = (
@@ -437,9 +452,15 @@ async def create_keyword_live_video_review_job(
     trace_id: str,
     matched_keyword: str,
     telegram_access_hash: int | None = None,
+    inbound_call_number: int | None = None,
+    completed_inbound_calls: int | None = None,
 ) -> str | None:
     """Queue a pending_operator job when user texts a live video-call request."""
     ext = external_user_id or f"tg_{chat_id}"
+    if inbound_call_number is None or completed_inbound_calls is None:
+        call_ctx = await resolve_inbound_call_context(db, chat_id)
+        inbound_call_number = int(call_ctx["inbound_call_number"])
+        completed_inbound_calls = int(call_ctx["completed_inbound_calls"])
     rule_key = (
         f"call:keyword_live_video:{chat_id}:{account_id}:"
         f"{matched_keyword}:{int(time.time() * 1000)}"
@@ -447,7 +468,8 @@ async def create_keyword_live_video_review_job(
     metadata: dict[str, Any] = {
         "source": "keyword_live_video_call",
         "matched_keyword": matched_keyword,
-        "inbound_call_number": 2,
+        "inbound_call_number": inbound_call_number,
+        "completed_inbound_calls": completed_inbound_calls,
         "conversation_id": conversation_id,
     }
     if telegram_access_hash is not None:

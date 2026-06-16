@@ -26,13 +26,14 @@ from services.call_broadcast.jobs import (
     create_inbound_operator_review_job,
     finalize_job,
     mark_job_streaming,
+    resolve_inbound_call_context,
 )
 from services.call_broadcast.session import reject_inbound_call, run_call_broadcast
 
 
 def inbound_call_requires_operator_review(completed_inbound_count: int) -> bool:
-    """True when the next inbound call exceeds automated auto-answer count (default: 2nd call onward)."""
-    threshold = int(getattr(settings, "CALL_BROADCAST_INBOUND_MANUAL_AFTER", 1))
+    """True when the next inbound call exceeds automated auto-answer count (default: 3rd call onward)."""
+    threshold = int(getattr(settings, "CALL_BROADCAST_INBOUND_MANUAL_AFTER", 2))
     return (completed_inbound_count + 1) > threshold
 
 
@@ -63,8 +64,9 @@ async def queue_inbound_operator_review(
         mapping = dict(existing._mapping)
         return str(mapping.get("id") or existing[0])
 
-    completed = await count_completed_inbound_calls_for_chat(db, chat_id)
-    inbound_call_number = completed + 1
+    call_ctx = await resolve_inbound_call_context(db, chat_id)
+    inbound_call_number = int(call_ctx["inbound_call_number"])
+    completed_inbound_calls = int(call_ctx["completed_inbound_calls"])
     job_id = await create_inbound_operator_review_job(
         db,
         chat_id=chat_id,
@@ -72,6 +74,7 @@ async def queue_inbound_operator_review(
         trace_id=trace_id,
         telegram_access_hash=access_hash,
         inbound_call_number=inbound_call_number,
+        completed_inbound_calls=completed_inbound_calls,
     )
     if not job_id:
         return None
@@ -88,14 +91,20 @@ async def queue_inbound_operator_review(
     return job_id
 
 
-async def _load_video_asset(db: AsyncSession, video_asset_id: str) -> dict[str, Any] | None:
+async def _load_video_asset(
+    db: AsyncSession,
+    video_asset_id: str,
+    *,
+    allow_archived: bool = False,
+) -> dict[str, Any] | None:
+    status_filter = "" if allow_archived else "AND status = 'active'"
     row = (
         await db.execute(
             text(
-                """
-                SELECT id, title, file_path, duration_seconds, play_sequence
+                f"""
+                SELECT id, title, file_path, duration_seconds, play_sequence, status
                 FROM video_broadcast_assets
-                WHERE id = CAST(:asset_id AS uuid) AND status = 'active'
+                WHERE id = CAST(:asset_id AS uuid) {status_filter}
                 LIMIT 1
                 """
             ),
@@ -187,7 +196,8 @@ async def hydrate_pending_review_from_job(
 
     access_hash_raw = metadata.get("telegram_access_hash")
     access_hash = int(access_hash_raw) if access_hash_raw is not None else None
-    inbound_call_number = int(metadata.get("inbound_call_number") or 2)
+    call_ctx = await resolve_inbound_call_context(db, int(job["chat_id"]))
+    inbound_call_number = int(call_ctx["inbound_call_number"])
 
     return register_pending_review(
         job_id=job_id,
@@ -216,9 +226,12 @@ async def accept_operator_review(
             pop_pending_review(job_id)
             return {"ok": False, "reason": "job_not_pending"}
 
-        asset = await _load_video_asset(db, video_asset_id)
+        asset = await _load_video_asset(db, video_asset_id, allow_archived=True)
         if asset is None:
             return {"ok": False, "reason": "video_asset_not_found"}
+        file_path = str(asset.get("file_path") or "").strip()
+        if not file_path:
+            return {"ok": False, "reason": "video_asset_missing_file"}
 
     pop_pending_review(job_id)
     trace_id = review.trace_id

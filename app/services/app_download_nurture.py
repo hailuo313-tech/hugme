@@ -46,6 +46,7 @@ TRIGGER_SILENT_30M = TRIGGER_NURTURE_ROUND_2
 TRIGGER_SILENT_24H = TRIGGER_NURTURE_ROUND_3
 
 _ACTIVE_NURTURE_STATUSES = ("pending", "sending", "sent")
+NURTURE_CYCLE_COMPLETED_PREF = "nurture_cycle_completed_at"
 
 
 def _utc_now() -> datetime:
@@ -134,7 +135,7 @@ _ES_NURTURE_RE = re.compile(
     re.IGNORECASE | re.UNICODE,
 )
 _PT_NURTURE_RE = re.compile(
-    r"\b(oi|quero|você|voce|chamada|vídeo|video|cadê|cade|amanhã|amanha)\b",
+    r"\b(oi|quero|você|voce|chamada|vídeo|video|cadê|cade|amanhã|amanha|sexo|agora|aqui|estou)\b",
     re.IGNORECASE | re.UNICODE,
 )
 
@@ -150,6 +151,96 @@ def detect_nurture_language_from_text(text_value: str | None) -> str:
     if _PT_NURTURE_RE.search(text):
         return "pt"
     return _normalize_nurture_language(detect_language_from_text(text, default="en"))
+
+
+async def user_nurture_cycle_completed(
+    db: AsyncSession,
+    *,
+    user_id: str,
+) -> bool:
+    """Return True once all nurture rounds (5m / 30m / 24h) have been sent for this user."""
+    profile = await _load_profile(db, user_id=user_id)
+    if profile and _prefs(profile).get(NURTURE_CYCLE_COMPLETED_PREF):
+        return True
+
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT COUNT(DISTINCT metadata->>'trigger') AS sent_rounds
+                FROM message_schedules
+                WHERE user_id = CAST(:user_id AS uuid)
+                  AND metadata->>'delivery_mode' = :delivery_mode
+                  AND metadata->>'trigger' = ANY(:triggers)
+                  AND status = 'sent'
+                """
+            ),
+            {
+                "user_id": user_id,
+                "delivery_mode": APP_DOWNLOAD_NURTURE_DELIVERY_MODE,
+                "triggers": list(_NURTURE_ROUND_TRIGGERS),
+            },
+        )
+    ).fetchone()
+    sent_rounds = int((row[0] if row else 0) or 0)
+    return sent_rounds >= len(_NURTURE_ROUND_TRIGGERS)
+
+
+async def maybe_mark_nurture_cycle_completed(
+    db: AsyncSession,
+    *,
+    user_id: str,
+) -> bool:
+    """Persist completion flag when every nurture round has been sent at least once."""
+    profile = await _load_profile(db, user_id=user_id)
+    if profile and _prefs(profile).get(NURTURE_CYCLE_COMPLETED_PREF):
+        return True
+
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT COUNT(DISTINCT metadata->>'trigger') AS sent_rounds
+                FROM message_schedules
+                WHERE user_id = CAST(:user_id AS uuid)
+                  AND metadata->>'delivery_mode' = :delivery_mode
+                  AND metadata->>'trigger' = ANY(:triggers)
+                  AND status = 'sent'
+                """
+            ),
+            {
+                "user_id": user_id,
+                "delivery_mode": APP_DOWNLOAD_NURTURE_DELIVERY_MODE,
+                "triggers": list(_NURTURE_ROUND_TRIGGERS),
+            },
+        )
+    ).fetchone()
+    sent_rounds = int((row[0] if row else 0) or 0)
+    if sent_rounds < len(_NURTURE_ROUND_TRIGGERS):
+        return False
+
+    await db.execute(
+        text(
+            """
+            UPDATE user_profiles
+            SET preferences = COALESCE(preferences, '{}'::jsonb)
+                || jsonb_build_object(:pref_key, to_jsonb(NOW()::text)),
+                updated_at = NOW()
+            WHERE user_id = CAST(:user_id AS uuid)
+            """
+        ),
+        {
+            "user_id": user_id,
+            "pref_key": NURTURE_CYCLE_COMPLETED_PREF,
+        },
+    )
+    await db.commit()
+    logger.bind(
+        component="app_download_nurture",
+        user_id=user_id,
+        sent_rounds=sent_rounds,
+    ).info("app_download_nurture.cycle_completed")
+    return True
 
 
 async def persist_user_nurture_language(
@@ -220,6 +311,15 @@ async def schedule_nurture_after_reply(
     任一轮发送前用户若再次发言则取消（stale guard）。
     """
     if not settings.APP_DOWNLOAD_NURTURE_ENABLED or not chat_id:
+        return 0
+
+    if await user_nurture_cycle_completed(db, user_id=user_id):
+        logger.bind(
+            component="app_download_nurture",
+            trace_id=trace_id,
+            conversation_id=conversation_id,
+            user_id=user_id,
+        ).info("app_download_nurture.cycle_already_completed_skip")
         return 0
 
     sender_account_id = account_id or await resolve_nurture_sender_account_id(
@@ -570,6 +670,10 @@ async def should_skip_stale_nurture_message(
     metadata = message.get("metadata") or {}
     if metadata.get("delivery_mode") != APP_DOWNLOAD_NURTURE_DELIVERY_MODE:
         return None
+
+    user_id = message.get("user_id")
+    if user_id and await user_nurture_cycle_completed(db, user_id=str(user_id)):
+        return "nurture_cycle_completed"
 
     if metadata.get("stop_if_downloaded", True):
         downloaded = (
@@ -1113,8 +1217,15 @@ def _nurture_reply_language(
 
     ranked = sorted(votes.items(), key=lambda item: (-item[1], item[0]))
     if len(ranked) == 1 or ranked[0][1] > ranked[1][1]:
-        return ranked[0][0]
-    return detect_nurture_language_from_text(user_texts[0])
+        winner = ranked[0][0]
+    else:
+        winner = detect_nurture_language_from_text(user_texts[0])
+
+    if winner == "en":
+        pref_lang = _prefs(profile).get("nurture_language")
+        if pref_lang:
+            return _normalize_nurture_language(str(pref_lang))
+    return winner
 
 
 def _prefs(profile: dict[str, Any] | None) -> dict[str, Any]:
