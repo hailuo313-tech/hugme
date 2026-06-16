@@ -169,7 +169,7 @@ async def user_nurture_cycle_completed(
                 """
                 SELECT COUNT(DISTINCT metadata->>'trigger') AS sent_rounds
                 FROM message_schedules
-                WHERE user_id = CAST(:user_id AS uuid)
+                WHERE user_id = CAST(:user_id AS text)
                   AND metadata->>'delivery_mode' = :delivery_mode
                   AND metadata->>'trigger' = ANY(:triggers)
                   AND status = 'sent'
@@ -202,7 +202,7 @@ async def maybe_mark_nurture_cycle_completed(
                 """
                 SELECT COUNT(DISTINCT metadata->>'trigger') AS sent_rounds
                 FROM message_schedules
-                WHERE user_id = CAST(:user_id AS uuid)
+                WHERE user_id = CAST(:user_id AS text)
                   AND metadata->>'delivery_mode' = :delivery_mode
                   AND metadata->>'trigger' = ANY(:triggers)
                   AND status = 'sent'
