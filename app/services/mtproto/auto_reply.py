@@ -49,6 +49,7 @@ from services.user_level_service import user_level_service
 from services.user_reply_guard import user_allows_auto_reply
 from services.human_takeover_gate import evaluate_human_takeover_gate
 from services.mtproto.account_routing import ensure_mtproto_account_route_for_reply
+from services.message_repeat_guard import should_skip_duplicate_outbound
 from services.mtproto.human_like_send import HumanLikeSendPolicy, send_human_like_message
 
 
@@ -814,6 +815,16 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
             await db.rollback()
             log.bind(error_type=type(exc).__name__).warning("mtproto.link_attribution_failed")
 
+    async with AsyncSessionLocal() as db:
+        if await should_skip_duplicate_outbound(
+            db,
+            user_id=user_id,
+            content=reply_text,
+            trace_id=trace_id,
+            source="mtproto_auto_reply",
+        ):
+            return
+
     peer = getattr(event, "chat_id", None) or sender_id
     telegram_reply_text = render_tracking_links_as_html_cta(reply_text)
     send_kwargs = {"parse_mode": "html"} if telegram_reply_text != reply_text else {}
@@ -870,6 +881,16 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
             )
     if app_download_decision is not None:
         for asset in app_download_decision.assets:
+            asset_content = str(asset.get("asset_url") or "")
+            async with AsyncSessionLocal() as db:
+                if await should_skip_duplicate_outbound(
+                    db,
+                    user_id=user_id,
+                    content=asset_content,
+                    trace_id=trace_id,
+                    source="mtproto_auto_reply_asset",
+                ):
+                    continue
             media_sent = await send_mtproto_asset(
                 client,
                 peer,

@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     APP_DOWNLOAD_LINK_COOLDOWN_MINUTES: int = 15
     # 会话前 N 条用户消息内必须至少发出一次 APP 推广链接（0=关闭）
     APP_DOWNLOAD_EARLY_LINK_USER_MESSAGE_LIMIT: int = 5
+    # 同一用户 N 小时内不得收到内容相同的助手消息（0=关闭）
+    OUTBOUND_MESSAGE_REPEAT_COOLDOWN_HOURS: int = 2
     APP_DOWNLOAD_CONVERSION_ENABLED: bool = True
     APP_DOWNLOAD_NURTURE_ENABLED: bool = True
     # 培育 v3：沉默三轮视频邀请（秒）
