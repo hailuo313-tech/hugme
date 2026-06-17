@@ -16,7 +16,10 @@ from core.config import settings
 from core.database import AsyncSessionLocal
 from services.memory_writer import maybe_write_memory
 from services.llm_orchestrator import LLMOrchestratorError, generate_reply
-from services.app_download_conversion import get_last_app_download_decision
+from services.app_download_conversion import (
+    decision_bypasses_link_cooldown,
+    get_last_app_download_decision,
+)
 from services.link_cooldown import is_conversation_link_cooldown_active, strip_links_from_reply
 from services.link_attribution import render_tracking_links_as_html_cta, wrap_text_links_with_tracking
 from services.emotion_lexicon import detect_language_from_text, normalize_language
@@ -30,7 +33,7 @@ from services.profile_intake import (
     write_age,
     write_country_code,
 )
-from services.reply_sanitize import sanitize_outbound_reply
+from services.reply_sanitize import nurture_boilerplate_conflicts_with_llm_reply, sanitize_outbound_reply
 from services.script_asset_delivery import send_mtproto_asset
 from services.user_request_intent import (
     bypasses_link_cooldown,
@@ -45,8 +48,10 @@ from services.telegram_peer_cache import upsert_telegram_peer_cache
 from services.user_level_service import user_level_service
 from services.user_reply_guard import user_allows_auto_reply
 from services.human_takeover_gate import evaluate_human_takeover_gate
-from services.mtproto.account_routing import pin_mtproto_account_route
+from services.mtproto.account_routing import ensure_mtproto_account_route_for_reply
+from services.message_repeat_guard import should_skip_duplicate_outbound
 from services.mtproto.human_like_send import HumanLikeSendPolicy, send_human_like_message
+from services.product_i18n import profile_intake_text
 
 
 CONTEXT_MAX_MESSAGES = 50
@@ -63,40 +68,9 @@ PROFILE_COUNTRY_RETRY = (
 PROFILE_AGE_QUESTION = "Thanks. How old are you?"
 PROFILE_AGE_RETRY = "Lmao you completely ignored my question! How old are you anyway? Tell me a number so I know if you're a big boy or just a baby. 😜"
 
-_PROFILE_COPY = {
-    "es": {
-        "country_question": "Antes de seguir, ¿en qué país estás? Puedes responder con el país o el código, como US, Canada, Japan o Germany.",
-        "country_retry": "No pude reconocer ese país. Responde con el nombre de tu país o un código de dos letras, como US, GB, JP o SG.",
-        "age_question": "Gracias. ¿Cuántos años tienes?",
-        "age_retry": "Responde con tu edad en número, por ejemplo 24.",
-    },
-    "pt": {
-        "country_question": "Antes de continuar, em que país você está? Pode responder com o país ou o código, como US, Canada, Japan ou Germany.",
-        "country_retry": "Não consegui reconhecer esse país. Responda com o nome do país ou um código de duas letras, como US, GB, JP ou SG.",
-        "age_question": "Obrigado. Quantos anos você tem?",
-        "age_retry": "Responda com sua idade em número, por exemplo 24.",
-    },
-    "ja": {
-        "country_question": "続ける前に、どの国にいますか？US、Canada、Japan、Germany のように国名かコードで答えてください。",
-        "country_retry": "その国を認識できませんでした。US、GB、JP、SG のように国名か2文字コードで答えてください。",
-        "age_question": "ありがとう。何歳ですか？",
-        "age_retry": "年齢を数字で答えてください。例: 24",
-    },
-    "ko": {
-        "country_question": "계속하기 전에 어느 나라에 있나요? US, Canada, Japan, Germany처럼 나라 이름이나 코드로 답해 주세요.",
-        "country_retry": "그 국가는 인식하지 못했어요. US, GB, JP, SG처럼 국가명이나 두 글자 코드로 답해 주세요.",
-        "age_question": "고마워요. 몇 살인가요?",
-        "age_retry": "나이를 숫자로 답해 주세요. 예: 24",
-    },
-}
-
 
 def _profile_copy(kind: str, text_value: str, fallback: str) -> str:
-    language = normalize_language(
-        detect_language_from_text(text_value or "", default="en"),
-        default="en",
-    )
-    return _PROFILE_COPY.get(language, {}).get(kind, fallback)
+    return profile_intake_text(kind, None, user_text=text_value) or fallback
 
 _redis_client = None
 
@@ -301,12 +275,28 @@ async def _profile_preferences(db: Any, *, user_id: str) -> dict[str, Any]:
     return {}
 
 
+async def _ensure_user_profile_row(db: Any, *, user_id: str) -> None:
+    await db.execute(
+        text(
+            """
+            INSERT INTO user_profiles
+            (user_id, preferences, chat_style, user_level, chat_route, updated_at)
+            VALUES (CAST(:uid AS uuid), '{}'::jsonb, 'casual', 'C', 'ai_auto', NOW())
+            ON CONFLICT (user_id) DO NOTHING
+            """
+        ),
+        {"uid": user_id},
+    )
+
+
 async def _write_profile_preferences(db: Any, *, user_id: str, preferences: dict[str, Any]) -> None:
+    await _ensure_user_profile_row(db, user_id=user_id)
     await db.execute(
         text(
             """
             UPDATE user_profiles
-            SET preferences = CAST(:prefs AS jsonb), updated_at = NOW()
+            SET preferences = COALESCE(preferences, '{}'::jsonb) || CAST(:prefs AS jsonb),
+                updated_at = NOW()
             WHERE user_id = CAST(:uid AS uuid)
             """
         ),
@@ -350,6 +340,7 @@ async def _handle_required_profile_intake(
     log: Any,
 ) -> str | None:
     """Persist profile answers when present and return a non-blocking follow-up question."""
+    await _ensure_user_profile_row(db, user_id=user_id)
     prefs = await _profile_preferences(db, user_id=user_id)
     pending = str(prefs.get("profile_intake_pending") or "").strip()
     completeness = await read_profile_completeness(db, user_id=user_id)
@@ -546,14 +537,20 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
     log = log.bind(user_id=user_id, conv_id=conv_id, telegram_message_id=message_id)
 
     redis = await _get_redis()
-    try:
-        await pin_mtproto_account_route(
-            redis,
-            user_id=user_id,
-            account_id=str(account_id),
-        )
-    except Exception as exc:
-        log.bind(error_type=type(exc).__name__).warning("mtproto.route.pin_failed")
+    route_allowed = await ensure_mtproto_account_route_for_reply(
+        redis,
+        user_id=user_id,
+        account_id=str(account_id),
+    )
+    if not route_allowed:
+        pinned = None
+        try:
+            from services.mtproto.account_routing import get_mtproto_account_route
+
+            pinned = await get_mtproto_account_route(redis, user_id=user_id)
+        except Exception:
+            pass
+        log.bind(pinned_account_id=pinned).info("mtproto.inbound.route_skip")
 
     async with AsyncSessionLocal() as db:
         try:
@@ -594,6 +591,23 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
     )
     log.bind(message_id=user_msg_id).info("mtproto.inbound.persisted")
 
+    # Keyword video requests must queue on whichever account received the message,
+    # even when account routing skips LLM auto-reply on secondary MTProto accounts.
+    await _try_queue_live_video_keyword_review(
+        user_id=user_id,
+        external_id=external_id,
+        conv_id=conv_id,
+        sender_id=sender_id,
+        account_id=str(account_id),
+        text_value=text_value,
+        trace_id=trace_id,
+        access_hash=getattr(sender, "access_hash", None),
+        log=log,
+    )
+
+    if not route_allowed:
+        return
+
     async with AsyncSessionLocal() as db:
         try:
             gate = await evaluate_human_takeover_gate(db, conv_id)
@@ -614,6 +628,7 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
             )
 
     nurture_immediate_reply: str | None = None
+    nurture_intent: str | None = None
     async with AsyncSessionLocal() as db:
         try:
             nurture_action = await handle_nurture_user_reply(
@@ -629,6 +644,7 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
             )
             await db.commit()
             nurture_immediate_reply = nurture_action.immediate_reply_text
+            nurture_intent = nurture_action.intent
             log.bind(
                 nurture_intent=nurture_action.intent,
                 nurture_valid_reply=nurture_action.valid_reply,
@@ -638,28 +654,9 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
             await db.rollback()
             log.bind(error_type=type(exc).__name__).warning("mtproto.nurture_reply.failed")
 
-    async with AsyncSessionLocal() as db:
-        try:
-            video_job_id = await maybe_queue_live_video_call_operator_review(
-                db,
-                user_id=user_id,
-                external_user_id=external_id,
-                conversation_id=conv_id,
-                chat_id=int(sender_id),
-                account_id=str(account_id),
-                user_text=text_value,
-                trace_id=trace_id,
-                telegram_access_hash=getattr(sender, "access_hash", None),
-            )
-            if video_job_id:
-                log.bind(job_id=video_job_id).info(
-                    "mtproto.video_request_handoff.keyword_review_queued"
-                )
-        except Exception as exc:
-            await db.rollback()
-            log.bind(error_type=type(exc).__name__).warning(
-                "mtproto.video_request_handoff.failed"
-            )
+    if nurture_intent == "spam":
+        log.info("mtproto.inbound.spam_skip_reply")
+        return
 
     _spawn_call_broadcast_enqueue(
         user_id=user_id,
@@ -717,6 +714,23 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
             reply_text = "I am a little busy right now, talk in a bit?"
         if profile_followup and profile_followup not in reply_text:
             reply_text = f"{reply_text}\n\n{profile_followup}"
+        if nurture_immediate_reply:
+            async with AsyncSessionLocal() as db:
+                if await should_skip_duplicate_outbound(
+                    db,
+                    user_id=user_id,
+                    content=nurture_immediate_reply,
+                    trace_id=trace_id,
+                    source="mtproto_nurture_boilerplate",
+                    redis=redis,
+                ):
+                    nurture_immediate_reply = None
+        if nurture_immediate_reply and nurture_boilerplate_conflicts_with_llm_reply(
+            nurture_immediate_reply,
+            reply_text,
+        ):
+            log.info("mtproto.nurture_reply.skipped_call_conflict")
+            nurture_immediate_reply = None
         if nurture_immediate_reply and nurture_immediate_reply not in reply_text:
             reply_text = f"{nurture_immediate_reply}\n\n{reply_text}"
         reply_text = sanitize_outbound_reply(reply_text, user_text=text_value)
@@ -724,13 +738,11 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
             db,
             conversation_id=conv_id,
         )
+        app_download_decision = get_last_app_download_decision()
         if link_cooldown_active and not bypasses_link_cooldown(text_value):
-            reply_text = strip_links_from_reply(reply_text)
-            app_download_decision = None
-        elif link_cooldown_active:
-            app_download_decision = get_last_app_download_decision()
-        else:
-            app_download_decision = get_last_app_download_decision()
+            if not decision_bypasses_link_cooldown(app_download_decision):
+                reply_text = strip_links_from_reply(reply_text)
+                app_download_decision = None
         assistant_msg_id = str(uuid.uuid4())
         try:
             reply_text = await wrap_text_links_with_tracking(
@@ -790,6 +802,17 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
             await db.rollback()
             log.bind(error_type=type(exc).__name__).warning("mtproto.link_attribution_failed")
 
+    async with AsyncSessionLocal() as db:
+        if await should_skip_duplicate_outbound(
+            db,
+            user_id=user_id,
+            content=reply_text,
+            trace_id=trace_id,
+            source="mtproto_auto_reply",
+            redis=redis,
+        ):
+            return
+
     peer = getattr(event, "chat_id", None) or sender_id
     telegram_reply_text = render_tracking_links_as_html_cta(reply_text)
     send_kwargs = {"parse_mode": "html"} if telegram_reply_text != reply_text else {}
@@ -846,6 +869,17 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
             )
     if app_download_decision is not None:
         for asset in app_download_decision.assets:
+            asset_content = str(asset.get("asset_url") or "")
+            async with AsyncSessionLocal() as db:
+                if await should_skip_duplicate_outbound(
+                    db,
+                    user_id=user_id,
+                    content=asset_content,
+                    trace_id=trace_id,
+                    source="mtproto_auto_reply_asset",
+                    redis=redis,
+                ):
+                    continue
             media_sent = await send_mtproto_asset(
                 client,
                 peer,
@@ -865,6 +899,47 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
     except Exception as exc:
         log.bind(error_type=type(exc).__name__).warning("mtproto.reply.ctx_push_failed")
     log.bind(message_id=assistant_msg_id, telegram_sent_id=sent_id).info("mtproto.reply.sent")
+
+
+async def _try_queue_live_video_keyword_review(
+    *,
+    user_id: str,
+    external_id: str,
+    conv_id: str,
+    sender_id: str,
+    account_id: str,
+    text_value: str,
+    trace_id: str,
+    access_hash: int | None,
+    log: Any,
+) -> str | None:
+    try:
+        async with AsyncSessionLocal() as db:
+            try:
+                video_job_id = await maybe_queue_live_video_call_operator_review(
+                    db,
+                    user_id=user_id,
+                    external_user_id=external_id,
+                    conversation_id=conv_id,
+                    chat_id=int(sender_id),
+                    account_id=account_id,
+                    user_text=text_value,
+                    trace_id=trace_id,
+                    telegram_access_hash=access_hash,
+                )
+                if video_job_id:
+                    log.bind(job_id=video_job_id).info(
+                        "mtproto.video_request_handoff.keyword_review_queued"
+                    )
+                return video_job_id
+            except Exception:
+                await db.rollback()
+                raise
+    except Exception as exc:
+        log.bind(error_type=type(exc).__name__).warning(
+            "mtproto.video_request_handoff.failed"
+        )
+        return None
 
 
 def _spawn_call_broadcast_enqueue(

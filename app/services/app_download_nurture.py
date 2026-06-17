@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.config import settings
 from services.app_download_platforms import resolve_app_download_url
 from services.emotion_lexicon import detect_language_from_text
+from services.product_i18n import normalize_product_language, nurture_video_round_text
 from services.level_engine import country_tier
 from services.link_attribution import wrap_text_links_with_tracking
 from services.profile_intake import age_from_preferences, normalize_country_code
@@ -46,6 +47,7 @@ TRIGGER_SILENT_30M = TRIGGER_NURTURE_ROUND_2
 TRIGGER_SILENT_24H = TRIGGER_NURTURE_ROUND_3
 
 _ACTIVE_NURTURE_STATUSES = ("pending", "sending", "sent")
+NURTURE_CYCLE_COMPLETED_PREF = "nurture_cycle_completed_at"
 
 
 def _utc_now() -> datetime:
@@ -121,35 +123,107 @@ def _round_category_key(round_num: int) -> str:
 
 
 def _normalize_nurture_language(detected: str | None) -> str:
-    value = str(detected or "en").lower()
-    if value.startswith("zh"):
-        return "zh"
-    if value in {"es", "pt"}:
-        return value
-    return "en"
-
-
-_ES_NURTURE_RE = re.compile(
-    r"\b(hola|quiero|mi\s+vida|llamada|videollamada|ver|mañana|depois)\b",
-    re.IGNORECASE | re.UNICODE,
-)
-_PT_NURTURE_RE = re.compile(
-    r"\b(oi|quero|você|voce|chamada|vídeo|video|cadê|cade|amanhã|amanha)\b",
-    re.IGNORECASE | re.UNICODE,
-)
+    return normalize_product_language(detected, default="en")
 
 
 def detect_nurture_language_from_text(text_value: str | None) -> str:
     text = str(text_value or "").strip()
     if not text:
         return "en"
-    if re.search(r"[\u4e00-\u9fff]", text):
-        return "zh"
-    if _ES_NURTURE_RE.search(text):
-        return "es"
-    if _PT_NURTURE_RE.search(text):
-        return "pt"
-    return _normalize_nurture_language(detect_language_from_text(text, default="en"))
+    return normalize_product_language(
+        detect_language_from_text(text, default="en"),
+        default="en",
+    )
+
+
+async def user_nurture_cycle_completed(
+    db: AsyncSession,
+    *,
+    user_id: str,
+) -> bool:
+    """Return True once all nurture rounds (5m / 30m / 24h) have been sent for this user."""
+    profile = await _load_profile(db, user_id=user_id)
+    if profile and _prefs(profile).get(NURTURE_CYCLE_COMPLETED_PREF):
+        return True
+
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT COUNT(DISTINCT metadata->>'trigger') AS sent_rounds
+                FROM message_schedules
+                WHERE user_id = CAST(:user_id AS text)
+                  AND metadata->>'delivery_mode' = :delivery_mode
+                  AND metadata->>'trigger' = ANY(:triggers)
+                  AND status = 'sent'
+                """
+            ),
+            {
+                "user_id": user_id,
+                "delivery_mode": APP_DOWNLOAD_NURTURE_DELIVERY_MODE,
+                "triggers": list(_NURTURE_ROUND_TRIGGERS),
+            },
+        )
+    ).fetchone()
+    sent_rounds = int((row[0] if row else 0) or 0)
+    return sent_rounds >= len(_NURTURE_ROUND_TRIGGERS)
+
+
+async def maybe_mark_nurture_cycle_completed(
+    db: AsyncSession,
+    *,
+    user_id: str,
+) -> bool:
+    """Persist completion flag when every nurture round has been sent at least once."""
+    profile = await _load_profile(db, user_id=user_id)
+    if profile and _prefs(profile).get(NURTURE_CYCLE_COMPLETED_PREF):
+        return True
+
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT COUNT(DISTINCT metadata->>'trigger') AS sent_rounds
+                FROM message_schedules
+                WHERE user_id = CAST(:user_id AS text)
+                  AND metadata->>'delivery_mode' = :delivery_mode
+                  AND metadata->>'trigger' = ANY(:triggers)
+                  AND status = 'sent'
+                """
+            ),
+            {
+                "user_id": user_id,
+                "delivery_mode": APP_DOWNLOAD_NURTURE_DELIVERY_MODE,
+                "triggers": list(_NURTURE_ROUND_TRIGGERS),
+            },
+        )
+    ).fetchone()
+    sent_rounds = int((row[0] if row else 0) or 0)
+    if sent_rounds < len(_NURTURE_ROUND_TRIGGERS):
+        return False
+
+    await db.execute(
+        text(
+            """
+            UPDATE user_profiles
+            SET preferences = COALESCE(preferences, '{}'::jsonb)
+                || jsonb_build_object(:pref_key, to_jsonb(NOW()::text)),
+                updated_at = NOW()
+            WHERE user_id = CAST(:user_id AS uuid)
+            """
+        ),
+        {
+            "user_id": user_id,
+            "pref_key": NURTURE_CYCLE_COMPLETED_PREF,
+        },
+    )
+    await db.commit()
+    logger.bind(
+        component="app_download_nurture",
+        user_id=user_id,
+        sent_rounds=sent_rounds,
+    ).info("app_download_nurture.cycle_completed")
+    return True
 
 
 async def persist_user_nurture_language(
@@ -177,28 +251,7 @@ async def persist_user_nurture_language(
 
 
 def _video_chat_round_copy(round_num: int, language: str) -> str:
-    copies: dict[int, dict[str, str]] = {
-        1: {
-            "en": "Still here? Tap call on my profile for a quick video.",
-            "zh": "我还在呢，点我资料页的视频通话打过来，聊一小会儿？",
-            "es": "Sigo aquí. Toca videollamada en mi perfil si quieres hablar ahora.",
-            "pt": "Ainda estou aqui. Toca em chamada de vídeo no meu perfil se quiser conversar.",
-        },
-        2: {
-            "en": "I was waiting for you. Tap call on my profile — I'll pick up.",
-            "zh": "我刚刚还在等你，点我资料页的视频通话打过来，我会接。",
-            "es": "Te estaba esperando. Toca videollamada en mi perfil y te contesto.",
-            "pt": "Eu estava te esperando. Toca na chamada do meu perfil que eu atendo.",
-        },
-        3: {
-            "en": "I liked talking with you yesterday. Tap call on my profile tonight if you're free.",
-            "zh": "昨天聊得挺开心，今晚有空就点我资料页的视频打过来。",
-            "es": "Me gustó hablar contigo ayer. Esta noche toca videollamada en mi perfil si puedes.",
-            "pt": "Gostei de falar com você ontem. Hoje à noite toca em chamada no meu perfil se puder.",
-        },
-    }
-    lang = _normalize_nurture_language(language)
-    return copies.get(round_num, copies[1]).get(lang, copies[round_num]["en"])
+    return nurture_video_round_text(round_num, language)
 
 
 async def schedule_nurture_after_reply(
@@ -220,6 +273,15 @@ async def schedule_nurture_after_reply(
     任一轮发送前用户若再次发言则取消（stale guard）。
     """
     if not settings.APP_DOWNLOAD_NURTURE_ENABLED or not chat_id:
+        return 0
+
+    if await user_nurture_cycle_completed(db, user_id=user_id):
+        logger.bind(
+            component="app_download_nurture",
+            trace_id=trace_id,
+            conversation_id=conversation_id,
+            user_id=user_id,
+        ).info("app_download_nurture.cycle_already_completed_skip")
         return 0
 
     sender_account_id = account_id or await resolve_nurture_sender_account_id(
@@ -570,6 +632,10 @@ async def should_skip_stale_nurture_message(
     metadata = message.get("metadata") or {}
     if metadata.get("delivery_mode") != APP_DOWNLOAD_NURTURE_DELIVERY_MODE:
         return None
+
+    user_id = message.get("user_id")
+    if user_id and await user_nurture_cycle_completed(db, user_id=str(user_id)):
+        return "nurture_cycle_completed"
 
     if metadata.get("stop_if_downloaded", True):
         downloaded = (
@@ -1113,8 +1179,15 @@ def _nurture_reply_language(
 
     ranked = sorted(votes.items(), key=lambda item: (-item[1], item[0]))
     if len(ranked) == 1 or ranked[0][1] > ranked[1][1]:
-        return ranked[0][0]
-    return detect_nurture_language_from_text(user_texts[0])
+        winner = ranked[0][0]
+    else:
+        winner = detect_nurture_language_from_text(user_texts[0])
+
+    if winner == "en":
+        pref_lang = _prefs(profile).get("nurture_language")
+        if pref_lang:
+            return _normalize_nurture_language(str(pref_lang))
+    return winner
 
 
 def _prefs(profile: dict[str, Any] | None) -> dict[str, Any]:

@@ -160,19 +160,29 @@ _LANG_ALIASES: Final[dict[str, str]] = {
 }
 
 _LANG_HINTS: Final[dict[str, tuple[str, ...]]] = {
-    "es": (" que ", " estoy ", " siento ", " hola ", " gracias ", " solo", " sola", " feliz", " quiero ", " donde "),
-    "pt": (" que ", " estou ", " sinto ", " olá ", " ola ", " obrigado ", " obrigada ", " sozinho", " sozinha", " feliz", " quero "),
-    "fr": (" je ", " suis ", " très ", " merci ", " bonjour ", " seul", " seule", " triste"),
-    "de": (" ich ", " bin ", " sehr ", " danke ", " hallo ", " einsam", " traurig", " glücklich"),
-    "it": (" che ", " sono ", " ciao ", " grazie ", " voglio ", " triste", " felice"),
-    "nl": (" ik ", " ben ", " hallo ", " dank je ", " bedankt ", " wil ", " verdrietig"),
-    "sv": (" jag ", " är ", " hej ", " tack ", " vill ", " ledsen"),
-    "da": (" jeg ", " er ", " hej ", " tak ", " vil ", " trist"),
-    "no": (" jeg ", " er ", " hei ", " takk ", " vil ", " trist"),
-    "fi": (" minä ", " olen ", " hei ", " kiitos ", " haluan ", " surullinen"),
-    "is": (" ég ", " er ", " hæ ", " takk ", " vil ", " leiður"),
-    "el": (" είμαι ", " γεια ", " ευχαριστώ ", " θέλω "),
-    "cs": (" jsem ", " ahoj ", " děkuji ", " chci ", " smutný"),
+    "es": (
+        " que ", " estoy ", " siento ", " hola ", " gracias ", " solo", " sola", " feliz",
+        " quiero ", " donde ", " mandame ", " mándame ", " fotos ", " foto ", " imagen ",
+        " puedes ", " tienes ", " cuantos ", " cuántos ", " años ", " edad ", " mi vida ",
+    ),
+    "pt": (
+        " que ", " estou ", " sinto ", " olá ", " ola ", " obrigado ", " obrigada ",
+        " sozinho", " sozinha", " feliz", " quero ", " cadê ", " cade ", " você ", " voce ",
+        " sexo ", " agora ", " chamada ", " vídeo ", " video ",
+    ),
+    "fr": (" je ", " suis ", " très ", " merci ", " bonjour ", " seul", " seule", " triste", " veux ", " photo ", " vidéo "),
+    "de": (" ich ", " bin ", " sehr ", " danke ", " hallo ", " einsam", " traurig", " glücklich", " möchte ", " foto ", " video "),
+    "it": (" che ", " sono ", " ciao ", " grazie ", " voglio ", " triste", " felice", " foto ", " video "),
+    "nl": (" ik ", " ben ", " hallo ", " dank je ", " bedankt ", " wil ", " verdrietig", " foto ", " video "),
+    "sv": (" jag ", " är ", " hej ", " tack ", " vill ", " ledsen", " foto ", " video "),
+    "da": (" jeg ", " er ", " hej ", " tak ", " vil ", " trist", " foto ", " video "),
+    "no": (" jeg ", " er ", " hei ", " takk ", " vil ", " trist", " foto ", " video "),
+    "fi": (" minä ", " olen ", " hei ", " kiitos ", " haluan ", " surullinen", " kuva ", " video "),
+    "is": (" ég ", " er ", " hæ ", " takk ", " vil ", " leiður", " mynd ", " myndband "),
+    "el": (" είμαι ", " γεια ", " ευχαριστώ ", " θέλω ", " φωτο ", " βίντεο "),
+    "cs": (" jsem ", " ahoj ", " děkuji ", " chci ", " smutný", " foto ", " video "),
+    "ja": (" です ", " ます ", " こんにちは ", " ありがとう ", " 写真 ", " 動画 "),
+    "ko": (" 입니다 ", " 합니다 ", " 안녕 ", " 감사 ", " 사진 ", " 영상 "),
 }
 
 

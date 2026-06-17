@@ -58,6 +58,7 @@ from services.profile_intake import (
     write_age,
     write_country_code,
 )
+from services.product_i18n import profile_intake_text
 import asyncio
 import re
 
@@ -83,40 +84,10 @@ TELEGRAM_ONBOARDING_SKIPPED_STEPS = {
     "forbidden_topics": "skipped",
 }
 
-_PROFILE_COPY = {
-    "es": {
-        "country_question": "Antes de seguir, ¿en qué país estás? Puedes responder con el país o el código, como US, Canada, Japan o Germany.",
-        "country_retry": "No pude reconocer ese país. Responde con el nombre de tu país o un código de dos letras, como US, GB, JP o SG.",
-        "age_question": "Gracias. ¿Cuántos años tienes?",
-        "age_retry": "Responde con tu edad en número, por ejemplo 24.",
-    },
-    "pt": {
-        "country_question": "Antes de continuar, em que país você está? Pode responder com o país ou o código, como US, Canada, Japan ou Germany.",
-        "country_retry": "Não consegui reconhecer esse país. Responda com o nome do país ou um código de duas letras, como US, GB, JP ou SG.",
-        "age_question": "Obrigado. Quantos anos você tem?",
-        "age_retry": "Responda com sua idade em número, por exemplo 24.",
-    },
-    "ja": {
-        "country_question": "続ける前に、どの国にいますか？US、Canada、Japan、Germany のように国名かコードで答えてください。",
-        "country_retry": "その国を認識できませんでした。US、GB、JP、SG のように国名か2文字コードで答えてください。",
-        "age_question": "ありがとう。何歳ですか？",
-        "age_retry": "年齢を数字で答えてください。例: 24",
-    },
-    "ko": {
-        "country_question": "계속하기 전에 어느 나라에 있나요? US, Canada, Japan, Germany처럼 나라 이름이나 코드로 답해 주세요.",
-        "country_retry": "그 국가는 인식하지 못했어요. US, GB, JP, SG처럼 국가명이나 두 글자 코드로 답해 주세요.",
-        "age_question": "고마워요. 몇 살인가요?",
-        "age_retry": "나이를 숫자로 답해 주세요. 예: 24",
-    },
-}
-
+from services.product_i18n import profile_intake_text
 
 def _profile_copy(kind: str, text_content: str, fallback: str) -> str:
-    language = normalize_language(
-        detect_language_from_text(text_content or "", default="en"),
-        default="en",
-    )
-    return _PROFILE_COPY.get(language, {}).get(kind, fallback)
+    return profile_intake_text(kind, None, user_text=text_content) or fallback
 
 # ── Redis 单例 ────────────────────────────────────────
 _redis_client = None
