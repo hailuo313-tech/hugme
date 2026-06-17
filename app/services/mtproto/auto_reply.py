@@ -48,6 +48,7 @@ from services.telegram_peer_cache import upsert_telegram_peer_cache
 from services.user_level_service import user_level_service
 from services.user_reply_guard import user_allows_auto_reply
 from services.human_takeover_gate import evaluate_human_takeover_gate
+from services.inbound_reply_coalescer import finalize_coalesced_inbound_turn, register_inbound_turn
 from services.mtproto.account_routing import ensure_mtproto_account_route_for_reply
 from services.message_repeat_guard import should_skip_duplicate_outbound
 from services.mtproto.human_like_send import HumanLikeSendPolicy, send_human_like_message
@@ -591,6 +592,21 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
     )
     log.bind(message_id=user_msg_id).info("mtproto.inbound.persisted")
 
+    coalesce_registration = None
+    if route_allowed:
+        try:
+            coalesce_registration = await register_inbound_turn(
+                redis,
+                conversation_id=conv_id,
+                message_id=user_msg_id,
+                text_value=text_value,
+                trace_id=trace_id,
+            )
+        except Exception as exc:
+            log.bind(error_type=type(exc).__name__).warning(
+                "mtproto.inbound.coalesce_register_failed"
+            )
+
     # Keyword video requests must queue on whichever account received the message,
     # even when account routing skips LLM auto-reply on secondary MTProto accounts.
     await _try_queue_live_video_keyword_review(
@@ -627,6 +643,45 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
                 "mtproto.inbound.human_takeover_gate_failed"
             )
 
+    async with AsyncSessionLocal() as db:
+        try:
+            coalesced = await finalize_coalesced_inbound_turn(
+                redis,
+                db,
+                conversation_id=conv_id,
+                message_id=user_msg_id,
+                text_value=text_value,
+                trace_id=trace_id,
+                registration=coalesce_registration,
+                sleep=asyncio.sleep,
+            )
+        except Exception as exc:
+            await db.rollback()
+            log.bind(error_type=type(exc).__name__).warning(
+                "mtproto.inbound.coalesce_failed"
+            )
+            coalesced = None
+
+    if coalesced is not None and not coalesced.should_reply:
+        log.bind(
+            coalesced_message_count=coalesced.message_count,
+            coalesced_trigger_message_id=coalesced.trigger_message_id,
+        ).info("mtproto.inbound.coalesced_skip_duplicate_reply")
+        return
+
+    reply_user_text = coalesced.merged_text if coalesced is not None else text_value
+    reply_trigger_message_id = (
+        coalesced.trigger_message_id if coalesced is not None else user_msg_id
+    )
+    if coalesced is not None and coalesced.message_count > 1:
+        trace_id = coalesced.trace_id
+        log = log.bind(
+            trace_id=trace_id,
+            coalesced_message_count=coalesced.message_count,
+            coalesced_trigger_message_id=reply_trigger_message_id,
+        )
+        log.info("mtproto.inbound.coalesced_reply")
+
     nurture_immediate_reply: str | None = None
     nurture_intent: str | None = None
     async with AsyncSessionLocal() as db:
@@ -638,7 +693,7 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
                 conversation_id=conv_id,
                 chat_id=int(sender_id),
                 account_id=str(account_id),
-                user_text=text_value,
+                user_text=reply_user_text,
                 trace_id=trace_id,
                 telegram_access_hash=getattr(sender, "access_hash", None),
             )
@@ -664,7 +719,7 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
         conversation_id=conv_id,
         chat_id=int(sender_id),
         account_id=str(account_id),
-        user_text=text_value,
+        user_text=reply_user_text,
         trace_id=trace_id,
         telegram_access_hash=getattr(sender, "access_hash", None),
     )
@@ -691,7 +746,7 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
                 db,
                 user_id=user_id,
                 external_id=external_id,
-                text_value=text_value,
+                text_value=reply_user_text,
                 log=log,
             )
         except Exception as exc:
@@ -703,11 +758,11 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
             reply_text = await generate_reply(
                 user_id=user_id,
                 conversation_id=conv_id,
-                user_text=text_value,
+                user_text=reply_user_text,
                 trace_id=trace_id,
                 redis=redis,
                 db=db,
-                trigger_message_id=user_msg_id,
+                trigger_message_id=reply_trigger_message_id,
             )
         except LLMOrchestratorError as exc:
             log.bind(reason=str(exc)).warning("mtproto.orchestrator.failed")
@@ -733,13 +788,13 @@ async def handle_mtproto_new_message(client: Any, account_id: uuid.UUID, event: 
             nurture_immediate_reply = None
         if nurture_immediate_reply and nurture_immediate_reply not in reply_text:
             reply_text = f"{nurture_immediate_reply}\n\n{reply_text}"
-        reply_text = sanitize_outbound_reply(reply_text, user_text=text_value)
+        reply_text = sanitize_outbound_reply(reply_text, user_text=reply_user_text)
         link_cooldown_active = await is_conversation_link_cooldown_active(
             db,
             conversation_id=conv_id,
         )
         app_download_decision = get_last_app_download_decision()
-        if link_cooldown_active and not bypasses_link_cooldown(text_value):
+        if link_cooldown_active and not bypasses_link_cooldown(reply_user_text):
             if not decision_bypasses_link_cooldown(app_download_decision):
                 reply_text = strip_links_from_reply(reply_text)
                 app_download_decision = None
