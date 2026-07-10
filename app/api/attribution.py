@@ -556,6 +556,7 @@ async def admin_attribution_summary(
                 WHERE m.id IS NOT NULL
                   AND {user_window}
             ) AS new_users,
+            COALESCE(rn.new_users_last_10m, 0) AS new_users_last_10m,
             COUNT(m.id) AS assistant_messages,
             MAX(m.created_at) AS last_message_at
         FROM telegram_accounts ta
@@ -565,9 +566,26 @@ async def admin_attribution_summary(
          AND {event_window.replace("created_at", "m.created_at")}
         LEFT JOIN conversations c ON c.id = m.conversation_id
         LEFT JOIN users u ON u.id = c.user_id AND u.channel = 'telegram_real_user'
-        GROUP BY ta.id, ta.display_name, ta.username, ta.phone
-        ORDER BY served_users DESC, new_users DESC, assistant_messages DESC, account_label ASC
-        LIMIT 50
+        LEFT JOIN (
+            SELECT
+                pc.account_id::text AS account_id,
+                COUNT(DISTINCT pc.user_id) AS new_users_last_10m
+            FROM telegram_peer_cache pc
+            JOIN users recent_user ON recent_user.id = pc.user_id
+            WHERE pc.user_id IS NOT NULL
+              AND recent_user.channel = 'telegram_real_user'
+              AND recent_user.created_at >=
+                  (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - INTERVAL '10 minutes'
+              AND recent_user.created_at < CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
+            GROUP BY pc.account_id
+        ) rn ON rn.account_id = ta.id::text
+        GROUP BY
+            ta.id, ta.display_name, ta.username, ta.phone,
+            rn.new_users_last_10m
+        ORDER BY
+            new_users_last_10m DESC,
+            last_message_at DESC NULLS LAST,
+            account_label ASC
         """
     )
 
@@ -732,8 +750,9 @@ async def admin_attribution_summary(
                 "username": value(r, 3, None),
                 "served_users": int(value(r, 4) or 0),
                 "new_users": int(value(r, 5) or 0),
-                "assistant_messages": int(value(r, 6) or 0),
-                "last_message_at": value(r, 7, None).isoformat() if value(r, 7, None) else None,
+                "new_users_last_10m": int(value(r, 6) or 0),
+                "assistant_messages": int(value(r, 7) or 0),
+                "last_message_at": value(r, 8, None).isoformat() if value(r, 8, None) else None,
             }
             for r in telegram_account_rows
         ],
