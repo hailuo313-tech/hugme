@@ -325,12 +325,13 @@ async def test_admin_attribution_summary_returns_complete_dashboard_shape() -> N
     assert out["overview"]["tg_served_users"] == 5
     assert out["telegram_accounts"][0]["account_label"] == "Mira TG"
     assert out["telegram_accounts"][0]["new_users"] == 3
-    assert out["telegram_accounts"][0]["new_users_last_10m"] == 4
+    assert out["telegram_accounts"][0]["new_users_last_30m"] == 4
     assert out["telegram_accounts"][0]["served_users"] == 5
     telegram_accounts_sql = db.execute.await_args_list[-1].args[0].text
     assert "FROM telegram_peer_cache pc" in telegram_accounts_sql
     assert "COUNT(DISTINCT pc.user_id)" in telegram_accounts_sql
-    assert "new_users_last_10m DESC" in telegram_accounts_sql
+    assert "INTERVAL '30 minutes'" in telegram_accounts_sql
+    assert "new_users_last_30m DESC" in telegram_accounts_sql
     assert db.execute.await_args_list[0].args[1]["start_at"] == date(2026, 5, 22)
 
 

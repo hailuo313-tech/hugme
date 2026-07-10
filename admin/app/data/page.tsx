@@ -56,7 +56,7 @@ interface TelegramAccountRow {
   username?: string | null;
   served_users: number;
   new_users: number;
-  new_users_last_10m: number;
+  new_users_last_30m: number;
   assistant_messages: number;
   last_message_at?: string | null;
 }
@@ -462,7 +462,7 @@ function TelegramAccountPanel({ rows }: { rows: TelegramAccountRow[] }) {
       <div className="border-b border-slate-800 px-5 py-4">
         <h2 className="text-lg font-semibold">TG 账号接待表现</h2>
         <p className="mt-1 text-xs text-slate-500">
-          按最近滚动 10 分钟由各 TG 账号实际新增的去重用户数从高到低排列，无需已接待。
+          按最近滚动 30 分钟由各 TG 账号实际新增的去重用户数从高到低排列，无需已接待。
         </p>
       </div>
       <div className="overflow-x-auto">
@@ -470,7 +470,7 @@ function TelegramAccountPanel({ rows }: { rows: TelegramAccountRow[] }) {
           <thead className="bg-slate-950/50 text-slate-500">
             <tr>
               <th className="px-5 py-3 font-medium">TG 账号</th>
-              <th className="px-5 py-3 font-medium">近10分钟实际新增</th>
+              <th className="px-5 py-3 font-medium">近30分钟实际新增</th>
               <th className="px-5 py-3 font-medium">新用户</th>
               <th className="px-5 py-3 font-medium">接待用户</th>
               <th className="px-5 py-3 font-medium">发送消息</th>
@@ -485,7 +485,7 @@ function TelegramAccountPanel({ rows }: { rows: TelegramAccountRow[] }) {
                     <div className="font-medium text-slate-100">{row.account_label}</div>
                     <div className="mt-1 text-xs text-slate-500">{row.username || row.phone || row.account_id}</div>
                   </td>
-                  <td className="px-5 py-4 font-semibold text-sky-300">{row.new_users_last_10m}</td>
+                  <td className="px-5 py-4 font-semibold text-sky-300">{row.new_users_last_30m}</td>
                   <td className="px-5 py-4 text-slate-100">{row.new_users}</td>
                   <td className="px-5 py-4 text-slate-100">{row.served_users}</td>
                   <td className="px-5 py-4 text-slate-300">{row.assistant_messages}</td>
