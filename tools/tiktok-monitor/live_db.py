@@ -139,6 +139,7 @@ def init_db(db_path: Path) -> None:
         _ensure_column(conn, "accounts", "last_managed_probe_at", "TEXT")
         _ensure_column(conn, "accounts", "last_managed_status", "TEXT")
         _ensure_column(conn, "accounts", "last_managed_error", "TEXT")
+        _ensure_column(conn, "accounts", "last_managed_room_id", "TEXT")
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) -> None:
@@ -244,7 +245,8 @@ def account_verification_state(db_path: Path, username: str) -> Optional[sqlite3
         return conn.execute(
             """
             SELECT username, last_probe_status, local_live_streak, local_offline_streak,
-                   last_managed_probe_at, last_managed_status, last_managed_error
+                   last_managed_probe_at, last_managed_status, last_managed_error,
+                   last_managed_room_id
             FROM accounts
             WHERE lower(username)=lower(?) AND enabled=1
             """,
@@ -307,6 +309,7 @@ def record_managed_probe(
     *,
     outcome: str,
     error: Optional[str] = None,
+    room_id: Optional[str] = None,
 ) -> None:
     with connect(db_path) as conn:
         conn.execute(
@@ -314,10 +317,17 @@ def record_managed_probe(
             UPDATE accounts
             SET last_managed_probe_at=?,
                 last_managed_status=?,
-                last_managed_error=?
+                last_managed_error=?,
+                last_managed_room_id=?
             WHERE lower(username)=lower(?) AND enabled=1
             """,
-            (now_iso(), outcome, str(error)[:500] if error else None, username),
+            (
+                now_iso(),
+                outcome,
+                str(error)[:500] if error else None,
+                str(room_id) if room_id else None,
+                username,
+            ),
         )
 
 

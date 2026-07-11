@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import random
 import sys
@@ -166,11 +167,69 @@ def _pending(local: LiveStatus, message: str) -> LiveStatus:
     )
 
 
+def _staggered_cache_minutes(username: str, *, has_room_id: bool) -> int:
+    digest = hashlib.sha256(username.casefold().encode("utf-8")).digest()
+    offset = int.from_bytes(digest[:2], "big")
+    if has_room_id:
+        return 720 + (offset % 361)
+    return 240 + (offset % 241)
+
+
+def _managed_cache_fresh(state, local: LiveStatus) -> bool:
+    if not state or not state["last_managed_probe_at"]:
+        return False
+    current_room = str(local.room_id or "").strip()
+    checked_room = str(state["last_managed_room_id"] or "").strip()
+    if current_room and checked_room and current_room != checked_room:
+        return False
+    status = str(state["last_managed_status"] or "")
+    if status == "offline":
+        ttl = _staggered_cache_minutes(
+            local.username,
+            has_room_id=bool(current_room),
+        )
+    elif status == "unknown":
+        ttl = 120
+    else:
+        return False
+    return not _managed_due(state["last_managed_probe_at"], ttl)
+
+
+def _managed_primary_result(
+    local: LiveStatus,
+    managed: ManagedLiveStatus,
+) -> LiveStatus:
+    source = f"{managed.source}+local:{local.source}"
+    if managed.outcome == "live":
+        return LiveStatus(
+            username=local.username,
+            is_live=True,
+            room_id=managed.room_id or local.room_id,
+            title=managed.title or local.title,
+            viewer_count=managed.viewer_count,
+            enter_count=local.enter_count,
+            source=source,
+        )
+    if managed.outcome == "offline":
+        return LiveStatus(
+            username=local.username,
+            is_live=False,
+            room_id=local.room_id,
+            title=local.title,
+            source=source,
+        )
+    return _pending(
+        local,
+        managed.error or "professional LIVE API returned an unknown result",
+    )
+
+
 def _fetch_budgeted_managed(
     *,
     usernames: list[str],
     category: str,
     live_api: dict,
+    local_results: dict[str, LiveStatus],
 ) -> dict[str, ManagedLiveStatus]:
     ordered = sorted(set(usernames), key=str.casefold)
     allowed = reserve_managed_budget(DB_PATH, len(ordered), category=category)
@@ -191,6 +250,10 @@ def _fetch_budgeted_managed(
             username,
             outcome=status.outcome,
             error=status.error,
+            room_id=(
+                status.room_id
+                or local_results.get(username.casefold(), LiveStatus(username, False)).room_id
+            ),
         )
     return results
 
@@ -219,9 +282,7 @@ def _apply_budgeted_consensus(
             and state["last_managed_status"] == "live"
         )
 
-        if local.outcome == "unknown":
-            pending_results[key] = local
-        elif local.outcome == "live" and confirmed_live:
+        if confirmed_live:
             if _managed_due(state["last_managed_probe_at"], recheck_minutes):
                 active_candidates.append(local.username)
             else:
@@ -230,9 +291,20 @@ def _apply_budgeted_consensus(
                     outcome="live",
                     source="managed:cached",
                 )
-                pending_results[key] = _consensus_status(
-                    local, cached, managed_required=True
+                pending_results[key] = _managed_primary_result(
+                    local,
+                    cached,
                 )
+        elif local.outcome == "unknown":
+            if _managed_cache_fresh(state, local):
+                cached_status = ManagedLiveStatus(
+                    username=local.username,
+                    outcome=state["last_managed_status"],
+                    source="managed:cached",
+                )
+                pending_results[key] = _managed_primary_result(local, cached_status)
+            else:
+                active_candidates.append(local.username)
         elif local.outcome == "live":
             if live_streak >= 2:
                 new_candidates.append(local.username)
@@ -254,12 +326,14 @@ def _apply_budgeted_consensus(
         usernames=active_candidates,
         category="active",
         live_api=live_api,
+        local_results=local_results,
     )
     managed_statuses.update(
         _fetch_budgeted_managed(
             usernames=new_candidates,
             category="candidate",
             live_api=live_api,
+            local_results=local_results,
         )
     )
 
@@ -270,9 +344,7 @@ def _apply_budgeted_consensus(
         if managed is None:
             pending_results[key] = _pending(local, "daily Apify budget exhausted")
         else:
-            pending_results[key] = _consensus_status(
-                local, managed, managed_required=True
-            )
+            pending_results[key] = _managed_primary_result(local, managed)
     return pending_results
 
 

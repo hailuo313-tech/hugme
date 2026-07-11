@@ -27,6 +27,113 @@ import web_app
 
 
 class HybridLiveTests(unittest.TestCase):
+    @patch("live_worker.fetch_managed_statuses")
+    def test_unknown_baseline_is_paid_once_then_cached(
+        self,
+        managed_mock: Mock,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "live.sqlite"
+            init_db(db_path)
+            with connect(db_path) as conn:
+                conn.execute(
+                    """
+                    INSERT INTO accounts
+                    (username, display_name, profile_url, enabled, created_at, updated_at)
+                    VALUES ('creator', 'creator', 'https://example.test', 1,
+                            '2026-01-01', '2026-01-01')
+                    """
+                )
+            managed_mock.return_value = {
+                "creator": ManagedLiveStatus(
+                    username="creator",
+                    outcome="offline",
+                    source="managed:apify",
+                )
+            }
+            local = {
+                "creator": LiveStatus(
+                    username="creator",
+                    is_live=False,
+                    room_id="room-1",
+                    source="sigi_unverified",
+                    error="local stream unavailable",
+                )
+            }
+
+            with patch("live_worker.DB_PATH", db_path):
+                first = _apply_budgeted_consensus(
+                    local,
+                    live_api={"enabled": True, "provider": "apify"},
+                    managed_required=True,
+                )["creator"]
+                second = _apply_budgeted_consensus(
+                    local,
+                    live_api={"enabled": True, "provider": "apify"},
+                    managed_required=True,
+                )["creator"]
+
+            self.assertEqual("offline", first.outcome)
+            self.assertEqual("offline", second.outcome)
+            managed_mock.assert_called_once()
+            self.assertEqual(1, managed_budget_stats(db_path)["used"])
+            self.assertIn("managed:cached", second.source)
+
+    @patch("live_worker.fetch_managed_statuses")
+    def test_room_change_bypasses_offline_cache(self, managed_mock: Mock) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "live.sqlite"
+            init_db(db_path)
+            with connect(db_path) as conn:
+                conn.execute(
+                    """
+                    INSERT INTO accounts
+                    (username, display_name, profile_url, enabled, created_at, updated_at)
+                    VALUES ('creator', 'creator', 'https://example.test', 1,
+                            '2026-01-01', '2026-01-01')
+                    """
+                )
+            managed_mock.return_value = {
+                "creator": ManagedLiveStatus(
+                    username="creator",
+                    outcome="offline",
+                    source="managed:apify",
+                )
+            }
+            first_local = {
+                "creator": LiveStatus(
+                    username="creator",
+                    is_live=False,
+                    room_id="room-1",
+                    source="sigi_unverified",
+                    error="local stream unavailable",
+                )
+            }
+            changed_local = {
+                "creator": LiveStatus(
+                    username="creator",
+                    is_live=False,
+                    room_id="room-2",
+                    source="sigi_unverified",
+                    error="local stream unavailable",
+                )
+            }
+
+            with patch("live_worker.DB_PATH", db_path):
+                _apply_budgeted_consensus(
+                    first_local,
+                    live_api={"enabled": True, "provider": "apify"},
+                    managed_required=True,
+                )
+                _apply_budgeted_consensus(
+                    changed_local,
+                    live_api={"enabled": True, "provider": "apify"},
+                    managed_required=True,
+                )
+
+            self.assertEqual(2, managed_mock.call_count)
+            self.assertEqual(2, managed_budget_stats(db_path)["used"])
+
     def test_dashboard_is_manual_only_and_button_still_triggers_probe(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
