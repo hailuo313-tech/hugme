@@ -199,28 +199,14 @@ def _managed_primary_result(
     local: LiveStatus,
     managed: ManagedLiveStatus,
 ) -> LiveStatus:
-    source = f"{managed.source}+local:{local.source}"
-    if managed.outcome == "live":
-        return LiveStatus(
-            username=local.username,
-            is_live=True,
-            room_id=managed.room_id or local.room_id,
-            title=managed.title or local.title,
-            viewer_count=managed.viewer_count,
-            enter_count=local.enter_count,
-            source=source,
-        )
-    if managed.outcome == "offline":
-        return LiveStatus(
-            username=local.username,
-            is_live=False,
-            room_id=local.room_id,
-            title=local.title,
-            source=source,
-        )
-    return _pending(
+    # A managed provider is an independent signal, not an authority that may
+    # overwrite a contradictory local Webcast/playback result.  In particular,
+    # some providers return false negatives for region-restricted live rooms.
+    # Preserve the strict contract: only matching signals are conclusive.
+    return _consensus_status(
         local,
-        managed.error or "professional LIVE API returned an unknown result",
+        managed,
+        managed_required=True,
     )
 
 

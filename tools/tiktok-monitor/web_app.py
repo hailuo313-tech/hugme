@@ -295,6 +295,20 @@ def render_page(*, tab: str, group: str = GROUP_INTERCEPT, message: str = "") ->
         )
 
     live_rows = [session_row_html(row) for row in live_sessions]
+    pending_rows = []
+    for row in accounts:
+        if str(row["last_probe_status"] or "") != "unknown":
+            continue
+        profile_url = str(row["profile_url"] or "").rstrip("/")
+        pending_rows.append(
+            "<tr>"
+            f"<td><a href='{esc(profile_url)}/live' target='_blank' rel='noopener'>"
+            f"@{esc(row['username'])}</a></td>"
+            f"<td>{esc(row['display_name'] or '-')}</td>"
+            f"<td>{probe_status_html(row)}</td>"
+            f"<td>{esc(row['last_probe_at'] or '-')}</td>"
+            "</tr>"
+        )
     history_rows = [session_row_html(row) for row in history_sessions]
     removed_rows = []
     for row in removed_rows_db:
@@ -424,7 +438,7 @@ def render_page(*, tab: str, group: str = GROUP_INTERCEPT, message: str = "") ->
     </div>
     {group_tabs}
     {render_accounts_tab(account_rows, group) if tab == 'accounts' else ''}
-    {render_live_tab(live_rows, group, probe_running=probe_running) if tab == 'live' else ''}
+    {render_live_tab(live_rows, pending_rows, group, probe_running=probe_running) if tab == 'live' else ''}
     {render_history_tab(history_rows, group) if tab == 'history' else ''}
     {render_removed_tab(removed_rows, group, audit_running=audit_running) if tab == 'removed' else ''}
   </div>
@@ -473,13 +487,22 @@ def render_accounts_tab(rows: list[str], group: str) -> str:
     </div>"""
 
 
-def render_live_tab(rows: list[str], group: str, *, probe_running: bool = False) -> str:
+def render_live_tab(
+    rows: list[str],
+    pending_rows: list[str],
+    group: str,
+    *,
+    probe_running: bool = False,
+) -> str:
     group_label = GROUP_LABELS[parse_group(group)]
     disabled_attr = " disabled" if probe_running else ""
     btn_label = "⏳ 检测进行中…" if probe_running else "立即检测全部账号"
     btn_class = "btn-running" if probe_running else ""
     body = "".join(rows) if rows else (
         f"<tr><td colspan='9' class='empty'>当前无{esc(group_label)}在直播</td></tr>"
+    )
+    pending_body = "".join(pending_rows) if pending_rows else (
+        f"<tr><td colspan='4' class='empty'>当前无{esc(group_label)}待确认账号</td></tr>"
     )
     return f"""
     <div class="panel">
@@ -495,6 +518,16 @@ def render_live_tab(rows: list[str], group: str, *, probe_running: bool = False)
         <table>
           <thead><tr><th>账号</th><th>标题</th><th>累计进入</th><th>较上次增加</th><th>采样次数</th><th>开播时间</th><th>结束时间</th><th>确认状态</th><th>最后确认/来源</th></tr></thead>
           <tbody>{body}</tbody>
+        </table>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:16px">
+      <h2>{esc(group_label)} · 待确认直播候选（可点击账号人工核验）</h2>
+      <div class="panel-body">
+        <p class="note">这里包含本地与 Apify 冲突、超时或无法完成双源确认的账号，不再错误归类为离线。</p>
+        <table>
+          <thead><tr><th>账号/直播链接</th><th>备注</th><th>冲突原因</th><th>最后检测</th></tr></thead>
+          <tbody>{pending_body}</tbody>
         </table>
       </div>
     </div>"""

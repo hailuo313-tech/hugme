@@ -75,8 +75,8 @@ class HybridLiveTests(unittest.TestCase):
                     managed_required=True,
                 )["creator"]
 
-            self.assertEqual("offline", first.outcome)
-            self.assertEqual("offline", second.outcome)
+            self.assertEqual("unknown", first.outcome)
+            self.assertEqual("unknown", second.outcome)
             managed_mock.assert_called_once()
             self.assertEqual(1, managed_budget_stats(db_path)["used"])
             self.assertIn("managed:cached", second.source)
@@ -160,6 +160,7 @@ class HybridLiveTests(unittest.TestCase):
         self.assertIn('action="/tiktok-monitor/run-probe"', body)
         self.assertIn("立即检测全部账号", body)
         self.assertIn("只在点击按钮后执行，不自动检测", body)
+        self.assertIn("待确认直播候选", body)
         self.assertNotIn("自动每 2 分钟", body)
         self.assertNotIn("直播账号每 60 秒复核", body)
 
@@ -283,6 +284,51 @@ class HybridLiveTests(unittest.TestCase):
             self.assertEqual("live", second.outcome)
             managed_mock.assert_called_once()
             self.assertEqual(1, managed_budget_stats(db_path)["used"])
+
+    @patch("live_worker.fetch_managed_statuses")
+    def test_managed_offline_cannot_override_verified_local_live(
+        self,
+        managed_mock: Mock,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "live.sqlite"
+            init_db(db_path)
+            with connect(db_path) as conn:
+                conn.execute(
+                    """
+                    INSERT INTO accounts
+                    (username, display_name, profile_url, enabled, local_live_streak,
+                     created_at, updated_at)
+                    VALUES ('creator', 'creator', 'https://example.test', 1, 1,
+                            '2026-01-01', '2026-01-01')
+                    """
+                )
+            managed_mock.return_value = {
+                "creator": ManagedLiveStatus(
+                    username="creator",
+                    outcome="offline",
+                    source="managed:apify",
+                )
+            }
+            local = {
+                "creator": LiveStatus(
+                    username="creator",
+                    is_live=True,
+                    room_id="123",
+                    source="sigi+webcast",
+                )
+            }
+
+            with patch("live_worker.DB_PATH", db_path):
+                result = _apply_budgeted_consensus(
+                    local,
+                    live_api={"enabled": True, "provider": "apify"},
+                    managed_required=True,
+                )["creator"]
+
+            self.assertEqual("unknown", result.outcome)
+            self.assertIn("managed=offline", str(result.error))
+            self.assertIn("local=live", str(result.error))
 
     @patch("live_worker.fetch_managed_statuses")
     def test_exhausted_budget_never_confirms_live(self, managed_mock: Mock) -> None:
