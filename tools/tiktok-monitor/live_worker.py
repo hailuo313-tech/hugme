@@ -167,6 +167,13 @@ def _pending(local: LiveStatus, message: str) -> LiveStatus:
     )
 
 
+def _is_strong_local_live(local: LiveStatus) -> bool:
+    return local.outcome == "live" and local.source in {
+        "sigi+webcast",
+        "sigi+stream",
+    }
+
+
 def _staggered_cache_minutes(username: str, *, has_room_id: bool) -> int:
     digest = hashlib.sha256(username.casefold().encode("utf-8")).digest()
     offset = int.from_bytes(digest[:2], "big")
@@ -199,10 +206,25 @@ def _managed_primary_result(
     local: LiveStatus,
     managed: ManagedLiveStatus,
 ) -> LiveStatus:
-    # A managed provider is an independent signal, not an authority that may
-    # overwrite a contradictory local Webcast/playback result.  In particular,
-    # some providers return false negatives for region-restricted live rooms.
-    # Preserve the strict contract: only matching signals are conclusive.
+    if _is_strong_local_live(local):
+        return LiveStatus(
+            username=local.username,
+            is_live=True,
+            room_id=local.room_id or managed.room_id,
+            title=local.title or managed.title,
+            viewer_count=local.viewer_count
+            if local.viewer_count is not None
+            else managed.viewer_count,
+            enter_count=local.enter_count,
+            source=(
+                f"local:{local.source}+{managed.source}:"
+                f"advisory-{managed.outcome}"
+            ),
+        )
+
+    # Apify is advisory. It may support a local result, but it cannot confirm
+    # live by itself or turn an inconclusive/contradictory local result into a
+    # conclusive one.
     return _consensus_status(
         local,
         managed,
@@ -292,7 +314,14 @@ def _apply_budgeted_consensus(
             else:
                 active_candidates.append(local.username)
         elif local.outcome == "live":
-            if live_streak >= 2:
+            if _is_strong_local_live(local) and _managed_cache_fresh(state, local):
+                cached_status = ManagedLiveStatus(
+                    username=local.username,
+                    outcome=state["last_managed_status"],
+                    source="managed:cached",
+                )
+                pending_results[key] = _managed_primary_result(local, cached_status)
+            elif _is_strong_local_live(local) or live_streak >= 2:
                 new_candidates.append(local.username)
             else:
                 pending_results[key] = _pending(
@@ -328,7 +357,10 @@ def _apply_budgeted_consensus(
         local = local_results[key]
         managed = managed_statuses.get(key)
         if managed is None:
-            pending_results[key] = _pending(local, "daily Apify budget exhausted")
+            if _is_strong_local_live(local):
+                pending_results[key] = local
+            else:
+                pending_results[key] = _pending(local, "daily Apify budget exhausted")
         else:
             pending_results[key] = _managed_primary_result(local, managed)
     return pending_results

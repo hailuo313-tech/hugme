@@ -77,8 +77,8 @@ def hybrid_mode_note() -> str:
         config = {}
     live_api = config.get("live_api") if isinstance(config.get("live_api"), dict) else {}
     if managed_api_enabled(live_api):
-        return "混合严格模式：专业 LIVE API 与本地 Webcast/视频流必须一致才确认直播。"
-    return "严格本地模式：已禁止 SIGI 单独确认；专业 LIVE API 尚未启用，启用后自动执行双源一致判定。"
+        return "本地强信号模式：SIGI 与 Webcast/有效视频流一致即确认直播；Apify 仅作参考，无否决权。"
+    return "本地强信号模式：SIGI 与 Webcast/有效视频流一致即确认直播；已禁止 SIGI 单独确认。"
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -513,7 +513,7 @@ def render_live_tab(
           <button type="submit" class="{btn_class}"{disabled_attr}>{btn_label}</button>
           <span class="note" style="margin-left:10px">检测范围：全部账号 · 本页仅显示{esc(group_label)} · 只在点击按钮后执行，不自动检测</span>
         </form>
-        <p class="note">{esc(hybrid_mode_note())} 冲突、超时、限流或预算耗尽统一显示“待确认”，不会误报为直播。每次点击执行一次完整检测；Apify 只复核连续强信号候选，并受最短复核间隔和每日预算限制。</p>
+        <p class="note">{esc(hybrid_mode_note())} 本地信号不完整时显示“待确认”。每次点击执行一次完整检测；Apify 复核受缓存、最短间隔和每日预算限制。</p>
         <p class="note">累计进入 = 本场总进入人次（只增不减）；较上次增加 = 距上一次采样新增的人次。TikTok 未登录接口无法读取 App 内实时在线人数。</p>
         <table>
           <thead><tr><th>账号</th><th>标题</th><th>累计进入</th><th>较上次增加</th><th>采样次数</th><th>开播时间</th><th>结束时间</th><th>确认状态</th><th>最后确认/来源</th></tr></thead>

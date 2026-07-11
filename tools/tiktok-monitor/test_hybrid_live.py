@@ -225,7 +225,7 @@ class HybridLiveTests(unittest.TestCase):
             self.assertLessEqual(daily_calls, 600)
 
     @patch("live_worker.fetch_managed_statuses")
-    def test_candidate_requires_two_local_live_signals(
+    def test_strong_local_live_is_confirmed_on_first_probe(
         self,
         managed_mock: Mock,
     ) -> None:
@@ -263,12 +263,12 @@ class HybridLiveTests(unittest.TestCase):
                     live_api={"enabled": True, "provider": "apify"},
                     managed_required=True,
                 )["creator"]
-                self.assertEqual("unknown", first.outcome)
-                managed_mock.assert_not_called()
+                self.assertEqual("live", first.outcome)
+                managed_mock.assert_called_once()
                 apply_probe_result(
                     db_path,
                     username="creator",
-                    is_live=False,
+                    is_live=first.is_live,
                     room_id="123",
                     title=None,
                     viewer_count=None,
@@ -326,12 +326,15 @@ class HybridLiveTests(unittest.TestCase):
                     managed_required=True,
                 )["creator"]
 
-            self.assertEqual("unknown", result.outcome)
-            self.assertIn("managed=offline", str(result.error))
-            self.assertIn("local=live", str(result.error))
+            self.assertEqual("live", result.outcome)
+            self.assertIsNone(result.error)
+            self.assertIn("advisory-offline", result.source)
 
     @patch("live_worker.fetch_managed_statuses")
-    def test_exhausted_budget_never_confirms_live(self, managed_mock: Mock) -> None:
+    def test_exhausted_budget_does_not_block_strong_local_live(
+        self,
+        managed_mock: Mock,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "live.sqlite"
             init_db(db_path)
@@ -362,8 +365,8 @@ class HybridLiveTests(unittest.TestCase):
                     managed_required=True,
                 )["creator"]
 
-            self.assertEqual("unknown", result.outcome)
-            self.assertIn("budget exhausted", str(result.error))
+            self.assertEqual("live", result.outcome)
+            self.assertIsNone(result.error)
             managed_mock.assert_not_called()
 
     @patch("managed_live.requests.post")
