@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any, Optional
@@ -26,6 +27,13 @@ def managed_api_enabled(config: dict) -> bool:
     if env_value is not None:
         return env_value.strip().lower() in {"1", "true", "yes", "on"}
     return bool(config.get("enabled"))
+
+
+def _safe_request_error(exc: Exception, api_key: str) -> str:
+    message = str(exc)
+    if api_key:
+        message = message.replace(api_key, "[REDACTED]")
+    return re.sub(r"apify_api_[A-Za-z0-9_-]+", "[REDACTED]", message)[:500]
 
 
 def _clean_username(value: Any) -> str:
@@ -163,7 +171,7 @@ def fetch_managed_statuses(usernames: list[str], config: dict) -> dict[str, Mana
     try:
         if provider == "apify":
             batch_size = max(1, min(20, int(config.get("apify_batch_size") or 20)))
-            workers = max(1, min(4, int(config.get("apify_workers") or 4)))
+            workers = max(1, min(2, int(config.get("apify_workers") or 1)))
             batches = [
                 clean_names[index : index + batch_size]
                 for index in range(0, len(clean_names), batch_size)
@@ -193,9 +201,10 @@ def fetch_managed_statuses(usernames: list[str], config: dict) -> dict[str, Mana
                     try:
                         _, parsed = future.result()
                     except (requests.RequestException, ValueError) as exc:
+                        safe_error = _safe_request_error(exc, api_key)
                         for name in batch:
                             results[name.casefold()].error = (
-                                f"managed LIVE API request failed: {exc}"
+                                f"managed LIVE API request failed: {safe_error}"
                             )
                         continue
                     for item in parsed:
@@ -235,7 +244,7 @@ def fetch_managed_statuses(usernames: list[str], config: dict) -> dict[str, Mana
                 results[key] = status
         return results
     except (requests.RequestException, ValueError) as exc:
-        message = f"managed LIVE API request failed: {exc}"
+        message = f"managed LIVE API request failed: {_safe_request_error(exc, api_key)}"
         for status in results.values():
             status.error = message
         return results

@@ -7,6 +7,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import requests
+
 from live_db import (
     apply_probe_result,
     connect,
@@ -372,6 +374,20 @@ class HybridLiveTests(unittest.TestCase):
                 for call in post_mock.call_args_list
             )
         )
+
+    @patch("managed_live.requests.post")
+    def test_apify_errors_never_expose_token(self, post_mock: Mock) -> None:
+        post_mock.side_effect = requests.HTTPError(
+            "403 for https://api.apify.test/run?token=apify_api_secret"
+        )
+
+        results = fetch_managed_statuses(
+            ["creator"],
+            {"enabled": True, "provider": "apify", "api_key": "apify_api_secret"},
+        )
+
+        self.assertNotIn("apify_api_secret", str(results["creator"].error))
+        self.assertIn("[REDACTED]", str(results["creator"].error))
 
     def test_offline_local_result_does_not_require_paid_confirmation(self) -> None:
         local = LiveStatus(username="creator", is_live=False, source="redirect")
