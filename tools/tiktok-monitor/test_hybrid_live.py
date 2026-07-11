@@ -576,6 +576,49 @@ class HybridLiveTests(unittest.TestCase):
         self.assertEqual("unknown", result.outcome)
         self.assertEqual("sigi_unverified", result.source)
 
+    @patch("live_fetch.validate_playback_stream", return_value=True)
+    @patch("live_fetch.fetch_webcast_room", return_value=None)
+    @patch("live_fetch._get_with_retry")
+    def test_playable_stream_confirms_live_without_status_flag(
+        self,
+        get_mock: Mock,
+        _webcast_mock: Mock,
+        _stream_mock: Mock,
+    ) -> None:
+        # Real production case: TikTok status flag is not 4 and Webcast is blocked
+        # for the datacenter IP, but the playback URL returns real bytes.
+        sigi = {
+            "LiveRoom": {
+                "liveRoomUserInfo": {
+                    "user": {"roomId": "123"},
+                    "liveRoom": {
+                        "roomId": "123",
+                        "status": 2,
+                        "liveRoomStats": {"userCount": 198},
+                        "streamData": {
+                            "pull_data": {
+                                "stream_data": (
+                                    '{"data":{"ld":{"main":{"flv":'
+                                    '"https://pull-f5.tiktokcdn-us.com/x_ld.flv"}}}}'
+                                )
+                            }
+                        },
+                    },
+                }
+            }
+        }
+        response = Mock()
+        response.text = f"<script>SIGI_STATE={json.dumps(sigi)}</script>"
+        response.url = "https://www.tiktok.com/@creator/live"
+        get_mock.return_value = response
+
+        result = fetch_live_status("creator")
+
+        self.assertTrue(result.is_live)
+        self.assertEqual("live", result.outcome)
+        self.assertEqual("sigi+stream", result.source)
+        self.assertEqual(198, result.viewer_count)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -392,10 +392,27 @@ def fetch_live_status(
     sigi_info = _sigi_live_room(html)
     if sigi_info:
         room_id, is_live, title, viewers, enter_count = _live_from_sigi(sigi_info)
-        if is_live and room_id:
+        stream_urls = _stream_urls_from_sigi(sigi_info)
+
+        # Strongest server-reachable proof of a live stream: the playback URL
+        # actually returns playable bytes. This holds even when TikTok's status
+        # flag is not 4 and when the Webcast API is blocked for datacenter IPs,
+        # which is exactly the false-negative case we observed in production.
+        if stream_urls and validate_playback_stream(sigi_info, timeout=min(timeout, 8.0)):
+            return LiveStatus(
+                username=clean,
+                is_live=True,
+                room_id=room_id,
+                title=title,
+                viewer_count=viewers,
+                enter_count=enter_count,
+                source="sigi+stream",
+            )
+
+        if room_id:
             webcast = fetch_webcast_room(room_id, timeout=timeout, retries=retries)
-            wc_viewers = viewer_count_from_webcast(webcast)
             if is_webcast_live(webcast):
+                wc_viewers = viewer_count_from_webcast(webcast)
                 return LiveStatus(
                     username=clean,
                     is_live=True,
@@ -405,16 +422,8 @@ def fetch_live_status(
                     enter_count=enter_count,
                     source="sigi+webcast",
                 )
-            if validate_playback_stream(sigi_info, timeout=min(timeout, 8.0)):
-                return LiveStatus(
-                    username=clean,
-                    is_live=True,
-                    room_id=room_id,
-                    title=title,
-                    viewer_count=viewers,
-                    enter_count=enter_count,
-                    source="sigi+stream",
-                )
+
+        if is_live or stream_urls:
             return LiveStatus(
                 username=clean,
                 is_live=False,
