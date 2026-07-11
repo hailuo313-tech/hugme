@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -139,7 +140,7 @@ def fetch_managed_statuses(usernames: list[str], config: dict) -> dict[str, Mana
             username=name,
             outcome="unknown",
             source=f"managed:{provider}",
-            error="managed LIVE API endpoint or key is not configured",
+            error="managed API returned no result",
         )
         for name in clean_names
     }
@@ -149,6 +150,8 @@ def fetch_managed_statuses(usernames: list[str], config: dict) -> dict[str, Mana
             "unseenuser~tiktok-live-status-scraper/run-sync-get-dataset-items"
         )
     if not endpoint or not api_key:
+        for status in unavailable.values():
+            status.error = "managed LIVE API endpoint or key is not configured"
         return unavailable
 
     auth_header = str(config.get("auth_header") or "Authorization").strip()
@@ -159,19 +162,47 @@ def fetch_managed_statuses(usernames: list[str], config: dict) -> dict[str, Mana
 
     try:
         if provider == "apify":
-            response = requests.post(
-                endpoint,
-                params={"token": api_key},
-                headers={"Accept": "application/json", "Content-Type": "application/json"},
-                json={"handles": clean_names, "include_stream_urls": True},
-                timeout=timeout,
-            )
-            response.raise_for_status()
-            for item in _items(response.json()):
-                status = _parse_item(item, fallback_username="", provider=provider)
-                key = status.username.casefold()
-                if key in results:
-                    results[key] = status
+            batch_size = max(1, min(20, int(config.get("apify_batch_size") or 20)))
+            workers = max(1, min(4, int(config.get("apify_workers") or 4)))
+            batches = [
+                clean_names[index : index + batch_size]
+                for index in range(0, len(clean_names), batch_size)
+            ]
+
+            def fetch_batch(batch: list[str]) -> tuple[list[str], list[dict]]:
+                response = requests.post(
+                    endpoint,
+                    params={"token": api_key},
+                    headers={
+                        "Accept": "application/json",
+                        "Content-Type": "application/json",
+                    },
+                    json={"handles": batch, "include_stream_urls": True},
+                    timeout=timeout,
+                )
+                response.raise_for_status()
+                return batch, _items(response.json())
+
+            with ThreadPoolExecutor(
+                max_workers=min(workers, len(batches)),
+                thread_name_prefix="apify-live",
+            ) as executor:
+                futures = {executor.submit(fetch_batch, batch): batch for batch in batches}
+                for future in as_completed(futures):
+                    batch = futures[future]
+                    try:
+                        _, parsed = future.result()
+                    except (requests.RequestException, ValueError) as exc:
+                        for name in batch:
+                            results[name.casefold()].error = (
+                                f"managed LIVE API request failed: {exc}"
+                            )
+                        continue
+                    for item in parsed:
+                        status = _parse_item(item, fallback_username="", provider=provider)
+                        key = status.username.casefold()
+                        if key in results:
+                            results[key] = status
             return results
 
         if "{username}" in endpoint:

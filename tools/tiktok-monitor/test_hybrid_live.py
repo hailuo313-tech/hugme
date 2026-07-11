@@ -297,7 +297,7 @@ class HybridLiveTests(unittest.TestCase):
                             '2026-01-01', '2026-01-01')
                     """
                 )
-            reserve_managed_budget(db_path, 100, category="candidate")
+            reserve_managed_budget(db_path, 600, category="active")
             local = {
                 "creator": LiveStatus(
                     username="creator",
@@ -341,6 +341,37 @@ class HybridLiveTests(unittest.TestCase):
         self.assertEqual("Live now", results["creator"].title)
         self.assertEqual(123, results["creator"].viewer_count)
         self.assertEqual(["creator"], post_mock.call_args.kwargs["json"]["handles"])
+
+    @patch("managed_live.requests.post")
+    def test_apify_requests_are_chunked_to_twenty_handles(
+        self,
+        post_mock: Mock,
+    ) -> None:
+        def response_for_batch(*_args, **kwargs):
+            response = Mock()
+            response.raise_for_status.return_value = None
+            response.json.return_value = [
+                {"handle": name, "is_live": False}
+                for name in kwargs["json"]["handles"]
+            ]
+            return response
+
+        post_mock.side_effect = response_for_batch
+        usernames = [f"creator{i}" for i in range(45)]
+
+        results = fetch_managed_statuses(
+            usernames,
+            {"enabled": True, "provider": "apify", "api_key": "test-token"},
+        )
+
+        self.assertEqual(3, post_mock.call_count)
+        self.assertTrue(all(result.outcome == "offline" for result in results.values()))
+        self.assertTrue(
+            all(
+                len(call.kwargs["json"]["handles"]) <= 20
+                for call in post_mock.call_args_list
+            )
+        )
 
     def test_offline_local_result_does_not_require_paid_confirmation(self) -> None:
         local = LiveStatus(username="creator", is_live=False, source="redirect")

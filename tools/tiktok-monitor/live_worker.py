@@ -331,7 +331,7 @@ def _apply_budgeted_consensus(
     managed_statuses.update(
         _fetch_budgeted_managed(
             usernames=new_candidates,
-            category="candidate",
+            category="active",
             live_api=live_api,
             local_results=local_results,
         )
