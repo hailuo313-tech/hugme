@@ -17,7 +17,7 @@ from live_db import (
     managed_budget_stats,
     reserve_managed_budget,
 )
-from live_fetch import LiveStatus, fetch_live_status
+from live_fetch import LiveStatus, fetch_live_status, is_webcast_live
 from live_worker import (
     _apply_budgeted_consensus,
     _confirm_live_candidate,
@@ -29,6 +29,34 @@ import web_app
 
 
 class HybridLiveTests(unittest.TestCase):
+    def test_ended_webcast_room_is_not_live_despite_stale_stream_id(self) -> None:
+        self.assertFalse(
+            is_webcast_live(
+                {
+                    "status": 4,
+                    "stream_status": 0,
+                    "finish_reason": 0,
+                    "finish_time": 1783734782,
+                    "stream_id": 3866699217698816962,
+                    "user_count": 1,
+                }
+            )
+        )
+
+    def test_active_webcast_stream_status_is_live(self) -> None:
+        self.assertTrue(
+            is_webcast_live(
+                {
+                    "status": 4,
+                    "stream_status": 1,
+                    "finish_reason": 0,
+                    "finish_time": 0,
+                    "stream_id": 3866699217698816962,
+                    "user_count": 12,
+                }
+            )
+        )
+
     @patch("live_worker.fetch_managed_statuses")
     def test_unknown_baseline_is_paid_once_then_cached(
         self,

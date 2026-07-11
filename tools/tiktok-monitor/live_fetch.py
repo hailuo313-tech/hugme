@@ -286,19 +286,21 @@ def fetch_webcast_room(
 def is_webcast_live(data: Optional[dict]) -> bool:
     if not data:
         return False
+    finish_time = _as_int(data.get("finish_time")) or 0
+    finish_reason = _as_int(data.get("finish_reason"))
+    if finish_time > 0 or finish_reason not in (None, 0):
+        return False
+
     stream_status = _as_int(data.get("stream_status"))
-    if stream_status == 1:
-        return True
+    if stream_status is not None:
+        return stream_status == 1
+
     status = _as_int(data.get("status"))
     if status != 4:
         return False
-    finish_reason = _as_int(data.get("finish_reason"))
-    if finish_reason not in (None, 0):
-        return False
-    if data.get("stream_id"):
-        return True
+
     user_count = _as_int(data.get("user_count")) or 0
-    return user_count > 0
+    return bool(data.get("stream_id")) and user_count > 0
 
 
 def viewer_count_from_webcast(data: Optional[dict]) -> Optional[int]:
