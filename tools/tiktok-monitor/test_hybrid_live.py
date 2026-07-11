@@ -164,7 +164,7 @@ class HybridLiveTests(unittest.TestCase):
             self.assertEqual(2, managed_mock.call_count)
             self.assertEqual(2, managed_budget_stats(db_path)["used"])
 
-    def test_dashboard_is_manual_only_and_button_still_triggers_probe(self) -> None:
+    def test_dashboard_auto_schedule_and_button_still_triggers_probe(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             config_path = root / "config.json"
@@ -187,21 +187,21 @@ class HybridLiveTests(unittest.TestCase):
 
         self.assertIn('action="/tiktok-monitor/run-probe"', body)
         self.assertIn("立即检测全部账号", body)
-        self.assertIn("只在点击按钮后执行，不自动检测", body)
+        self.assertIn("每 20 分钟自动检测一次", body)
         self.assertIn("待确认直播候选", body)
-        self.assertNotIn("自动每 2 分钟", body)
         self.assertNotIn("直播账号每 60 秒复核", body)
 
-    def test_timer_installer_disables_automatic_detection(self) -> None:
-        script = (
-            Path(__file__).resolve().parent / "scripts" / "install_timers.sh"
-        ).read_text(encoding="utf-8")
-        self.assertIn(
-            "systemctl disable --now tiktok-live-probe.timer tiktok-live-sample.timer",
-            script,
-        )
-        self.assertNotIn("enable --now tiktok-live-probe.timer", script)
-        self.assertNotIn("enable --now tiktok-live-sample.timer", script)
+    def test_timer_installer_enables_20min_probe_only(self) -> None:
+        scripts_dir = Path(__file__).resolve().parent / "scripts"
+        script = (scripts_dir / "install_timers.sh").read_text(encoding="utf-8")
+        timer = (scripts_dir / "tiktok-live-probe.timer").read_text(encoding="utf-8")
+        service = (scripts_dir / "tiktok-live-probe.service").read_text(encoding="utf-8")
+        self.assertIn("systemctl enable --now tiktok-live-probe.timer", script)
+        self.assertIn("systemctl disable --now tiktok-live-sample.timer", script)
+        self.assertIn("OnUnitActiveSec=20min", timer)
+        self.assertNotIn("ConditionPathExists", timer)
+        # Scheduled runs must stay free: local playback only, no paid API.
+        self.assertIn("TIKTOK_LIVE_API_ENABLED=false", service)
 
     def test_budget_hard_limit_and_category_pools(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

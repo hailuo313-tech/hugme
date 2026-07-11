@@ -1,10 +1,9 @@
 [Unit]
-Description=Disabled legacy TikTok automatic live probe
-ConditionPathExists=/opt/eris-TIKTOK/.enable-legacy-auto-detection
+Description=TikTok automatic live probe every 20 minutes
 
 [Timer]
-OnBootSec=2min
-OnUnitActiveSec=2min
+OnBootSec=3min
+OnUnitActiveSec=20min
 AccuracySec=30s
 Persistent=true
 

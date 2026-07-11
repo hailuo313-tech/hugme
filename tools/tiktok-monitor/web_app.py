@@ -511,7 +511,7 @@ def render_live_tab(
         <form method="post" action="/tiktok-monitor/run-probe" style="margin-bottom:14px">
           <input type="hidden" name="group" value="{esc(group)}">
           <button type="submit" class="{btn_class}"{disabled_attr}>{btn_label}</button>
-          <span class="note" style="margin-left:10px">检测范围：全部账号 · 本页仅显示{esc(group_label)} · 只在点击按钮后执行，不自动检测</span>
+          <span class="note" style="margin-left:10px">检测范围：全部账号 · 本页仅显示{esc(group_label)} · 系统每 20 分钟自动检测一次，点击按钮可立即检测</span>
         </form>
         <p class="note">{esc(hybrid_mode_note())} 本地信号不完整时显示“待确认”。每次点击执行一次完整检测；Apify 复核受缓存、最短间隔和每日预算限制。</p>
         <p class="note">累计进入 = 本场总进入人次（只增不减）；较上次增加 = 距上一次采样新增的人次。TikTok 未登录接口无法读取 App 内实时在线人数。</p>

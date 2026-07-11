@@ -5,6 +5,9 @@ After=network-online.target
 [Service]
 Type=oneshot
 WorkingDirectory=/opt/eris-TIKTOK
+# Scheduled runs use the free, reliable local playback detection only.
+# Apify stays reserved for the manual dashboard button to control cost.
+Environment=TIKTOK_LIVE_API_ENABLED=false
 ExecStart=/opt/eris-TIKTOK/.venv/bin/python /opt/eris-TIKTOK/live_worker.py probe
 Nice=5
 
