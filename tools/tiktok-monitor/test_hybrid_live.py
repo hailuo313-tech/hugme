@@ -198,7 +198,7 @@ class HybridLiveTests(unittest.TestCase):
         service = (scripts_dir / "tiktok-live-probe.service").read_text(encoding="utf-8")
         self.assertIn("systemctl enable --now tiktok-live-probe.timer", script)
         self.assertIn("systemctl disable --now tiktok-live-sample.timer", script)
-        self.assertIn("OnUnitActiveSec=20min", timer)
+        self.assertIn("OnCalendar=*:0/20", timer)
         self.assertNotIn("ConditionPathExists", timer)
         # Scheduled runs must stay free: local playback only, no paid API.
         self.assertIn("TIKTOK_LIVE_API_ENABLED=false", service)

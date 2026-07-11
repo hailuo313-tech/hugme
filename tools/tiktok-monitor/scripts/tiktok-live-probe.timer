@@ -2,8 +2,7 @@
 Description=TikTok automatic live probe every 20 minutes
 
 [Timer]
-OnBootSec=3min
-OnUnitActiveSec=20min
+OnCalendar=*:0/20
 AccuracySec=30s
 Persistent=true
 
