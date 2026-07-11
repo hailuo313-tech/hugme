@@ -1,0 +1,12 @@
+[Unit]
+Description=TikTok account ban audit (daily)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/eris-TIKTOK
+ExecStart=/opt/eris-TIKTOK/.venv/bin/python /opt/eris-TIKTOK/live_worker.py audit
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

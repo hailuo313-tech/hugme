@@ -1,0 +1,27 @@
+{
+  "accounts": [],
+  "live_monitor": {
+    "auto_probe_enabled": false,
+    "auto_sample_enabled": false,
+    "probe_delay_sec": 0,
+    "probe_timeout_sec": 10,
+    "probe_workers": 8,
+    "probe_retries": 1,
+    "probe_jitter_sec": 0.35,
+    "secondary_confirmation_delay_sec": 2,
+    "offline_miss_threshold": 2
+  },
+  "account_audit": {
+    "delay_sec": 1.0,
+    "daily_hour": 3
+  },
+  "live_api": {
+    "enabled": false,
+    "provider": "apify",
+    "endpoint": "",
+    "api_key": "",
+    "timeout": 180,
+    "auth_header": "Authorization",
+    "auth_scheme": "Bearer"
+  }
+}

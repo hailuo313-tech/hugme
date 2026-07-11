@@ -1,0 +1,12 @@
+[Unit]
+Description=Disabled legacy TikTok automatic live sample
+ConditionPathExists=/opt/eris-TIKTOK/.enable-legacy-auto-detection
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=60s
+AccuracySec=15s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,10 @@
+[Unit]
+Description=Run TikTok account ban audit daily at 03:00
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+AccuracySec=1h
+
+[Install]
+WantedBy=timers.target
