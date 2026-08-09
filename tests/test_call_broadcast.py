@@ -238,6 +238,7 @@ async def test_run_call_broadcast_waits_for_answer_before_playback(monkeypatch) 
             video_path="/data/videos/demo.mp4",
             duration_seconds=30,
             trace_id="trace",
+            prepared=call_session.CallPlaybackPrepare("/tmp/demo.mp4", 8.0, 8.0),
         )
     )
     await asyncio.wait_for(play_started.wait(), timeout=2)
@@ -882,7 +883,6 @@ async def test_accept_operator_review_blocks_when_account_busy(monkeypatch) -> N
             chat_id=5422465697,
             account_id=account_id,
             trace_id="trace",
-            prepared=call_session.CallPlaybackPrepare("/tmp/demo.mp4", 8.0, 8.0),
             access_hash=123,
             inbound_call_number=1,
             expires_at=9999999999.0,
