@@ -167,6 +167,7 @@ async def test_run_call_broadcast_uses_pytgcalls(monkeypatch) -> None:
         video_path="/data/videos/demo.mp4",
         duration_seconds=30,
         trace_id="trace",
+        prepared=call_session.CallPlaybackPrepare("/tmp/demo.mp4", 10.5, 10.5),
     )
     assert playback.playback_seconds == 10.5
     assert playback.probed_seconds == 10.5
@@ -290,6 +291,7 @@ async def test_run_call_broadcast_classifies_play_timeout_as_unanswered(monkeypa
             video_path="/data/videos/demo.mp4",
             duration_seconds=30,
             trace_id="trace",
+            prepared=call_session.CallPlaybackPrepare("/tmp/demo.mp4", 8.0, 8.0),
         )
 
     sleep_mock.assert_not_awaited()
@@ -326,7 +328,7 @@ async def test_run_call_broadcast_uses_incoming_wrapper(monkeypatch) -> None:
     monkeypatch.setattr(call_session, "_cache_call_peer", AsyncMock())
     monkeypatch.setattr(call_session, "_stop_stream", AsyncMock())
 
-    await call_session.run_call_broadcast(
+        await call_session.run_call_broadcast(
         account_id=uuid4(),
         chat_id=999,
         video_path="/data/videos/demo.mp4",
@@ -880,6 +882,7 @@ async def test_accept_operator_review_blocks_when_account_busy(monkeypatch) -> N
             chat_id=5422465697,
             account_id=account_id,
             trace_id="trace",
+            prepared=call_session.CallPlaybackPrepare("/tmp/demo.mp4", 8.0, 8.0),
             access_hash=123,
             inbound_call_number=1,
             expires_at=9999999999.0,
