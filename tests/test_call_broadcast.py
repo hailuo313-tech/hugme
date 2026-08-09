@@ -694,6 +694,22 @@ async def test_handle_incoming_not_busy_on_first_call(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         incoming_listener,
+        "record_inbound_call_event",
+        AsyncMock(return_value=True),
+    )
+    monkeypatch.setattr(
+        incoming_listener,
+        "count_inbound_call_events_for_chat",
+        AsyncMock(return_value=1),
+    )
+    from services import post_inbound_video_expert_gate
+    monkeypatch.setattr(
+        post_inbound_video_expert_gate,
+        "ensure_release_review_after_inbound_call",
+        AsyncMock(return_value=False),
+    )
+    monkeypatch.setattr(
+        incoming_listener,
         "resolve_inbound_sequence_video_asset",
         AsyncMock(
             return_value={
