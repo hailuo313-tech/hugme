@@ -24,6 +24,9 @@ class TelegramAccount(Base):
         default=uuid4,
         server_default=text("uuid_generate_v4()"),
     )
+    api_credential_id: Mapped[Optional[PyUUID]] = mapped_column(
+        PG_UUID(as_uuid=True), nullable=True, index=True
+    )
     phone: Mapped[str] = mapped_column(String(20), unique=True, nullable=False, index=True)
     session_string: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(

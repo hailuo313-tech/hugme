@@ -21,7 +21,9 @@ from telethon.errors import (
 from telethon.sessions import StringSession
 
 from core.config import settings
-from services.telegram_account_manager import telegram_account_manager
+from core.database import AsyncSessionLocal
+from sqlalchemy import text
+from services.telegram_account_manager import _with_admin_display_name, telegram_account_manager
 
 
 class TelegramSessionLoginError(Exception):
@@ -39,6 +41,7 @@ class PendingTelegramLogin:
     phone_code_hash: str
     client: TelegramClient
     display_name: str | None
+    api_credential_id: UUID | None
     created_at: datetime
     expires_at: datetime
     requires_password: bool = False
@@ -52,15 +55,21 @@ class TelegramSessionLoginManager:
         self.pending: dict[str, PendingTelegramLogin] = {}
         self._lock = asyncio.Lock()
 
-    async def start_login(self, phone: str, display_name: str | None = None) -> dict[str, str]:
+    async def start_login(
+        self,
+        phone: str,
+        display_name: str | None = None,
+        api_credential_id: UUID | None = None,
+    ) -> dict[str, str]:
         """Send a Telegram login code and keep the client in memory briefly."""
         self._ensure_configured()
         await self._cleanup_expired()
 
+        credential_id, api_id, api_hash = await self._resolve_api_credentials(api_credential_id)
         client = TelegramClient(
             StringSession(),
-            settings.TELEGRAM_API_ID,
-            settings.TELEGRAM_API_HASH,
+            api_id,
+            api_hash,
             device_model=settings.TELEGRAM_DEVICE_MODEL,
             system_version=settings.TELEGRAM_SYSTEM_VERSION,
         )
@@ -88,6 +97,7 @@ class TelegramSessionLoginManager:
                 phone_code_hash=sent_code.phone_code_hash,
                 client=client,
                 display_name=display_name or None,
+                api_credential_id=credential_id,
                 created_at=now,
                 expires_at=now + self.ttl,
             )
@@ -145,18 +155,27 @@ class TelegramSessionLoginManager:
 
         me = await pending.client.get_me()
         session_string = pending.client.session.save()
-        chosen_display_name = display_name or pending.display_name or getattr(me, "first_name", None) or ""
+        operator_display_name = (display_name or pending.display_name or "").strip()
+        profile_display_name = (
+            operator_display_name
+            or getattr(me, "first_name", None)
+            or ""
+        )
 
-        account_id = await telegram_account_manager.add_account(
+        account_id = await telegram_account_manager.upsert_account(
             phone=pending.phone,
             session_string=session_string,
             is_bot=False,
-            display_name=chosen_display_name or None,
-            metadata={
-                "session_source": "admin_telethon_login",
-                "telegram_user_id": getattr(me, "id", None),
-                "telegram_username": getattr(me, "username", None),
-            },
+            display_name=profile_display_name or None,
+            metadata=_with_admin_display_name(
+                {
+                    "session_source": "admin_telethon_login",
+                    "telegram_user_id": getattr(me, "id", None),
+                    "telegram_username": getattr(me, "username", None),
+                },
+                operator_display_name or None,
+            ),
+            api_credential_id=pending.api_credential_id,
         )
 
         await self._discard(login_id)
@@ -178,8 +197,37 @@ class TelegramSessionLoginManager:
             "requires_password": False,
             "telegram_user_id": getattr(me, "id", None),
             "username": getattr(me, "username", None),
-            "display_name": chosen_display_name or None,
+            "display_name": profile_display_name or None,
+            "admin_display_name": operator_display_name or None,
         }
+
+    async def _resolve_api_credentials(
+        self, requested_id: UUID | None
+    ) -> tuple[UUID | None, int, str]:
+        async with AsyncSessionLocal() as db:
+            if requested_id:
+                row = (await db.execute(
+                    text("""SELECT id, api_id, api_hash, max_accounts,
+                                   (SELECT COUNT(*) FROM telegram_accounts a
+                                    WHERE a.api_credential_id = c.id
+                                      AND a.is_active = TRUE AND a.status <> 'banned') AS account_count
+                            FROM telegram_api_credentials c
+                            WHERE c.id = :credential_id AND c.is_active = TRUE"""),
+                    {"credential_id": requested_id},
+                )).mappings().one_or_none()
+                if not row:
+                    raise TelegramSessionLoginError("选择的开发者应用不存在或已停用")
+                if row["max_accounts"] is not None and row["account_count"] >= row["max_accounts"]:
+                    raise TelegramSessionLoginError("选择的开发者应用已达到账号上限")
+            else:
+                row = (await db.execute(text(
+                    """SELECT id, api_id, api_hash FROM telegram_api_credentials
+                       WHERE is_active = TRUE AND is_default = TRUE
+                       ORDER BY sort_order, name LIMIT 1"""
+                ))).mappings().one_or_none()
+        if row:
+            return UUID(str(row["id"])), int(row["api_id"]), str(row["api_hash"])
+        return None, int(settings.TELEGRAM_API_ID), str(settings.TELEGRAM_API_HASH)
 
     async def _cleanup_expired(self) -> None:
         now = datetime.now(UTC)

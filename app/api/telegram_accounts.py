@@ -8,6 +8,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from loguru import logger
 from pydantic import BaseModel, Field
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from telethon import TelegramClient
 from telethon.errors import (
     PasswordHashInvalidError,
@@ -19,8 +21,12 @@ from telethon.errors import (
 from telethon.sessions import StringSession
 
 from core.config import settings
+from core.database import AsyncSessionLocal
 from api.admin import require_operator
-from services.telegram_account_manager import telegram_account_manager
+from services.telegram_account_manager import (
+    _with_admin_display_name,
+    telegram_account_manager,
+)
 from services.telegram_session_login import (
     TelegramSessionLoginError,
     TelegramSessionPasswordRequired,
@@ -51,12 +57,14 @@ class TelegramAccountResponse(BaseModel):
     status: str
     is_active: bool
     display_name: str | None
+    admin_display_name: str | None = None
     username: str | None
     user_id: int | None
     is_connected: bool
     last_connected_at: str | None
     last_error_at: str | None
     error_message: str | None
+    reply_mode: str = "ai"
 
 
 class TelegramAccountStatusResponse(BaseModel):
@@ -67,11 +75,33 @@ class TelegramAccountStatusResponse(BaseModel):
     connected_count: int
 
 
+class TelegramAccountReplyModeRequest(BaseModel):
+    """Request to switch an account between AI system and fixed replies."""
+
+    reply_mode: str = Field(..., description="ai or fixed")
+
+
+class TelegramAccountAdminDisplayNameRequest(BaseModel):
+    """Request to update the operator-facing display label."""
+
+    admin_display_name: str = Field(default="", description="Operator display name shown in reports")
+
+
+class TelegramApiCredentialCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    api_id: int = Field(gt=0)
+    api_hash: str = Field(min_length=8, max_length=128)
+    max_accounts: int | None = Field(default=None, gt=0)
+    sort_order: int | None = None
+    note: str | None = None
+
+
 class SessionLoginStartRequest(BaseModel):
     """Request to send a Telegram login verification code."""
 
     phone: str = Field(..., description="Phone number in international format")
     display_name: str = Field(default="", description="Optional display name")
+    api_credential_id: UUID | None = None
 
 
 class SessionLoginStartResponse(BaseModel):
@@ -116,6 +146,38 @@ def _require_telegram_login_config() -> None:
         )
 
 
+@router.get("/api/v1/telegram/api-credentials")
+async def list_telegram_api_credentials(_operator=Depends(require_operator)):
+    async with AsyncSessionLocal() as db:
+        rows=(await db.execute(text("""SELECT c.id::text,c.name,c.api_id,c.api_hash,c.is_default,c.is_active,
+          c.max_accounts,c.sort_order,c.note,COUNT(a.id) account_count
+          FROM telegram_api_credentials c LEFT JOIN telegram_accounts a
+            ON a.api_credential_id=c.id AND a.is_active=TRUE AND a.status <> 'banned'
+          GROUP BY c.id ORDER BY c.sort_order,c.name"""))).mappings().all()
+    items=[]
+    for serial,row in enumerate(rows,1):
+        value=dict(row); secret=str(value.pop("api_hash") or "")
+        value.update(serial_no=serial,serial_label=f"API-{serial:02d}",api_hash_masked=f"****{secret[-4:]}" if secret else "")
+        items.append(value)
+    return {"credentials":items,"total":len(items)}
+
+
+@router.post("/api/v1/telegram/api-credentials",status_code=status.HTTP_201_CREATED)
+async def create_telegram_api_credential(payload: TelegramApiCredentialCreateRequest, _operator=Depends(require_operator)):
+    async with AsyncSessionLocal() as db:
+        try:
+            row=(await db.execute(text("""INSERT INTO telegram_api_credentials
+              (name,api_id,api_hash,is_default,is_active,max_accounts,sort_order,note)
+              VALUES(:name,:api_id,:api_hash,
+                NOT EXISTS(SELECT 1 FROM telegram_api_credentials WHERE is_active AND is_default),
+                TRUE,:max_accounts,COALESCE(:sort_order,0),:note) RETURNING id::text"""),
+              {"name":payload.name.strip(),"api_id":payload.api_id,"api_hash":payload.api_hash.strip(),
+               "max_accounts":payload.max_accounts,"sort_order":payload.sort_order,"note":payload.note})).scalar_one()
+            await db.commit()
+            return {"ok":True,"id":row}
+        except IntegrityError as exc:
+            await db.rollback()
+            raise HTTPException(status_code=409,detail="开发者应用名称或API配置已存在") from exc
 async def _cleanup_expired_logins() -> None:
     now = datetime.utcnow()
     expired_ids = [
@@ -144,7 +206,7 @@ async def add_telegram_account(request: TelegramAccountCreateRequest):
             session_string=request.session_string,
             is_bot=request.is_bot,
             display_name=request.display_name or None,
-            metadata=request.metadata,
+            metadata=_with_admin_display_name(request.metadata, request.display_name or None),
         )
 
         logger.info(f"Added Telegram account {account_id} for phone {request.phone}")
@@ -176,6 +238,7 @@ async def start_telegram_session_login_v2(
         result = await telegram_session_login_manager.start_login(
             phone=request.phone.strip(),
             display_name=request.display_name.strip() or None,
+            api_credential_id=request.api_credential_id,
         )
     except TelegramSessionLoginError as exc:
         raise HTTPException(
@@ -323,9 +386,12 @@ async def verify_telegram_session_login(request: SessionLoginVerifyRequest):
 
         me = await client.get_me()
         session_string = client.session.save()
-        display_name = (
+        operator_display_name = (
             request.display_name.strip()
-            or item.get("display_name")
+            or (item.get("display_name") or "").strip()
+        )
+        display_name = (
+            operator_display_name
             or getattr(me, "first_name", None)
             or phone
         )
@@ -334,7 +400,10 @@ async def verify_telegram_session_login(request: SessionLoginVerifyRequest):
             session_string=session_string,
             is_bot=False,
             display_name=display_name,
-            metadata={"login_method": "telethon_code"},
+            metadata=_with_admin_display_name(
+                {"login_method": "telethon_code"},
+                operator_display_name or None,
+            ),
         )
 
         _pending_logins.pop(request.login_id, None)
@@ -466,11 +535,17 @@ async def delete_telegram_account(account_id: str):
         )
     except HTTPException:
         raise
+    except IntegrityError as e:
+        logger.error(f"Failed to delete Telegram account {account_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="账号仍有关联任务，无法删除。请稍后重试或联系运维清理关联数据。",
+        )
     except Exception as e:
         logger.error(f"Failed to delete Telegram account {account_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete account: {str(e)}",
+            detail="删除账号失败，请稍后重试。",
         )
 
 
@@ -503,6 +578,79 @@ async def get_telegram_account(account_id: str):
         )
 
 
+@router.patch("/api/v1/telegram/accounts/{account_id}/admin-display-name", response_model=TelegramAccountResponse)
+async def update_telegram_account_admin_display_name(
+    account_id: str,
+    request: TelegramAccountAdminDisplayNameRequest,
+    _operator=Depends(require_operator),
+):
+    """Update the operator-facing display label used on /admin/data."""
+    try:
+        account_uuid = UUID(account_id)
+        account_status = await telegram_account_manager.update_admin_display_name(
+            account_uuid,
+            request.admin_display_name,
+        )
+        if not account_status:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Account not found",
+            )
+        return TelegramAccountResponse(**account_status)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid account ID format",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update Telegram account admin display name {account_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="更新显示名称失败，请稍后重试。",
+        )
+
+
+@router.patch("/api/v1/telegram/accounts/{account_id}/reply-mode", response_model=TelegramAccountResponse)
+async def update_telegram_account_reply_mode(
+    account_id: str,
+    request: TelegramAccountReplyModeRequest,
+    _operator=Depends(require_operator),
+):
+    """Switch one Telegram account between the normal AI pipeline and fixed replies."""
+    if request.reply_mode not in {"ai", "fixed"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="reply_mode must be ai or fixed",
+        )
+    try:
+        account_uuid = UUID(account_id)
+        account_status = await telegram_account_manager.update_reply_mode(
+            account_uuid,
+            request.reply_mode,
+        )
+        if not account_status:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Account not found",
+            )
+        return TelegramAccountResponse(**account_status)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid account ID format",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update Telegram account reply mode {account_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update account reply mode: {str(e)}",
+        )
+
+
 @router.get("/api/v1/telegram/accounts", response_model=TelegramAccountStatusResponse)
 async def get_all_telegram_accounts():
     """Get status of all Telegram accounts."""
@@ -520,6 +668,23 @@ async def get_all_telegram_accounts():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get accounts: {str(e)}",
+        )
+
+
+@router.post("/api/v1/telegram/accounts/sync-profiles", response_model=dict)
+async def sync_telegram_account_profiles():
+    """Refresh connected Telegram account profiles from live sessions."""
+    try:
+        result = await telegram_account_manager.sync_connected_account_profiles()
+        return {
+            "message": "Telegram account profiles synced",
+            **result,
+        }
+    except Exception as e:
+        logger.error(f"Failed to sync Telegram account profiles: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to sync account profiles: {str(e)}",
         )
 
 
