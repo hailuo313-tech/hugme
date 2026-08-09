@@ -353,7 +353,7 @@ async def _record_prompt_retry(db: AsyncSession, job_id: str, reason: str, next_
     await db.execute(text("""
       UPDATE call_broadcast_jobs SET metadata=COALESCE(metadata,'{}'::jsonb) || jsonb_build_object(
         'post_auto_profile_prompt_attempts',COALESCE((metadata->>'post_auto_profile_prompt_attempts')::int,0)+1,
-        'post_auto_profile_prompt_last_error',:reason,
-        'post_auto_profile_prompt_next_attempt_at',:next_at),updated_at=NOW()
+        'post_auto_profile_prompt_last_error',CAST(:reason AS text),
+        'post_auto_profile_prompt_next_attempt_at',CAST(:next_at AS text)),updated_at=NOW()
       WHERE id=CAST(:job_id AS uuid)
     """), {"job_id": job_id, "reason": reason[:500], "next_at": next_at.isoformat()})
