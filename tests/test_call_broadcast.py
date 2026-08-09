@@ -286,7 +286,7 @@ async def test_run_call_broadcast_classifies_play_timeout_as_unanswered(monkeypa
     monkeypatch.setattr(call_session.asyncio, "sleep", sleep_mock)
 
     with pytest.raises(call_session.CallBroadcastStreamError, match="call not answered"):
-        await call_session.run_call_broadcast(
+    await call_session.run_call_broadcast(
             account_id=uuid4(),
             chat_id=999,
             video_path="/data/videos/demo.mp4",
@@ -329,7 +329,7 @@ async def test_run_call_broadcast_uses_incoming_wrapper(monkeypatch) -> None:
     monkeypatch.setattr(call_session, "_cache_call_peer", AsyncMock())
     monkeypatch.setattr(call_session, "_stop_stream", AsyncMock())
 
-        await call_session.run_call_broadcast(
+    await call_session.run_call_broadcast(
         account_id=uuid4(),
         chat_id=999,
         video_path="/data/videos/demo.mp4",
