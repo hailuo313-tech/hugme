@@ -702,6 +702,17 @@ async def test_handle_incoming_not_busy_on_first_call(monkeypatch) -> None:
         "count_inbound_call_events_for_chat",
         AsyncMock(return_value=1),
     )
+    monkeypatch.setattr(
+        incoming_listener,
+        "_get_account_reply_mode",
+        AsyncMock(return_value="ai"),
+    )
+    from services import telegram_user_migration
+    monkeypatch.setattr(
+        telegram_user_migration,
+        "migration_video_cutover",
+        AsyncMock(return_value=None),
+    )
     from services import post_inbound_video_expert_gate
     monkeypatch.setattr(
         post_inbound_video_expert_gate,
