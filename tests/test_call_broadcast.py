@@ -833,7 +833,7 @@ async def test_resolve_inbound_sequence_second_call_returns_none(monkeypatch) ->
     assert asset is None
 
 
-def test_inbound_call_requires_operator_review_after_two_auto_answers() -> None:
+def test_inbound_video_sequence_never_requires_operator_review() -> None:
     from services.call_broadcast.incoming_review import inbound_call_requires_operator_review
 
     assert inbound_call_requires_operator_review(
@@ -847,7 +847,11 @@ def test_inbound_call_requires_operator_review_after_two_auto_answers() -> None:
     assert inbound_call_requires_operator_review(
         completed_playbacks=2,
         recorded_attempts=2,
-    ) is True   # 3rd+ call: manual
+    ) is False  # 3rd+ call: do not enter manual takeover
+    assert inbound_call_requires_operator_review(
+        completed_playbacks=20,
+        recorded_attempts=20,
+    ) is False  # call count alone must never create manual takeover
 
 
 def test_failed_auto_answer_does_not_block_auto_retry() -> None:

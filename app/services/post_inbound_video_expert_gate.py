@@ -65,10 +65,12 @@ async def requires_post_inbound_video_expert(
     *,
     chat_id: int,
 ) -> bool:
-    if not post_inbound_video_expert_only_enabled():
-        return False
-    completed = await count_completed_inbound_auto_answer_calls_for_chat(db, int(chat_id))
-    return completed >= post_inbound_video_expert_threshold()
+    """Automatic inbound-video completion no longer requires human takeover.
+
+    Release review at the configured independent-call threshold is evaluated by
+    ``ensure_release_review_after_inbound_call`` and remains a separate queue.
+    """
+    return False
 
 
 async def is_post_inbound_video_expert_waived(
@@ -234,7 +236,8 @@ async def conversation_relock_eligible(
         chat_id = int(str(row[0])[3:])
     except ValueError:
         return False
-    return await requires_post_inbound_video_expert(db, chat_id=chat_id)
+    completed = await count_completed_inbound_auto_answer_calls_for_chat(db, chat_id)
+    return completed >= post_inbound_video_expert_threshold()
 
 
 async def conversation_requires_post_inbound_video_expert(

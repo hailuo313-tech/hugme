@@ -59,13 +59,13 @@ def inbound_call_requires_operator_review(
     operator_review_attempts: int = 0,
     auto_answer_threshold: int | None = None,
 ) -> bool:
-    """True when the next inbound call must enter operator review (default: 3rd call onward)."""
-    return not inbound_call_should_auto_answer(
-        completed_playbacks=completed_playbacks,
-        recorded_attempts=recorded_attempts,
-        operator_review_attempts=operator_review_attempts,
-        auto_answer_threshold=auto_answer_threshold,
-    )
+    """Video-sequence completion never routes an inbound call to manual takeover.
+
+    The sixth independent inbound call is handled separately by the release-review
+    gate. Keeping this predicate false prevents calls 3-5 and later calls from
+    creating ordinary ``pending_operator`` jobs.
+    """
+    return False
 
 
 async def queue_inbound_operator_review(

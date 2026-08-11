@@ -1,8 +1,12 @@
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from services.call_broadcast.incoming_listener import _incoming_call_event_key
-from services.post_inbound_video_expert_gate import post_inbound_video_release_review_calls
+from services.post_inbound_video_expert_gate import (
+    post_inbound_video_release_review_calls,
+    requires_post_inbound_video_expert,
+)
 
 
 def test_release_review_threshold_is_six():
@@ -11,6 +15,18 @@ def test_release_review_threshold_is_six():
         6,
     ):
         assert post_inbound_video_release_review_calls() == 6
+
+
+def test_video_completion_never_requires_human_takeover():
+    class FailIfUsedDb:
+        async def execute(self, *_args, **_kwargs):
+            raise AssertionError("video call count must not be queried for human takeover")
+
+    required = asyncio.run(
+        requires_post_inbound_video_expert(FailIfUsedDb(), chat_id=123456)
+    )
+
+    assert required is False
 
 
 def test_telegram_call_id_is_stable_deduplication_key():
