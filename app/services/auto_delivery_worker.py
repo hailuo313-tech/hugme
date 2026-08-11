@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from uuid import UUID
 
@@ -20,11 +20,22 @@ from services.telegram_send import telegram_chat_id_from_external
 from services.app_download_nurture import (
     APP_DOWNLOAD_MESSAGE_TYPE,
     APP_DOWNLOAD_NURTURE_DELIVERY_MODE,
+    maybe_mark_nurture_cycle_completed,
     persist_auto_delivery_message,
     prepare_nurture_message_for_send,
-    queue_clicked_not_downloaded_followups,
     resolve_nurture_sender_account_id,
     should_skip_stale_nurture_message,
+)
+from services.link_cooldown import is_conversation_link_cooldown_active
+from services.message_repeat_guard import should_skip_duplicate_outbound
+from services.outbound_account_gate import check_outbound_account
+from services.post_release_ai_followup import (
+    DELIVERY_MODE as POST_RELEASE_AI_FOLLOWUP_DELIVERY_MODE,
+    MESSAGE_TYPE as POST_RELEASE_AI_FOLLOWUP_MESSAGE_TYPE,
+    is_post_release_ai_followup_message,
+    mark_post_release_followup_result,
+    persist_post_release_followup_message,
+    prepare_post_release_followup_for_send,
 )
 
 try:
@@ -40,6 +51,9 @@ TIMEOUT_FALLBACK_MESSAGE_TYPE = "timeout_fallback"
 TIMEOUT_FALLBACK_DELIVERY_MODE = "timeout_fallback"
 DEFAULT_TIMEOUT_FALLBACK_SCRIPT_HIT_ID = "default.timeout_fallback.safe_reply"
 DEFAULT_TIMEOUT_FALLBACK_CONTENT = "我先接住你刚才这条消息。真人同事稍后继续跟进，我们也可以先把最重要的点说清楚。"
+ASSISTANT_QUIET_COOLDOWN_SECONDS = 290
+ASSISTANT_QUIET_COOLDOWN_REASON = "assistant_quiet_cooldown_290s"
+VIDEO_CALL_OUTREACH_DELIVERY_MODE = "video_call_outreach"
 
 _scheduler: Optional[AsyncIOScheduler] = None
 _account_pool: Optional[AccountPool] = None
@@ -323,12 +337,16 @@ async def _claim_bcd_message(session: AsyncSession) -> dict[str, Any] | None:
                     WHERE ms.status = 'pending'
                       AND (ms.send_at IS NULL OR ms.send_at <= NOW())
                       AND ms.retry_count < ms.max_retries
+                      AND ms.invitation_queue IS NULL
                       AND (
                           COALESCE(p.user_level, 'C') IN ('B', 'C', 'D')
                           OR ms.metadata->>'delivery_mode' = :delivery_mode
                           OR ms.metadata->>'delivery_mode' = :app_download_delivery_mode
+                          OR ms.metadata->>'delivery_mode' = :video_call_outreach_delivery_mode
+                          OR ms.metadata->>'delivery_mode' = :post_release_ai_followup_delivery_mode
                           OR ms.message_type = :timeout_message_type
                           OR ms.message_type = :app_download_message_type
+                          OR ms.message_type = :post_release_ai_followup_message_type
                       )
                     ORDER BY ms.priority DESC, ms.send_at ASC NULLS LAST, ms.created_at ASC
                     FOR UPDATE OF ms SKIP LOCKED
@@ -348,10 +366,53 @@ async def _claim_bcd_message(session: AsyncSession) -> dict[str, Any] | None:
                 "delivery_mode": TIMEOUT_FALLBACK_DELIVERY_MODE,
                 "timeout_message_type": TIMEOUT_FALLBACK_MESSAGE_TYPE,
                 "app_download_delivery_mode": APP_DOWNLOAD_NURTURE_DELIVERY_MODE,
+                "video_call_outreach_delivery_mode": VIDEO_CALL_OUTREACH_DELIVERY_MODE,
+                "post_release_ai_followup_delivery_mode": POST_RELEASE_AI_FOLLOWUP_DELIVERY_MODE,
                 "app_download_message_type": APP_DOWNLOAD_MESSAGE_TYPE,
+                "post_release_ai_followup_message_type": POST_RELEASE_AI_FOLLOWUP_MESSAGE_TYPE,
             },
         )
     ).mappings().first()
+    if not row:
+        return None
+    await session.commit()
+    return dict(row)
+
+
+async def _claim_priority_video_invitation(session: AsyncSession) -> dict[str, Any] | None:
+    """Claim P1/P2/P4 under the shared one-per-minute invitation gate."""
+    row = (await session.execute(text("""
+      WITH candidate AS (
+        SELECT ms.id
+        FROM message_schedules ms JOIN users u ON u.id::text=ms.user_id
+        WHERE ms.status='pending' AND ms.invitation_queue IN ('P1','P2','P4')
+          AND (ms.send_at IS NULL OR ms.send_at<=NOW()) AND ms.retry_count<ms.max_retries
+          AND (ms.invitation_queue<>'P4' OR (
+            NOT EXISTS (SELECT 1 FROM message_schedules h WHERE h.status='pending'
+              AND h.invitation_queue IN ('P1','P2') AND (h.send_at IS NULL OR h.send_at<=NOW()))
+            AND (NOT EXISTS (SELECT 1 FROM video_reinvite_jobs r WHERE r.status IN ('scheduled','sent','restricted') AND r.next_send_at<=NOW())
+                 OR MOD(FLOOR(EXTRACT(EPOCH FROM NOW())/60)::bigint,5)=4)
+            AND (SELECT COUNT(*) FROM message_schedules d
+              WHERE d.invitation_queue='P4' AND d.status='sent'
+                AND d.sent_at>=date_trunc('day',NOW() AT TIME ZONE 'Asia/Shanghai') AT TIME ZONE 'Asia/Shanghai') <
+                (SELECT LEAST(144,GREATEST(36,FLOOR(COALESCE(SUM(s.effective_daily_limit),0)*0.20)))
+                   FROM video_reinvite_account_state s JOIN telegram_accounts a ON a.id=s.account_id
+                  WHERE s.tier>=2 AND s.status='active' AND s.health_check_status='healthy'
+                    AND (s.resume_at IS NULL OR s.resume_at<=NOW()) AND a.status='connected' AND a.is_active)
+          ))
+        ORDER BY CASE ms.invitation_queue WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 ELSE 4 END,
+                 ms.send_at NULLS LAST,ms.created_at
+        FOR UPDATE OF ms SKIP LOCKED LIMIT 1
+      ), gate AS (
+        UPDATE video_reinvite_settings SET next_global_send_at=NOW()+INTERVAL '1 minute',updated_at=NOW()
+        WHERE id=1 AND EXISTS(SELECT 1 FROM candidate)
+          AND (next_global_send_at IS NULL OR next_global_send_at<=NOW()) RETURNING id
+      )
+      UPDATE message_schedules ms SET status='sending',updated_at=NOW()
+      FROM candidate c,gate g WHERE ms.id=c.id
+      RETURNING ms.id,ms.user_id,ms.external_user_id,ms.message_type,ms.content,ms.platform,
+                ms.account_id,ms.chat_id,ms.metadata,ms.trace_id,ms.retry_count
+    """))).mappings().first()
     if not row:
         return None
     await session.commit()
@@ -397,6 +458,84 @@ async def _finalize_message(
     await session.commit()
 
 
+async def _recover_stale_sending(session: AsyncSession) -> int:
+    """Return abandoned claims to the queue; never consume retry budget."""
+    result = await session.execute(text("""
+      UPDATE message_schedules SET status='pending',send_at=GREATEST(COALESCE(send_at,NOW()),NOW()+INTERVAL '5 minutes'),
+        failure_reason='recovered:stale_sending',updated_at=NOW()
+      WHERE status='sending' AND updated_at<NOW()-INTERVAL '10 minutes'
+    """))
+    await session.commit()
+    return result.rowcount or 0
+
+
+async def _get_assistant_quiet_cooldown_until(
+    session: AsyncSession,
+    *,
+    conversation_id: str | None,
+) -> datetime | None:
+    """Return the earliest send time if the last message is a recent system reply."""
+    if not conversation_id:
+        return None
+
+    row = (
+        await session.execute(
+            text(
+                """
+                SELECT
+                    sender_type,
+                    created_at + (:cooldown_seconds * interval '1 second') AS allow_after,
+                    EXTRACT(
+                        EPOCH FROM (
+                            created_at + (:cooldown_seconds * interval '1 second') - NOW()
+                        )
+                    ) AS remaining_seconds
+                FROM messages
+                WHERE conversation_id = CAST(:conversation_id AS uuid)
+                ORDER BY created_at DESC
+                LIMIT 1
+                """
+            ),
+            {
+                "conversation_id": conversation_id,
+                "cooldown_seconds": ASSISTANT_QUIET_COOLDOWN_SECONDS,
+            },
+        )
+    ).mappings().first()
+    if not row:
+        return None
+
+    sender_type = str(row.get("sender_type") or "").lower()
+    remaining_seconds = float(row.get("remaining_seconds") or 0)
+    if sender_type in {"assistant", "operator", "system"} and remaining_seconds > 0:
+        return row.get("allow_after")
+    return None
+
+
+async def _defer_message_until(
+    session: AsyncSession,
+    *,
+    message_id: str,
+    send_at: datetime,
+    reason: str,
+) -> None:
+    """Put a claimed message back to pending without consuming retry budget."""
+    await session.execute(
+        text(
+            """
+            UPDATE message_schedules
+            SET status = 'pending',
+                send_at = :send_at,
+                failure_reason = :reason,
+                updated_at = NOW()
+            WHERE id = :id AND status = 'sending'
+            """
+        ),
+        {"id": message_id, "send_at": send_at, "reason": reason},
+    )
+    await session.commit()
+
+
 async def _resolve_delivery_account_id(
     session: AsyncSession,
     *,
@@ -424,10 +563,12 @@ async def _send_via_mtproto_account(
     chat_id: int,
     content: str,
     trace_id: Optional[str] = None,
+    telegram_access_hash: int | None = None,
+    asset: dict[str, Any] | None = None,
 ) -> bool:
     """Send using a specific MTProto account instead of hash routing."""
     try:
-        from telethon.tl.types import PeerUser
+        from services.mtproto.peer_resolve import resolve_telethon_peer
 
         client = await telegram_account_manager.get_client(UUID(account_id))
         if client is None:
@@ -439,21 +580,34 @@ async def _send_via_mtproto_account(
         delay_result = calculate_human_delay(content)
         await asyncio.sleep(delay_result.delay_seconds)
 
-        peer = PeerUser(user_id=chat_id)
-        get_input_entity = getattr(client, "get_input_entity", None)
-        if callable(get_input_entity):
-            try:
-                peer = await get_input_entity(peer)
-            except Exception:
-                pass
+        peer = await resolve_telethon_peer(
+            client,
+            chat_id,
+            access_hash=telegram_access_hash,
+        )
 
-        from services.mtproto.human_like_send import send_human_like_message
+        if asset:
+            from services.script_asset_delivery import send_mtproto_asset
 
-        await send_human_like_message(client, peer, content)
+            asset_payload = dict(asset)
+            asset_payload["caption"] = content
+            sent = await send_mtproto_asset(
+                client,
+                peer,
+                asset_payload,
+                trace_id=trace_id,
+            )
+            if sent is None:
+                return False
+        else:
+            from services.mtproto.human_like_send import send_human_like_message
+
+            await send_human_like_message(client, peer, content)
         logger.bind(
             trace_id=trace_id,
             account_id=account_id,
             chat_id=chat_id,
+            has_asset=bool(asset),
         ).info("auto_delivery_worker.sent_via_account")
         return True
     except Exception as exc:
@@ -472,6 +626,8 @@ async def _send_via_account_pool(
     content: str,
     trace_id: Optional[str] = None,
     preferred_account_id: str | None = None,
+    telegram_access_hash: int | None = None,
+    asset: dict[str, Any] | None = None,
 ) -> bool:
     """Send message via AccountPool with human-like delay."""
     if preferred_account_id:
@@ -481,12 +637,46 @@ async def _send_via_account_pool(
             user_id=user_id,
             account_id=preferred_account_id,
         )
-        return await _send_via_mtproto_account(
+        if await _send_via_mtproto_account(
             account_id=preferred_account_id,
             chat_id=chat_id,
             content=content,
             trace_id=trace_id,
+            telegram_access_hash=telegram_access_hash,
+            asset=asset,
+        ):
+            return True
+
+        from services.call_broadcast.peers import resolve_account_and_access_hash
+
+        fallback_account_id, fallback_hash = await resolve_account_and_access_hash(
+            chat_id=chat_id,
+            preferred_account_id=preferred_account_id,
         )
+        if fallback_account_id and fallback_account_id != preferred_account_id:
+            await pin_mtproto_account_route(
+                redis,
+                user_id=user_id,
+                account_id=fallback_account_id,
+            )
+            fallback_access_hash = (
+                int(fallback_hash) if fallback_hash is not None else telegram_access_hash
+            )
+            return await _send_via_mtproto_account(
+                account_id=fallback_account_id,
+                chat_id=chat_id,
+                content=content,
+                trace_id=trace_id,
+                telegram_access_hash=fallback_access_hash,
+                asset=asset,
+            )
+        return False
+
+    if asset:
+        logger.bind(trace_id=trace_id, user_id=user_id, chat_id=chat_id).warning(
+            "auto_delivery_worker.asset_requires_preferred_account"
+        )
+        return False
 
     if _account_pool is None:
         logger.error("AccountPool not initialized")
@@ -544,8 +734,10 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
         "sent": 0,
         "failed": 0,
         "skipped_stale": 0,
+        "deferred_quiet_cooldown": 0,
         "skipped_no_lock": 0,
         "skipped_no_pool": 0,
+        "recovered_stale_sending": 0,
         "error": None,
     }
 
@@ -578,13 +770,12 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
                     session,
                     trace_id=trace_id,
                 )
-                stats["app_download_followup_queued"] = await queue_clicked_not_downloaded_followups(
-                    session,
-                    trace_id=trace_id,
-                )
+                stats["app_download_followup_queued"] = 0
 
                 # Claim one B/C/D message to send
-                message = await _claim_bcd_message(session)
+                message = await _claim_priority_video_invitation(session)
+                if not message:
+                    message = await _claim_bcd_message(session)
                 if not message:
                     log.info("auto_delivery_worker.tick.empty")
                     return stats
@@ -594,6 +785,30 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
                 user_id = message["user_id"]
                 content = message["content"]
                 chat_id = message.get("chat_id")
+                metadata = message.get("metadata") or {}
+                conversation_id = metadata.get("conversation_id")
+
+                cooldown_until = await _get_assistant_quiet_cooldown_until(
+                    session,
+                    conversation_id=str(conversation_id) if conversation_id else None,
+                )
+                if cooldown_until:
+                    await _defer_message_until(
+                        session,
+                        message_id=message_id,
+                        send_at=cooldown_until,
+                        reason=ASSISTANT_QUIET_COOLDOWN_REASON,
+                    )
+                    stats["deferred_quiet_cooldown"] = 1
+                    log.bind(
+                        message_id=message_id,
+                        conversation_id=conversation_id,
+                        cooldown_until=cooldown_until.isoformat()
+                        if hasattr(cooldown_until, "isoformat")
+                        else str(cooldown_until),
+                    ).info("auto_delivery_worker.tick.quiet_cooldown_defer")
+                    return stats
+
                 stale_reason = await should_skip_stale_nurture_message(
                     session,
                     message=message,
@@ -611,15 +826,127 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
                     )
                     return stats
 
-                content = await prepare_nurture_message_for_send(
+                if (
+                    _is_app_download_nurture_message(message)
+                    and conversation_id
+                    and (message.get("metadata") or {}).get("nurture_kind") != "video_chat"
+                    and await is_conversation_link_cooldown_active(
+                        session,
+                        conversation_id=str(conversation_id),
+                    )
+                ):
+                    await _finalize_message(
+                        session,
+                        message_id=message_id,
+                        status="failed",
+                        failure_reason="stale:link_cooldown",
+                    )
+                    stats["skipped_stale"] = 1
+                    log.bind(message_id=message_id, stale_reason="link_cooldown").info(
+                        "auto_delivery_worker.tick.link_cooldown_skip"
+                    )
+                    return stats
+
+                stats["recovered_stale_sending"] = await _recover_stale_sending(session)
+
+                if (
+                    metadata.get("delivery_mode") == VIDEO_CALL_OUTREACH_DELIVERY_MODE
+                    and metadata.get("stop_if_auto_video_completed", True)
+                    and chat_id
+                ):
+                    completed_call = (
+                        await session.execute(
+                            text(
+                                """
+                                SELECT 1
+                                FROM call_broadcast_jobs
+                                WHERE chat_id = :chat_id
+                                  AND status = 'completed'
+                                  AND trigger_source = 'inbound_call'
+                                LIMIT 1
+                                """
+                            ),
+                            {"chat_id": int(chat_id)},
+                        )
+                    ).fetchone()
+                    if completed_call:
+                        await _finalize_message(
+                            session,
+                            message_id=message_id,
+                            status="failed",
+                            failure_reason="stale:auto_video_already_completed",
+                        )
+                        stats["skipped_stale"] = 1
+                        log.bind(message_id=message_id, chat_id=chat_id).info(
+                            "auto_delivery_worker.tick.auto_video_completed_skip"
+                        )
+                        return stats
+
+                if is_post_release_ai_followup_message(message):
+                    prepared_followup = await prepare_post_release_followup_for_send(
+                        session,
+                        message=message,
+                        trace_id=trace_id,
+                    )
+                    await mark_post_release_followup_result(
+                        session,
+                        message_id=message_id,
+                        result=prepared_followup,
+                    )
+                    if not prepared_followup.should_send:
+                        await _finalize_message(
+                            session,
+                            message_id=message_id,
+                            status="failed",
+                            failure_reason=f"skipped:{prepared_followup.reason}",
+                        )
+                        stats["skipped_stale"] = 1
+                        log.bind(
+                            message_id=message_id,
+                            skip_reason=prepared_followup.reason,
+                        ).info("auto_delivery_worker.tick.post_release_skip")
+                        return stats
+                    content = prepared_followup.content
+                else:
+                    content = await prepare_nurture_message_for_send(
+                        session,
+                        message=message,
+                        trace_id=trace_id,
+                    )
+                if await should_skip_duplicate_outbound(
                     session,
-                    message=message,
+                    user_id=str(user_id),
+                    content=content,
                     trace_id=trace_id,
-                )
+                    source="auto_delivery_worker",
+                ):
+                    await _finalize_message(
+                        session,
+                        message_id=message_id,
+                        status="failed",
+                        failure_reason="duplicate:repeat_cooldown",
+                    )
+                    stats["skipped_stale"] = 1
+                    log.bind(message_id=message_id).info(
+                        "auto_delivery_worker.tick.duplicate_content_skip"
+                    )
+                    return stats
                 preferred_account_id = await _resolve_delivery_account_id(
                     session,
                     message=message,
                 )
+                allowed, gate_reason, resume_at = await check_outbound_account(session, preferred_account_id)
+                if not allowed:
+                    defer_until = resume_at or datetime.now(timezone.utc).replace(microsecond=0) + timedelta(hours=1)
+                    await _defer_message_until(session, message_id=message_id, send_at=defer_until,
+                                               reason=f"account_gate:{gate_reason}")
+                    log.bind(message_id=message_id, reason=gate_reason).info("auto_delivery_worker.account_gate_defer")
+                    return stats
+                raw_access_hash = (message.get("metadata") or {}).get("telegram_access_hash")
+                telegram_access_hash = (
+                    int(str(raw_access_hash)) if raw_access_hash is not None else None
+                )
+                asset = metadata.get("asset") if isinstance(metadata.get("asset"), dict) else None
                 await session.commit()
 
                 log.bind(
@@ -639,6 +966,8 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
                         content=content,
                         trace_id=trace_id,
                         preferred_account_id=preferred_account_id,
+                        telegram_access_hash=telegram_access_hash,
+                        asset=asset,
                     )
 
                     if success:
@@ -656,11 +985,52 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
                                     message_id=message_id,
                                     error_type=type(persist_error).__name__,
                                 ).warning("auto_delivery_worker.persist_sent_message_failed")
+                        elif metadata.get("delivery_mode") == VIDEO_CALL_OUTREACH_DELIVERY_MODE:
+                            try:
+                                await persist_auto_delivery_message(
+                                    session,
+                                    message=message,
+                                    content=content,
+                                    sender_id=str(preferred_account_id or "auto_delivery_worker"),
+                                )
+                            except Exception as persist_error:
+                                log.bind(
+                                    message_id=message_id,
+                                    error_type=type(persist_error).__name__,
+                                ).warning("auto_delivery_worker.persist_outreach_message_failed")
+                        elif is_post_release_ai_followup_message(message):
+                            try:
+                                await persist_post_release_followup_message(
+                                    session,
+                                    message=message,
+                                    content=content,
+                                    sender_id=str(preferred_account_id or "auto_delivery_worker"),
+                                )
+                            except Exception as persist_error:
+                                log.bind(
+                                    message_id=message_id,
+                                    error_type=type(persist_error).__name__,
+                                ).warning(
+                                    "auto_delivery_worker.persist_post_release_followup_failed"
+                                )
                         await _finalize_message(
                             session,
                             message_id=message_id,
                             status="sent",
                         )
+                        if _is_app_download_nurture_message(message):
+                            nurture_meta = message.get("metadata") or {}
+                            if nurture_meta.get("nurture_kind") == "video_chat" and user_id:
+                                try:
+                                    await maybe_mark_nurture_cycle_completed(
+                                        session,
+                                        user_id=str(user_id),
+                                    )
+                                except Exception as mark_error:
+                                    log.bind(
+                                        message_id=message_id,
+                                        error_type=type(mark_error).__name__,
+                                    ).warning("auto_delivery_worker.nurture_cycle_mark_failed")
                         stats["sent"] = 1
                         log.bind(message_id=message_id).info("auto_delivery_worker.tick.sent")
                     else:

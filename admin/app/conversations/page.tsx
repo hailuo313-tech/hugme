@@ -1,14 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AuthGate from "@/components/AuthGate";
 import AdminFrame from "@/components/AdminFrame";
+import OperatorRingControls from "@/components/OperatorRingControls";
 import OperatorWsStatus from "@/components/OperatorWsStatus";
 import { apiFetch, Operator } from "@/lib/auth";
+import { formatBeijingDateTime, parseDbUtcTimestamp } from "@/lib/reportTime";
+import { usePendingReviewRing } from "@/hooks/usePendingReviewRing";
 import { useOperatorTaskWs } from "@/hooks/useOperatorTaskWs";
 import { levelBadgeClass, vipToLevelTier, type LevelTier } from "@/lib/priorityDisplay";
 
-type QueueTab = "all" | "handoff" | "premium" | "auto" | "risk";
+type QueueTab = "all" | "handoff" | "released" | "premium" | "auto" | "risk";
 
 interface ConversationRow {
   conversation_id: string;
@@ -26,9 +29,26 @@ interface ConversationRow {
   user_status: string | null;
   loneliness_score: number | null;
   vip_level: number | null;
+  user_level: LevelTier | string | null;
+  chat_route: string | null;
   relationship_stage: string | null;
   character_id: string | null;
   character_name: string | null;
+  telegram_account_id: string | null;
+  telegram_account_label: string | null;
+  telegram_account_phone: string | null;
+  telegram_account_username: string | null;
+  country_code?: string | null;
+  city?: string | null;
+  age?: string | null;
+  message_status?: string | null;
+  first_system_message_at?: string | null;
+  latest_message_at?: string | null;
+  latest_message_sender?: string | null;
+  latest_message_content?: string | null;
+  post_inbound_video_expert_waived_at?: string | null;
+  post_inbound_video_expert_release_eligible?: boolean | null;
+  post_inbound_video_expert_relock_eligible?: boolean | null;
 }
 
 interface MessageRow {
@@ -39,6 +59,7 @@ interface MessageRow {
   is_operator_message: boolean | null;
   model_name: string | null;
   safety_result: unknown;
+  operator_translation_zh?: string | null;
   created_at: string | null;
 }
 
@@ -55,6 +76,7 @@ interface DetailResponse {
     language?: string | null;
     timezone?: string | null;
     chat_style?: string | null;
+    post_inbound_video_expert_release_eligible?: boolean | null;
   };
   messages: MessageRow[];
 }
@@ -107,10 +129,67 @@ interface TranslateResponse {
   latency_ms?: number | null;
 }
 
+interface ConversationTranslateResponse extends TranslateResponse {
+  saved_count: number;
+  skipped_count: number;
+}
+
 const PAGE_SIZE = 50;
+const CONVERSATION_POLL_MS = 30 * 1000;
 const CONVERSATION_LIST_API_MARKER = "/admin/conversations?";
+const TRANSLATION_PERSISTENCE_BUILD = "operator-translation-persist-20260624-v4";
 const SCRIPT_HOOKS = ["入站", "消费", "探测", "分级", "回复", "坐席", "出站", "归档"];
 const LEVELS: LevelTier[] = ["S", "A", "B", "C", "D"];
+const COUNTRY_LABELS: Record<string, { zh: string; en: string }> = {
+  US: { zh: "美国", en: "United States" },
+  CA: { zh: "加拿大", en: "Canada" },
+  GB: { zh: "英国", en: "United Kingdom" },
+  DE: { zh: "德国", en: "Germany" },
+  FR: { zh: "法国", en: "France" },
+  IT: { zh: "意大利", en: "Italy" },
+  ES: { zh: "西班牙", en: "Spain" },
+  NL: { zh: "荷兰", en: "Netherlands" },
+  BE: { zh: "比利时", en: "Belgium" },
+  CH: { zh: "瑞士", en: "Switzerland" },
+  AT: { zh: "奥地利", en: "Austria" },
+  IE: { zh: "爱尔兰", en: "Ireland" },
+  DK: { zh: "丹麦", en: "Denmark" },
+  NO: { zh: "挪威", en: "Norway" },
+  SE: { zh: "瑞典", en: "Sweden" },
+  FI: { zh: "芬兰", en: "Finland" },
+  IS: { zh: "冰岛", en: "Iceland" },
+  LU: { zh: "卢森堡", en: "Luxembourg" },
+  PT: { zh: "葡萄牙", en: "Portugal" },
+  GR: { zh: "希腊", en: "Greece" },
+  CZ: { zh: "捷克", en: "Czech Republic" },
+  JP: { zh: "日本", en: "Japan" },
+  AU: { zh: "澳大利亚", en: "Australia" },
+  NZ: { zh: "新西兰", en: "New Zealand" },
+  SG: { zh: "新加坡", en: "Singapore" },
+  HK: { zh: "中国香港", en: "Hong Kong" },
+};
+
+function canRelockPostInboundVideoExpert(row: ConversationRow): boolean {
+  return Boolean(
+    row.post_inbound_video_expert_relock_eligible || row.post_inbound_video_expert_waived_at,
+  );
+}
+
+function isReleasedExpert(row: ConversationRow): boolean {
+  return Boolean(row.post_inbound_video_expert_waived_at);
+}
+
+function isExpertPendingRelease(row: ConversationRow): boolean {
+  return Boolean(row.post_inbound_video_expert_release_eligible);
+}
+
+function isTakenOver(row: ConversationRow): boolean {
+  return Boolean(row.assigned_operator_id) || row.state === "HUMAN_LOCKED";
+}
+
+function isAiFollowing(row: ConversationRow): boolean {
+  return !isFrozen(row) && row.state === "AI_ACTIVE";
+}
 
 const STATE_OPTIONS = [
   { value: "", label: "全部状态" },
@@ -131,9 +210,12 @@ const CHANNEL_OPTIONS = [
 
 function fmtTime(value: string | null | undefined): string {
   if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("zh-CN", { hour12: false });
+  return formatBeijingDateTime(value);
+}
+
+function sortTime(value: string | null | undefined): number {
+  if (!value) return 0;
+  return parseDbUtcTimestamp(value)?.getTime() ?? 0;
 }
 
 function shortText(value: string | null | undefined, max = 56): string {
@@ -142,20 +224,77 @@ function shortText(value: string | null | undefined, max = 56): string {
   return text.length > max ? `${text.slice(0, max)}...` : text;
 }
 
+function normalizeForTranslationCompare(value: string | null | undefined): string {
+  return (value || "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function hasCjk(value: string | null | undefined): boolean {
+  return /[\u3400-\u9fff]/.test(value || "");
+}
+
+function hasTranslatableText(value: string | null | undefined): boolean {
+  const text = (value || "")
+    .replace(/https?:\/\/\S+/gi, " ")
+    .replace(/[@#]\w+/g, " ")
+    .trim();
+  return /[A-Za-z]{3,}|[\u3040-\u30ff\uac00-\ud7af\u0400-\u04ff\u0370-\u03ff]/.test(text);
+}
+
+function isStaleSavedTranslation(message: MessageRow, translatedText: string | null | undefined): boolean {
+  const translated = (translatedText || "").trim();
+  const source = (message.content || "").trim();
+  if (!translated || !hasTranslatableText(source) || hasCjk(source)) return false;
+  return !hasCjk(translated) || normalizeForTranslationCompare(source) === normalizeForTranslationCompare(translated);
+}
+
+function usableSavedTranslation(message: MessageRow): string {
+  const translated = (message.operator_translation_zh || "").trim();
+  if (!translated || isStaleSavedTranslation(message, translated)) return "";
+  return translated;
+}
+
+function telegramAccountDisplay(row: ConversationRow): string {
+  return (
+    row.telegram_account_label ||
+    row.telegram_account_username ||
+    row.telegram_account_phone ||
+    row.telegram_account_id ||
+    "—"
+  );
+}
+
 function levelOf(row: ConversationRow): LevelTier {
+  const explicitLevel = String(row.user_level || "").trim().toUpperCase();
+  if (LEVELS.includes(explicitLevel as LevelTier)) return explicitLevel as LevelTier;
   return vipToLevelTier(row.vip_level ?? 0);
 }
 
 function isPremium(row: ConversationRow): boolean {
-  return levelOf(row) === "S" || levelOf(row) === "A";
+  return !isFrozen(row) && (levelOf(row) === "S" || levelOf(row) === "A");
+}
+
+function isReleasedTabRow(row: ConversationRow): boolean {
+  if (isFrozen(row)) return false;
+  if (isPremium(row)) return false;
+  if (isAiFollowing(row)) return false;
+  return isReleasedExpert(row) || isExpertPendingRelease(row);
 }
 
 function isWaiting(row: ConversationRow): boolean {
-  return row.state === "WAITING_OPERATOR" && !row.assigned_operator_id;
+  return (
+    !isFrozen(row)
+    && row.state === "WAITING_OPERATOR"
+    && !row.assigned_operator_id
+    && !isExpertPendingRelease(row)
+  );
 }
 
 function isRisk(row: ConversationRow): boolean {
-  return row.risk_level === "critical" || row.risk_level === "high" || row.risk_level === "elevated";
+  return isFrozen(row) || row.risk_level === "critical" || row.risk_level === "high" || row.risk_level === "elevated";
+}
+
+function isFrozen(row: ConversationRow): boolean {
+  return row.user_status === "frozen" || row.state === "FROZEN";
 }
 
 function stateLabel(state: string | null): string {
@@ -166,6 +305,8 @@ function stateLabel(state: string | null): string {
       return "人工中";
     case "AI_ACTIVE":
       return "AI跟进";
+    case "FROZEN":
+      return "已冻结";
     case "CLOSED":
       return "已关闭";
     default:
@@ -181,15 +322,16 @@ function stateClass(state: string | null): string {
       return "border-violet-600/70 bg-violet-500/10 text-violet-200";
     case "AI_ACTIVE":
       return "border-emerald-600/70 bg-emerald-500/10 text-emerald-200";
+    case "FROZEN":
+      return "border-rose-700/70 bg-rose-500/10 text-rose-200";
     default:
       return "border-slate-700 bg-slate-800 text-slate-300";
   }
 }
 
 function queueStateLabel(row: ConversationRow): string {
-  if (row.assigned_operator_id || row.state === "HUMAN_LOCKED") {
-    return "已接管";
-  }
+  if (isFrozen(row)) return "已冻结";
+  if (row.assigned_operator_id || row.state === "HUMAN_LOCKED") return "已接管";
   if (row.state === "WAITING_OPERATOR") return "待接管";
   if (row.state === "AI_ACTIVE") return "AI跟进";
   if (row.state === "CLOSED") return "已关闭";
@@ -197,6 +339,7 @@ function queueStateLabel(row: ConversationRow): string {
 }
 
 function queueStateClass(row: ConversationRow): string {
+  if (isFrozen(row)) return "border-rose-700/70 bg-rose-500/10 text-rose-200";
   if (row.assigned_operator_id || row.state === "HUMAN_LOCKED") {
     return "border-violet-600/70 bg-violet-500/10 text-violet-200";
   }
@@ -209,7 +352,41 @@ function riskClass(risk: string | null): string {
   return "text-slate-400";
 }
 
+function countryDisplay(code: string | null | undefined): string {
+  const normalized = (code || "").trim().toUpperCase();
+  if (!normalized) return "";
+  const label = COUNTRY_LABELS[normalized];
+  if (!label) return normalized;
+  return `${label.zh} / ${label.en}`;
+}
+
+function bilingualText(value: string | null | undefined): string {
+  const text = (value || "").trim();
+  if (!text) return "";
+  return `${text} / ${text}`;
+}
+
+function ageDisplay(value: string | null | undefined): string {
+  const text = (value || "").trim();
+  if (!text) return "";
+  return `${text}岁 / ${text} years old`;
+}
+
+function messageStatusDisplay(status: string | null | undefined): { text: string; unread: boolean } {
+  if (status === "unread") return { text: "未读 / Unread", unread: true };
+  if (status === "read") return { text: "已读 / Read", unread: false };
+  return { text: "", unread: false };
+}
+
+function messageSenderDisplay(sender: string | null | undefined): string {
+  if (sender === "user") return "用户 / User";
+  if (sender === "assistant") return "AI / AI";
+  if (sender === "operator") return "人工 / Operator";
+  return "";
+}
+
 function routeLabel(row: ConversationRow): string {
+  if (row.chat_route === "manual_premium") return "S/A精聊";
   const level = levelOf(row);
   if (level === "S") return "专家精聊";
   if (level === "A") return "重点转化";
@@ -226,15 +403,15 @@ function sortQueue(items: ConversationRow[]): ConversationRow[] {
     if (levelDiff !== 0) return levelDiff;
     const stateDiff = (stateScore[a.state || ""] ?? 9) - (stateScore[b.state || ""] ?? 9);
     if (stateDiff !== 0) return stateDiff;
-    return new Date(b.last_message_at || b.created_at || 0).getTime() - new Date(a.last_message_at || a.created_at || 0).getTime();
+    return sortTime(b.last_message_at || b.created_at) - sortTime(a.last_message_at || a.created_at);
   });
 }
 
 function ConversationsContent({ operator }: { operator: Operator }) {
   const [items, setItems] = useState<ConversationRow[]>([]);
   const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [listLoading, setListLoading] = useState(true);
   const [tab, setTab] = useState<QueueTab>("all");
   const [state, setState] = useState("");
   const [channel, setChannel] = useState("");
@@ -251,38 +428,84 @@ function ConversationsContent({ operator }: { operator: Operator }) {
   const [draft, setDraft] = useState("");
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [queueDeleteId, setQueueDeleteId] = useState<string | null>(null);
+  const [queueJoinPremiumId, setQueueJoinPremiumId] = useState<string | null>(null);
+  const [queueFreezeId, setQueueFreezeId] = useState<string | null>(null);
+  const [queueReleaseId, setQueueReleaseId] = useState<string | null>(null);
+  const [humanReleaseId, setHumanReleaseId] = useState<string | null>(null);
+  const [relockLoading, setRelockLoading] = useState(false);
+  const [actionToast, setActionToast] = useState<string | null>(null);
   const [sendLoading, setSendLoading] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [messageTranslations, setMessageTranslations] = useState<Record<string, string>>({});
   const [translatingMessages, setTranslatingMessages] = useState(false);
   const [translationError, setTranslationError] = useState<string | null>(null);
+  const queuePanelRef = useRef<HTMLDivElement | null>(null);
+  const listInFlightRef = useRef(false);
+  const listRequestSeqRef = useRef(0);
+  const detailRequestSeqRef = useRef(0);
+  const detailRef = useRef<DetailResponse | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  useEffect(() => {
+    detailRef.current = detail;
+  }, [detail]);
+
+  const load = useCallback(async (options?: { silent?: boolean }) => {
+    if (options?.silent && listInFlightRef.current) return;
+    const requestSeq = listRequestSeqRef.current + 1;
+    listRequestSeqRef.current = requestSeq;
+    listInFlightRef.current = true;
+    if (!options?.silent) {
+      setError(null);
+      setListLoading(true);
+    }
     try {
       const qs = new URLSearchParams({ page: "1", page_size: String(PAGE_SIZE) });
-      if (state) qs.set("state", state);
+      qs.set("tab", tab);
+      const backendState = tab === "auto" ? "AI_ACTIVE" : state;
+      if (backendState) qs.set("state", backendState);
       if (channel) qs.set("channel", channel);
       if (appliedSearch.trim()) qs.set("search", appliedSearch.trim());
       const response = await apiFetch<ListResponse>(
         `${CONVERSATION_LIST_API_MARKER}${qs.toString()}`,
       );
+      if (listRequestSeqRef.current !== requestSeq) return;
       setItems(sortQueue(response.items || []));
       setTotal(response.total || 0);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      setItems([]);
-      setTotal(0);
+      if (!options?.silent && listRequestSeqRef.current === requestSeq) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
     } finally {
-      setLoading(false);
+      if (listRequestSeqRef.current === requestSeq) {
+        listInFlightRef.current = false;
+        if (!options?.silent) setListLoading(false);
+      }
     }
-  }, [appliedSearch, channel, state]);
+  }, [appliedSearch, channel, state, tab]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void load({ silent: true });
+    }, CONVERSATION_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [load]);
+
+  const waitingConversationIds = useMemo(
+    () => items.filter((row) => isWaiting(row) || isExpertPendingRelease(row)).map((item) => item.conversation_id),
+    [items],
+  );
+
+  const {
+    soundEnabled,
+    setSoundEnabled,
+    needsUnlock,
+    unlockSound,
+    testRing,
+  } = usePendingReviewRing(waitingConversationIds);
 
   const { connState, lastAlert, dismissAlert, reconnect } = useOperatorTaskWs({
     operatorId: operator.operator_id,
@@ -298,8 +521,10 @@ function ConversationsContent({ operator }: { operator: Operator }) {
     }, {});
     return {
       waiting: items.filter(isWaiting).length,
-      premium: items.filter(isPremium).length,
-      aiActive: items.filter((item) => item.state === "AI_ACTIVE").length,
+      releaseReview: items.filter(isExpertPendingRelease).length,
+      released: items.filter((row) => !isFrozen(row) && !isPremium(row) && !isAiFollowing(row) && isReleasedExpert(row)).length,
+      premium: items.filter((row) => isPremium(row) && !isAiFollowing(row)).length,
+      aiActive: items.filter(isAiFollowing).length,
       risk: items.filter(isRisk).length,
       levels,
     };
@@ -307,11 +532,33 @@ function ConversationsContent({ operator }: { operator: Operator }) {
 
   const visibleItems = useMemo(() => {
     if (tab === "handoff") return items.filter(isWaiting);
-    if (tab === "premium") return items.filter(isPremium);
-    if (tab === "auto") return items.filter((item) => item.state === "AI_ACTIVE");
+    if (tab === "released") {
+      return items
+        .filter(isReleasedTabRow)
+        .sort((a, b) => {
+          const aPending = isExpertPendingRelease(a) || (isTakenOver(a) && !isReleasedExpert(a)) ? 0 : 1;
+          const bPending = isExpertPendingRelease(b) || (isTakenOver(b) && !isReleasedExpert(b)) ? 0 : 1;
+          if (aPending !== bPending) return aPending - bPending;
+          return sortTime(b.last_message_at || b.created_at) - sortTime(a.last_message_at || a.created_at);
+        });
+    }
+    if (tab === "premium") return items.filter((row) => isPremium(row) && !isAiFollowing(row));
+    if (tab === "auto") return items.filter(isAiFollowing);
     if (tab === "risk") return items.filter(isRisk);
-    return items;
+    return [...items].sort((a, b) => {
+      const aWaiting = isWaiting(a);
+      const bWaiting = isWaiting(b);
+      if (aWaiting !== bWaiting) return aWaiting ? -1 : 1;
+      return sortTime(b.last_message_at || b.created_at) - sortTime(a.last_message_at || a.created_at);
+    });
   }, [items, tab]);
+
+  const jumpToQueue = useCallback((nextTab: QueueTab) => {
+    setTab(nextTab);
+    window.setTimeout(() => {
+      queuePanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
+  }, []);
 
   async function acceptConversation(row: ConversationRow) {
     if (!isWaiting(row) || row.assigned_operator_id) return;
@@ -339,6 +586,8 @@ function ConversationsContent({ operator }: { operator: Operator }) {
   }
 
   async function openDetail(conversationId: string) {
+    const requestSeq = detailRequestSeqRef.current + 1;
+    detailRequestSeqRef.current = requestSeq;
     setDetail(null);
     setDetailError(null);
     setDeleteError(null);
@@ -353,16 +602,45 @@ function ConversationsContent({ operator }: { operator: Operator }) {
     setDetailLoading(true);
     try {
       const response = await apiFetch<DetailResponse>(`/admin/conversations/${conversationId}`);
+      if (detailRequestSeqRef.current !== requestSeq) return;
       setDetail(response);
+      setMessageTranslations(savedMessageTranslations(response.messages));
       void loadSuggestions(response.conversation);
       if (isPremium(response.conversation)) {
         void loadTrace(conversationId);
       }
     } catch (err) {
+      if (detailRequestSeqRef.current !== requestSeq) return;
       setDetailError(err instanceof Error ? err.message : String(err));
     } finally {
-      setDetailLoading(false);
+      if (detailRequestSeqRef.current === requestSeq) {
+        setDetailLoading(false);
+      }
     }
+  }
+
+  function savedMessageTranslations(messages: MessageRow[]) {
+    const saved: Record<string, string> = {};
+    for (const message of messages) {
+      const translated = usableSavedTranslation(message);
+      if (translated) {
+        saved[message.id] = translated;
+      }
+    }
+    return saved;
+  }
+
+  function filterTranslationsForMessageIds(
+    translations: Record<string, string>,
+    allowedMessageIds: Set<string>,
+  ) {
+    const filtered: Record<string, string> = {};
+    for (const [id, text] of Object.entries(translations)) {
+      if (allowedMessageIds.has(id) && text.trim()) {
+        filtered[id] = text;
+      }
+    }
+    return filtered;
   }
 
   async function deleteSingleMessage(messageId: string) {
@@ -407,17 +685,20 @@ function ConversationsContent({ operator }: { operator: Operator }) {
     }
   }
 
-  async function deleteConversation(row: ConversationRow) {
-    if (queueDeleteId) return;
+  async function freezeConversation(row: ConversationRow) {
+    if (!row.user_id || queueFreezeId || isFrozen(row)) return;
     const name = row.nickname || row.external_id || row.conversation_id;
-    const confirmed = window.confirm(`确认删除这个TG会话？\n\n${name}\n\n删除后这个会话和它的聊天记录都会从工作队列移除。`);
+    const confirmed = window.confirm(
+      `确认冻结并停止回复？\n\n${name}\n\n冻结后：\n- 不再 AI 自动回复\n- 取消待发送 nurture / 通知\n- 会话标记为已冻结`,
+    );
     if (!confirmed) return;
 
-    setQueueDeleteId(row.conversation_id);
+    setQueueFreezeId(row.conversation_id);
     setError(null);
     try {
-      await apiFetch(`/admin/conversations/${row.conversation_id}`, {
-        method: "DELETE",
+      await apiFetch<{ status: string }>(`/users/${row.user_id}/freeze`, {
+        method: "POST",
+        body: JSON.stringify({ reason: "operator_freeze_from_queue" }),
       });
       if (detail?.conversation.conversation_id === row.conversation_id) {
         setDetail(null);
@@ -426,7 +707,114 @@ function ConversationsContent({ operator }: { operator: Operator }) {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setQueueDeleteId(null);
+      setQueueFreezeId(null);
+    }
+  }
+
+  async function releasePostInboundVideoExpert(row: ConversationRow) {
+    if (!row.post_inbound_video_expert_release_eligible || queueReleaseId) return;
+    const name = row.nickname || row.external_id || row.conversation_id;
+    const confirmed = window.confirm(
+      `确认放行？\n\n${name}\n\n放行后该用户将恢复与普通用户一样：\n- AI 自动回复\n- 固定话术 / TikTok 引导等\n\n之后可在「已放行」标签或会话详情点击「收回人工」。`,
+    );
+    if (!confirmed) return;
+
+    setQueueReleaseId(row.conversation_id);
+    setError(null);
+    try {
+      await apiFetch<{ status: string; state: string }>(
+        `/admin/conversations/${row.conversation_id}/post-inbound-video-release`,
+        { method: "POST" },
+      );
+      setTab("released");
+      setActionToast("已放行：该用户已恢复 AI/话术自动回复。可在此页或详情点击「收回人工」。");
+      await openDetail(row.conversation_id);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setQueueReleaseId(null);
+    }
+  }
+
+  async function releaseHumanConversation(row: ConversationRow) {
+    if (!isTakenOver(row) || row.post_inbound_video_expert_release_eligible || humanReleaseId) return;
+    const name = row.nickname || row.external_id || row.conversation_id;
+    const confirmed = window.confirm(
+      `确认放回 AI？\n\n${name}\n\n放回后：\n- 清除人工接管状态\n- 用户后续消息由系统正常自动回复\n- 当前坐席不再占用这个会话`,
+    );
+    if (!confirmed) return;
+
+    setHumanReleaseId(row.conversation_id);
+    setError(null);
+    try {
+      await apiFetch<{ status: string; state: string }>(
+        `/admin/conversations/${row.conversation_id}/release-human`,
+        { method: "POST" },
+      );
+      setTab("auto");
+      setActionToast("已放回 AI：该用户后续消息会由系统正常自动回复。");
+      if (detail?.conversation.conversation_id === row.conversation_id) {
+        await openDetail(row.conversation_id);
+      }
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setHumanReleaseId(null);
+    }
+  }
+
+  async function relockPostInboundVideoExpert(row: ConversationRow) {
+    if (!canRelockPostInboundVideoExpert(row) || relockLoading) return;
+    const name = row.nickname || row.external_id || row.conversation_id;
+    const confirmed = window.confirm(
+      `确认收回人工？\n\n${name}\n\n收回后该用户将重新回到两段自动来电视频后的待人工专属模式，系统/AI 不再自动回复。`,
+    );
+    if (!confirmed) return;
+
+    setRelockLoading(true);
+    setError(null);
+    try {
+      await apiFetch<{ status: string; state: string }>(
+        `/admin/conversations/${row.conversation_id}/post-inbound-video-relock`,
+        { method: "POST" },
+      );
+      setTab("handoff");
+      setActionToast("已收回人工：该用户重新回到两段自动来电视频后的待人工专属模式。");
+      await openDetail(row.conversation_id);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRelockLoading(false);
+    }
+  }
+
+  async function joinPremiumChat(row: ConversationRow) {
+    if (queueJoinPremiumId || !row.user_id || isPremium(row)) return;
+    const name = row.nickname || row.external_id || row.conversation_id;
+    const confirmed = window.confirm(
+      `确认加入 S/A精聊？\n\n${name}\n\n加入后：\n- 该用户会进入「S/A精聊」列表\n- 不会删除会话和聊天记录\n- 不会再出现在「已放行」列表里`,
+    );
+    if (!confirmed) return;
+
+    setQueueJoinPremiumId(row.conversation_id);
+    setError(null);
+    try {
+      await apiFetch(`/admin/conversations/${row.conversation_id}/join-premium-chat`, {
+        method: "POST",
+      });
+      setTab("premium");
+      setActionToast("已加入 S/A精聊：该用户已从已放行队列移到 S/A精聊。");
+      if (detail?.conversation.conversation_id === row.conversation_id) {
+        await openDetail(row.conversation_id);
+      }
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setQueueJoinPremiumId(null);
     }
   }
 
@@ -507,8 +895,8 @@ function ConversationsContent({ operator }: { operator: Operator }) {
 
   async function translateTexts(items: { id: string; text: string; sender_type?: string | null }[]) {
     const chunks: typeof items[] = [];
-    for (let i = 0; i < items.length; i += 10) {
-      chunks.push(items.slice(i, i + 10));
+    for (let i = 0; i < items.length; i += 50) {
+      chunks.push(items.slice(i, i + 50));
     }
     const merged: Record<string, string> = {};
     for (const chunk of chunks) {
@@ -521,7 +909,10 @@ function ConversationsContent({ operator }: { operator: Operator }) {
         }),
       });
       for (const item of response.translations || []) {
-        merged[item.id] = item.text;
+        const id = String(item.id || "").trim();
+        if (id) {
+          merged[id] = item.text;
+        }
       }
     }
     return merged;
@@ -529,19 +920,74 @@ function ConversationsContent({ operator }: { operator: Operator }) {
 
   async function translateAllMessages() {
     if (!detail || translatingMessages) return;
-    const items = detail.messages
-      .filter((message) => (message.content || "").trim())
+    const activeDetail = detail;
+    const activeConversationId = activeDetail.conversation.conversation_id;
+    const activeMessages = activeDetail.messages;
+    const currentMessageIds = new Set(activeMessages.map((message) => message.id).filter(Boolean));
+    const savedTranslations = {
+      ...savedMessageTranslations(activeMessages),
+      ...filterTranslationsForMessageIds(messageTranslations, currentMessageIds),
+    };
+    const items = activeMessages
+      .filter((message) => message.id && (message.content || "").trim() && !savedTranslations[message.id])
       .map((message) => ({
         id: message.id,
         text: message.content || "",
         sender_type: message.sender_type,
       }));
-    if (items.length === 0) return;
+    if (items.length === 0) {
+      setMessageTranslations(savedTranslations);
+      return;
+    }
 
     setTranslatingMessages(true);
     setTranslationError(null);
     try {
-      setMessageTranslations(await translateTexts(items));
+      const response = await apiFetch<ConversationTranslateResponse>(
+        `/ops-ai/conversations/${activeConversationId}/translate-messages`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            target_language: "zh-CN",
+            preserve_terms: [activeDetail.conversation.nickname, activeDetail.conversation.external_id].filter(Boolean),
+            message_ids: items.map((item) => item.id),
+          }),
+        },
+      );
+      const translated: Record<string, string> = {};
+      for (const item of response.translations || []) {
+        const id = String(item.id || "").trim();
+        if (id && item.text?.trim()) {
+          translated[id] = item.text;
+        }
+      }
+      const currentDetail = detailRef.current;
+      if (!currentDetail || currentDetail.conversation.conversation_id !== activeConversationId) {
+        return;
+      }
+      const translatedForCurrent = filterTranslationsForMessageIds(translated, currentMessageIds);
+      if (Object.keys(translatedForCurrent).length === 0) {
+        if (response.skipped_count > 0) {
+          setMessageTranslations(savedTranslations);
+          return;
+        }
+        setTranslationError("翻译结果没有匹配当前会话消息，请重新打开会话后再试。");
+        return;
+      }
+      const mergedTranslations = { ...savedTranslations, ...translatedForCurrent };
+      setMessageTranslations(mergedTranslations);
+      setDetail((current) => {
+        if (!current || current.conversation.conversation_id !== activeConversationId) {
+          return current;
+        }
+        return {
+          ...current,
+          messages: current.messages.map((message) => ({
+            ...message,
+            operator_translation_zh: mergedTranslations[message.id] || usableSavedTranslation(message) || message.operator_translation_zh,
+          })),
+        };
+      });
     } catch (err) {
       setTranslationError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -588,6 +1034,66 @@ function ConversationsContent({ operator }: { operator: Operator }) {
     setTab("all");
   }
 
+  function renderQueueActions(row: ConversationRow) {
+    return (
+      <div className="flex min-w-[220px] flex-wrap justify-end gap-2">
+        <button onClick={() => void processConversation(row)} className="rounded-md bg-slate-800 px-3 py-2 text-xs font-medium text-sky-300 hover:bg-slate-700">
+          处理
+        </button>
+        {row.post_inbound_video_expert_release_eligible ? (
+          <button
+            type="button"
+            onClick={() => void releasePostInboundVideoExpert(row)}
+            disabled={queueReleaseId === row.conversation_id}
+            className="rounded-md border border-emerald-700 px-3 py-2 text-xs font-medium text-emerald-200 hover:bg-emerald-950/40 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {queueReleaseId === row.conversation_id ? "放行中..." : "放行"}
+          </button>
+        ) : null}
+        {isTakenOver(row) && !row.post_inbound_video_expert_release_eligible ? (
+          <button
+            type="button"
+            onClick={() => void releaseHumanConversation(row)}
+            disabled={humanReleaseId === row.conversation_id}
+            className="rounded-md border border-emerald-700 px-3 py-2 text-xs font-medium text-emerald-200 hover:bg-emerald-950/40 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {humanReleaseId === row.conversation_id ? "放回中..." : "放回 AI"}
+          </button>
+        ) : null}
+        {canRelockPostInboundVideoExpert(row) ? (
+          <button
+            type="button"
+            onClick={() => void relockPostInboundVideoExpert(row)}
+            disabled={relockLoading}
+            className="rounded-md border border-violet-700 px-3 py-2 text-xs font-medium text-violet-200 hover:bg-violet-950/40 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {relockLoading ? "收回中..." : "收回人工"}
+          </button>
+        ) : null}
+        {!isFrozen(row) && row.user_id && (
+          <button
+            type="button"
+            onClick={() => void freezeConversation(row)}
+            disabled={queueFreezeId === row.conversation_id}
+            className="rounded-md border border-amber-700 px-3 py-2 text-xs font-medium text-amber-200 hover:bg-amber-950/40 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {queueFreezeId === row.conversation_id ? "冻结中..." : "冻结并停止回复"}
+          </button>
+        )}
+        {!isPremium(row) && row.user_id ? (
+          <button
+            type="button"
+            onClick={() => void joinPremiumChat(row)}
+            disabled={queueJoinPremiumId === row.conversation_id}
+            className="rounded-md border border-violet-700 px-3 py-2 text-xs font-medium text-violet-200 hover:bg-violet-950/40 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {queueJoinPremiumId === row.conversation_id ? "加入中..." : "加入精聊"}
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <AdminFrame
       operator={operator}
@@ -619,8 +1125,31 @@ function ConversationsContent({ operator }: { operator: Operator }) {
         </div>
       </section>
 
-      <section className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Metric title="待人工接管" value={stats.waiting} hint="S/A 挂起、超时、待坐席处理" tone="amber" />
+      <section
+        className={`mb-5 rounded-lg border p-4 ${
+          stats.waiting > 0
+            ? "border-amber-600 bg-amber-950/30"
+            : "border-slate-800 bg-slate-900"
+        }`}
+      >
+        <OperatorRingControls
+          soundEnabled={soundEnabled}
+          onToggleSound={() => setSoundEnabled()}
+          needsUnlock={needsUnlock}
+          onUnlockSound={() => void unlockSound()}
+          onTestRing={() => testRing()}
+          description={
+            stats.waiting > 0
+              ? `当前有 ${stats.waiting} 条待人工接管会话，将播放叮铃-叮铃提醒（双频 440Hz+480Hz）。`
+              : "有待人工接管会话时，将播放与视频通话页相同的叮铃-叮铃提醒。"
+          }
+        />
+      </section>
+
+      <section className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+        <Metric title="待人工接管" value={stats.waiting} hint="S/A 挂起、超时、待坐席处理" tone="amber" onClick={() => jumpToQueue("handoff")} />
+        <Metric title="待放行审核" value={stats.releaseReview} hint="累计第6次独立入站视频来电后审核是否放行" tone="violet" onClick={() => jumpToQueue("released")} />
+        <Metric title="已恢复 AI" value={stats.released} hint="已放行、可收回人工" tone="emerald" />
         <Metric title="S/A 精聊用户" value={stats.premium} hint="高价值用户优先处理" tone="violet" />
         <Metric title="AI 自动跟进" value={stats.aiActive} hint="B/C/D 自动投递链路" tone="emerald" />
         <Metric title="风险会话" value={stats.risk} hint="高风险或升高风险复核" tone="rose" />
@@ -666,6 +1195,7 @@ function ConversationsContent({ operator }: { operator: Operator }) {
         </Panel>
       </section>
 
+      <div ref={queuePanelRef}>
       <Panel title="会话工作队列" action={<span className="text-xs text-slate-500">共 {total} 条，当前展示 {visibleItems.length} 条</span>}>
         <form onSubmit={submitSearch} className="mb-4 grid gap-3 lg:grid-cols-[170px_170px_1fr_auto_auto]">
           <select value={state} onChange={(event) => setState(event.target.value)} className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200">
@@ -682,77 +1212,148 @@ function ConversationsContent({ operator }: { operator: Operator }) {
         <div className="mb-4 flex flex-wrap gap-2">
           <TabButton active={tab === "all"} onClick={() => setTab("all")}>全部</TabButton>
           <TabButton active={tab === "handoff"} onClick={() => setTab("handoff")}>待人工</TabButton>
+          <TabButton active={tab === "released"} onClick={() => setTab("released")}>
+            已放行{(stats.releaseReview + stats.released) > 0 ? ` (${stats.releaseReview + stats.released})` : ""}
+          </TabButton>
           <TabButton active={tab === "premium"} onClick={() => setTab("premium")}>S/A精聊</TabButton>
           <TabButton active={tab === "auto"} onClick={() => setTab("auto")}>AI自动</TabButton>
           <TabButton active={tab === "risk"} onClick={() => setTab("risk")}>风险</TabButton>
         </div>
 
         {error && <div className="mb-4 rounded-md border border-rose-800 bg-rose-950/40 px-4 py-3 text-sm text-rose-200">{error}</div>}
+        {actionToast && (
+          <div className="mb-4 rounded-md border border-violet-800 bg-violet-950/40 px-4 py-3 text-sm text-violet-100">
+            {actionToast}
+            <button
+              type="button"
+              className="ml-3 text-violet-300 underline"
+              onClick={() => setActionToast(null)}
+            >
+              关闭
+            </button>
+          </div>
+        )}
 
-        <div className="overflow-hidden rounded-md border border-slate-800">
-          <table className="w-full min-w-[1040px] text-sm">
-            <thead className="bg-slate-950 text-xs text-slate-500">
-              <tr>
-                <th className="px-4 py-3 text-left font-medium">用户</th>
-                <th className="px-4 py-3 text-left font-medium">等级/路由</th>
-                <th className="px-4 py-3 text-left font-medium">状态</th>
-                <th className="px-4 py-3 text-left font-medium">话术链路</th>
-                <th className="px-4 py-3 text-left font-medium">画像</th>
-                <th className="px-4 py-3 text-left font-medium">风险</th>
-                <th className="px-4 py-3 text-left font-medium">最后消息</th>
-                <th className="px-4 py-3 text-right font-medium">操作</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800 bg-slate-900/35">
-              {loading && <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-500">加载中...</td></tr>}
-              {!loading && visibleItems.length === 0 && <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-500">暂无符合条件的会话</td></tr>}
-              {!loading && visibleItems.map((row) => (
-                <tr key={row.conversation_id} className="transition hover:bg-slate-800/70">
-                  <td className="px-4 py-4">
-                    <div className="font-medium text-slate-100">{shortText(row.nickname || row.external_id, 42)}</div>
-                    <div className="mt-1 font-mono text-xs text-slate-500">{row.external_id || row.user_id || "-"}</div>
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="flex items-center gap-2">
-                      <span className={`inline-flex h-7 w-7 items-center justify-center rounded-full border text-xs font-semibold ${levelBadgeClass(levelOf(row))}`}>{levelOf(row)}</span>
-                      <span className="text-sm text-slate-300">{routeLabel(row)}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-4">
-                    <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs ${queueStateClass(row)}`}>{queueStateLabel(row)}</span>
-                    <div className="mt-1 text-xs text-slate-500">{row.channel || row.user_channel || "-"}</div>
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="text-xs text-slate-300">Top3 / script_hit 可追溯</div>
-                    <div className="mt-1 text-xs text-slate-500">打开详情查看每步命中</div>
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="text-slate-300">{row.character_name || "未绑定角色"}</div>
-                    <div className="mt-1 text-xs text-slate-500">孤独感 {row.loneliness_score ?? "-"}</div>
-                  </td>
-                  <td className={`px-4 py-4 ${riskClass(row.risk_level)}`}>{row.risk_level || "normal"}</td>
-                  <td className="px-4 py-4 text-slate-400">{fmtTime(row.last_message_at)}</td>
-                  <td className="px-4 py-4">
-                    <div className="flex justify-end gap-2">
-                      <button onClick={() => void processConversation(row)} className="rounded-md bg-slate-800 px-3 py-2 text-xs font-medium text-sky-300 hover:bg-slate-700">
-                        处理
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void deleteConversation(row)}
-                        disabled={queueDeleteId === row.conversation_id}
-                        className="rounded-md border border-rose-800 px-3 py-2 text-xs font-medium text-rose-300 hover:bg-rose-950/40 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {queueDeleteId === row.conversation_id ? "删除中..." : "删除会话"}
-                      </button>
-                    </div>
-                  </td>
+        {tab === "premium" ? (
+          <div className="overflow-x-auto rounded-md border border-slate-800">
+            <table className="w-full min-w-[1120px] text-sm">
+              <thead className="bg-slate-950 text-xs text-slate-500">
+                <tr>
+                  <th className="px-4 py-3 text-left font-medium">用户</th>
+                  <th className="px-4 py-3 text-left font-medium">国家</th>
+                  <th className="px-4 py-3 text-left font-medium">城市</th>
+                  <th className="px-4 py-3 text-left font-medium">年龄</th>
+                  <th className="px-4 py-3 text-left font-medium">消息状态</th>
+                  <th className="px-4 py-3 text-left font-medium">开始消息</th>
+                  <th className="px-4 py-3 text-left font-medium">最后消息</th>
+                  <th className="sticky right-0 z-10 w-[260px] bg-slate-950 px-4 py-3 text-right font-medium shadow-[-12px_0_18px_rgba(2,6,23,0.75)]">操作</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-slate-800 bg-slate-900/35">
+                {listLoading && visibleItems.length === 0 && <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-500">加载中...</td></tr>}
+                {!listLoading && visibleItems.length === 0 && <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-500">暂无符合条件的会话</td></tr>}
+                {visibleItems.map((row) => {
+                  const messageStatus = messageStatusDisplay(row.message_status);
+                  return (
+                    <tr key={row.conversation_id} className="transition hover:bg-slate-800/70">
+                      <td className="px-4 py-4 align-top">
+                        <div className="font-medium text-slate-100">{shortText(row.nickname || row.external_id, 42)}</div>
+                        <div className="mt-1 font-mono text-xs text-slate-500">{row.external_id || row.user_id || ""}</div>
+                      </td>
+                      <td className="px-4 py-4 align-top text-slate-200">{countryDisplay(row.country_code)}</td>
+                      <td className="px-4 py-4 align-top text-slate-200">{bilingualText(row.city)}</td>
+                      <td className="px-4 py-4 align-top text-slate-200">{ageDisplay(row.age)}</td>
+                      <td className="px-4 py-4 align-top">
+                        {messageStatus.text ? (
+                          <span
+                            className={
+                              messageStatus.unread
+                                ? "inline-flex rounded-md bg-red-600 px-3 py-1.5 text-sm font-bold text-white shadow-sm shadow-red-950/40"
+                                : "inline-flex rounded-md border border-slate-700 bg-slate-950/60 px-3 py-1.5 text-sm text-slate-300"
+                            }
+                          >
+                            {messageStatus.text}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="px-4 py-4 align-top">
+                        {row.first_system_message_at ? (
+                          <>
+                            <div className="text-xs text-slate-500">系统首条 / First system</div>
+                            <div className="mt-1 text-slate-300">{fmtTime(row.first_system_message_at)}</div>
+                          </>
+                        ) : null}
+                      </td>
+                      <td className="px-4 py-4 align-top">
+                        <div className="text-xs text-slate-500">{messageSenderDisplay(row.latest_message_sender)}</div>
+                        {row.latest_message_at ? <div className="mt-1 text-slate-300">{fmtTime(row.latest_message_at)}</div> : null}
+                        {row.latest_message_content ? <div className="mt-2 max-w-[300px] text-xs text-slate-400">{shortText(row.latest_message_content, 96)}</div> : null}
+                      </td>
+                      <td className="sticky right-0 bg-slate-900/95 px-4 py-4 align-top shadow-[-12px_0_18px_rgba(2,6,23,0.65)]">{renderQueueActions(row)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-md border border-slate-800">
+            <table className="w-full min-w-[1180px] text-sm">
+              <thead className="bg-slate-950 text-xs text-slate-500">
+                <tr>
+                  <th className="px-4 py-3 text-left font-medium">用户</th>
+                  <th className="px-4 py-3 text-left font-medium">接听 TG 账号</th>
+                  <th className="px-4 py-3 text-left font-medium">等级/路由</th>
+                  <th className="px-4 py-3 text-left font-medium">状态</th>
+                  <th className="px-4 py-3 text-left font-medium">话术链路</th>
+                  <th className="px-4 py-3 text-left font-medium">画像</th>
+                  <th className="px-4 py-3 text-left font-medium">风险</th>
+                  <th className="px-4 py-3 text-left font-medium">最后消息</th>
+                  <th className="sticky right-0 z-10 w-[240px] bg-slate-950 px-4 py-3 text-right font-medium shadow-[-12px_0_18px_rgba(2,6,23,0.75)]">操作</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800 bg-slate-900/35">
+                {listLoading && visibleItems.length === 0 && <tr><td colSpan={9} className="px-4 py-10 text-center text-slate-500">加载中...</td></tr>}
+                {!listLoading && visibleItems.length === 0 && <tr><td colSpan={9} className="px-4 py-10 text-center text-slate-500">暂无符合条件的会话</td></tr>}
+                {visibleItems.map((row) => (
+                  <tr key={row.conversation_id} className="transition hover:bg-slate-800/70">
+                    <td className="px-4 py-4 align-top">
+                      <div className="font-medium text-slate-100">{shortText(row.nickname || row.external_id, 42)}</div>
+                      <div className="mt-1 font-mono text-xs text-slate-500">{row.external_id || row.user_id || "-"}</div>
+                    </td>
+                    <td className="px-4 py-4 align-top">
+                      <div className="font-medium text-slate-200">{row.telegram_account_label || row.telegram_account_username || "-"}</div>
+                      <div className="mt-1 text-xs text-slate-500">{row.telegram_account_phone || row.telegram_account_id || ""}</div>
+                    </td>
+                    <td className="px-4 py-4 align-top">
+                      <div className="flex items-center gap-2">
+                        <span className={`inline-flex h-7 w-7 items-center justify-center rounded-full border text-xs ${levelBadgeClass(levelOf(row))}`}>{levelOf(row)}</span>
+                        <span className="text-slate-200">{routeLabel(row)}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-4 align-top">
+                      <span className={`inline-flex rounded-full border px-3 py-1 text-xs ${queueStateClass(row)}`}>{queueStateLabel(row)}</span>
+                      {isExpertPendingRelease(row) ? <div className="mt-2 text-xs text-amber-300">待审核放行</div> : null}
+                    </td>
+                    <td className="px-4 py-4 align-top">
+                      <div className="text-slate-200">Top3 / script_hit 可追溯</div>
+                      <div className="mt-1 text-xs text-slate-500">打开详情查看每步命中</div>
+                    </td>
+                    <td className="px-4 py-4 align-top">
+                      <div className="text-slate-200">{row.character_name || "未绑定角色"}</div>
+                      <div className="mt-1 text-xs text-slate-500">孤独感 {row.loneliness_score ?? "-"}</div>
+                    </td>
+                    <td className={`px-4 py-4 align-top ${riskClass(row.risk_level)}`}>{row.risk_level || "normal"}</td>
+                    <td className="px-4 py-4 align-top text-slate-400">{fmtTime(row.last_message_at)}</td>
+                    <td className="sticky right-0 bg-slate-900/95 px-4 py-4 align-top shadow-[-12px_0_18px_rgba(2,6,23,0.65)]">{renderQueueActions(row)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Panel>
+      </div>
 
       {(detail || detailLoading || detailError) && (
         <DetailDrawer
@@ -773,12 +1374,26 @@ function ConversationsContent({ operator }: { operator: Operator }) {
           translatingMessages={translatingMessages}
           translationError={translationError}
           onDraftChange={setDraft}
-          onClose={() => setDetail(null)}
+          onClose={() => {
+            detailRequestSeqRef.current += 1;
+            setDetail(null);
+            setDetailError(null);
+            setMessageTranslations({});
+            setTranslationError(null);
+          }}
           onGenerateAssist={() => void generateAssist()}
           onConfirmSend={() => void confirmSendDraft()}
           onTranslateAllMessages={() => void translateAllMessages()}
           onDeleteMessage={(messageId) => void deleteSingleMessage(messageId)}
           onDeleteAllUserMessages={() => void deleteAllUserMessages()}
+          onFreeze={() => detail && void freezeConversation(detail.conversation)}
+          freezeLoading={queueFreezeId === detail?.conversation.conversation_id}
+          onRelock={() => detail && void relockPostInboundVideoExpert(detail.conversation)}
+          relockLoading={relockLoading}
+          onRelease={() => detail && void releasePostInboundVideoExpert(detail.conversation)}
+          releaseLoading={queueReleaseId === detail?.conversation.conversation_id}
+          onReleaseHuman={() => detail && void releaseHumanConversation(detail.conversation)}
+          humanReleaseLoading={humanReleaseId === detail?.conversation.conversation_id}
         />
       )}
     </AdminFrame>
@@ -797,13 +1412,29 @@ function Panel({ title, action, children }: { title: string; action?: React.Reac
   );
 }
 
-function Metric({ title, value, hint, tone }: { title: string; value: number; hint: string; tone: "amber" | "violet" | "emerald" | "rose" }) {
+function Metric({ title, value, hint, tone, onClick }: { title: string; value: number; hint: string; tone: "amber" | "violet" | "emerald" | "rose"; onClick?: () => void }) {
   const toneClass = { amber: "text-amber-300", violet: "text-violet-300", emerald: "text-emerald-300", rose: "text-rose-300" }[tone];
-  return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900 px-5 py-4">
+  const clickableClass = onClick
+    ? "cursor-pointer hover:border-sky-700 hover:bg-slate-800/70 focus:outline-none focus:ring-2 focus:ring-sky-600"
+    : "";
+  const content = (
+    <>
       <div className="text-sm text-slate-400">{title}</div>
       <div className={`mt-2 text-3xl font-semibold ${toneClass}`}>{value}</div>
       <div className="mt-2 text-xs text-slate-500">{hint}</div>
+      {onClick ? <div className="mt-2 text-xs text-sky-300">点击定位到用户列表</div> : null}
+    </>
+  );
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className={`w-full rounded-lg border border-slate-800 bg-slate-900 px-5 py-4 text-left transition ${clickableClass}`}>
+        {content}
+      </button>
+    );
+  }
+  return (
+    <div className="rounded-lg border border-slate-800 bg-slate-900 px-5 py-4">
+      {content}
     </div>
   );
 }
@@ -849,6 +1480,14 @@ function DetailDrawer({
   onTranslateAllMessages,
   onDeleteMessage,
   onDeleteAllUserMessages,
+  onFreeze,
+  freezeLoading,
+  onRelock,
+  relockLoading,
+  onRelease,
+  releaseLoading,
+  onReleaseHuman,
+  humanReleaseLoading,
 }: {
   detail: DetailResponse | null;
   loading: boolean;
@@ -873,6 +1512,14 @@ function DetailDrawer({
   onTranslateAllMessages: () => void;
   onDeleteMessage: (messageId: string) => void;
   onDeleteAllUserMessages: () => void;
+  onFreeze: () => void;
+  freezeLoading: boolean;
+  onRelock: () => void;
+  relockLoading: boolean;
+  onRelease: () => void;
+  releaseLoading: boolean;
+  onReleaseHuman: () => void;
+  humanReleaseLoading: boolean;
 }) {
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/60" onClick={onClose}>
@@ -894,6 +1541,7 @@ function DetailDrawer({
               <Panel title="用户与路由">
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <Meta label="用户" value={detail.conversation.nickname || detail.conversation.external_id} />
+                  <Meta label="接听 TG 账号" value={telegramAccountDisplay(detail.conversation)} />
                   <Meta label="等级路由" value={`${levelOf(detail.conversation)} / ${routeLabel(detail.conversation)}`} />
                   <Meta label="状态" value={stateLabel(detail.conversation.state)} />
                   <Meta label="渠道" value={detail.conversation.channel || detail.conversation.user_channel} />
@@ -901,11 +1549,62 @@ function DetailDrawer({
                   <Meta label="关系阶段" value={detail.conversation.relationship_stage} />
                   <Meta label="孤独感" value={detail.conversation.loneliness_score != null ? String(detail.conversation.loneliness_score) : null} />
                   <Meta label="风险" value={detail.conversation.risk_level || "normal"} />
+                  <Meta label="用户状态" value={detail.conversation.user_status || "active"} />
+                  {detail.conversation.post_inbound_video_expert_waived_at ? (
+                    <Meta
+                      label="专家放行"
+                      value={`已放行（${formatBeijingDateTime(detail.conversation.post_inbound_video_expert_waived_at)}）`}
+                    />
+                  ) : null}
                 </div>
-                {detail.conversation.user_id && (
-                  <div className="mt-4 flex flex-wrap items-center gap-3">
-                    <a href={`/admin/users/${detail.conversation.user_id}`} className="text-sm text-sky-300 hover:text-sky-200">查看画像</a>
-                    <a href={`/admin/data?user_id=${detail.conversation.user_id}`} className="text-sm text-violet-300 hover:text-violet-200">查看归因</a>
+                <div className="mt-4 flex flex-wrap items-center gap-3">
+                  {detail.conversation.user_id ? (
+                    <>
+                      <a href={`/admin/users/${detail.conversation.user_id}`} className="text-sm text-sky-300 hover:text-sky-200">查看画像</a>
+                      <a href={`/admin/data?user_id=${detail.conversation.user_id}`} className="text-sm text-violet-300 hover:text-violet-200">查看归因</a>
+                    </>
+                  ) : null}
+                  {!isFrozen(detail.conversation) && detail.conversation.user_id && (
+                    <button
+                      type="button"
+                      onClick={onFreeze}
+                      disabled={freezeLoading}
+                      className="rounded-md border border-amber-700 px-3 py-1.5 text-xs font-medium text-amber-200 hover:bg-amber-950/40 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {freezeLoading ? "冻结中..." : "冻结并停止回复"}
+                    </button>
+                  )}
+                  {detail.conversation.post_inbound_video_expert_release_eligible ? (
+                    <button
+                      type="button"
+                      onClick={onRelease}
+                      disabled={releaseLoading}
+                      className="rounded-md border border-emerald-700 px-3 py-1.5 text-xs font-medium text-emerald-200 hover:bg-emerald-950/40 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {releaseLoading ? "放行中..." : "放行"}
+                    </button>
+                  ) : null}
+                  {isTakenOver(detail.conversation) && !detail.conversation.post_inbound_video_expert_release_eligible ? (
+                    <button
+                      type="button"
+                      onClick={onReleaseHuman}
+                      disabled={humanReleaseLoading}
+                      className="rounded-md border border-emerald-700 px-3 py-1.5 text-xs font-medium text-emerald-200 hover:bg-emerald-950/40 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {humanReleaseLoading ? "放回中..." : "放回 AI"}
+                    </button>
+                  ) : null}
+                  {canRelockPostInboundVideoExpert(detail.conversation) ? (
+                    <button
+                      type="button"
+                      onClick={onRelock}
+                      disabled={relockLoading}
+                      className="rounded-md border border-violet-700 px-3 py-1.5 text-xs font-medium text-violet-200 hover:bg-violet-950/40 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {relockLoading ? "收回中..." : "收回人工"}
+                    </button>
+                  ) : null}
+                  {detail.conversation.user_id ? (
                     <button
                       type="button"
                       onClick={onDeleteAllUserMessages}
@@ -914,8 +1613,8 @@ function DetailDrawer({
                     >
                       {deleteLoading ? "删除中..." : "删除该用户全部聊天记录"}
                     </button>
-                  </div>
-                )}
+                  ) : null}
+                </div>
               </Panel>
               <Panel title="话术命中轨迹">
                 {traceError && <div className="mb-3 text-sm text-amber-300">{traceError}</div>}
@@ -995,6 +1694,7 @@ function DetailDrawer({
                   <button
                     type="button"
                     onClick={onTranslateAllMessages}
+                    title={TRANSLATION_PERSISTENCE_BUILD}
                     disabled={translatingMessages || detail.messages.length === 0}
                     className="rounded-md border border-sky-700 px-3 py-2 text-xs font-medium text-sky-200 hover:bg-sky-950/40 disabled:cursor-not-allowed disabled:opacity-50"
                   >
@@ -1009,7 +1709,7 @@ function DetailDrawer({
                     <MessageBubble
                       key={message.id}
                       message={message}
-                      translatedText={messageTranslations[message.id]}
+                      translatedText={messageTranslations[message.id] || usableSavedTranslation(message) || undefined}
                       deleteLoading={deleteLoading}
                       onDelete={() => onDeleteMessage(message.id)}
                     />
