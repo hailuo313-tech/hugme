@@ -913,6 +913,7 @@ async def admin_list_conversations(
 async def admin_list_users(
     page: int = Query(1, ge=1, description="页码，1-based"),
     page_size: int = Query(50, ge=1, le=100, description="每页大小，最大 100"),
+    offset: Optional[int] = Query(None, ge=0, description="可选的精确偏移量；用于首批与后续批次大小不一致的连续加载"),
     channel: Optional[str] = Query(None, description="按用户渠道过滤，如 telegram_real_user"),
     status: Optional[str] = Query(None, description="按用户状态过滤，如 active/frozen"),
     country: Optional[str] = Query(None, description="按国家/T2/T3 过滤。T1 用国家码，T2/T3 用层级"),
@@ -950,7 +951,7 @@ async def admin_list_users(
         "country_code": country_code_filter,
         "search": search_like,
         "limit": page_size,
-        "offset": (page - 1) * page_size,
+        "offset": offset if offset is not None else (page - 1) * page_size,
     }
 
     where = f"""
@@ -1177,6 +1178,7 @@ async def admin_list_users(
         operator_id=payload.get("sub"),
         page=page,
         page_size=page_size,
+        offset=params["offset"],
         channel=channel,
         status=status,
         country=country_filter,
@@ -1953,6 +1955,89 @@ async def admin_delete_user_messages(
         "user_id": user_id,
         "conversation_count": len(conversation_ids),
         "deleted_count": deleted_count,
+    }
+
+
+@router.get(
+    "/admin/users/{user_id}/chat-history",
+    summary="Admin: paginated complete chat history for one user.",
+)
+async def admin_get_user_chat_history(
+    user_id: str,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(100, ge=1, le=200),
+    payload: dict = Depends(require_operator),
+    db: AsyncSession = Depends(get_db),
+):
+    _require_uuid(user_id, "user_id")
+
+    exists = (
+        await db.execute(text("SELECT 1 FROM users WHERE id=:uid"), {"uid": user_id})
+    ).first()
+    if not exists:
+        raise HTTPException(status_code=404, detail="user not found")
+
+    total = int(
+        (
+            await db.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM messages m
+                    JOIN conversations c ON c.id = m.conversation_id
+                    WHERE c.user_id = :uid
+                    """
+                ),
+                {"uid": user_id},
+            )
+        ).scalar_one()
+        or 0
+    )
+    rows = (
+        await db.execute(
+            text(
+                """
+                SELECT
+                  m.id,
+                  m.conversation_id,
+                  c.channel AS conversation_channel,
+                  c.state AS conversation_state,
+                  m.sender_type,
+                  m.sender_id,
+                  m.content,
+                  m.content_type,
+                  m.is_operator_message,
+                  m.model_name,
+                  m.safety_result,
+                  m.operator_translation_zh,
+                  m.created_at
+                FROM messages m
+                JOIN conversations c ON c.id = m.conversation_id
+                WHERE c.user_id = :uid
+                ORDER BY m.created_at DESC, m.id DESC
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            {
+                "uid": user_id,
+                "limit": page_size,
+                "offset": (page - 1) * page_size,
+            },
+        )
+    ).fetchall()
+
+    logger.bind(
+        operator_id=payload.get("sub"),
+        user_id=user_id,
+        page=page,
+        page_size=page_size,
+        total=total,
+    ).info("admin.users.chat_history")
+    return {
+        "items": [_serialize_row(row) for row in rows],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
     }
 
 
