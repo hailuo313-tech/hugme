@@ -26,6 +26,14 @@ type DownloadPlatform = {
   sort_order: number;
 };
 
+type CountryRoute = {
+  country_code: string;
+  platform_key: string;
+  display_name?: string | null;
+  download_url?: string | null;
+  is_active?: boolean | null;
+};
+
 type ScriptTemplate = {
   id: string;
   category_key: string;
@@ -98,7 +106,54 @@ const PLATFORM_PRESETS = [
   { platform_key: "platform_a", display_name: "A平台" },
   { platform_key: "platform_b", display_name: "B平台" },
   { platform_key: "platform_c", display_name: "C平台" },
+  { platform_key: "platform_d", display_name: "D平台" },
+  { platform_key: "platform_e", display_name: "E平台" },
+  { platform_key: "platform_f", display_name: "F平台" },
 ];
+
+const T1_COUNTRY_CODES = new Set([
+  "US", "CA", "GB", "DE", "FR", "IT", "ES", "NL", "BE", "CH",
+  "AT", "IE", "DK", "NO", "SE", "FI", "IS", "LU", "PT", "GR",
+  "CZ", "JP", "AU", "NZ", "SG", "HK",
+]);
+const T2_COUNTRY_CODES = new Set([
+  "AD", "AR", "BG", "BH", "BR", "BY", "CL", "CO", "CR", "CY",
+  "DO", "EC", "EE", "FJ", "GT", "HR", "HU", "ID", "IL", "KW",
+  "KZ", "LB", "LT", "LV", "MO", "MT", "MX", "MY", "NC", "OM",
+  "PA", "PE", "PF", "PH", "PL", "RO", "RS", "RU", "SA", "SI",
+  "SK", "TH", "TR", "TW", "UA", "UY", "VN", "ZA",
+]);
+const COUNTRY_NAMES: Record<string, string> = {
+  US: "美国", CA: "加拿大", GB: "英国", DE: "德国", FR: "法国", IT: "意大利", ES: "西班牙",
+  NL: "荷兰", BE: "比利时", CH: "瑞士", AT: "奥地利", IE: "爱尔兰", DK: "丹麦", NO: "挪威",
+  SE: "瑞典", FI: "芬兰", IS: "冰岛", LU: "卢森堡", PT: "葡萄牙", GR: "希腊", CZ: "捷克",
+  JP: "日本", AU: "澳大利亚", NZ: "新西兰", SG: "新加坡", HK: "中国香港",
+  AD: "安道尔", AR: "阿根廷", BG: "保加利亚", BH: "巴林", BR: "巴西", BY: "白俄罗斯",
+  CL: "智利", CO: "哥伦比亚", CR: "哥斯达黎加", CY: "塞浦路斯", DO: "多米尼加", EC: "厄瓜多尔",
+  EE: "爱沙尼亚", FJ: "斐济", GT: "危地马拉", HR: "克罗地亚", HU: "匈牙利", ID: "印尼",
+  IL: "以色列", KW: "科威特", KZ: "哈萨克斯坦", LB: "黎巴嫩", LT: "立陶宛", LV: "拉脱维亚",
+  MO: "澳门", MT: "马耳他", MX: "墨西哥", MY: "马来西亚", NC: "新喀里多尼亚", OM: "阿曼",
+  PA: "巴拿马", PE: "秘鲁", PF: "法属波利尼西亚", PH: "菲律宾", PL: "波兰", RO: "罗马尼亚",
+  RS: "塞尔维亚", RU: "俄罗斯", SA: "沙特", SI: "斯洛文尼亚", SK: "斯洛伐克", TH: "泰国",
+  TR: "土耳其", TW: "台湾", UA: "乌克兰", UY: "乌拉圭", VN: "越南", ZA: "南非",
+  VE: "委内瑞拉", NI: "尼加拉瓜", HN: "洪都拉斯", BO: "玻利维亚", PY: "巴拉圭",
+  IN: "印度", CN: "中国", AE: "阿联酋", EG: "埃及",
+};
+const COUNTRY_OPTIONS = [
+  ...T1_COUNTRY_CODES,
+  ...T2_COUNTRY_CODES,
+  "VE", "NI", "HN", "BO", "PY", "IN", "CN", "AE", "EG",
+].filter((code, index, list) => list.indexOf(code) === index);
+
+function countryTier(code: string): "T1" | "T2" | "T3" {
+  if (T1_COUNTRY_CODES.has(code)) return "T1";
+  if (T2_COUNTRY_CODES.has(code)) return "T2";
+  return "T3";
+}
+
+function countryTag(code: string): string {
+  return `${code}-${COUNTRY_NAMES[code] || code}-${countryTier(code)}`;
+}
 
 const SCRIPT_CATEGORY_OPTIONS = [
   "app_download_first_push",
@@ -184,6 +239,9 @@ export default function AiOpsPage() {
 function AiOpsContent({ operator }: { operator: Operator }) {
   const [scripts, setScripts] = useState<ScriptTemplate[]>([]);
   const [platforms, setPlatforms] = useState<DownloadPlatform[]>([]);
+  const [countryRoutes, setCountryRoutes] = useState<CountryRoute[]>([]);
+  const [routeForm, setRouteForm] = useState({ country_code: "PE", platform_key: "platform_a" });
+  const [routeSaving, setRouteSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [platformSaving, setPlatformSaving] = useState(false);
@@ -195,17 +253,20 @@ function AiOpsContent({ operator }: { operator: Operator }) {
   const [statusFilter, setStatusFilter] = useState("active");
   const [scriptForm, setScriptForm] = useState<ScriptForm>(scriptEmpty);
   const [platformForm, setPlatformForm] = useState<PlatformForm>(platformEmpty);
+  const [editingPlatformId, setEditingPlatformId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [scriptResponse, platformResponse] = await Promise.all([
+      const [scriptResponse, platformResponse, routeResponse] = await Promise.all([
         loadAllScriptTemplates(),
         apiFetch<{ items: DownloadPlatform[] }>("/ai-ops/admin/app-download-platforms"),
+        apiFetch<{ items: CountryRoute[] }>("/ai-ops/admin/app-download-country-routes").catch(() => ({ items: [] })),
       ]);
       setScripts(scriptResponse);
       setPlatforms(platformResponse.items);
+      setCountryRoutes(routeResponse.items);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -236,7 +297,10 @@ function AiOpsContent({ operator }: { operator: Operator }) {
   const totalActiveCount = scripts.filter((row) => row.status !== "archived").length;
   const appDownloadCount = scripts.filter((row) => APP_DOWNLOAD_CATEGORY_KEYS.has(row.category_key) && row.status !== "archived").length;
   const approvedCount = visibleScripts.filter((row) => row.status === "approved").length;
-  const defaultPlatform = platforms.find((item) => item.is_default && item.is_active) || platforms.find((item) => item.is_active);
+  const defaultPlatform =
+    platforms.find((item) => item.platform_key === "platform_a" && item.is_active)
+    || platforms.find((item) => item.is_default && item.is_active)
+    || platforms.find((item) => item.is_active);
 
   function notify(message: string) {
     setToast(message);
@@ -252,20 +316,31 @@ function AiOpsContent({ operator }: { operator: Operator }) {
     setPlatformSaving(true);
     setError(null);
     try {
-      await apiFetch("/ai-ops/admin/app-download-platforms", {
-        method: "POST",
-        body: JSON.stringify({
-          ...platformForm,
-          platform_key: platformForm.platform_key.trim(),
-          display_name: platformForm.display_name.trim(),
-          download_url: platformForm.download_url.trim(),
-          is_active: true,
-          is_default: platforms.length === 0,
-          sort_order: platforms.length,
-        }),
-      });
+      if (editingPlatformId) {
+        await apiFetch(`/ai-ops/admin/app-download-platforms/${editingPlatformId}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            display_name: platformForm.display_name.trim(),
+            download_url: platformForm.download_url.trim(),
+          }),
+        });
+      } else {
+        await apiFetch("/ai-ops/admin/app-download-platforms", {
+          method: "POST",
+          body: JSON.stringify({
+            ...platformForm,
+            platform_key: platformForm.platform_key.trim(),
+            display_name: platformForm.display_name.trim(),
+            download_url: platformForm.download_url.trim(),
+            is_active: true,
+            is_default: platforms.length === 0,
+            sort_order: platforms.length,
+          }),
+        });
+      }
       setPlatformForm(platformEmpty);
-      notify("三方平台已添加");
+      setEditingPlatformId(null);
+      notify(editingPlatformId ? "平台链接已更新" : "三方平台已添加");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -275,17 +350,66 @@ function AiOpsContent({ operator }: { operator: Operator }) {
   }
 
   async function patchPlatform(id: string, payload: Partial<DownloadPlatform>) {
-    await apiFetch(`/ai-ops/admin/app-download-platforms/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(payload),
+    setError(null);
+    try {
+      await apiFetch(`/ai-ops/admin/app-download-platforms/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  function editPlatform(platform: DownloadPlatform) {
+    setEditingPlatformId(platform.id);
+    setPlatformForm({
+      platform_key: platform.platform_key,
+      display_name: platform.display_name,
+      download_url: platform.download_url,
     });
-    await load();
+    setError(null);
+  }
+
+  function cancelPlatformEdit() {
+    setEditingPlatformId(null);
+    setPlatformForm(platformEmpty);
   }
 
   async function deletePlatform(id: string) {
     if (!window.confirm("确认删除这个三方平台链接？")) return;
     await apiFetch(`/ai-ops/admin/app-download-platforms/${id}`, { method: "DELETE" });
     notify("三方平台已删除");
+    await load();
+  }
+
+  async function saveCountryRoute(event: FormEvent) {
+    event.preventDefault();
+    if (!routeForm.country_code.trim() || !routeForm.platform_key.trim()) {
+      setError("国家和平台都要选");
+      return;
+    }
+    setRouteSaving(true);
+    setError(null);
+    try {
+      await apiFetch(`/ai-ops/admin/app-download-country-routes/${routeForm.country_code.trim().toUpperCase()}`, {
+        method: "PUT",
+        body: JSON.stringify({ platform_key: routeForm.platform_key }),
+      });
+      notify("国家路由已保存");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRouteSaving(false);
+    }
+  }
+
+  async function deleteCountryRoute(countryCode: string) {
+    if (!window.confirm(`确认删除 ${countryCode} 的国家路由？`)) return;
+    await apiFetch(`/ai-ops/admin/app-download-country-routes/${countryCode}`, { method: "DELETE" });
+    notify("国家路由已删除");
     await load();
   }
 
@@ -405,13 +529,21 @@ function AiOpsContent({ operator }: { operator: Operator }) {
       operator={operator}
       active="ai"
       title="话术库管理"
-      subtitle="管理下载引导话术、媒体附件和三方平台下载链接。话术里的 {{app_download_url}} 会自动替换成默认平台的追踪链接。"
+      subtitle="管理下载引导话术、媒体附件和三方平台下载链接。{{app_download_url}}：识别到 T1 国家固定发 C 平台；其他国家先走国家路由，没有再按接待号绑定，最后跟随 A 平台。"
     >
+      <div className="mb-6 flex flex-wrap gap-3">
+        <a
+          href="/admin/ai-ops/country-routes"
+          className="inline-flex rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-500"
+        >
+          国家路由
+        </a>
+      </div>
       <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-4">
         <Metric label="全部话术" value={`${totalActiveCount}`} hint="未归档的所有话术，不限制数量" />
         <Metric label="下载引导话术" value={`${appDownloadCount}`} hint="未归档的 App 下载类目话术" />
         <Metric label="当前列表启用" value={`${approvedCount}`} hint="当前筛选下会被系统自动匹配使用" />
-        <Metric label="默认三方平台" value={defaultPlatform?.display_name || "-"} hint="用户点击追踪链接后跳转到这里" />
+        <Metric label="默认三方平台" value={defaultPlatform?.display_name || "-"} hint="未绑定账号时跟随 A 平台跳转" />
       </section>
 
       {error && <div className="mb-4 rounded-md border border-rose-800 bg-rose-950/50 px-4 py-3 text-sm text-rose-200">{error}</div>}
@@ -421,10 +553,23 @@ function AiOpsContent({ operator }: { operator: Operator }) {
         platforms={platforms}
         form={platformForm}
         saving={platformSaving}
+        editingId={editingPlatformId}
         onChange={setPlatformForm}
         onSubmit={savePlatform}
+        onEdit={editPlatform}
+        onCancelEdit={cancelPlatformEdit}
         onPatch={patchPlatform}
         onDelete={deletePlatform}
+      />
+
+      <CountryRoutePanel
+        routes={countryRoutes}
+        platforms={platforms}
+        form={routeForm}
+        saving={routeSaving}
+        onChange={setRouteForm}
+        onSubmit={saveCountryRoute}
+        onDelete={deleteCountryRoute}
       />
 
       <section className="grid grid-cols-1 gap-5 xl:grid-cols-[390px_1fr]">
@@ -492,16 +637,22 @@ function DownloadPlatformPanel({
   platforms,
   form,
   saving,
+  editingId,
   onChange,
   onSubmit,
+  onEdit,
+  onCancelEdit,
   onPatch,
   onDelete,
 }: {
   platforms: DownloadPlatform[];
   form: PlatformForm;
   saving: boolean;
+  editingId: string | null;
   onChange: (form: PlatformForm) => void;
   onSubmit: (event: FormEvent) => void;
+  onEdit: (platform: DownloadPlatform) => void;
+  onCancelEdit: () => void;
   onPatch: (id: string, payload: Partial<DownloadPlatform>) => void;
   onDelete: (id: string) => void;
 }) {
@@ -517,19 +668,27 @@ function DownloadPlatformPanel({
               <button
                 key={preset.platform_key}
                 type="button"
+                disabled={editingId !== null}
                 onClick={() => onChange({ ...form, ...preset })}
-                className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800"
+                className={`rounded-md border px-3 py-1.5 text-xs ${
+                  form.platform_key === preset.platform_key
+                    ? "border-violet-500 bg-violet-600/30 text-white"
+                    : "border-slate-700 text-slate-200 hover:bg-slate-800"
+                }`}
               >
                 {preset.display_name}
               </button>
             ))}
           </div>
-          <Input label="平台标识" value={form.platform_key} onChange={(value) => onChange({ ...form, platform_key: value })} />
+          <Input label="平台标识" value={form.platform_key} disabled={editingId !== null} onChange={(value) => onChange({ ...form, platform_key: value })} />
           <Input label="平台名称" value={form.display_name} onChange={(value) => onChange({ ...form, display_name: value })} />
           <Input label="三方下载链接" value={form.download_url} onChange={(value) => onChange({ ...form, download_url: value })} />
-          <button disabled={saving} className="rounded-md bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-50">
-            {saving ? "保存中..." : "添加平台"}
-          </button>
+          <div className="flex gap-2">
+            <button disabled={saving} className="rounded-md bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-50">
+              {saving ? "保存中..." : editingId ? "保存修改" : "添加平台"}
+            </button>
+            {editingId && <button type="button" onClick={onCancelEdit} className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">取消</button>}
+          </div>
         </form>
 
         <div className="overflow-x-auto">
@@ -545,7 +704,7 @@ function DownloadPlatformPanel({
             <tbody className="divide-y divide-slate-800">
               {platforms.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-8 text-slate-500" colSpan={4}>暂无平台，先添加 A平台 / B平台 / C平台</td>
+                  <td className="px-4 py-8 text-slate-500" colSpan={4}>暂无平台，先添加 A–F 平台下载链接</td>
                 </tr>
               ) : (
                 platforms.map((platform) => (
@@ -569,12 +728,157 @@ function DownloadPlatformPanel({
                     </td>
                     <td className="px-4 py-4">
                       <div className="flex flex-wrap gap-2">
+                        <button type="button" onClick={() => onEdit(platform)} className="rounded-md border border-sky-700 px-3 py-1.5 text-xs text-sky-200 hover:bg-sky-950">编辑</button>
                         <button type="button" onClick={() => onPatch(platform.id, { is_default: true, is_active: true })} className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800">设默认</button>
                         <button type="button" onClick={() => onPatch(platform.id, { is_active: !platform.is_active })} className="rounded-md border border-amber-700 px-3 py-1.5 text-xs text-amber-200 hover:bg-amber-950">
                           {platform.is_active ? "停用" : "启用"}
                         </button>
                         <button type="button" onClick={() => onDelete(platform.id)} className="rounded-md border border-rose-800 px-3 py-1.5 text-xs text-rose-200 hover:bg-rose-950">删除</button>
                       </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function CountryRoutePanel({
+  routes,
+  platforms,
+  form,
+  saving,
+  onChange,
+  onSubmit,
+  onDelete,
+}: {
+  routes: CountryRoute[];
+  platforms: DownloadPlatform[];
+  form: { country_code: string; platform_key: string };
+  saving: boolean;
+  onChange: (form: { country_code: string; platform_key: string }) => void;
+  onSubmit: (event: FormEvent) => void;
+  onDelete: (countryCode: string) => void;
+}) {
+  const [tierFilter, setTierFilter] = useState<"all" | "T1" | "T2" | "T3">("all");
+  const platformLabel = (key: string) =>
+    platforms.find((item) => item.platform_key === key)?.display_name
+    || PLATFORM_PRESETS.find((item) => item.platform_key === key)?.display_name
+    || key;
+  const visibleCountries = COUNTRY_OPTIONS
+    .filter((code) => tierFilter === "all" || countryTier(code) === tierFilter)
+    .sort((a, b) => countryTag(a).localeCompare(countryTag(b), "zh"));
+  const groupedCountries = {
+    T1: visibleCountries.filter((code) => countryTier(code) === "T1"),
+    T2: visibleCountries.filter((code) => countryTier(code) === "T2"),
+    T3: visibleCountries.filter((code) => countryTier(code) === "T3"),
+  };
+  const visibleRoutes = [...routes]
+    .filter((route) => tierFilter === "all" || countryTier(route.country_code) === tierFilter)
+    .sort((a, b) => countryTier(a.country_code).localeCompare(countryTier(b.country_code))
+      || countryTag(a.country_code).localeCompare(countryTag(b.country_code), "zh"));
+
+  return (
+    <section className="mb-6 rounded-md border border-slate-800 bg-slate-900">
+      <div className="border-b border-slate-800 px-5 py-4">
+        <h2 className="text-lg font-semibold text-slate-100">国家路由</h2>
+        <p className="mt-1 text-xs text-slate-500">系统规则：资料国是 T1 时一律发 C 平台，优先于人工路由和接待号绑定。T2/T3 在这里绑 A–F。没配的非 T1 国家仍走接待号或默认 A。</p>
+      </div>
+      <div className="grid grid-cols-1 gap-5 p-5 xl:grid-cols-[380px_1fr]">
+        <form onSubmit={onSubmit} className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            {(["all", "T1", "T2", "T3"] as const).map((tier) => (
+              <button
+                key={tier}
+                type="button"
+                onClick={() => {
+                  setTierFilter(tier);
+                  const first = COUNTRY_OPTIONS.find((code) => tier === "all" || countryTier(code) === tier);
+                  if (first) onChange({ ...form, country_code: first });
+                }}
+                className={`rounded-md border px-3 py-1.5 text-xs ${
+                  tierFilter === tier
+                    ? "border-violet-500 bg-violet-600/30 text-white"
+                    : "border-slate-700 text-slate-200 hover:bg-slate-800"
+                }`}
+              >
+                {tier === "all" ? "全部档位" : tier}
+              </button>
+            ))}
+          </div>
+          <label className="block">
+            <span className="mb-1 block text-xs text-slate-400">国家</span>
+            <select
+              value={form.country_code}
+              onChange={(event) => onChange({ ...form, country_code: event.target.value })}
+              className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-violet-500"
+            >
+              {(["T1", "T2", "T3"] as const).map((tier) => (
+                groupedCountries[tier].length > 0 ? (
+                  <optgroup key={tier} label={tier}>
+                    {groupedCountries[tier].map((code) => (
+                      <option key={code} value={code}>{countryTag(code)}</option>
+                    ))}
+                  </optgroup>
+                ) : null
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs text-slate-400">平台</span>
+            <select
+              value={form.platform_key}
+              onChange={(event) => onChange({ ...form, platform_key: event.target.value })}
+              className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-violet-500"
+            >
+              {PLATFORM_PRESETS.map((preset) => (
+                <option key={preset.platform_key} value={preset.platform_key}>
+                  {preset.display_name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button disabled={saving} className="rounded-md bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-500 disabled:opacity-50">
+            {saving ? "保存中..." : "保存这条路由"}
+          </button>
+        </form>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead className="bg-slate-950/50 text-slate-500">
+              <tr>
+                <th className="px-4 py-3 font-medium">国家</th>
+                <th className="px-4 py-3 font-medium">档位</th>
+                <th className="px-4 py-3 font-medium">平台</th>
+                <th className="px-4 py-3 font-medium">操作</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800">
+              {visibleRoutes.length === 0 ? (
+                <tr>
+                  <td className="px-4 py-8 text-slate-500" colSpan={4}>还没有国家路由，未配置的国家继续走接待号 / 默认 A</td>
+                </tr>
+              ) : (
+                visibleRoutes.map((route) => (
+                  <tr key={route.country_code}>
+                    <td className="px-4 py-4 font-mono text-sm text-slate-100">{countryTag(route.country_code)}</td>
+                    <td className="px-4 py-4">
+                      <span className={`rounded px-2 py-1 text-xs ${
+                        countryTier(route.country_code) === "T1"
+                          ? "bg-emerald-500/10 text-emerald-200"
+                          : countryTier(route.country_code) === "T2"
+                            ? "bg-amber-500/10 text-amber-200"
+                            : "bg-slate-800 text-slate-300"
+                      }`}>
+                        {countryTier(route.country_code)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4 text-slate-200">{platformLabel(route.platform_key)}</td>
+                    <td className="px-4 py-4">
+                      <button type="button" onClick={() => onDelete(route.country_code)} className="rounded-md border border-rose-800 px-3 py-1.5 text-xs text-rose-200 hover:bg-rose-950">删除</button>
                     </td>
                   </tr>
                 ))
@@ -802,11 +1106,11 @@ function Panel({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function Input({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+function Input({ label, value, disabled = false, onChange }: { label: string; value: string; disabled?: boolean; onChange: (value: string) => void }) {
   return (
     <label className="block">
       <span className="mb-1 block text-sm text-slate-300">{label}</span>
-      <input value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-violet-500" />
+      <input value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-violet-500 disabled:cursor-not-allowed disabled:opacity-60" />
     </label>
   );
 }
