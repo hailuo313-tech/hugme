@@ -6,6 +6,7 @@ import AdminFrame from "@/components/AdminFrame";
 import OperatorRingControls from "@/components/OperatorRingControls";
 import OperatorWsStatus from "@/components/OperatorWsStatus";
 import { apiFetch, Operator } from "@/lib/auth";
+import InboundUserMedia, { looksLikeUserPhoto } from "@/components/InboundUserMedia";
 import { formatBeijingDateTime, parseDbUtcTimestamp } from "@/lib/reportTime";
 import { usePendingReviewRing } from "@/hooks/usePendingReviewRing";
 import { useOperatorTaskWs } from "@/hooks/useOperatorTaskWs";
@@ -134,6 +135,7 @@ interface ConversationTranslateResponse extends TranslateResponse {
   skipped_count: number;
 }
 
+const INITIAL_PAGE_SIZE = 20;
 const PAGE_SIZE = 50;
 const CONVERSATION_POLL_MS = 30 * 1000;
 const CONVERSATION_LIST_API_MARKER = "/admin/conversations?";
@@ -180,7 +182,10 @@ function isReleasedExpert(row: ConversationRow): boolean {
 }
 
 function isExpertPendingRelease(row: ConversationRow): boolean {
-  return Boolean(row.post_inbound_video_expert_release_eligible);
+  return Boolean(
+    row.post_inbound_video_expert_release_eligible
+    && !row.post_inbound_video_expert_waived_at,
+  );
 }
 
 function isTakenOver(row: ConversationRow): boolean {
@@ -459,18 +464,48 @@ function ConversationsContent({ operator }: { operator: Operator }) {
       setListLoading(true);
     }
     try {
-      const qs = new URLSearchParams({ page: "1", page_size: String(PAGE_SIZE) });
-      qs.set("tab", tab);
-      const backendState = tab === "auto" ? "AI_ACTIVE" : state;
-      if (backendState) qs.set("state", backendState);
-      if (channel) qs.set("channel", channel);
-      if (appliedSearch.trim()) qs.set("search", appliedSearch.trim());
+      const buildQuery = (page: number, pageSize: number) => {
+        const qs = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+        qs.set("tab", tab);
+        const backendState = tab === "auto" ? "AI_ACTIVE" : state;
+        if (backendState) qs.set("state", backendState);
+        if (channel) qs.set("channel", channel);
+        if (appliedSearch.trim()) qs.set("search", appliedSearch.trim());
+        return qs;
+      };
+
+      const firstPageSize = options?.silent ? PAGE_SIZE : INITIAL_PAGE_SIZE;
       const response = await apiFetch<ListResponse>(
-        `${CONVERSATION_LIST_API_MARKER}${qs.toString()}`,
+        `${CONVERSATION_LIST_API_MARKER}${buildQuery(1, firstPageSize).toString()}`,
       );
       if (listRequestSeqRef.current !== requestSeq) return;
-      setItems(sortQueue(response.items || []));
+      let accumulated = response.items || [];
+      setItems(sortQueue([...accumulated]));
       setTotal(response.total || 0);
+
+      if (!options?.silent) {
+        setListLoading(false);
+        const targetSize = Math.min(response.total || 0, PAGE_SIZE);
+        let page = 2;
+        while (accumulated.length < targetSize) {
+          let nextResponse: ListResponse;
+          try {
+            nextResponse = await apiFetch<ListResponse>(
+              `${CONVERSATION_LIST_API_MARKER}${buildQuery(page, INITIAL_PAGE_SIZE).toString()}`,
+            );
+          } catch {
+            break;
+          }
+          if (listRequestSeqRef.current !== requestSeq) return;
+          if (!nextResponse.items?.length) break;
+
+          const merged = new Map(accumulated.map((item) => [item.conversation_id, item]));
+          nextResponse.items.forEach((item) => merged.set(item.conversation_id, item));
+          accumulated = Array.from(merged.values()).slice(0, PAGE_SIZE);
+          setItems(sortQueue([...accumulated]));
+          page += 1;
+        }
+      }
     } catch (err) {
       if (!options?.silent && listRequestSeqRef.current === requestSeq) {
         setError(err instanceof Error ? err.message : String(err));
@@ -712,10 +747,10 @@ function ConversationsContent({ operator }: { operator: Operator }) {
   }
 
   async function releasePostInboundVideoExpert(row: ConversationRow) {
-    if (!row.post_inbound_video_expert_release_eligible || queueReleaseId) return;
+    if (!isExpertPendingRelease(row) || queueReleaseId) return;
     const name = row.nickname || row.external_id || row.conversation_id;
     const confirmed = window.confirm(
-      `确认放行？\n\n${name}\n\n放行后该用户将恢复与普通用户一样：\n- AI 自动回复\n- 固定话术 / TikTok 引导等\n\n之后可在「已放行」标签或会话详情点击「收回人工」。`,
+      `确认放行？\n\n${name}\n\n放行后该用户将恢复与普通用户一样：\n- AI 自动回复\n- 固定话术 / TikTok 引导等\n- 之后再打视频，不会第二次进入待放行审核\n\n之后可在「已放行」标签或会话详情点击「收回人工」。`,
     );
     if (!confirmed) return;
 
@@ -1040,7 +1075,7 @@ function ConversationsContent({ operator }: { operator: Operator }) {
         <button onClick={() => void processConversation(row)} className="rounded-md bg-slate-800 px-3 py-2 text-xs font-medium text-sky-300 hover:bg-slate-700">
           处理
         </button>
-        {row.post_inbound_video_expert_release_eligible ? (
+        {isExpertPendingRelease(row) ? (
           <button
             type="button"
             onClick={() => void releasePostInboundVideoExpert(row)}
@@ -1148,7 +1183,7 @@ function ConversationsContent({ operator }: { operator: Operator }) {
 
       <section className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         <Metric title="待人工接管" value={stats.waiting} hint="S/A 挂起、超时、待坐席处理" tone="amber" onClick={() => jumpToQueue("handoff")} />
-        <Metric title="待放行审核" value={stats.releaseReview} hint="累计第6次独立入站视频来电后审核是否放行" tone="violet" onClick={() => jumpToQueue("released")} />
+        <Metric title="待放行审核" value={stats.releaseReview} hint="累计第6次独立入站视频来电后审核是否放行；放行过一次后不再进入" tone="violet" onClick={() => jumpToQueue("released")} />
         <Metric title="已恢复 AI" value={stats.released} hint="已放行、可收回人工" tone="emerald" />
         <Metric title="S/A 精聊用户" value={stats.premium} hint="高价值用户优先处理" tone="violet" />
         <Metric title="AI 自动跟进" value={stats.aiActive} hint="B/C/D 自动投递链路" tone="emerald" />
@@ -1574,7 +1609,7 @@ function DetailDrawer({
                       {freezeLoading ? "冻结中..." : "冻结并停止回复"}
                     </button>
                   )}
-                  {detail.conversation.post_inbound_video_expert_release_eligible ? (
+                  {isExpertPendingRelease(detail.conversation) ? (
                     <button
                       type="button"
                       onClick={onRelease}
@@ -1754,7 +1789,13 @@ function MessageBubble({ message, translatedText, deleteLoading, onDelete }: { m
           </button>
         </div>
       </div>
-      <div className="whitespace-pre-wrap break-words text-sm text-slate-100">{message.content || "（空）"}</div>
+      <div className="whitespace-pre-wrap break-words text-sm text-slate-100">
+        {looksLikeUserPhoto(message.content, message.content_type) ? (
+          <InboundUserMedia messageId={message.id} content={message.content} />
+        ) : (
+          message.content || "（空）"
+        )}
+      </div>
       {translatedText && (
         <div className="mt-3 rounded-md border border-slate-800 bg-slate-950/70 px-3 py-2 text-xs leading-6 text-amber-100">
           <div className="mb-1 font-medium text-amber-300">中文参考</div>
