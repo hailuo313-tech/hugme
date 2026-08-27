@@ -14,8 +14,14 @@ from services.emotion_lexicon import detect_language_from_text, normalize_langua
 from services.link_cooldown import (
     is_conversation_link_cooldown_active,
     is_within_link_cooldown,
+    reply_already_has_link_material,
 )
 from services.profile_intake import age_from_preferences, normalize_country_code
+from services.product_i18n import (
+    ASSET_IMAGE_KEYWORDS,
+    ASSET_REQUEST_TERMS,
+    ASSET_VIDEO_KEYWORDS,
+)
 from services.script_match_hooks import (
     ScriptMatchContext,
     ScriptMatchResult,
@@ -38,103 +44,14 @@ APP_DOWNLOAD_CATEGORIES = {
 }
 
 APP_DOWNLOAD_SAFETY_TAG = "app_download_conversion"
+EARLY_LINK_MANDATE_SCENE = "early_link_mandate"
 ASSET_KEYWORD_TRIGGER_TITLES: tuple[str, ...] = (
     "用户聊天中想要看本人视频的关键词",
     "用户聊天中想要看本人图片的关键词",
 )
 ASSET_KEYWORD_APP_DOWNLOAD_COPY = (
-    "Sent! 😉 That's just my casual look text-blocked by TG. I actually just uploaded "
-    "a super wild bedroom video on my private secure app. Check my room L8385160 "
-    "right now before I take it down."
-)
-ASSET_KEYWORD_APP_DOWNLOAD_COPY = (
     "TG blocks all my unedited premium content anyway. Move over to my private "
     "chatroom, everything is unlocked there:"
-)
-ASSET_IMAGE_KEYWORDS: tuple[str, ...] = (
-    "photo",
-    "photos",
-    "pic",
-    "pics",
-    "picture",
-    "pictures",
-    "selfie",
-    "selfies",
-    "image",
-    "images",
-    "snapshot",
-    "snap",
-    "face",
-    "body",
-    "face pic",
-    "body pic",
-    "full body",
-    "mirror selfie",
-    "your face",
-    "your body",
-    "nudes",
-    "照片",
-    "图片",
-    "自拍",
-    "裸体",
-    "裸照",
-    "大奶",
-    "奶子",
-)
-ASSET_VIDEO_KEYWORDS: tuple[str, ...] = (
-    "video",
-    "videos",
-    "vid",
-    "vids",
-    "clip",
-    "clips",
-    "movie",
-    "gif",
-    "tape",
-    "recording",
-    "custom video",
-    "dirty video",
-    "short clip",
-    "private video",
-    "bedroom video",
-    "视频",
-    "小视频",
-    "录像",
-)
-ASSET_REQUEST_TERMS: tuple[str, ...] = (
-    "send",
-    "show",
-    "see",
-    "watch",
-    "look",
-    "view",
-    "share",
-    "drop",
-    "give",
-    "upload",
-    "want",
-    "wanna",
-    "need",
-    "can i",
-    "could i",
-    "may i",
-    "let me",
-    "lemme",
-    "please",
-    "pls",
-    "have",
-    "got",
-    "any",
-    "do you have",
-    "you have",
-    "想",
-    "想看",
-    "想要",
-    "要",
-    "看",
-    "发",
-    "有",
-    "有没有",
 )
 ASSET_BLOCKED_KEYWORDS: tuple[str, ...] = (
     "cock",
@@ -195,6 +112,29 @@ def get_last_app_download_decision() -> AppDownloadDecision | None:
     return _last_decision.get()
 
 
+def conversion_decision_skips_llm(decision: AppDownloadDecision | None) -> bool:
+    if decision is None:
+        return False
+    return decision.category_key in ("app_download_objection", "trust_reassurance")
+
+
+def is_early_link_mandate_decision(decision: AppDownloadDecision | None) -> bool:
+    if decision is None:
+        return False
+    return (
+        decision.scene_step == EARLY_LINK_MANDATE_SCENE
+        or decision.intent == "early_link_mandate"
+    )
+
+
+def decision_bypasses_link_cooldown(decision: AppDownloadDecision | None) -> bool:
+    return is_early_link_mandate_decision(decision)
+
+
+def _decision_includes_app_link(decision: AppDownloadDecision) -> bool:
+    return reply_already_has_link_material(decision.content)
+
+
 async def maybe_select_app_download_reply(
     *,
     db: Any,
@@ -229,7 +169,18 @@ async def maybe_select_app_download_reply(
     )
 
     force_link_script = forces_app_download_script(user_text)
-    if await is_conversation_link_cooldown_active(db, conversation_id=conversation_id) and not bypasses_link_cooldown(user_text):
+    early_limit = max(0, int(getattr(settings, "APP_DOWNLOAD_EARLY_LINK_USER_MESSAGE_LIMIT", 5)))
+    needs_early_link = early_limit > 0 and await _needs_early_link_mandate(
+        db,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        user_message_limit=early_limit,
+    )
+    if (
+        await is_conversation_link_cooldown_active(db, conversation_id=conversation_id)
+        and not bypasses_link_cooldown(user_text)
+        and not needs_early_link
+    ):
         logger.bind(
             component="app_download_conversion",
             trace_id=trace_id,
@@ -279,7 +230,18 @@ async def maybe_select_app_download_reply(
             include_download_url=False,
         )
         if trust is not None:
-            return trust
+            return await apply_early_link_mandate_overlay(
+                db=db,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                user_text=user_text,
+                profile_row=profile_row,
+                character_row=character_row,
+                trigger_message_id=trigger_message_id,
+                trace_id=trace_id,
+                decision=trust,
+                destination_url=destination_url,
+            )
 
     if is_serious_conversation_request(user_text):
         serious = await _build_serious_conversation_decision(
@@ -292,7 +254,18 @@ async def maybe_select_app_download_reply(
             trace_id=trace_id,
         )
         if serious is not None:
-            return serious
+            return await apply_early_link_mandate_overlay(
+                db=db,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                user_text=user_text,
+                profile_row=profile_row,
+                character_row=character_row,
+                trigger_message_id=trigger_message_id,
+                trace_id=trace_id,
+                decision=serious,
+                destination_url=destination_url,
+            )
 
     asset_triggers = await _match_asset_keyword_triggers(
         db=db,
@@ -410,7 +383,18 @@ async def maybe_select_app_download_reply(
         classified_intent=classified_intent,
     )
     if category_key is None:
-        return None
+        return await apply_early_link_mandate_overlay(
+            db=db,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            user_text=user_text,
+            profile_row=profile_row,
+            character_row=character_row,
+            trigger_message_id=trigger_message_id,
+            trace_id=trace_id,
+            decision=None,
+            destination_url=destination_url,
+        )
 
     persona_slug = _persona_slug(character_row)
     result = await search_script_templates(
@@ -468,7 +452,239 @@ async def maybe_select_app_download_reply(
         user_level=user_level,
         scene_step=scene_step,
     ).info("app_download_conversion.script_selected")
+    return await apply_early_link_mandate_overlay(
+        db=db,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        user_text=user_text,
+        profile_row=profile_row,
+        character_row=character_row,
+        trigger_message_id=trigger_message_id,
+        trace_id=trace_id,
+        decision=decision,
+        destination_url=destination_url,
+    )
+
+
+async def _load_user_message_count(*, db: Any, conversation_id: str) -> int:
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT COUNT(*) AS user_message_count
+                FROM messages
+                WHERE conversation_id = CAST(:conversation_id AS uuid)
+                  AND sender_type = 'user'
+                """
+            ),
+            {"conversation_id": conversation_id},
+        )
+    ).fetchone()
+    if row is None:
+        return 0
+    data = row._mapping if hasattr(row, "_mapping") else row
+    return max(0, int(data.get("user_message_count") or 0))
+
+
+async def _conversation_app_link_already_sent(
+    *,
+    db: Any,
+    user_id: str,
+    conversation_id: str,
+) -> bool:
+    state = await _load_latest_funnel_state(
+        db=db,
+        user_id=user_id,
+        conversation_id=conversation_id,
+    )
+    if state.tracking_id:
+        return True
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT 1
+                FROM messages
+                WHERE conversation_id = CAST(:conversation_id AS uuid)
+                  AND sender_type = 'assistant'
+                  AND content ~* 'https?://'
+                LIMIT 1
+                """
+            ),
+            {"conversation_id": conversation_id},
+        )
+    ).fetchone()
+    return row is not None
+
+
+async def _needs_early_link_mandate(
+    db: Any,
+    *,
+    user_id: str,
+    conversation_id: str,
+    user_message_limit: int,
+) -> bool:
+    if user_message_limit <= 0:
+        return False
+    user_count = await _load_user_message_count(db=db, conversation_id=conversation_id)
+    if user_count > user_message_limit:
+        return False
+    return not await _conversation_app_link_already_sent(
+        db=db,
+        user_id=user_id,
+        conversation_id=conversation_id,
+    )
+
+
+async def _build_early_link_mandate_decision(
+    db: Any,
+    *,
+    user_text: str,
+    destination_url: str,
+    profile: dict[str, Any],
+    character_row: dict[str, Any] | None,
+    conversation_id: str,
+    trigger_message_id: str | None,
+    trace_id: str,
+) -> AppDownloadDecision | None:
+    for category_key in ("app_download_first_push", "app_download_direct_cta"):
+        decision = await _build_category_script_decision(
+            db,
+            user_text=user_text,
+            category_key=category_key,
+            scene_step=EARLY_LINK_MANDATE_SCENE,
+            destination_url=destination_url,
+            profile=profile,
+            character_row=character_row,
+            conversation_id=conversation_id,
+            trigger_message_id=trigger_message_id,
+            trace_id=trace_id,
+            include_download_url=True,
+        )
+        if decision is not None and _decision_includes_app_link(decision):
+            decision = AppDownloadDecision(
+                content=decision.content,
+                category_key=decision.category_key,
+                script_hit_id=decision.script_hit_id,
+                assets=decision.assets,
+                user_level=decision.user_level,
+                persona_slug=decision.persona_slug,
+                intent="early_link_mandate",
+                scene_step=EARLY_LINK_MANDATE_SCENE,
+                country_code=decision.country_code,
+                age=decision.age,
+                is_t1_country=decision.is_t1_country,
+                language=decision.language,
+            )
+            _last_decision.set(decision)
+            logger.bind(
+                component="app_download_conversion",
+                trace_id=trace_id,
+                category_key=decision.category_key,
+                scene_step=EARLY_LINK_MANDATE_SCENE,
+            ).info("app_download_conversion.early_link_mandate_selected")
+            return decision
+
+    user_level = str(profile.get("user_level") or "C").upper()
+    country_code = normalize_country_code(
+        profile.get("country_code") or _preferences(profile).get("country_code")
+    )
+    age = age_from_preferences(_preferences(profile))
+    is_t1 = country_tier(country_code) == "T1" if country_code else None
+    content = _compact_app_link_reply("", destination_url=destination_url)
+    decision = AppDownloadDecision(
+        content=content,
+        category_key="app_download_direct_cta",
+        script_hit_id="early-link-mandate-fallback",
+        assets=[],
+        user_level=user_level,
+        persona_slug=_persona_slug(character_row),
+        intent="early_link_mandate",
+        scene_step=EARLY_LINK_MANDATE_SCENE,
+        country_code=country_code,
+        age=age,
+        is_t1_country=is_t1,
+        language=_reply_language(profile, user_text),
+    )
+    _last_decision.set(decision)
+    await _audit_decision(
+        db=db,
+        decision=decision,
+        conversation_id=conversation_id,
+        trigger_message_id=trigger_message_id,
+        user_text=user_text,
+        trace_id=trace_id,
+    )
+    logger.bind(
+        component="app_download_conversion",
+        trace_id=trace_id,
+        scene_step=EARLY_LINK_MANDATE_SCENE,
+    ).info("app_download_conversion.early_link_mandate_fallback")
     return decision
+
+
+async def apply_early_link_mandate_overlay(
+    *,
+    db: Any,
+    user_id: str,
+    conversation_id: str,
+    user_text: str,
+    profile_row: dict[str, Any] | None,
+    character_row: dict[str, Any] | None,
+    trigger_message_id: str | None,
+    trace_id: str,
+    decision: AppDownloadDecision | None,
+    destination_url: str | None = None,
+) -> AppDownloadDecision | None:
+    """Ensure an APP link is queued before the user exceeds the early-message window."""
+    limit = max(0, int(getattr(settings, "APP_DOWNLOAD_EARLY_LINK_USER_MESSAGE_LIMIT", 5)))
+    if limit <= 0 or not settings.APP_DOWNLOAD_CONVERSION_ENABLED:
+        return decision
+    if destination_url is None:
+        destination_url = await resolve_app_download_url(db)
+    if not destination_url or db is None:
+        return decision
+    if not await _needs_early_link_mandate(
+        db,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        user_message_limit=limit,
+    ):
+        return decision
+    if decision is not None and _decision_includes_app_link(decision):
+        return decision
+
+    mandate = await _build_early_link_mandate_decision(
+        db,
+        user_text=user_text,
+        destination_url=destination_url,
+        profile=profile_row or {},
+        character_row=character_row,
+        conversation_id=conversation_id,
+        trigger_message_id=trigger_message_id,
+        trace_id=trace_id,
+    )
+    if mandate is None:
+        return decision
+    if decision is None:
+        return mandate
+
+    merged = AppDownloadDecision(
+        content=mandate.content,
+        category_key=mandate.category_key,
+        script_hit_id=mandate.script_hit_id,
+        assets=decision.assets,
+        user_level=decision.user_level,
+        persona_slug=decision.persona_slug or mandate.persona_slug,
+        intent="early_link_mandate",
+        scene_step=EARLY_LINK_MANDATE_SCENE,
+        country_code=decision.country_code,
+        age=decision.age,
+        is_t1_country=decision.is_t1_country,
+        language=decision.language or mandate.language,
+    )
+    _last_decision.set(merged)
+    return merged
 
 
 async def _load_latest_funnel_state(

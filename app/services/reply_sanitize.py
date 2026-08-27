@@ -6,6 +6,7 @@ import re
 
 from core.config import settings
 from services.emotion_lexicon import detect_language_from_text, normalize_language
+from services.product_i18n import FLIRT_FALLBACK_COPY, pick_localized
 
 _HR_SPLIT_RE = re.compile(r"\n---+\n+")
 _EXCESS_BLANK_RE = re.compile(r"\n{3,}")
@@ -66,6 +67,43 @@ _NO_MEDIA_REFUSAL_RE = re.compile(
     r")[^.!?。！？\n]*[.!?。！？]?\s*$",
     re.IGNORECASE,
 )
+_PROFILE_SYSTEM_LEAK_RE = re.compile(
+    r"(?:"
+    r"no tengo una edad definida|"
+    r"edad definida en mi perfil|"
+    r"no (?:tengo|hay).{0,24}edad.{0,24}perfil|"
+    r"(?:not|isn't|is not).{0,24}age.{0,24}(?:profile|defined|set)|"
+    r"age.{0,24}(?:not|isn't|is not).{0,24}(?:defined|set|profile)|"
+    r"profile/details|"
+    r"loneliness_score|"
+    r"current_city|"
+    r"in my profile database|"
+    r"my profile (?:doesn't|does not) have"
+    r")",
+    re.IGNORECASE | re.UNICODE,
+)
+_OUTBOUND_CALL_REFUSAL_RE = re.compile(
+    r"(?:"
+    r"no puedo hacer llamadas|"
+    r"no puedo iniciar|"
+    r"no puedo llamarte|"
+    r"can't (?:make|initiate|start) calls?|"
+    r"cannot (?:make|initiate|start) calls?|"
+    r"can't call you|"
+    r"cannot call you|"
+    r"não posso (?:fazer|iniciar) chamadas?"
+    r")",
+    re.IGNORECASE | re.UNICODE,
+)
+_NURTURE_INBOUND_CALL_MARKERS: tuple[str, ...] = (
+    "tap call",
+    "tap the video call",
+    "video call button",
+    "toca el botón",
+    "toca videollamada",
+    "toca en chamada",
+    "点我资料页",
+)
 
 _TRACKING_URL_RE = re.compile(r"https?://[^\s<>\]\"']+/r/[A-Za-z0-9]+")
 _URL_RE = re.compile(r"https?://[^\s<>\]\"']+")
@@ -85,6 +123,9 @@ _GENERIC_AI_REFUSAL_RE = re.compile(
     r"non posso aiutarti con richieste di natura sessuale|"
     r"no puedo ayudarte con solicitudes de naturaleza sexual|"
     r"não posso ajudar com pedidos de natureza sexual|"
+    r"对不起|无法满足|无法提供|不能帮助|无法帮助|很抱歉，我无法|"
+    r"não posso acessar|não consigo acessar|não posso abrir|não posso ajudar|"
+    r"estou aqui para conversar, mas não posso|"
     r"i don(?:'t| not) open external links|"
     r"i(?:'m| am) unable to access external links|"
     r"unable to access external links|"
@@ -93,12 +134,7 @@ _GENERIC_AI_REFUSAL_RE = re.compile(
     re.IGNORECASE,
 )
 
-_FLIRT_FALLBACK_BY_LANG = {
-    "en": "Mmm you already have my attention. Tell me exactly what you want.",
-    "it": "Mi stai accendendo. Dimmi esattamente cosa vuoi che ti faccia sentire.",
-    "es": "Me estás provocando. Dime exactamente qué quieres que haga contigo.",
-    "pt": "Você está me deixando com vontade. Me diz exatamente o que quer sentir.",
-}
+_FLIRT_FALLBACK_BY_LANG = FLIRT_FALLBACK_COPY
 
 
 def default_max_reply_chars() -> int:
@@ -119,7 +155,7 @@ def flirt_fallback_reply(user_text: str | None = None) -> str:
         detect_language_from_text(user_text or "", default="en"),
         default="en",
     )
-    return _FLIRT_FALLBACK_BY_LANG.get(language, _FLIRT_FALLBACK_BY_LANG["en"])
+    return pick_localized(_FLIRT_FALLBACK_BY_LANG, language)
 
 
 def replace_generic_ai_refusal(text_value: str | None, *, user_text: str | None = None) -> str:
@@ -196,6 +232,34 @@ def _drop_no_app_refusal_sentences(text: str) -> str:
 
 def _drop_media_refusal_sentences(text: str) -> str:
     return _drop_refusal_sentences(text, _NO_MEDIA_REFUSAL_RE)
+
+
+def _drop_profile_system_leak_sentences(text: str) -> str:
+    parts = _SENTENCE_END_RE.split(text.strip())
+    if len(parts) <= 1:
+        single = text.strip()
+        return "" if _PROFILE_SYSTEM_LEAK_RE.search(single) else single
+    kept = [
+        part.strip()
+        for part in parts
+        if part.strip() and not _PROFILE_SYSTEM_LEAK_RE.search(part.strip())
+    ]
+    return " ".join(kept).strip()
+
+
+def nurture_boilerplate_conflicts_with_llm_reply(
+    nurture_text: str | None,
+    llm_reply: str | None,
+) -> bool:
+    """Skip inbound-call nurture copy when the model just refused outbound calls."""
+    nurture = str(nurture_text or "").strip()
+    reply = str(llm_reply or "").strip()
+    if not nurture or not reply:
+        return False
+    if not _OUTBOUND_CALL_REFUSAL_RE.search(reply):
+        return False
+    nurture_lower = nurture.casefold()
+    return any(marker in nurture_lower for marker in _NURTURE_INBOUND_CALL_MARKERS)
 
 
 def _strip_stage_actions(text: str) -> str:
@@ -291,6 +355,7 @@ def sanitize_outbound_reply(
     text = _drop_meta_lines(text)
     text = _drop_no_app_refusal_sentences(text)
     text = _drop_media_refusal_sentences(text)
+    text = _drop_profile_system_leak_sentences(text)
     text = _collapse_paragraphs(text)
     text = _EXCESS_BLANK_RE.sub(" ", text).strip()
     text = _normalize_app_link_reply(text)

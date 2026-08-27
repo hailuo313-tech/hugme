@@ -12,25 +12,21 @@ from loguru import logger
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-_NEED_HELP_COPY: dict[str, str] = {
-    "en": "Tap the video call button on my profile to call me — I'll pick up.",
-    "zh": "点我资料页顶部的视频通话按钮打过来，我会接的。",
-    "es": "Toca el botón de videollamada en mi perfil para llamarme — te contesto.",
-    "pt": "Toque no botão de chamada de vídeo no meu perfil para me ligar — eu atendo.",
-}
-
-_ACCEPT_ACK_COPY: dict[str, str] = {
-    "en": "Perfect — tap call on my profile now and I'll pick up right away.",
-    "zh": "好，现在点我资料页的视频通话打过来，我马上接。",
-    "es": "Perfecto — toca videollamada en mi perfil ahora y te contesto enseguida.",
-    "pt": "Perfeito — toca em chamada no meu perfil agora que eu atendo na hora.",
-}
-
+from services.product_i18n import (
+    NURTURE_ACCEPT_ACK_COPY,
+    NURTURE_DELAY_FOLLOWUP_COPY,
+    NURTURE_NEED_HELP_COPY,
+    pick_localized,
+)
 _SPAM_URL_RE = re.compile(
     r"(https?://|t\.me/|telegram\.me/|@\w{4,})",
     re.IGNORECASE,
 )
-_MULTI_URL_RE = re.compile(r"https?://|t\.me/", re.IGNORECASE)
+_MULTI_URL_RE = re.compile(r"https?://|t\.me/|telegram\.me/", re.IGNORECASE)
+_TME_FULL_URL_RE = re.compile(
+    r"(?:https?://)?(?:t\.me|telegram\.me)/[^\s]+",
+    re.IGNORECASE,
+)
 
 _ACCEPT_RE = re.compile(
     r"(^|\b)(yes|yeah|yep|yup|ok|okay|sure|call me|video call|facetime|"
@@ -61,6 +57,26 @@ _NEGATIVE_RE = re.compile(
     r"não|pare)\b",
     re.IGNORECASE | re.UNICODE,
 )
+# User asks the bot to initiate an outbound call — not accepting a nurture invite.
+_OUTBOUND_CALL_REQUEST_RE = re.compile(
+    r"(?:"
+    r"\bcan you (?:call|video|facetime|initiate)\b|"
+    r"\bcould you (?:call|video|facetime)\b|"
+    r"\bwill you call\b|"
+    r"\byou call me\b|"
+    r"\bpuedes (?:llamar|hacer|iniciar)\b|"
+    r"\bme puedes (?:llamar|hacer)\b|"
+    r"\bhazme (?:una )?(?:llamada|videollamada)\b|"
+    r"\biniciar (?:una )?videollamada\b|"
+    r"\bme llamas\b|"
+    r"\bvocê pode (?:ligar|chamar|fazer)\b|"
+    r"\bvoce pode (?:ligar|chamar|fazer)\b|"
+    r"\bpode me ligar\b|"
+    r"\?[^.!?]{0,40}\bvideollamada\b|"
+    r"\?[^.!?]{0,40}\bvideo call\b"
+    r")",
+    re.IGNORECASE | re.UNICODE,
+)
 
 
 @dataclass(frozen=True)
@@ -74,6 +90,13 @@ class NurtureReplyAction:
     matched_schedule_id: str | None = None
 
 
+def _strip_telegram_urls(text_value: str) -> str:
+    """Remove Telegram URLs/handles before measuring non-link spam content."""
+    cleaned = _TME_FULL_URL_RE.sub(" ", text_value)
+    cleaned = re.sub(r"@\w{4,}", " ", cleaned)
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
 def is_spam_reply(text_value: str | None) -> bool:
     text_value = str(text_value or "").strip()
     if not text_value:
@@ -81,10 +104,12 @@ def is_spam_reply(text_value: str | None) -> bool:
     url_hits = len(_MULTI_URL_RE.findall(text_value))
     if url_hits >= 2:
         return True
+    stripped = _strip_telegram_urls(text_value)
     if _SPAM_URL_RE.search(text_value) and len(text_value) > 40:
-        non_url = _MULTI_URL_RE.sub("", text_value).strip()
-        if len(non_url) < 20:
+        if len(stripped) < 20:
             return True
+    if _TME_FULL_URL_RE.search(text_value) and len(stripped) < 20:
+        return True
     if text_value.count("http") >= 2 or text_value.count("t.me/") >= 2:
         return True
     return False
@@ -100,6 +125,8 @@ def classify_nurture_reply_intent(text_value: str | None, *, language: str = "en
         return "negative"
     if _NEED_HELP_RE.search(text_value):
         return "need_help"
+    if _OUTBOUND_CALL_REQUEST_RE.search(text_value):
+        return "open_chat"
     if _ACCEPT_RE.search(text_value):
         return "accept_call"
     if _DELAY_RE.search(text_value):
@@ -176,7 +203,7 @@ async def handle_nurture_user_reply(
         return NurtureReplyAction(
             intent=intent,
             valid_reply=True,
-            immediate_reply_text=_ACCEPT_ACK_COPY.get(lang, _ACCEPT_ACK_COPY["en"]),
+            immediate_reply_text=pick_localized(NURTURE_ACCEPT_ACK_COPY, lang),
             cancel_pending_nurture=True,
             nurture_language=lang,
             matched_schedule_id=schedule_id,
@@ -187,7 +214,7 @@ async def handle_nurture_user_reply(
         return NurtureReplyAction(
             intent=intent,
             valid_reply=True,
-            immediate_reply_text=_NEED_HELP_COPY.get(lang, _NEED_HELP_COPY["en"]),
+            immediate_reply_text=pick_localized(NURTURE_NEED_HELP_COPY, lang),
             nurture_language=lang,
             matched_schedule_id=schedule_id,
         )
@@ -343,17 +370,23 @@ async def _schedule_delay_followup(
     language: str,
     trace_id: str | None,
 ) -> None:
-    from services.app_download_nurture import APP_DOWNLOAD_NURTURE_DELIVERY_MODE
+    from services.app_download_nurture import (
+        APP_DOWNLOAD_NURTURE_DELIVERY_MODE,
+        user_nurture_cycle_completed,
+    )
+
+    if await user_nurture_cycle_completed(db, user_id=user_id):
+        logger.bind(
+            component="nurture_reply_handler",
+            trace_id=trace_id,
+            conversation_id=conversation_id,
+            user_id=user_id,
+        ).info("nurture_reply.delay_skip_cycle_completed")
+        return
 
     send_at = datetime.now(timezone.utc) + timedelta(hours=4)
     rule_key = f"nurture_delay:{conversation_id}:{int(send_at.timestamp())}"
-    copy = {
-        "en": "No rush — tap call on my profile whenever you're free for a quick video.",
-        "zh": "不急，你有空就点我资料页的视频打过来。",
-        "es": "Sin prisa — toca videollamada en mi perfil cuando estés libre.",
-        "pt": "Sem pressa — toque em chamada no meu perfil quando estiver livre.",
-    }
-    content = copy.get(language, copy["en"])
+    content = pick_localized(NURTURE_DELAY_FOLLOWUP_COPY, language)
     metadata = {
         "delivery_mode": APP_DOWNLOAD_NURTURE_DELIVERY_MODE,
         "trigger": "nurture_delay_followup",

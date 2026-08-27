@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+from services.product_i18n import UNICODE_VIDEO_CALL_KEYWORDS, VIDEO_CALL_KEYWORDS
+
 # Exact-match test codes: send only this text to trigger an immediate video call.
 TEST_IMMEDIATE_VIDEO_CALL_CODES: tuple[str, ...] = (
     "8866",
@@ -16,29 +18,6 @@ STANDALONE_VIDEO_CALL_TOKENS: tuple[str, ...] = (
     "cam",
     "cam2",
     "vc",
-)
-
-_CJK_KEYWORDS: tuple[str, ...] = (
-    "视频通话",
-    "视频电话",
-    "打视频",
-    "开视频",
-    "视讯",
-    "裸聊",
-)
-
-VIDEO_CALL_KEYWORDS: tuple[str, ...] = (
-    "video call",
-    "videocall",
-    "facetime",
-    "face time",
-    "cam2cam",
-    "c2c",
-    "live show",
-    "private call",
-    "call me",
-    "video chat",
-    * _CJK_KEYWORDS,
 )
 
 _ASCII_COMPILED = tuple(
@@ -66,7 +45,7 @@ def is_video_call_request(text: str | None) -> bool:
         return True
     if is_immediate_video_call_code(value):
         return True
-    if any(token in value for token in _CJK_KEYWORDS):
+    if any(token in value for token in UNICODE_VIDEO_CALL_KEYWORDS):
         return True
     return any(pattern.search(value) for pattern in _ASCII_COMPILED)
 
@@ -79,8 +58,8 @@ def matched_video_call_keyword(text: str | None) -> str | None:
         return value
     if value in TEST_IMMEDIATE_VIDEO_CALL_CODES:
         return value
-    for token in _CJK_KEYWORDS:
-        if token in value:
+    for token in UNICODE_VIDEO_CALL_KEYWORDS:
+        if token.casefold() in value:
             return token
     for token, pattern in zip(
         [t for t in VIDEO_CALL_KEYWORDS if t.isascii()],

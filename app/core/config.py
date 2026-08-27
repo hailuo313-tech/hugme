@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     TELEGRAM_SESSION_STRINGS: Optional[str] = None
     TELEGRAM_SESSION_DIR: str = "./data/telegram_sessions"
     MTProto_ENABLED: bool = False
+    # Merge rapid back-to-back user texts into one reply (seconds; 0 disables).
+    MTProto_INBOUND_COALESCE_SECONDS: float = 4.0
     TELEGRAM_DEVICE_MODEL: str = "ERIS"
     TELEGRAM_SYSTEM_VERSION: str = "1.0"
     PUBLIC_BASE_URL: str = "https://hugme2.com"
