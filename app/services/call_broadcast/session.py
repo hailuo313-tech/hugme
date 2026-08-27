@@ -15,6 +15,7 @@ from loguru import logger
 from core.config import settings
 from services.call_broadcast.duration import CallPlaybackResult
 from services.call_broadcast.ffmpeg_pipeline import (
+    ensure_post_connect_leadin_sync,
     ensure_playable_video,
     ensure_playable_video_sync,
     probe_video_duration_seconds,
@@ -22,6 +23,10 @@ from services.call_broadcast.ffmpeg_pipeline import (
     resolve_playback_duration_seconds,
 )
 from services.call_broadcast.pytgcalls_manager import get_pytgcalls
+from services.call_broadcast.remote_stills import (
+    start_remote_still_capture,
+    stop_remote_still_capture,
+)
 from services.telegram_account_manager import telegram_account_manager
 
 
@@ -84,6 +89,16 @@ def _prepare_playback_sync(
         transcode_enabled=transcode_enabled,
         work_dir=work_dir,
     )
+    post_connect_delay = max(
+        0.0,
+        float(getattr(settings, "CALL_BROADCAST_POST_CONNECT_DELAY_SECONDS", 3)),
+    )
+    playable = ensure_post_connect_leadin_sync(
+        playable,
+        delay_seconds=post_connect_delay,
+        work_dir=work_dir,
+        trace_id=trace_id,
+    )
     probed = probe_video_duration_seconds_sync(playable)
     playback_seconds = resolve_playback_duration_seconds(
         probed_seconds=probed,
@@ -139,6 +154,19 @@ class CallPlaybackPrepare:
 
 def _answer_timeout_seconds() -> int:
     return int(getattr(settings, "CALL_BROADCAST_ANSWER_TIMEOUT_SECONDS", 60))
+
+
+def _hangup_timeout_seconds() -> float:
+    return max(2.0, float(getattr(settings, "CALL_BROADCAST_HANGUP_TIMEOUT_SECONDS", 8)))
+
+
+def _still_stop_timeout_seconds() -> float:
+    return max(2.0, float(getattr(settings, "CALL_BROADCAST_STILL_STOP_TIMEOUT_SECONDS", 10)))
+
+
+async def _await_optional(result: Any, timeout: float) -> None:
+    if asyncio.iscoroutine(result):
+        await asyncio.wait_for(result, timeout=timeout)
 
 
 def _playback_buffer_seconds() -> int:
@@ -275,22 +303,99 @@ async def _cache_call_peer(client: Any, chat_id: int, access_hash: int | None) -
     )
 
 
-async def _invoke_connect(pytgcalls: Any, chat_id: int) -> None:
-    """Answer/dial and establish RTC without starting user-visible media."""
+def _pytgcalls_input_call_cache(pytgcalls: Any) -> Any | None:
+    app = getattr(pytgcalls, "_app", None)
+    for obj in (app, getattr(app, "_bind_client", None)):
+        cache = getattr(obj, "_cache", None)
+        if cache is not None and callable(getattr(cache, "set_cache", None)):
+            return cache
+    return None
+
+
+async def _read_input_phone_call(pytgcalls: Any, chat_id: int) -> Any:
+    app = getattr(pytgcalls, "_app", None)
+    getter = getattr(app, "get_input_call", None)
+    if not callable(getter):
+        return True
+    try:
+        result = getter(int(chat_id))
+        if asyncio.iscoroutine(result):
+            result = await result
+        return result
+    except Exception:
+        return None
+
+
+async def capture_incoming_phone_call(
+    pytgcalls: Any,
+    chat_id: int,
+    *,
+    timeout_seconds: float = 2.0,
+) -> Any | None:
+    """Read InputPhoneCall while the inbound ring is still cached."""
+    deadline = time.monotonic() + max(0.05, float(timeout_seconds))
+    while True:
+        peer = await _read_input_phone_call(pytgcalls, int(chat_id))
+        if peer:
+            return peer
+        if time.monotonic() >= deadline:
+            return None
+        await asyncio.sleep(0.05)
+
+
+def restore_incoming_phone_call(pytgcalls: Any, chat_id: int, peer: Any) -> bool:
+    """Re-inject a captured InputPhoneCall before accept/play."""
+    if peer in (None, True, False):
+        return False
+    cache = _pytgcalls_input_call_cache(pytgcalls)
+    if cache is None:
+        return False
+    try:
+        cache.set_cache(int(chat_id), peer)
+        return True
+    except Exception:
+        return False
+
+
+async def _wait_for_incoming_phone_call(
+    pytgcalls: Any,
+    chat_id: int,
+    *,
+    timeout_seconds: float = 4.0,
+) -> bool:
+    """Wait until PyTgCalls has cached InputPhoneCall for this P2P chat."""
+    peer = await capture_incoming_phone_call(
+        pytgcalls,
+        chat_id,
+        timeout_seconds=timeout_seconds,
+    )
+    return bool(peer)
+
+
+async def _invoke_connect(
+    pytgcalls: Any,
+    chat_id: int,
+    playable: str,
+    *,
+    require_incoming_phone_call: bool = False,
+) -> None:
+    """Answer/dial with delayed media in one supported PyTgCalls operation."""
     from pytgcalls.types import CallConfig
+
+    if require_incoming_phone_call:
+        if not await _wait_for_incoming_phone_call(pytgcalls, int(chat_id)):
+            logger.bind(chat_id=chat_id).warning(
+                "call_broadcast.stream.incoming_phone_call_missing"
+            )
+            raise CallBroadcastStreamError(
+                f"incoming phone call cache missing for chat_id={chat_id}"
+            )
 
     answer_timeout = int(
         getattr(settings, "CALL_BROADCAST_ANSWER_TIMEOUT_SECONDS", 60)
     )
     config = CallConfig(timeout=answer_timeout)
-    play_result = pytgcalls.play(int(chat_id), None, config)
-    if asyncio.iscoroutine(play_result):
-        await play_result
-
-
-async def _invoke_start_stream(pytgcalls: Any, chat_id: int, playable: str) -> None:
-    """Attach the prepared video to an already connected RTC call."""
-    play_result = pytgcalls.play(int(chat_id), playable)
+    play_result = pytgcalls.play(int(chat_id), playable, config)
     if asyncio.iscoroutine(play_result):
         await play_result
 
@@ -330,11 +435,13 @@ async def hang_up_call(
         for args in ((int(chat_id),), tuple()):
             try:
                 result = method(*args)
-                if asyncio.iscoroutine(result):
-                    await result
+                await _await_optional(result, _hangup_timeout_seconds())
                 log.bind(method=method_name).info("call_broadcast.hangup.ok")
                 return
             except TypeError:
+                continue
+            except asyncio.TimeoutError:
+                log.bind(method=method_name).warning("call_broadcast.hangup.method_timeout")
                 continue
             except Exception as exc:
                 log.bind(method=method_name, error_type=type(exc).__name__).debug(
@@ -379,6 +486,8 @@ async def run_call_broadcast(
     telegram_access_hash: int | None = None,
     prepared: CallPlaybackPrepare | None = None,
     pytgcalls: Any | None = None,
+    job_id: str | None = None,
+    require_incoming_phone_call: bool = False,
 ) -> CallPlaybackResult:
     """Stream a local video file to a private Telegram peer via PyTgCalls."""
     if prepared is not None:
@@ -406,8 +515,6 @@ async def run_call_broadcast(
     if pytgcalls is None:
         raise RuntimeError(f"no connected Telethon client for account_id={account_id}")
 
-    await _cache_call_peer(client, chat_id, telegram_access_hash)
-
     log = logger.bind(
         component="call_broadcast",
         trace_id=trace_id,
@@ -417,6 +524,16 @@ async def run_call_broadcast(
         probed_seconds=round(probed, 2) if probed is not None else None,
         configured_seconds=duration_seconds,
     )
+    try:
+        await asyncio.wait_for(
+            _cache_call_peer(client, chat_id, telegram_access_hash),
+            timeout=8,
+        )
+    except Exception as exc:
+        log.bind(error_type=type(exc).__name__).warning(
+            "call_broadcast.stream.peer_cache_failed"
+        )
+
     log.info("call_broadcast.stream.start")
     playback_timeout = playback_seconds + int(
         getattr(settings, "CALL_BROADCAST_PLAYBACK_TIMEOUT_BUFFER_SECONDS", 90)
@@ -425,7 +542,24 @@ async def run_call_broadcast(
     wall_started = time.monotonic()
     try:
         try:
-            await _invoke_connect(pytgcalls, int(chat_id))
+            try:
+                await _invoke_connect(
+                    pytgcalls,
+                    int(chat_id),
+                    playable,
+                    require_incoming_phone_call=require_incoming_phone_call,
+                )
+            except asyncio.TimeoutError:
+                if not require_incoming_phone_call:
+                    raise
+                log.warning("call_broadcast.stream.incoming_accept_retry")
+                await asyncio.sleep(0.5)
+                await _invoke_connect(
+                    pytgcalls,
+                    int(chat_id),
+                    playable,
+                    require_incoming_phone_call=True,
+                )
         except asyncio.TimeoutError as exc:
             log.warning("call_broadcast.stream.answer_timeout")
             raise CallBroadcastStreamError(
@@ -441,16 +575,26 @@ async def run_call_broadcast(
 
         ring_seconds = time.monotonic() - wall_started
         log.bind(ring_seconds=round(ring_seconds, 2)).info("call_broadcast.stream.connected")
+        try:
+            await start_remote_still_capture(
+                pytgcalls=pytgcalls,
+                account_id=str(account_id),
+                chat_id=int(chat_id),
+                job_id=job_id,
+                trace_id=trace_id,
+            )
+        except Exception as exc:
+            log.bind(error_type=type(exc).__name__).warning(
+                "call_broadcast.remote_still.start_failed"
+            )
         post_connect_delay = max(
             0.0,
             float(getattr(settings, "CALL_BROADCAST_POST_CONNECT_DELAY_SECONDS", 3)),
         )
         if post_connect_delay:
-            log.bind(delay_seconds=post_connect_delay).info(
+            log.bind(delay_seconds=post_connect_delay, mode="media_leadin").info(
                 "call_broadcast.stream.preplay_delay"
             )
-            await asyncio.sleep(post_connect_delay)
-        await _invoke_start_stream(pytgcalls, int(chat_id), playable)
         log.info("call_broadcast.stream.playback_started")
         try:
             await asyncio.wait_for(asyncio.sleep(playback_seconds), timeout=playback_timeout)
@@ -463,12 +607,31 @@ async def run_call_broadcast(
             ) from exc
     finally:
         stream_wall_seconds = time.monotonic() - wall_started
-        await _stop_stream(
-            pytgcalls,
-            chat_id,
-            account_id=account_id,
-            trace_id=trace_id,
-        )
+        try:
+            await asyncio.wait_for(
+                stop_remote_still_capture(
+                    account_id=str(account_id), chat_id=int(chat_id)
+                ),
+                timeout=_still_stop_timeout_seconds(),
+            )
+        except Exception as exc:
+            log.bind(error_type=type(exc).__name__).warning(
+                "call_broadcast.remote_still.stop_failed"
+            )
+        try:
+            await asyncio.wait_for(
+                _stop_stream(
+                    pytgcalls,
+                    chat_id,
+                    account_id=account_id,
+                    trace_id=trace_id,
+                ),
+                timeout=_hangup_timeout_seconds() + 2.0,
+            )
+        except Exception as exc:
+            log.bind(error_type=type(exc).__name__).warning(
+                "call_broadcast.hangup.timeout"
+            )
         log.bind(stream_wall_seconds=round(stream_wall_seconds, 2)).info(
             "call_broadcast.stream.stop"
         )
