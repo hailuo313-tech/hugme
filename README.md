@@ -3,6 +3,11 @@
 ERIS is the MVP emotional companion platform. Operational notes live in
 `RUNBOOK.md`; task-specific designs live in the root `D*-*.md` files.
 
+## Windows 本机开发环境
+
+在 Windows 上搭建开发环境（Python 3.12 venv + pytest）请参阅：
+[docs/WINDOWS_DEV_SETUP.md](docs/WINDOWS_DEV_SETUP.md)
+
 ## D7-3 End-to-End Script
 
 Run the full D7-3 smoke path from the repository root:
