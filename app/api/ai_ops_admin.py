@@ -137,6 +137,17 @@ class AppDownloadPlatformPayload(BaseModel):
     sort_order: int = Field(default=0, ge=0, le=1000)
 
 
+class AppDownloadCountryRoutePayload(BaseModel):
+    country_code: str = Field(..., min_length=2, max_length=8)
+    platform_key: str = Field(..., min_length=1, max_length=40)
+    download_url: str | None = Field(default=None, min_length=1)
+
+
+class AppDownloadCountryRouteUpdate(BaseModel):
+    platform_key: str = Field(..., min_length=1, max_length=40)
+    download_url: str | None = Field(default=None, min_length=1)
+
+
 class AppDownloadPlatformUpdate(BaseModel):
     platform_key: str | None = Field(default=None, min_length=1, max_length=40, pattern="^[a-zA-Z0-9_-]+$")
     display_name: str | None = Field(default=None, min_length=1, max_length=80)
@@ -608,6 +619,7 @@ async def create_app_download_platform(
                     CAST(:id AS uuid), :platform_key, :display_name, :download_url,
                     :is_active, :is_default, :sort_order
                 )
+                ON CONFLICT (platform_key) DO NOTHING
                 RETURNING id, platform_key, display_name, download_url, is_active,
                           is_default, sort_order, created_at, updated_at
                 """
@@ -619,6 +631,12 @@ async def create_app_download_platform(
             },
         )
     ).fetchone()
+    if row is None:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="平台标识已存在，请使用编辑功能修改链接",
+        )
     await db.commit()
     return _row(row)
 
@@ -701,6 +719,135 @@ async def delete_app_download_platform(
         raise HTTPException(status_code=404, detail="app download platform not found")
     await db.commit()
     return {"status": "deleted", "id": pid}
+
+
+def _normalize_route_country(value: str) -> str:
+    from services.profile_intake import normalize_country_code
+
+    country = normalize_country_code(value)
+    if not country:
+        raise HTTPException(status_code=422, detail="country_code must be a valid ISO country")
+    return country
+
+
+def _normalize_route_download_url(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return _validate_http_url(value)
+
+
+def _normalize_route_platform(value: str) -> str:
+    from services.app_download_platforms import (
+        APP_DOWNLOAD_PLATFORM_KEYS,
+        normalize_app_download_platform,
+    )
+
+    key = normalize_app_download_platform(value)
+    if key not in APP_DOWNLOAD_PLATFORM_KEYS:
+        raise HTTPException(status_code=422, detail="platform_key must be platform_a ... platform_f")
+    return key
+
+
+@router.get("/app-download-country-routes")
+async def list_app_download_country_routes(
+    db: AsyncSession = Depends(get_db),
+    _operator: dict = Depends(require_operator),
+):
+    rows = (
+        await db.execute(
+            text(
+                """
+                SELECT r.country_code, r.platform_key, r.download_url,
+                       r.created_at, r.updated_at, p.display_name,
+                       p.download_url AS platform_download_url, p.is_active
+                FROM app_download_country_routes r
+                LEFT JOIN app_download_platforms p ON p.platform_key = r.platform_key
+                ORDER BY r.country_code
+                """
+            )
+        )
+    ).fetchall()
+    return {"items": [_row(row) for row in rows]}
+
+
+async def _upsert_country_route(
+    db: AsyncSession,
+    country_code: str,
+    platform_key: str,
+    download_url: str | None,
+) -> dict[str, Any]:
+    row = (
+        await db.execute(
+            text(
+                """
+                INSERT INTO app_download_country_routes (country_code, platform_key, download_url)
+                VALUES (:country_code, :platform_key, :download_url)
+                ON CONFLICT (country_code) DO UPDATE
+                SET platform_key = EXCLUDED.platform_key,
+                    download_url = EXCLUDED.download_url,
+                    updated_at = NOW()
+                RETURNING country_code, platform_key, download_url, created_at, updated_at
+                """
+            ),
+            {"country_code": country_code, "platform_key": platform_key, "download_url": download_url},
+        )
+    ).fetchone()
+    await db.commit()
+    return _row(row)
+
+
+@router.put("/app-download-country-routes/{country_code}")
+async def upsert_app_download_country_route(
+    country_code: str,
+    payload: AppDownloadCountryRouteUpdate,
+    db: AsyncSession = Depends(get_db),
+    _operator: dict = Depends(require_operator),
+):
+    return await _upsert_country_route(
+        db,
+        _normalize_route_country(country_code),
+        _normalize_route_platform(payload.platform_key),
+        _normalize_route_download_url(payload.download_url),
+    )
+
+
+@router.post("/app-download-country-routes", status_code=status.HTTP_201_CREATED)
+async def create_app_download_country_route(
+    payload: AppDownloadCountryRoutePayload,
+    db: AsyncSession = Depends(get_db),
+    _operator: dict = Depends(require_operator),
+):
+    return await _upsert_country_route(
+        db,
+        _normalize_route_country(payload.country_code),
+        _normalize_route_platform(payload.platform_key),
+        _normalize_route_download_url(payload.download_url),
+    )
+
+
+@router.delete("/app-download-country-routes/{country_code}")
+async def delete_app_download_country_route(
+    country_code: str,
+    db: AsyncSession = Depends(get_db),
+    _operator: dict = Depends(require_operator),
+):
+    code = _normalize_route_country(country_code)
+    row = (
+        await db.execute(
+            text(
+                """
+                DELETE FROM app_download_country_routes
+                WHERE country_code = :country_code
+                RETURNING country_code
+                """
+            ),
+            {"country_code": code},
+        )
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="country route not found")
+    await db.commit()
+    return {"status": "deleted", "country_code": code}
 
 
 @router.get("/persona-prompts")

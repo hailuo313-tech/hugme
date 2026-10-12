@@ -4,6 +4,8 @@
 from services.mtproto.account_routing import (
     ROUTE_KEY_PREFIX, ACCOUNT_KEY_PREFIX, assign_account_id,
     account_index_for_user, account_redis_prefix, route_redis_key,
+    get_mtproto_account_route, ensure_mtproto_account_route_for_reply,
+    pin_mtproto_account_route,
 )
 from services.mtproto.security_policy import (
     assert_safe_log_message, check_production_session_policy,

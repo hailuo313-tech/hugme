@@ -1,4 +1,4 @@
-﻿"""
+"""
 D2-2 / D2-2.1 / D3-2: LLM Orchestrator
 
 封装 ``generate_reply()``：从一条用户消息 → LLM 调用 → 返回回复字符串。
@@ -48,6 +48,8 @@ from typing import Any
 from loguru import logger
 
 from core.config import settings
+from services.ai_message_limit import enforce_ai_message_limit
+from services.ai_message_limit import AIMessageQuota
 from services.loneliness_updater import (
     infer_utterance_emotion_tags,
     refresh_loneliness_score,
@@ -56,16 +58,36 @@ from services.llm import chat as llm_chat
 from services.memory_consistency import filter_memory_hits_for_current_utterance
 from services.memory_retriever import retrieve as memory_retrieve
 from services.conversation_context import load_conversation_context
-from services.emotion_lexicon import detect_language_from_text, normalize_language
+from services.emotion_lexicon import (
+    detect_language_from_text,
+    language_name,
+    normalize_language,
+    resolve_reply_language,
+)
 from services.app_download_conversion import (
+    build_t1_sixth_message_link_decision,
     clear_last_app_download_decision,
+    decision_bypasses_link_cooldown,
     maybe_select_app_download_reply,
 )
+from services.link_cooldown import (
+    is_conversation_link_cooldown_active,
+    reply_already_has_link_material,
+    strip_links_from_reply,
+)
+from services.prompt_history import sanitize_history_message_for_prompt
 from services.prompt_builder import (
     DEFAULT_SYSTEM_PROMPT,
+    EARLY_REPLY_NO_QUESTION_LIMIT,
     LAYER_ORDER,
     PromptInput,
     build_prompt,
+)
+from services.product_i18n import app_link_nudge_text, is_in_person_meetup_request
+from services.reply_sanitize import is_generic_ai_refusal, is_meetup_refusal, sanitize_outbound_reply
+from services.user_request_intent import (
+    bypasses_link_cooldown,
+    should_skip_download_nudge,
 )
 
 
@@ -80,7 +102,142 @@ class LLMOrchestratorError(RuntimeError):
 # DEFAULT_SYSTEM_PROMPT 从 prompt_builder 重导出，保持老断言兼容：
 # = build_prompt(PromptInput(user_text="__placeholder__")).system_content
 
-DEFAULT_HISTORY_LIMIT = 10  # 历史消息默认条数（不含当前消息）
+DEFAULT_HISTORY_LIMIT = 50  # 历史消息默认条数（不含当前消息）
+
+_LLM_REFUSAL_RETRY_TEMPERATURE = 1.0
+_CJK_RE = re.compile(r"[\u4e00-\u9fff]")
+
+
+def _profile_country_code(profile_row: dict[str, Any] | None, quota: Any | None = None) -> str | None:
+    if isinstance(profile_row, dict):
+        raw = profile_row.get("country_code")
+        if raw:
+            return str(raw)
+        prefs = profile_row.get("preferences")
+        if isinstance(prefs, dict):
+            for key in ("country_code", "stated_country_code", "telegram_phone_country"):
+                value = prefs.get(key)
+                if value:
+                    return str(value)
+    quota_code = getattr(quota, "country_code", None) if quota is not None else None
+    if quota_code:
+        return str(quota_code)
+    return None
+
+
+def _reply_leaks_chinese(text_value: str | None, reply_language: str | None) -> bool:
+    if normalize_language(reply_language or "", default="en") == "zh":
+        return False
+    return bool(_CJK_RE.search(text_value or ""))
+
+
+def _finalize_reply(
+    text_value: str,
+    *,
+    user_text: str | None = None,
+    assistant_reply_number: int | None = None,
+    early_spoken_style: bool | None = None,
+) -> str:
+    apply_early = early_spoken_style
+    if apply_early is None:
+        apply_early = (
+            assistant_reply_number is not None
+            and assistant_reply_number <= EARLY_REPLY_NO_QUESTION_LIMIT
+        )
+    return sanitize_outbound_reply(
+        text_value,
+        user_text=user_text,
+        early_spoken_style=bool(apply_early),
+    )
+
+
+def _is_retryable_refusal(text_value: str | None, user_text: str | None = None) -> bool:
+    if is_generic_ai_refusal(text_value):
+        return True
+    return bool(is_in_person_meetup_request(user_text) and is_meetup_refusal(text_value))
+
+
+async def _chat_with_refusal_retry(
+    *,
+    messages: list[dict],
+    trace_id: str,
+    log: Any,
+    user_text: str | None = None,
+    reply_language: str | None = None,
+) -> Any:
+    """Call chat once; on generic / meetup refusal retry with warmer settings + alt provider."""
+    result = await llm_chat(
+        messages=messages,
+        trace_id=trace_id,
+        purpose="chat",
+        max_tokens=int(getattr(settings, "ORCHESTRATOR_CHAT_MAX_TOKENS", 160) or 160),
+    )
+    if result.error or not (result.content or "").strip():
+        return result
+    if _is_retryable_refusal(result.content, user_text):
+        primary_provider = (settings.LLM_CHAT_PROVIDER or settings.LLM_PROVIDER or "openrouter").strip().lower()
+        retry_provider = "openrouter" if primary_provider == "novita" else "novita"
+        log.bind(
+            primary_model=result.model_used,
+            retry_provider=retry_provider,
+            retry_temperature=_LLM_REFUSAL_RETRY_TEMPERATURE,
+        ).info("orchestrator.refusal.retry")
+
+        retry = await llm_chat(
+            messages=messages,
+            trace_id=trace_id,
+            purpose="chat",
+            temperature=_LLM_REFUSAL_RETRY_TEMPERATURE,
+            force_model=settings.LLM_FALLBACK_MODEL,
+            provider=retry_provider,
+            max_tokens=int(getattr(settings, "ORCHESTRATOR_CHAT_MAX_TOKENS", 160) or 160),
+        )
+        if retry.content and not retry.error and not _is_retryable_refusal(retry.content, user_text):
+            log.bind(model=retry.model_used).info("orchestrator.refusal.retry_ok")
+            result = retry
+        else:
+            log.bind(
+                retry_model=retry.model_used,
+                retry_error=retry.error,
+            ).warning("orchestrator.refusal.retry_failed")
+
+    if _reply_leaks_chinese(result.content, reply_language):
+        lang_name = language_name(reply_language)
+        lang_code = normalize_language(reply_language or "", default="en")
+        log.bind(reply_language=lang_code).info("orchestrator.language.retry")
+        lang_retry = await llm_chat(
+            messages=list(messages)
+            + [
+                {
+                    "role": "user",
+                    "content": (
+                        f"The previous draft used Chinese. Rewrite it entirely in {lang_name} "
+                        f"(language_code={lang_code}). Do not use any Chinese characters or Chinese punctuation. "
+                        "Keep the same meaning in 1-2 short spoken sentences."
+                    ),
+                }
+            ],
+            trace_id=trace_id,
+            purpose="chat",
+            temperature=_LLM_REFUSAL_RETRY_TEMPERATURE,
+            max_tokens=int(getattr(settings, "ORCHESTRATOR_CHAT_MAX_TOKENS", 160) or 160),
+        )
+        if (
+            lang_retry.content
+            and not lang_retry.error
+            and not _reply_leaks_chinese(lang_retry.content, reply_language)
+            and not _is_retryable_refusal(lang_retry.content, user_text)
+        ):
+            log.bind(model=lang_retry.model_used, reply_language=lang_code).info(
+                "orchestrator.language.retry_ok"
+            )
+            return lang_retry
+        log.bind(
+            retry_model=lang_retry.model_used,
+            retry_error=lang_retry.error,
+            reply_language=lang_code,
+        ).warning("orchestrator.language.retry_failed")
+    return result
 
 
 # ── 公开入口 ──────────────────────────────────────────
@@ -125,40 +282,105 @@ async def generate_reply(
     log.info("orchestrator.dispatch")
     clear_last_app_download_decision()
 
+    quota: AIMessageQuota | None = None
     if db is not None:
-        from services.crisis_intervention import (
-            apply_crisis_protocol,
-            detect_crisis_in_text,
+        quota = await enforce_ai_message_limit(
+            db,
+            user_id=user_id,
+            trace_id=trace_id,
         )
-
-        if detect_crisis_in_text(user_text):
-            crisis = await apply_crisis_protocol(
-                db,
-                user_id=user_id,
-                conversation_id=conversation_id,
-                user_text=user_text,
-                trigger_message_id=trigger_message_id,
-                trace_id=trace_id,
-            )
-            log.bind(
-                risk_event_id=crisis.risk_event_id,
-                handoff_task_id=crisis.handoff_task_id,
-            ).info("orchestrator.crisis.short_circuit")
-            return crisis.safety_reply
 
     started_at = time.time()
 
     history: list[dict[str, str]] = []
+    context_load_failed = False
     if redis is not None and history_limit > 0:
-        history = await _load_recent_context(
+        history, context_load_failed = await _load_recent_context(
             redis=redis,
             user_id=user_id,
             conversation_id=conversation_id,
             history_limit=history_limit,
             log=log,
         )
+        if context_load_failed:
+            try:
+                from services.business_metrics import business_metrics
+
+                business_metrics.record_orchestrator_context_load(success=False)
+            except Exception:
+                pass
+            log.bind(history_count=0).warning("orchestrator.context.load_failed_active")
+        else:
+            try:
+                from services.business_metrics import business_metrics
+
+                business_metrics.record_orchestrator_context_load(success=True)
+            except Exception:
+                pass
+            if history:
+                log.bind(history_count=len(history)).info("orchestrator.context.loaded")
 
     character_row, profile_row = await _load_db_context(db, user_id, conversation_id, log)
+    if db is not None and quota is not None and quota.is_sixth_t1_slot:
+        sixth = await build_t1_sixth_message_link_decision(
+            db=db,
+            user_id=str(user_id),
+            conversation_id=str(conversation_id),
+            user_text=user_text,
+            profile_row=profile_row if isinstance(profile_row, dict) else None,
+            character_row=character_row if isinstance(character_row, dict) else None,
+            trigger_message_id=trigger_message_id,
+            trace_id=trace_id,
+        )
+        if sixth is not None:
+            log.bind(
+                country_code=quota.country_code,
+                sent_count=quota.sent_count,
+                scene_step=sixth.scene_step,
+            ).info("orchestrator.t1_sixth_link")
+            return _finalize_reply(sixth.content, user_text=user_text)
+    recent_user_texts = [
+        str(item.get("content") or "")
+        for item in reversed(history)
+        if str(item.get("role") or item.get("sender_type") or "").lower() in {"user", "human"}
+        and str(item.get("content") or "").strip()
+        and str(item.get("content") or "").strip() != user_text.strip()
+    ][:5]
+    stored_language = None
+    if isinstance(profile_row, dict):
+        stored_language = (
+            profile_row.get("language")
+            or profile_row.get("user_language")
+            or profile_row.get("default_language")
+        )
+    reply_language = resolve_reply_language(
+        user_text,
+        recent_user_texts=recent_user_texts,
+        profile_language=str(stored_language) if stored_language else None,
+        country_code=_profile_country_code(profile_row, quota),
+        default="en",
+    )
+
+    if db is not None:
+        try:
+            from services.post_inbound_video_expert_gate import (
+                block_post_inbound_video_auto_reply,
+            )
+
+            if await block_post_inbound_video_auto_reply(
+                db,
+                user_id=str(user_id),
+                conversation_id=str(conversation_id),
+                trace_id=trace_id,
+            ):
+                log.info("orchestrator.post_inbound_video_expert_blocked")
+                raise LLMOrchestratorError("post_inbound_video_expert_only")
+        except LLMOrchestratorError:
+            raise
+        except Exception as exc:  # pragma: no cover
+            log.bind(error_type=type(exc).__name__).warning(
+                "orchestrator.post_inbound_video_expert_gate_failed"
+            )
 
     classified_intent: str | None = None
     if user_text.strip():
@@ -216,6 +438,10 @@ async def generate_reply(
                 log.bind(error_type=type(exc).__name__).warning(
                     "orchestrator.policy.exception"
                 )
+
+        if getattr(settings, "VIDEO_REQUEST_OPERATOR_HANDOFF_ENABLED", True):
+            # Live video-call reviews are queued in mtproto auto_reply where chat/account exist.
+            pass
 
         # REL-01：S0–S4 自动升降级（S5 不改；成功后 profile_row 供当轮 L4 使用）
         if settings.REL_STAGE_AUTO_ENABLED:
@@ -286,6 +512,29 @@ async def generate_reply(
         except Exception as exc:  # pragma: no cover
             log.bind(error_type=type(exc).__name__).warning("orchestrator.s5.load_failed")
 
+    link_cooldown_active = False
+    if db is not None:
+        link_cooldown_active = await is_conversation_link_cooldown_active(
+            db,
+            conversation_id=conversation_id,
+        )
+
+    from services.product_i18n import (
+        inbound_call_redirect_reply,
+        is_outbound_call_request,
+    )
+    from services.video_request_handoff import is_live_video_call_request
+
+    if is_outbound_call_request(user_text):
+        clear_last_app_download_decision()
+        log.bind(video_intent="outbound_redirect").info("orchestrator.outbound_call.redirect")
+        return _finalize_reply(inbound_call_redirect_reply(user_text), user_text=user_text)
+
+    if is_live_video_call_request(user_text):
+        clear_last_app_download_decision()
+        log.bind(video_intent="live_call_redirect").info("orchestrator.live_video_call.redirect")
+        return _finalize_reply(inbound_call_redirect_reply(user_text), user_text=user_text)
+
     decision = await maybe_select_app_download_reply(
         db=db,
         user_id=user_id,
@@ -298,6 +547,12 @@ async def generate_reply(
         trace_id=trace_id,
         classified_intent=classified_intent,
     )
+    if link_cooldown_active and not bypasses_link_cooldown(user_text):
+        if not decision_bypasses_link_cooldown(decision):
+            decision = None
+            clear_last_app_download_decision()
+        else:
+            log.info("orchestrator.link_cooldown.early_link_mandate_bypassed")
     if decision is not None:
         log.bind(
             result="success",
@@ -306,7 +561,7 @@ async def generate_reply(
             script_hit_id=decision.script_hit_id,
         ).info("orchestrator.app_download_conversion.nudge_ready")
         if getattr(decision, "intent", None) == "asset_keyword_request":
-            return _asset_keyword_acknowledgement(user_text, decision)
+            return _finalize_reply(_asset_keyword_acknowledgement(user_text, decision), user_text=user_text)
 
     prompt = build_prompt(
         PromptInput(
@@ -317,6 +572,8 @@ async def generate_reply(
             history=history,
             s5_phase=s5_phase_kw,
             current_assistant_reply_number=current_assistant_reply_number,
+            context_load_failed=context_load_failed,
+            reply_language=reply_language,
         )
     )
     messages = prompt.messages
@@ -335,10 +592,18 @@ async def generate_reply(
         current_assistant_reply_number=current_assistant_reply_number,
         loneliness_score=loneliness_score_log,
         loneliness_utterance_tags=loneliness_utterance_tags,
+        context_load_failed=context_load_failed,
+        reply_language=reply_language,
     ).info("orchestrator.prompt.assembled")
 
     try:
-        result = await llm_chat(messages=messages, trace_id=trace_id)
+        result = await _chat_with_refusal_retry(
+            messages=messages,
+            trace_id=trace_id,
+            log=log,
+            user_text=user_text,
+            reply_language=reply_language,
+        )
     except Exception as exc:  # pragma: no cover - llm.chat 当前自吞异常，仅防御
         duration_ms = round((time.time() - started_at) * 1000, 1)
         log.bind(
@@ -378,8 +643,29 @@ async def generate_reply(
         history_count=len(history),
     ).info("orchestrator.reply")
 
-    reply_text = _repair_short_preference_interview_followup(user_text, result.content)
-    return _append_conservative_download_nudge(reply_text, decision)
+    reply_text = _finalize_reply(
+        _repair_short_preference_interview_followup(user_text, result.content),
+        user_text=user_text,
+        assistant_reply_number=current_assistant_reply_number,
+    )
+    if (
+        link_cooldown_active
+        and not bypasses_link_cooldown(user_text)
+        and not decision_bypasses_link_cooldown(decision)
+    ):
+        reply_text = strip_links_from_reply(reply_text)
+        log.info("orchestrator.link_cooldown.enforced")
+        return reply_text
+    return _finalize_reply(
+        _append_conservative_download_nudge(
+            reply_text,
+            decision,
+            user_text=user_text,
+            reply_language=reply_language,
+        ),
+        user_text=user_text,
+        early_spoken_style=False,
+    )
 
 
 # ── 内部 ──────────────────────────────────────────────
@@ -410,20 +696,25 @@ def _repair_short_preference_interview_followup(user_text: str, reply_text: str)
 def _append_conservative_download_nudge(
     reply_text: str,
     decision: Any | None,
+    *,
+    user_text: str = "",
+    reply_language: str | None = None,
 ) -> str:
     """方案 A：先保留 AI 对用户问题的自然回答，再轻轻追加下载入口。"""
-    if decision is None:
+    if decision is None or should_skip_download_nudge(user_text):
         return reply_text
-    nudge = _conservative_download_nudge(decision)
+    nudge = _conservative_download_nudge(decision, reply_language=reply_language, user_text=user_text)
     if not nudge:
-        return reply_text
-    base = (reply_text or "").strip()
+        return (reply_text or "").strip()
+    base = strip_links_from_reply((reply_text or "").strip())
     if not base:
         return nudge
+    if reply_already_has_link_material(base):
+        return base
     url = _first_url(nudge)
     if url and url in base:
         return base
-    return f"{base}\n\n{nudge}"
+    return f"{base} {nudge}"
 
 
 def _asset_keyword_acknowledgement(user_text: str, decision: Any) -> str:
@@ -476,29 +767,16 @@ def _asset_keyword_acknowledgement(user_text: str, decision: Any) -> str:
     return translations.get(lang, {}).get(key, en)
 
 
-def _conservative_download_nudge(decision: Any) -> str | None:
+def _conservative_download_nudge(
+    decision: Any,
+    *,
+    reply_language: str | None = None,
+    user_text: str = "",
+) -> str | None:
     url = _first_url(getattr(decision, "content", "") or "")
     if not url:
         return None
-    category = str(getattr(decision, "category_key", "") or "").strip()
-    if category == "app_download_direct_cta":
-        return (
-            "Let's chat on my private app instead, way safer than here. "
-            f"Grab it real quick and text me: {url} (Enter code: c5a8we)"
-        )
-    if category == "app_link_clicked_followup":
-        return f"If you still want to continue somewhere more private, the link is here: {url}"
-    if category == "app_download_objection":
-        return (
-            "I only text close friends on my private encrypted app because TG keeps "
-            f"censoring our topics anyway. Takes like 15 seconds to set up, come over: {url}"
-        )
-    if category == "trust_reassurance":
-        return f"If you decide you want to try the private app, you can use this link: {url}"
-    return (
-        "Btw, my TG is lagging crazy right now and missing texts. Drop me a line "
-        f"on my main app here, it's free and way faster: {url} (Use code: c5a8we)"
-    )
+    return app_link_nudge_text(url, reply_language, user_text=user_text)
 
 
 def _first_url(text_value: str) -> str | None:
@@ -647,10 +925,10 @@ async def _load_recent_context(
     conversation_id: str,
     history_limit: int,
     log,
-) -> list[dict[str, str]]:
+) -> tuple[list[dict[str, str]], bool]:
     """读 Redis 最近历史消息，优先使用 P1-19 ``conv:{user_id}``。
 
-    新路径：``conv:{user_id}`` 用 ``RPUSH`` 写入，保留最近 50 轮（100 条）。
+    新路径：``conv:{user_id}`` 用 ``RPUSH`` 写入，保留最近 200 条上下文消息。
     兼容路径：``ctx:{conv_id}`` 用 ``RPUSH`` 写入，最新一条在末尾。每项是 JSON 字符串
     形如 ``{"role": "...", "content": "...", "msg_id": "...", "ts": 123}``。
 
@@ -659,7 +937,9 @@ async def _load_recent_context(
     ``[{role, content}, ...]``，最多 ``history_limit`` 条。
 
     任何读取/解析失败都被吞掉，仅 warning，返回空列表。
+    第二个返回值：是否发生 Redis/解析错误（空历史但无异常时为 False）。
     """
+    load_failed = False
     try:
         history = await load_conversation_context(
             redis,
@@ -668,8 +948,9 @@ async def _load_recent_context(
             drop_latest=True,
         )
         if history:
-            return history
+            return _sanitize_loaded_history(history, log), False
     except Exception as exc:
+        load_failed = True
         log.bind(error_type=type(exc).__name__).warning(
             "orchestrator.conv_context.load_failed"
         )
@@ -678,13 +959,14 @@ async def _load_recent_context(
     try:
         raw_items = await redis.lrange(key, -(history_limit + 1), -1)
     except Exception as exc:  # 网络抖动 / Redis down
+        load_failed = True
         log.bind(error_type=type(exc).__name__).warning(
             "orchestrator.context.load_failed"
         )
-        return []
+        return [], True
 
     if not raw_items:
-        return []
+        return [], load_failed
 
     # 丢最末一条（当前消息，已由调用方传入 user_text 显式拼）
     history_items = raw_items[:-1] if len(raw_items) > history_limit else raw_items[:-1]
@@ -709,7 +991,26 @@ async def _load_recent_context(
             continue
         parsed.append({"role": role, "content": content})
 
-    return parsed[-history_limit:]
+    return _sanitize_loaded_history(parsed[-history_limit:], log), load_failed
+
+
+def _sanitize_loaded_history(
+    history: list[dict[str, str]],
+    log,
+) -> list[dict[str, str]]:
+    sanitized: list[dict[str, str]] = []
+    dropped = 0
+    for item in history:
+        role = item.get("role") or ""
+        content = item.get("content") or ""
+        cleaned = sanitize_history_message_for_prompt(role, content)
+        if cleaned is None:
+            dropped += 1
+            continue
+        sanitized.append({"role": role, "content": cleaned})
+    if dropped:
+        log.bind(dropped_history_messages=dropped).info("orchestrator.history.sanitized")
+    return sanitized
 
 
 def _normalize_role(role: Any) -> str | None:

@@ -61,10 +61,14 @@ class TelegramAccountResponse(BaseModel):
     username: str | None
     user_id: int | None
     is_connected: bool
+    is_bot: bool = False
     last_connected_at: str | None
     last_error_at: str | None
     error_message: str | None
     reply_mode: str = "ai"
+    app_download_platform: str = "default"
+    api_credential_id: str | None = None
+    api_credential_name: str | None = None
 
 
 class TelegramAccountStatusResponse(BaseModel):
@@ -79,6 +83,12 @@ class TelegramAccountReplyModeRequest(BaseModel):
     """Request to switch an account between AI system and fixed replies."""
 
     reply_mode: str = Field(..., description="ai or fixed")
+
+
+class TelegramAccountAppDownloadPlatformRequest(BaseModel):
+    """Bind one reception account to an A-F download platform, or follow A as default."""
+
+    app_download_platform: str = Field(..., description="default or platform_a ... platform_f")
 
 
 class TelegramAccountAdminDisplayNameRequest(BaseModel):
@@ -410,7 +420,24 @@ async def verify_telegram_session_login(request: SessionLoginVerifyRequest):
         await client.disconnect()
 
         if request.auto_connect:
-            await telegram_account_manager.connect_account(account_id)
+            from services.telegram_command_gateway import submit_telegram_command
+
+            async def _legacy_auto_connect():
+                return await telegram_account_manager.connect_account(account_id)
+
+            gated = await submit_telegram_command(
+                command_type="connect_account",
+                account_id=str(account_id),
+                legacy_execute=_legacy_auto_connect,
+            )
+            if gated.accepted_not_sent or not gated.executed:
+                return SessionLoginVerifyResponse(
+                    account_id=str(account_id),
+                    phone=phone,
+                    status="accepted" if gated.accepted_not_sent else "disconnected",
+                    requires_password=False,
+                    message="账号已添加",
+                )
 
         return SessionLoginVerifyResponse(
             account_id=str(account_id),
@@ -452,7 +479,29 @@ async def connect_telegram_account(account_id: str):
     """
     try:
         account_uuid = UUID(account_id)
-        success = await telegram_account_manager.connect_account(account_uuid)
+        from services.telegram_command_gateway import submit_telegram_command
+
+        async def _legacy_connect():
+            return await telegram_account_manager.connect_account(account_uuid)
+
+        gated = await submit_telegram_command(
+            command_type="connect_account",
+            account_id=str(account_uuid),
+            legacy_execute=_legacy_connect,
+        )
+        if gated.accepted_not_sent:
+            return {
+                "account_id": account_id,
+                "status": "accepted",
+                "executed": False,
+                "command_id": gated.command_id,
+            }
+        if gated.reason == "telegram_control_not_on_this_process":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="telegram_control_not_on_this_process",
+            )
+        success = bool(gated.value)
 
         if success:
             account_status = await telegram_account_manager.get_account_status(account_uuid)
@@ -466,6 +515,8 @@ async def connect_telegram_account(account_id: str):
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Failed to connect account. Check error_message in account status.",
             )
+    except HTTPException:
+        raise
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -484,7 +535,29 @@ async def disconnect_telegram_account(account_id: str):
     """Disconnect a Telegram account."""
     try:
         account_uuid = UUID(account_id)
-        success = await telegram_account_manager.disconnect_account(account_uuid)
+        from services.telegram_command_gateway import submit_telegram_command
+
+        async def _legacy_disconnect():
+            return await telegram_account_manager.disconnect_account(account_uuid)
+
+        gated = await submit_telegram_command(
+            command_type="disconnect_account",
+            account_id=str(account_uuid),
+            legacy_execute=_legacy_disconnect,
+        )
+        if gated.accepted_not_sent:
+            return {
+                "account_id": account_id,
+                "status": "accepted",
+                "executed": False,
+                "command_id": gated.command_id,
+            }
+        if gated.reason == "telegram_control_not_on_this_process":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="telegram_control_not_on_this_process",
+            )
+        success = bool(gated.value)
 
         if success:
             return {
@@ -497,6 +570,8 @@ async def disconnect_telegram_account(account_id: str):
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Failed to disconnect account",
             )
+    except HTTPException:
+        raise
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -515,18 +590,61 @@ async def delete_telegram_account(account_id: str):
     """Permanently delete a Telegram account."""
     try:
         account_uuid = UUID(account_id)
-        success = await telegram_account_manager.delete_account(account_uuid)
+        from services.telegram_command_gateway import submit_telegram_command
+
+        async def _legacy_delete():
+            return await telegram_account_manager.delete_account(account_uuid)
+
+        gated = await submit_telegram_command(
+            command_type="delete_account",
+            account_id=str(account_uuid),
+            legacy_execute=_legacy_delete,
+        )
+        if gated.accepted_not_sent:
+            if not gated.command_id:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="删除任务未能提交，请稍后重试。",
+                )
+            from services.telegram_command_gateway import wait_for_runtime_command
+
+            gated = await wait_for_runtime_command(gated.command_id, timeout_seconds=20)
+        if gated.reason == "telegram_control_not_on_this_process":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="telegram_control_not_on_this_process",
+            )
+        success = False
+        if gated.executed:
+            if isinstance(gated.value, dict):
+                success = bool(gated.value.get("executed", gated.status == "succeeded"))
+            else:
+                success = bool(gated.value)
+        elif gated.status == "succeeded":
+            success = True
 
         if success:
             return {
                 "account_id": account_id,
                 "status": "deleted",
+                "executed": True,
                 "message": "Account deleted successfully",
             }
 
+        reason = str(gated.reason or "")
+        if reason in {"account_not_found", "Account not found"}:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Account not found",
+            )
+        detail_map = {
+            "account_has_dependencies": "账号仍有关联任务，无法删除。请稍后重试或联系运维清理关联数据。",
+            "runtime_command_timeout": "删除超时，请刷新列表确认是否已删除。",
+            "executor_not_wired:delete_account": "删除执行器未就绪，请稍后重试。",
+        }
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Account not found",
+            status_code=status.HTTP_409_CONFLICT if reason == "account_has_dependencies" else status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=detail_map.get(reason, "删除账号失败，请稍后重试。"),
         )
     except ValueError:
         raise HTTPException(
@@ -651,6 +769,55 @@ async def update_telegram_account_reply_mode(
         )
 
 
+@router.patch(
+    "/api/v1/telegram/accounts/{account_id}/app-download-platform",
+    response_model=TelegramAccountResponse,
+)
+async def update_telegram_account_app_download_platform(
+    account_id: str,
+    request: TelegramAccountAppDownloadPlatformRequest,
+    _operator=Depends(require_operator),
+):
+    """Bind one Telegram account to a third-party download platform."""
+    from services.app_download_platforms import (
+        APP_DOWNLOAD_PLATFORM_KEYS,
+        normalize_app_download_platform,
+    )
+
+    raw = str(request.app_download_platform or "").strip().lower()
+    if raw not in {"default", *APP_DOWNLOAD_PLATFORM_KEYS}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="app_download_platform must be default or platform_a ... platform_f",
+        )
+    normalized = normalize_app_download_platform(raw)
+    try:
+        account_uuid = UUID(account_id)
+        account_status = await telegram_account_manager.update_app_download_platform(
+            account_uuid,
+            normalized,
+        )
+        if not account_status:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Account not found",
+            )
+        return TelegramAccountResponse(**account_status)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid account ID format",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update Telegram account download platform {account_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="修改下载平台失败，请稍后重试。",
+        )
+
+
 @router.get("/api/v1/telegram/accounts", response_model=TelegramAccountStatusResponse)
 async def get_all_telegram_accounts():
     """Get status of all Telegram accounts."""
@@ -675,7 +842,29 @@ async def get_all_telegram_accounts():
 async def sync_telegram_account_profiles():
     """Refresh connected Telegram account profiles from live sessions."""
     try:
-        result = await telegram_account_manager.sync_connected_account_profiles()
+        from services.telegram_command_gateway import submit_telegram_command
+
+        async def _legacy_sync():
+            return await telegram_account_manager.sync_connected_account_profiles()
+
+        gated = await submit_telegram_command(
+            command_type="sync_profiles",
+            account_id=None,
+            legacy_execute=_legacy_sync,
+        )
+        if gated.accepted_not_sent:
+            return {
+                "message": "Telegram account profile sync accepted",
+                "status": "accepted",
+                "executed": False,
+                "command_id": gated.command_id,
+            }
+        if not gated.executed:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=gated.reason or "telegram_gateway_rejected",
+            )
+        result = gated.value or {}
         return {
             "message": "Telegram account profiles synced",
             **result,
@@ -692,7 +881,28 @@ async def sync_telegram_account_profiles():
 async def connect_all_telegram_accounts():
     """Connect all active Telegram accounts."""
     try:
-        results = await telegram_account_manager.connect_all_active_accounts()
+        from services.telegram_command_gateway import submit_telegram_command
+
+        async def _legacy_connect_all():
+            return await telegram_account_manager.connect_all_active_accounts()
+
+        gated = await submit_telegram_command(
+            command_type="connect_account",
+            account_id=None,
+            legacy_execute=_legacy_connect_all,
+        )
+        if gated.accepted_not_sent:
+            return {
+                "status": "accepted",
+                "executed": False,
+                "command_id": gated.command_id,
+            }
+        if not gated.executed:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=gated.reason or "telegram_gateway_rejected",
+            )
+        results = gated.value or {}
         connected_count = sum(1 for success in results.values() if success)
 
         return {
@@ -713,7 +923,27 @@ async def connect_all_telegram_accounts():
 async def disconnect_all_telegram_accounts():
     """Disconnect all Telegram accounts."""
     try:
-        await telegram_account_manager.disconnect_all_accounts()
+        from services.telegram_command_gateway import submit_telegram_command
+
+        async def _legacy_disconnect_all():
+            return await telegram_account_manager.disconnect_all_accounts()
+
+        gated = await submit_telegram_command(
+            command_type="disconnect_account",
+            account_id=None,
+            legacy_execute=_legacy_disconnect_all,
+        )
+        if gated.accepted_not_sent:
+            return {
+                "status": "accepted",
+                "executed": False,
+                "command_id": gated.command_id,
+            }
+        if not gated.executed:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=gated.reason or "telegram_gateway_rejected",
+            )
         return {
             "message": "All accounts disconnected successfully",
         }

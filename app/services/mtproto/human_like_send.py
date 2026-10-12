@@ -122,4 +122,18 @@ async def send_human_like_message(
     except Exception as exc:
         logger.bind(peer=str(peer), error_type=type(exc).__name__).warning("mtproto.typing_failed")
 
-    return await client.send_message(peer, text, **send_kwargs)
+    last_error: Exception | None = None
+    for attempt in range(1, 4):
+        try:
+            return await client.send_message(peer, text, **send_kwargs)
+        except Exception as exc:
+            last_error = exc
+            logger.bind(
+                peer=str(peer),
+                attempt=attempt,
+                error_type=type(exc).__name__,
+            ).warning("mtproto.send.transient_retry")
+            if attempt < 3:
+                await sleep(float(attempt))
+    assert last_error is not None
+    raise last_error

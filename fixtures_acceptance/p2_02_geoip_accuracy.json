@@ -1,0 +1,27 @@
+{
+  "task": "P2-02",
+  "description": "Fixed GeoIP regression sample set. CI uses cached expected answers so the accuracy gate is deterministic and does not call external GeoIP providers.",
+  "min_accuracy": 0.95,
+  "samples": [
+    {"ip": "8.8.8.8", "expected_country_code": "US", "country_name": "United States"},
+    {"ip": "8.8.4.4", "expected_country_code": "US", "country_name": "United States"},
+    {"ip": "1.1.1.1", "expected_country_code": "AU", "country_name": "Australia"},
+    {"ip": "1.0.0.1", "expected_country_code": "AU", "country_name": "Australia"},
+    {"ip": "9.9.9.9", "expected_country_code": "US", "country_name": "United States"},
+    {"ip": "208.67.222.222", "expected_country_code": "US", "country_name": "United States"},
+    {"ip": "208.67.220.220", "expected_country_code": "US", "country_name": "United States"},
+    {"ip": "80.80.80.80", "expected_country_code": "NL", "country_name": "Netherlands"},
+    {"ip": "80.80.81.81", "expected_country_code": "NL", "country_name": "Netherlands"},
+    {"ip": "77.88.8.8", "expected_country_code": "RU", "country_name": "Russia"},
+    {"ip": "77.88.8.1", "expected_country_code": "RU", "country_name": "Russia"},
+    {"ip": "114.114.114.114", "expected_country_code": "CN", "country_name": "China"},
+    {"ip": "223.5.5.5", "expected_country_code": "CN", "country_name": "China"},
+    {"ip": "223.6.6.6", "expected_country_code": "CN", "country_name": "China"},
+    {"ip": "168.95.1.1", "expected_country_code": "TW", "country_name": "Taiwan"},
+    {"ip": "168.95.192.1", "expected_country_code": "TW", "country_name": "Taiwan"},
+    {"ip": "210.130.1.1", "expected_country_code": "JP", "country_name": "Japan"},
+    {"ip": "101.6.6.6", "expected_country_code": "CN", "country_name": "China"},
+    {"ip": "180.76.76.76", "expected_country_code": "CN", "country_name": "China"},
+    {"ip": "64.6.64.6", "expected_country_code": "US", "country_name": "United States"}
+  ]
+}

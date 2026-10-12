@@ -1,5 +1,5 @@
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from core.database import get_db
@@ -120,3 +120,59 @@ async def retrieve_memories(
             for h in result.hits
         ],
     }
+
+
+@router.get('/memories/resolve-user')
+async def resolve_memory_user(
+    query: str = Query(..., min_length=1, max_length=200),
+    db: AsyncSession = Depends(get_db),
+    _operator: dict = Depends(require_operator),
+):
+    trimmed = query.strip()
+    if not trimmed:
+        return dict(user=None, items=[])
+    tg_exact = trimmed
+    if trimmed.isdigit():
+        tg_exact = 'tg_' + trimmed
+    like = '%' + trimmed.lower() + '%'
+    sql = '''
+    SELECT
+        u.id::text AS user_id,
+        u.nickname,
+        u.external_id,
+        COUNT(m.id) FILTER (WHERE m.is_active = true) AS memory_count
+    FROM users u
+    LEFT JOIN memories m ON m.user_id = u.id
+    WHERE
+        u.id::text = :exact
+        OR u.external_id = :exact
+        OR u.external_id = :tg_exact
+        OR LOWER(COALESCE(u.nickname, '')) LIKE :like
+        OR LOWER(COALESCE(u.external_id, '')) LIKE :like
+    GROUP BY u.id, u.nickname, u.external_id, u.updated_at
+    ORDER BY
+        CASE
+            WHEN u.id::text = :exact THEN 0
+            WHEN u.external_id = :exact THEN 1
+            WHEN u.external_id = :tg_exact THEN 2
+            ELSE 3
+        END,
+        COUNT(m.id) FILTER (WHERE m.is_active = true) DESC,
+        u.updated_at DESC NULLS LAST
+    LIMIT 1
+    '''
+    result = await db.execute(
+        text(sql),
+        dict(exact=trimmed, tg_exact=tg_exact, like=like),
+    )
+    row = result.fetchone()
+    if not row:
+        return dict(user=None, items=[])
+    data = row._mapping
+    user = dict(
+        user_id=data['user_id'],
+        nickname=data['nickname'],
+        external_id=data['external_id'],
+        memory_count=int(data['memory_count'] or 0),
+    )
+    return dict(user=user, items=[user])

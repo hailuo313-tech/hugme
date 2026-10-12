@@ -1,0 +1,78 @@
+{
+  "version": 2,
+  "task": "C-12",
+  "requirement": "nightly-e2e-ci workflow green for 3 consecutive scheduled runs",
+  "workflow": ".github/workflows/nightly-e2e-ci.yml",
+  "stability_days": 3,
+  "stability_met": false,
+  "stability_met_at": null,
+  "runs": [],
+  "manual_dispatch_history": [
+    {
+      "date": "2026-05-20",
+      "run_id": 26159926313,
+      "conclusion": "success",
+      "trigger": "workflow_dispatch",
+      "url": "https://github.com/hailuo313-tech/hugme/actions/runs/26159926313",
+      "jobs": ["c12-audit", "e2e-smoke"],
+      "note": "manual dispatch smoke; does not count toward scheduled-night acceptance"
+    },
+    {
+      "date": "2026-05-20",
+      "run_id": 26160200408,
+      "conclusion": "success",
+      "trigger": "workflow_dispatch",
+      "url": "https://github.com/hailuo313-tech/hugme/actions/runs/26160200408",
+      "jobs": ["c12-audit", "e2e-smoke"],
+      "note": "manual dispatch smoke; does not count toward scheduled-night acceptance"
+    },
+    {
+      "date": "2026-05-20",
+      "run_id": 26160289620,
+      "conclusion": "success",
+      "trigger": "workflow_dispatch",
+      "url": "https://github.com/hailuo313-tech/hugme/actions/runs/26160289620",
+      "jobs": ["c12-audit", "e2e-smoke"],
+      "note": "manual dispatch smoke; does not count toward scheduled-night acceptance"
+    }
+  ],
+  "repair_history": [
+    {
+      "run_id": 26159248831,
+      "conclusion": "failure",
+      "trigger": "workflow_dispatch",
+      "url": "https://github.com/hailuo313-tech/hugme/actions/runs/26159248831",
+      "reason": "c12-audit: run.sh missing POST /api/v1/handoff needle"
+    },
+    {
+      "run_id": 26159312524,
+      "conclusion": "failure",
+      "trigger": "workflow_dispatch",
+      "url": "https://github.com/hailuo313-tech/hugme/actions/runs/26159312524",
+      "reason": "e2e-smoke: API ModuleNotFoundError app (geoip import)"
+    },
+    {
+      "run_id": 26159663929,
+      "conclusion": "failure",
+      "trigger": "workflow_dispatch",
+      "url": "https://github.com/hailuo313-tech/hugme/actions/runs/26159663929",
+      "reason": "e2e-smoke: handoff lock without operator JWT"
+    },
+    {
+      "run_id": 26159811443,
+      "conclusion": "failure",
+      "trigger": "workflow_dispatch",
+      "url": "https://github.com/hailuo313-tech/hugme/actions/runs/26159811443",
+      "reason": "e2e-smoke: handoff reply needs Telegram (skipped in smoke thereafter)"
+    }
+  ],
+  "open_issue": {
+    "id": "C12-SCHED-01",
+    "severity": "P1",
+    "status": "waiting_for_scheduled_runs",
+    "required_next_step": "Record three consecutive nightly-e2e-ci runs with trigger=schedule, conclusion=success, and distinct UTC dates.",
+    "checked_at": "2026-05-21",
+    "checked_source": "gh run list --workflow nightly-e2e-ci.yml --limit 30"
+  },
+  "notes": "The 2026-05-20 workflow_dispatch successes prove the workflow can run, but they are not scheduled nightly evidence. C-12 remains open until three consecutive scheduled nights pass."
+}

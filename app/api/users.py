@@ -5,8 +5,12 @@ from sqlalchemy import text
 from api.admin import require_operator
 from core.database import get_db
 from pydantic import BaseModel
-from typing import Optional
+import json
+from datetime import date
+from typing import Any, Mapping, Optional
 import uuid
+
+from services.profile_intake import age_from_preferences, normalize_country_code
 
 router = APIRouter()
 
@@ -30,6 +34,124 @@ class RiskEventCreate(BaseModel):
 
 class UserFreezeRequest(BaseModel):
     reason: Optional[str] = None
+
+
+def _as_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _first_text(*values: Any) -> str | None:
+    for value in values:
+        if value is None:
+            continue
+        text_value = str(value).strip()
+        if text_value:
+            return text_value
+    return None
+
+
+def _profile_text(preferences: Mapping[str, Any], *keys: str) -> str | None:
+    return _first_text(*(preferences.get(key) for key in keys))
+
+
+def _profile_country(profile_data: Mapping[str, Any], preferences: Mapping[str, Any]) -> str | None:
+    candidates = (
+        profile_data.get("country_code"),
+        preferences.get("country_code"),
+        preferences.get("country"),
+        preferences.get("geo_country"),
+        preferences.get("ip_country"),
+        preferences.get("detected_country_code"),
+        preferences.get("detected_country"),
+        preferences.get("inferred_country_code"),
+        preferences.get("country_from_city"),
+        preferences.get("work_country"),
+        preferences.get("living_country"),
+    )
+    for candidate in candidates:
+        code = normalize_country_code(candidate)
+        if code:
+            return code
+    return None
+
+
+def _profile_city(preferences: Mapping[str, Any]) -> str | None:
+    return _profile_text(
+        preferences,
+        "current_city",
+        "city",
+        "user_city",
+        "location",
+        "work_city",
+        "living_city",
+        "hometown",
+        "birth_city",
+        "profile_city",
+        "detected_city",
+    )
+
+
+def _profile_age(preferences: Mapping[str, Any]) -> int | None:
+    age = age_from_preferences(preferences)
+    if age is not None:
+        return age
+    for key in ("birth_year", "born_year", "year_of_birth"):
+        raw_year = preferences.get(key)
+        try:
+            year = int(str(raw_year).strip())
+        except (TypeError, ValueError):
+            continue
+        computed = date.today().year - year
+        if 18 <= computed <= 100:
+            return computed
+    return None
+
+
+def _as_int(value: Any, default: int = 0) -> int:
+    if value is None or isinstance(value, bool):
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _normalize_profile_export(profile_row: Any) -> dict[str, Any] | None:
+    if not profile_row:
+        return None
+    profile_data = dict(profile_row._mapping)
+    preferences = _as_dict(profile_data.get("preferences"))
+    country_code = _profile_country(profile_data, preferences)
+    city = _profile_city(preferences)
+    age = _profile_age(preferences)
+    relationship_stage = _first_text(
+        profile_data.get("relationship_stage"),
+        preferences.get("relationship_stage"),
+        preferences.get("stage"),
+    ) or "S0"
+    vip_level = _as_int(
+        profile_data.get("vip_level")
+        if profile_data.get("vip_level") is not None
+        else preferences.get("vip_level"),
+        default=0,
+    )
+
+    profile_data["preferences"] = preferences
+    profile_data["country_code"] = country_code
+    profile_data["city"] = city
+    profile_data["age"] = age
+    profile_data["relationship_stage"] = relationship_stage
+    profile_data["vip_level"] = vip_level
+    profile_data["user_level"] = _first_text(profile_data.get("user_level"), preferences.get("user_level"))
+    return profile_data
 
 
 def _validate_uuid(value: str, field_name: str) -> str:
@@ -132,6 +254,20 @@ async def freeze_user(
         ),
         {"uid": uid, "reason": f"user_frozen:{reason[:100]}"},
     )
+    schedule_res = await db.execute(
+        text(
+            """
+            UPDATE message_schedules
+            SET status = 'failed',
+                failure_reason = :reason,
+                updated_at = NOW()
+            WHERE user_id = :uid
+              AND status IN ('pending', 'scheduled', 'sending')
+            RETURNING id
+            """
+        ),
+        {"uid": uid, "reason": f"user_frozen:{reason[:100]}"},
+    )
     await db.commit()
 
     return {
@@ -139,6 +275,7 @@ async def freeze_user(
         "user_id": uid,
         "conversations_frozen": len(conv_res.fetchall()),
         "notifications_cancelled": len(notification_res.fetchall()),
+        "schedules_cancelled": len(schedule_res.fetchall()),
     }
 
 @router.get("/{user_id}/data-export")
@@ -146,10 +283,31 @@ async def data_export(user_id: str, db: AsyncSession = Depends(get_db)):
     user = (await db.execute(text("SELECT * FROM users WHERE id=:uid"), {"uid": user_id})).fetchone()
     profile = (await db.execute(text("SELECT * FROM user_profiles WHERE user_id=:uid"), {"uid": user_id})).fetchone()
     memories = (await db.execute(text("SELECT id,memory_type,content,importance_score,created_at FROM memories WHERE user_id=:uid AND is_active=true"), {"uid": user_id})).fetchall()
+    recent_messages = (
+        await db.execute(
+            text(
+                """
+                SELECT
+                    m.id::text AS id,
+                    m.sender_type,
+                    m.content,
+                    m.created_at
+                FROM messages m
+                JOIN conversations c ON c.id = m.conversation_id
+                WHERE c.user_id = :uid
+                  AND COALESCE(m.content, '') <> ''
+                ORDER BY m.created_at DESC
+                LIMIT 30
+                """
+            ),
+            {"uid": user_id},
+        )
+    ).fetchall()
     return {
         "user": dict(user._mapping) if user else None,
-        "profile": dict(profile._mapping) if profile else None,
+        "profile": _normalize_profile_export(profile),
         "memories": [dict(m._mapping) for m in memories],
+        "recent_messages": [dict(m._mapping) for m in recent_messages],
     }
 
 @router.post("/{user_id}/risk-events", status_code=201)

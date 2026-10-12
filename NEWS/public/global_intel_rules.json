@@ -1,0 +1,879 @@
+{
+  "version": 4,
+  "target_total": 270,
+  "max_age_hours": 48,
+  "max_items_per_feed": 3,
+  "require_key_points": true,
+  "categories": [
+    {
+      "name": "Tech",
+      "quota": 30,
+      "region": "全球",
+      "match_keywords": [
+        "tech",
+        "software",
+        "ai",
+        "artificial intelligence",
+        "startup",
+        "chip",
+        "cyber",
+        "data",
+        "robot",
+        "developer",
+        "app",
+        "smartphone",
+        "cloud",
+        "open source",
+        "machine learning",
+        "semiconductor",
+        "gadget"
+      ],
+      "feeds": [
+        {
+          "title": "TechCrunch",
+          "url": "https://techcrunch.com/feed/",
+          "trust_feed": true
+        },
+        {
+          "title": "The Verge",
+          "url": "https://www.theverge.com/rss/index.xml",
+          "trust_feed": true
+        },
+        {
+          "title": "Ars Technica",
+          "url": "https://feeds.arstechnica.com/arstechnica/index",
+          "trust_feed": true
+        },
+        {
+          "title": "Hacker News",
+          "url": "https://hnrss.org/frontpage",
+          "trust_feed": true
+        },
+        {
+          "title": "Wired",
+          "url": "https://www.wired.com/feed/rss",
+          "trust_feed": true
+        },
+        {
+          "title": "CNBC Tech",
+          "url": "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=19854910",
+          "trust_feed": true
+        }
+      ]
+    },
+    {
+      "name": "支付",
+      "quota": 20,
+      "region": "北美",
+      "scope": "支付基础设施 / Fintech / 卡组织与收单",
+      "match_keywords": [
+        "payment",
+        "pay",
+        "fintech",
+        "checkout",
+        "wallet",
+        "merchant",
+        "acquirer",
+        "transaction",
+        "card",
+        "banking",
+        "stripe",
+        "visa",
+        "mastercard",
+        "pos",
+        "remittance",
+        "bnpl",
+        "crypto payment",
+        "real-time payment",
+        "open banking"
+      ],
+      "feeds": [
+        {
+          "title": "Payments Dive",
+          "url": "https://www.paymentsdive.com/feeds/news/",
+          "trust_feed": true
+        },
+        {
+          "title": "Finextra Payments",
+          "url": "https://www.finextra.com/rss/channel.aspx?channel=payments",
+          "trust_feed": true
+        },
+        {
+          "title": "PYMNTS",
+          "url": "https://www.pymnts.com/feed/",
+          "trust_feed": true
+        },
+        {
+          "title": "Digital Transactions",
+          "url": "https://www.digitaltransactions.net/feed/",
+          "trust_feed": true
+        },
+        {
+          "title": "NFCW",
+          "url": "https://www.nfcw.com/feed/",
+          "trust_feed": true
+        },
+        {
+          "title": "Payments Journal",
+          "url": "https://www.paymentsjournal.com/feed/",
+          "trust_feed": true
+        },
+        {
+          "title": "PaymentsNEXT",
+          "url": "https://paymentsnext.com/feed/",
+          "trust_feed": true
+        },
+        {
+          "title": "Tearsheet Payments",
+          "url": "https://tearsheet.co/payments/feed/",
+          "trust_feed": true
+        },
+        {
+          "title": "Banking Dive",
+          "url": "https://www.bankingdive.com/feeds/news/",
+          "trust_feed": true
+        },
+        {
+          "title": "Stripe Blog",
+          "url": "https://stripe.com/blog/feed.rss",
+          "trust_feed": true
+        }
+      ]
+    },
+    {
+      "name": "陌生人社交",
+      "quota": 50,
+      "region": "北美",
+      "scope": "约会 App / 陌生人聊天 / 社交发现 / 直播打赏变现",
+      "match_keywords": [
+        "dating",
+        "tinder",
+        "bumble",
+        "hinge",
+        "match group",
+        "badoo",
+        "stranger",
+        "random chat",
+        "anonymous chat",
+        "omegle",
+        "video chat app",
+        "social discovery",
+        "meet new people",
+        "live gift",
+        "virtual gift",
+        "in-app purchase",
+        "subscription",
+        "monetization",
+        "chat app",
+        "soul app"
+      ],
+      "feeds": [
+        {
+          "title": "TechCrunch · Dating/Social",
+          "url": "https://techcrunch.com/feed/",
+          "match_keywords": [
+            "dating",
+            "tinder",
+            "bumble",
+            "hinge",
+            "match group",
+            "badoo",
+            "stranger",
+            "social discovery",
+            "chat app",
+            "omegle",
+            "monetization"
+          ]
+        },
+        {
+          "title": "The Verge · Dating/Social",
+          "url": "https://www.theverge.com/rss/index.xml",
+          "match_keywords": [
+            "dating",
+            "tinder",
+            "bumble",
+            "hinge",
+            "match",
+            "badoo",
+            "stranger",
+            "chat app",
+            "social discovery",
+            "omegle"
+          ]
+        },
+        {
+          "title": "Wired · Dating/Social",
+          "url": "https://www.wired.com/feed/rss",
+          "match_keywords": [
+            "dating",
+            "tinder",
+            "bumble",
+            "hinge",
+            "match",
+            "stranger",
+            "chat app",
+            "social discovery",
+            "omegle",
+            "subscription"
+          ]
+        },
+        {
+          "title": "Social Media Today · Dating/Social",
+          "url": "https://www.socialmediatoday.com/feeds/news/",
+          "match_keywords": [
+            "dating",
+            "tinder",
+            "bumble",
+            "hinge",
+            "match",
+            "badoo",
+            "stranger",
+            "social discovery",
+            "chat app",
+            "monetization",
+            "subscription",
+            "in-app"
+          ]
+        },
+        {
+          "title": "Digiday · Dating/Social Monetization",
+          "url": "https://digiday.com/feed/",
+          "match_keywords": [
+            "dating",
+            "tinder",
+            "bumble",
+            "hinge",
+            "match",
+            "subscription",
+            "monetization",
+            "creator",
+            "in-app",
+            "virtual gift",
+            "live gift"
+          ]
+        },
+        {
+          "title": "CNBC Tech · Dating",
+          "url": "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=19854910",
+          "match_keywords": [
+            "dating",
+            "tinder",
+            "bumble",
+            "hinge",
+            "match group",
+            "badoo",
+            "subscription",
+            "monetization"
+          ]
+        },
+        {
+          "title": "Google News · Dating Apps",
+          "url": "https://news.google.com/rss/search?q=dating+app+OR+Match+Group+OR+Tinder+OR+Bumble+OR+Hinge&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        },
+        {
+          "title": "Google News · Match/Bumble Earnings",
+          "url": "https://news.google.com/rss/search?q=Bumble+OR+%22Match+Group%22+OR+Hinge+earnings+OR+users&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        },
+        {
+          "title": "Google News · Dating Monetization",
+          "url": "https://news.google.com/rss/search?q=dating+app+monetization+OR+subscription+OR+ARPU&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        },
+        {
+          "title": "Google News · Dating & Social Payments",
+          "url": "https://news.google.com/rss/search?q=dating+app+payment+OR+in-app+purchase+social+discovery&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        },
+        {
+          "title": "Google News · Stranger Social Apps",
+          "url": "https://news.google.com/rss/search?q=stranger+chat+OR+anonymous+social+app+OR+random+video+chat&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        },
+        {
+          "title": "Google News · Omegle / Random Chat",
+          "url": "https://news.google.com/rss/search?q=Omegle+OR+%22random+video+chat%22+OR+%22stranger+chat+app%22&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        },
+        {
+          "title": "Google News · Social Discovery",
+          "url": "https://news.google.com/rss/search?q=%22social+discovery%22+OR+%22meet+new+people%22+app+OR+platform&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        },
+        {
+          "title": "Google News · Live Social Monetization",
+          "url": "https://news.google.com/rss/search?q=live+streaming+social+app+virtual+gift+payment+monetization&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        },
+        {
+          "title": "Google News · Virtual / Live Gifting",
+          "url": "https://news.google.com/rss/search?q=%22virtual+gifts%22+OR+%22live+gifting%22+OR+%22in-app+gifts%22+social&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        },
+        {
+          "title": "Google News · Dating Safety",
+          "url": "https://news.google.com/rss/search?q=dating+app+safety+OR+verification+OR+catfishing&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        },
+        {
+          "title": "Google News · Online Dating Industry",
+          "url": "https://news.google.com/rss/search?q=%22online+dating%22+industry+OR+market+OR+startup&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        },
+        {
+          "title": "Google News · Video Chat Apps",
+          "url": "https://news.google.com/rss/search?q=%22video+chat+app%22+OR+%22random+chat%22+OR+Azar+OR+Monkey+app&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        }
+      ]
+    },
+    {
+      "name": "诈骗",
+      "quota": 50,
+      "region": "全球",
+      "match_keywords": [
+        "scam",
+        "fraud",
+        "hack",
+        "breach",
+        "malware",
+        "phishing",
+        "ransomware",
+        "security",
+        "vulnerability",
+        "cybercrime",
+        "exploit",
+        "stolen",
+        "leak",
+        "identity theft",
+        "botnet",
+        "zero-day",
+        "romance scam",
+        "pig butchering"
+      ],
+      "feeds": [
+        {
+          "title": "Krebs on Security",
+          "url": "https://krebsonsecurity.com/feed/",
+          "trust_feed": true
+        },
+        {
+          "title": "The Hacker News",
+          "url": "https://feeds.feedburner.com/TheHackersNews",
+          "trust_feed": true
+        },
+        {
+          "title": "BleepingComputer",
+          "url": "https://www.bleepingcomputer.com/feed/",
+          "trust_feed": true
+        },
+        {
+          "title": "Dark Reading",
+          "url": "https://www.darkreading.com/rss.xml",
+          "trust_feed": true
+        },
+        {
+          "title": "SecurityWeek",
+          "url": "https://feeds.feedburner.com/securityweek",
+          "trust_feed": true
+        },
+        {
+          "title": "CyberScoop",
+          "url": "https://www.cyberscoop.com/feed",
+          "trust_feed": true
+        },
+        {
+          "title": "SC World",
+          "url": "https://www.scworld.com/rss",
+          "trust_feed": true
+        },
+        {
+          "title": "Help Net Security",
+          "url": "https://www.helpnetsecurity.com/feed/",
+          "trust_feed": true
+        },
+        {
+          "title": "Schneier on Security",
+          "url": "https://www.schneier.com/feed/atom/",
+          "trust_feed": true
+        },
+        {
+          "title": "Bank Info Security",
+          "url": "https://www.bankinfosecurity.com/rss-feeds",
+          "trust_feed": true
+        },
+        {
+          "title": "Infosecurity Magazine",
+          "url": "https://www.infosecurity-magazine.com/rss/news/",
+          "trust_feed": true
+        },
+        {
+          "title": "Finextra Crime",
+          "url": "https://www.finextra.com/rss/channel.aspx?channel=crime",
+          "trust_feed": true
+        },
+        {
+          "title": "Malwarebytes Labs",
+          "url": "https://www.malwarebytes.com/blog/feed",
+          "trust_feed": true
+        },
+        {
+          "title": "Unit 42",
+          "url": "https://unit42.paloaltonetworks.com/feed/",
+          "trust_feed": true
+        },
+        {
+          "title": "Google News · Romance / Dating Scams",
+          "url": "https://news.google.com/rss/search?q=romance+scam+OR+dating+fraud+OR+pig+butchering&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        },
+        {
+          "title": "Google News · Pig Butchering",
+          "url": "https://news.google.com/rss/search?q=%22pig+butchering%22+OR+%22romance+scam%22+crypto&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        },
+        {
+          "title": "Google News · Phishing / BEC",
+          "url": "https://news.google.com/rss/search?q=phishing+OR+%22business+email+compromise%22+fraud&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        },
+        {
+          "title": "Google News · Ransomware",
+          "url": "https://news.google.com/rss/search?q=ransomware+attack+OR+extortion&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        },
+        {
+          "title": "Google News · Identity Theft",
+          "url": "https://news.google.com/rss/search?q=%22identity+theft%22+OR+%22account+takeover%22+scam&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        },
+        {
+          "title": "Google News · Bank / Payment Fraud",
+          "url": "https://news.google.com/rss/search?q=%22bank+fraud%22+OR+%22payment+fraud%22+OR+APP+scam&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        },
+        {
+          "title": "Google News · FTC Scam Losses",
+          "url": "https://news.google.com/rss/search?q=FTC+fraud+OR+scam+losses+OR+%22Consumer+Sentinel%22&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        },
+        {
+          "title": "Google News · Cybercrime",
+          "url": "https://news.google.com/rss/search?q=cybercrime+OR+%22data+breach%22+OR+malware+campaign&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        }
+      ]
+    },
+    {
+      "name": "TikTok",
+      "quota": 20,
+      "region": "全球",
+      "match_keywords": [
+        "tiktok",
+        "creator",
+        "influencer",
+        "social media",
+        "viral",
+        "youtube",
+        "instagram",
+        "streaming",
+        "short-form",
+        "short video",
+        "algorithm",
+        "platform",
+        "content creator",
+        "livestream",
+        "reels",
+        "snapchat"
+      ],
+      "feeds": [
+        {
+          "title": "Social Media Today",
+          "url": "https://www.socialmediatoday.com/feeds/news/",
+          "trust_feed": true
+        },
+        {
+          "title": "Digiday",
+          "url": "https://digiday.com/feed/"
+        },
+        {
+          "title": "Google News · TikTok / Short Video",
+          "url": "https://news.google.com/rss/search?q=TikTok+OR+short+video+OR+Reels+creator+economy&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        },
+        {
+          "title": "Google News · Creator Economy Video",
+          "url": "https://news.google.com/rss/search?q=creator+economy+OR+influencer+marketing+TikTok+OR+YouTube&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        },
+        {
+          "title": "Google News · Short-form Video",
+          "url": "https://news.google.com/rss/search?q=%22short-form+video%22+OR+Reels+OR+Shorts+platform&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        }
+      ]
+    },
+    {
+      "name": "成人与色情行业",
+      "quota": 50,
+      "region": "北美",
+      "match_keywords": [
+        "onlyfans",
+        "fansly",
+        "adult",
+        "porn",
+        "pornography",
+        "xbiz",
+        "avn",
+        "age verification",
+        "creator economy",
+        "nsfw",
+        "explicit",
+        "cam model",
+        "sex work",
+        "adult content",
+        "adult entertainment",
+        "ynot"
+      ],
+      "feeds": [
+        {
+          "title": "XBIZ",
+          "url": "https://www.xbiz.com/rss/all.xml",
+          "trust_feed": true
+        },
+        {
+          "title": "AVN",
+          "url": "https://avn.com/feed/articles.rss",
+          "trust_feed": true
+        },
+        {
+          "title": "YNOT",
+          "url": "https://www.ynot.com/feed/",
+          "trust_feed": true
+        },
+        {
+          "title": "AINews",
+          "url": "https://ainews.xxx/feed",
+          "trust_feed": true
+        },
+        {
+          "title": "Adult FYI",
+          "url": "https://adultfyi.com/feed/",
+          "trust_feed": true
+        },
+        {
+          "title": "The Spicy Hub",
+          "url": "https://thespicyhub.com/feed/",
+          "trust_feed": true
+        },
+        {
+          "title": "iWantClips Blog",
+          "url": "https://blog.iwantclips.com/feed/",
+          "trust_feed": true
+        },
+        {
+          "title": "FanCentro Blog",
+          "url": "https://blog.fancentro.com/en/feed",
+          "trust_feed": true
+        },
+        {
+          "title": "Adult Creative News",
+          "url": "https://adultcreative.com/news/feed",
+          "trust_feed": true
+        },
+        {
+          "title": "Google News · Adult Industry",
+          "url": "https://news.google.com/rss/search?q=adult+entertainment+industry+XBIZ+OR+AVN&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        },
+        {
+          "title": "Google News · Creator Economy",
+          "url": "https://news.google.com/rss/search?q=OnlyFans+OR+Fansly+adult+creator&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        },
+        {
+          "title": "Google News · OnlyFans / Fansly Regulation",
+          "url": "https://news.google.com/rss/search?q=OnlyFans+OR+Fansly+regulation+OR+ban+OR+payment&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        },
+        {
+          "title": "Google News · Age Verification",
+          "url": "https://news.google.com/rss/search?q=age+verification+adult+content+legislation&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        },
+        {
+          "title": "Google News · Age Verification Laws",
+          "url": "https://news.google.com/rss/search?q=%22age+verification%22+(porn+OR+adult)+law+OR+legislation&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        },
+        {
+          "title": "Google News · Cam / Live Adult",
+          "url": "https://news.google.com/rss/search?q=%22cam+model%22+OR+Chaturbate+OR+Stripchat+industry&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        },
+        {
+          "title": "Google News · Adult Payments",
+          "url": "https://news.google.com/rss/search?q=adult+industry+payment+OR+Visa+OR+Mastercard+OR+banking&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        },
+        {
+          "title": "Google News · FSC / Trade Press",
+          "url": "https://news.google.com/rss/search?q=%22Free+Speech+Coalition%22+OR+XBIZ+OR+AVN+news&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        },
+        {
+          "title": "Google News · Sextech / Creator Platforms",
+          "url": "https://news.google.com/rss/search?q=sextech+OR+%22adult+creator+economy%22+OR+%22adult+platform%22&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        },
+        {
+          "title": "PR Newswire · Entertainment",
+          "url": "https://www.prnewswire.com/rss/entertainment-media-latest-news/entertainment-media-latest-news_list.rss",
+          "match_keywords": [
+            "onlyfans",
+            "fansly",
+            "adult",
+            "porn",
+            "pornography",
+            "xbiz",
+            "avn",
+            "age verification",
+            "creator economy",
+            "nsfw",
+            "explicit",
+            "cam",
+            "adult content",
+            "adult entertainment"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "私域引流",
+      "quota": 50,
+      "region": "全球",
+      "scope": "私域引流 / SEO / 增长营销 / 联盟流量 / 广告投放 / 落地页转化 / 流量风控",
+      "match_keywords": [
+        "seo",
+        "traffic",
+        "growth marketing",
+        "performance marketing",
+        "affiliate",
+        "lead generation",
+        "paid search",
+        "paid social",
+        "ads",
+        "advertising",
+        "cpc",
+        "cpa",
+        "conversion",
+        "landing page",
+        "cro",
+        "retargeting",
+        "attribution",
+        "user acquisition",
+        "app install",
+        "organic search",
+        "search ranking",
+        "google ads",
+        "meta ads",
+        "tiktok ads",
+        "ad fraud",
+        "bot traffic",
+        "click fraud",
+        "tracking",
+        "utm",
+        "private traffic",
+        "owned audience",
+        "community growth",
+        "telegram traffic",
+        "whatsapp traffic",
+        "discord community",
+        "crm traffic",
+        "私域"
+      ],
+      "feeds": [
+        {
+          "title": "Search Engine Land",
+          "url": "https://searchengineland.com/feed",
+          "trust_feed": true
+        },
+        {
+          "title": "Search Engine Journal",
+          "url": "https://www.searchenginejournal.com/feed/",
+          "trust_feed": true
+        },
+        {
+          "title": "Search Engine Roundtable",
+          "url": "https://www.seroundtable.com/index.rdf",
+          "trust_feed": true
+        },
+        {
+          "title": "Marketing Land",
+          "url": "https://martech.org/feed/",
+          "trust_feed": true
+        },
+        {
+          "title": "AdExchanger",
+          "url": "https://www.adexchanger.com/feed/",
+          "trust_feed": true
+        },
+        {
+          "title": "Adweek Performance Marketing",
+          "url": "https://www.adweek.com/feed/",
+          "match_keywords": [
+            "performance marketing",
+            "advertising",
+            "ads",
+            "media buying",
+            "creator",
+            "tiktok",
+            "meta",
+            "google",
+            "measurement",
+            "brand safety",
+            "affiliate"
+          ]
+        },
+        {
+          "title": "Marketing Brew",
+          "url": "https://www.marketingbrew.com/feed",
+          "trust_feed": true
+        },
+        {
+          "title": "Social Media Examiner",
+          "url": "https://www.socialmediaexaminer.com/feed/",
+          "trust_feed": true
+        },
+        {
+          "title": "WordStream",
+          "url": "https://www.wordstream.com/blog/ws/feed",
+          "trust_feed": true
+        },
+        {
+          "title": "Neil Patel Blog",
+          "url": "https://neilpatel.com/blog/feed/",
+          "trust_feed": true
+        },
+        {
+          "title": "Ahrefs Blog",
+          "url": "https://ahrefs.com/blog/feed/",
+          "trust_feed": true
+        },
+        {
+          "title": "Semrush Blog",
+          "url": "https://www.semrush.com/blog/feed/",
+          "trust_feed": true
+        },
+        {
+          "title": "Moz Blog",
+          "url": "https://moz.com/blog/feed",
+          "trust_feed": true
+        },
+        {
+          "title": "Backlinko",
+          "url": "https://backlinko.com/feed",
+          "trust_feed": true
+        },
+        {
+          "title": "Amsive Digital",
+          "url": "https://www.amsivedigital.com/insights/feed/",
+          "trust_feed": true
+        },
+        {
+          "title": "GrowthHackers",
+          "url": "https://growthhackers.com/posts.rss",
+          "trust_feed": true
+        },
+        {
+          "title": "Lenny Newsletter",
+          "url": "https://www.lennysnewsletter.com/feed",
+          "match_keywords": [
+            "growth",
+            "acquisition",
+            "activation",
+            "retention",
+            "conversion",
+            "marketing",
+            "seo",
+            "paid"
+          ]
+        },
+        {
+          "title": "Reforge Blog",
+          "url": "https://www.reforge.com/blog/rss.xml",
+          "match_keywords": [
+            "growth",
+            "acquisition",
+            "retention",
+            "conversion",
+            "marketing",
+            "loops",
+            "growth model"
+          ]
+        },
+        {
+          "title": "App Growth Summit",
+          "url": "https://appgrowthsummit.com/feed/",
+          "trust_feed": true
+        },
+        {
+          "title": "Mobile Dev Memo",
+          "url": "https://www.mobiledevmemo.com/feed/",
+          "trust_feed": true
+        },
+        {
+          "title": "AppsFlyer Blog",
+          "url": "https://www.appsflyer.com/blog/feed/",
+          "trust_feed": true
+        },
+        {
+          "title": "Adjust Blog",
+          "url": "https://www.adjust.com/blog/feed/",
+          "trust_feed": true
+        },
+        {
+          "title": "Liftoff Blog",
+          "url": "https://liftoff.io/blog/feed/",
+          "trust_feed": true
+        },
+        {
+          "title": "Branch Blog",
+          "url": "https://www.branch.io/resources/blog/rss.xml",
+          "trust_feed": true
+        },
+        {
+          "title": "Singular Blog",
+          "url": "https://www.singular.net/blog/feed/",
+          "trust_feed": true
+        },
+        {
+          "title": "Partnerize Blog",
+          "url": "https://partnerize.com/blog/feed",
+          "trust_feed": true
+        },
+        {
+          "title": "impact.com Blog",
+          "url": "https://impact.com/feed/",
+          "trust_feed": true
+        },
+        {
+          "title": "Affiliate Summit",
+          "url": "https://www.affiliatesummit.com/feed",
+          "trust_feed": true
+        },
+        {
+          "title": "Google News · Traffic Arbitrage / Lead Gen",
+          "url": "https://news.google.com/rss/search?q=%22lead+generation%22+OR+%22traffic+arbitrage%22+OR+affiliate+marketing+performance+marketing&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        },
+        {
+          "title": "Google News · Ad Fraud / Bot Traffic",
+          "url": "https://news.google.com/rss/search?q=%22ad+fraud%22+OR+%22bot+traffic%22+OR+%22click+fraud%22+OR+invalid+traffic&hl=en-US&gl=US&ceid=US:en",
+          "trust_feed": true
+        }
+      ]
+    }
+  ]
+}

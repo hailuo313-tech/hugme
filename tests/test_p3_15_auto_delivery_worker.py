@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -27,8 +28,9 @@ class _ScalarResult:
 
 
 class _FakeSession:
-    def __init__(self, rows=None):
+    def __init__(self, rows=None, cooldown_rows=None):
         self.rows = rows or []
+        self.cooldown_rows = cooldown_rows or []
         self.executed = []
         self.commits = 0
 
@@ -41,6 +43,8 @@ class _FakeSession:
             return _ScalarResult(True)
         if "RETURNING ms.id" in sql:
             return _MappingsResult(self.rows)
+        if "remaining_seconds" in sql:
+            return _MappingsResult(self.cooldown_rows)
         return _MappingsResult()
 
     async def commit(self):
@@ -176,6 +180,50 @@ async def test_p3_15_run_one_tick_releases_advisory_lock(monkeypatch):
 
 async def _async_zero():
     return 0
+
+
+@pytest.mark.asyncio
+async def test_p3_15_assistant_quiet_cooldown_detects_recent_system_reply():
+    allow_after = datetime.now(timezone.utc) + timedelta(seconds=120)
+    session = _FakeSession(
+        cooldown_rows=[
+            {
+                "sender_type": "assistant",
+                "allow_after": allow_after,
+                "remaining_seconds": 120,
+            }
+        ]
+    )
+
+    result = await worker._get_assistant_quiet_cooldown_until(
+        session,
+        conversation_id="11111111-1111-1111-1111-111111111111",
+    )
+
+    assert result == allow_after
+    sql, params = session.executed[0]
+    assert "created_at + (:cooldown_seconds * interval '1 second')" in sql
+    assert params["cooldown_seconds"] == worker.ASSISTANT_QUIET_COOLDOWN_SECONDS
+
+
+@pytest.mark.asyncio
+async def test_p3_15_defer_message_until_does_not_consume_retry_budget():
+    send_at = datetime.now(timezone.utc) + timedelta(seconds=120)
+    session = _FakeSession()
+
+    await worker._defer_message_until(
+        session,
+        message_id="msg-1",
+        send_at=send_at,
+        reason=worker.ASSISTANT_QUIET_COOLDOWN_REASON,
+    )
+
+    sql, params = session.executed[0]
+    assert "SET status = 'pending'" in sql
+    assert "retry_count = retry_count + 1" not in sql
+    assert params["send_at"] == send_at
+    assert params["reason"] == worker.ASSISTANT_QUIET_COOLDOWN_REASON
+    assert session.commits == 1
 
 
 def test_p3_15_timeout_fallback_locks_handoff_tasks_only():

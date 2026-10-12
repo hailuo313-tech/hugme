@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>三方下载国家路由 · ERIS</title>
+  <style>
+    :root{--bg:#070b17;--panel:#0d192b;--line:#26344d;--text:#f7fbff;--muted:#9db2d0;--blue:#38bdf8;--green:#34d399;--amber:#facc15;--violet:#a78bfa;--t1:#34d399;--t2:#facc15;--t3:#94a3b8}
+    *{box-sizing:border-box} body{margin:0;background:linear-gradient(160deg,#070b17,#0a1224 50%,#070b17);color:var(--text);font:14px/1.65 Inter,"Microsoft YaHei",system-ui,sans-serif}
+    a{color:var(--blue);text-decoration:none} a:hover{color:#fff}
+    .wrap{width:min(1180px,calc(100% - 28px));margin:auto;padding:28px 0 80px}
+    .hero{padding:28px 30px;border:1px solid var(--line);border-radius:20px;background:radial-gradient(circle at 88% 8%,#2a2050 0,transparent 36%),var(--panel)}
+    h1{margin:8px 0;font-size:30px} h2{margin:0;font-size:20px}
+    .lead{max-width:920px;font-size:16px;color:#c9d7ee}
+    .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+    .chip{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:999px;padding:5px 10px;background:#081322;color:#bfd0e6;font-size:12px}
+    .chip.back{border-color:#6d4ad4;color:#e9d5ff}
+    .legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+    .lg{display:inline-flex;align-items:center;gap:8px;color:#c9d7ee;font-size:13px}
+    .dot{width:10px;height:10px;border-radius:50%}
+    .section{margin-top:22px;border:1px solid var(--line);border-radius:16px;background:var(--panel);overflow:hidden}
+    .head{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:16px 20px;border-bottom:1px solid var(--line);background:#101e32}
+    .body{padding:18px 20px 24px}
+    .flow{display:flex;flex-direction:column;align-items:center;gap:0}
+    .row{display:flex;flex-wrap:wrap;justify-content:center;gap:12px;width:100%;margin:2px 0}
+    .node{min-width:200px;max-width:320px;flex:1 1 200px;border:1px solid var(--line);border-radius:12px;padding:12px 13px;background:#081224}
+    .node b{display:block;margin-bottom:4px}
+    .node p{margin:0;color:#9db2d0;font-size:12px}
+    .node.start{border-color:#216b40;background:#082418}
+    .node.dec{border-color:#785d1d;background:#261c08;text-align:center}
+    .node.ok{border-color:#216b40;background:#082418}
+    .node.fallback{border-color:#785d1d;background:#261c08}
+    .node.end{border-color:#4c3a86;background:#1a1233}
+    .arrow{color:var(--blue);font-size:20px;line-height:1;padding:4px 0}
+    .arrow.fork{color:var(--amber)}
+    .branch{display:grid;grid-template-columns:1fr 1fr;gap:12px;width:min(100%,640px);margin:8px 0}
+    .col{display:flex;flex-direction:column;align-items:center}
+    .lbl{font-size:12px;color:var(--amber);margin-bottom:4px}
+    .k{color:#7dd3fc;font-family:ui-monospace,Consolas,monospace}
+    table{width:100%;border-collapse:collapse} th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top} th{color:#9fb6d9;background:#080e1d}
+    .tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;margin-right:6px}
+    .t1{background:#052e1c;color:#86efac} .t2{background:#3a2a08;color:#fde68a} .t3{background:#1e293b;color:#cbd5e1}
+    .grid{display:grid;gap:12px} .three{grid-template-columns:repeat(3,1fr)}
+    @media(max-width:860px){.three,.branch{grid-template-columns:1fr}h1{font-size:24px}}
+    .card{border:1px solid var(--line);border-radius:12px;padding:14px;background:#081224}
+    .note{margin-top:14px;padding:12px 14px;border-left:3px solid var(--blue);background:#081224;border-radius:8px;color:#c9d7ee}
+    .footer{margin-top:24px;text-align:center;color:var(--muted)}
+  </style>
+</head>
+<body>
+<main class="wrap">
+  <header class="hero">
+    <div class="chips">
+      <a class="chip back" href="/business-flow.html">← 返回业务流程</a>
+      <span class="chip">以线上 Runtime / AI话术页为准</span>
+      <span class="chip">更新：2026-08-23</span>
+      <a class="chip" href="/admin/ai-ops">去后台分配</a>
+    </div>
+    <h1>三方下载链接：按国家选平台</h1>
+    <p class="lead">运营在后台按 <span class="k">US-美国-T1</span> 这种标签，给每个国家人工绑 A–F 平台。用户触发下载话术时，系统用 <span class="k">{{app_download_url}}</span> 发出对应链接。</p>
+    <div class="legend">
+      <span class="lg"><span class="dot" style="background:var(--t1)"></span>T1 高优先市场</span>
+      <span class="lg"><span class="dot" style="background:var(--t2)"></span>T2 次优先市场</span>
+      <span class="lg"><span class="dot" style="background:var(--t3)"></span>T3 其余国家</span>
+      <span class="lg"><span class="dot" style="background:var(--amber)"></span>判断</span>
+      <span class="lg"><span class="dot" style="background:var(--green)"></span>发出链接</span>
+    </div>
+  </header>
+
+  <section class="section">
+    <div class="head"><h2>一、现行发链接顺序</h2><span class="chip">已上线</span></div>
+    <div class="body">
+      <div class="flow">
+        <div class="row"><div class="node start"><b>用户触发下载话术</b><p>自动回复、培育、直接要链接，都走同一条变量。</p></div></div>
+        <div class="arrow">↓</div>
+        <div class="row"><div class="node"><b>读号码国</b><p>资料卡国旗 <span class="k">country_code</span>，例如 US / MX / CN。不按 IP，不按自述国家。</p></div></div>
+        <div class="arrow">↓</div>
+        <div class="row"><div class="node dec"><b>这个国家人工配过路由吗？</b><p>后台「国家路由」里有没有这一行，且平台启用。</p></div></div>
+        <div class="arrow fork">↓</div>
+        <div class="branch">
+          <div class="col">
+            <div class="lbl">配了</div>
+            <div class="node ok"><b>发该平台当前 URL</b><p>例如 US-美国-T1 → A，MX-墨西哥-T2 → B。</p></div>
+          </div>
+          <div class="col">
+            <div class="lbl">没国家 / 没配</div>
+            <div class="node fallback"><b>接待号绑定 → 默认 A</b><p>和没开国家路由时一样。</p></div>
+          </div>
+        </div>
+        <div class="arrow">↓</div>
+        <div class="row"><div class="node end"><b>写入 {{app_download_url}} 发出</b><p>话术正文不改。国家只选平台，平台才有网址。</p></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="head"><h2>二、国家标签：码-中文-档位</h2><span class="chip">人工筛选用</span></div>
+    <div class="body">
+      <p style="margin:0 0 14px;color:#c9d7ee">后台下拉和已保存列表都显示这个标签。档位只方便你筛选和分配，不会自动整档绑同一个平台。</p>
+      <div class="grid three">
+        <div class="card">
+          <span class="tag t1">T1</span>
+          <b>高优先市场</b>
+          <p style="color:#9db2d0;margin:8px 0 0">例如 <span class="k">US-美国-T1</span>、<span class="k">IT-意大利-T1</span>、<span class="k">GB-英国-T1</span>、<span class="k">AU-澳大利亚-T1</span>。和用户列表同一套 T1 名单。</p>
+        </div>
+        <div class="card">
+          <span class="tag t2">T2</span>
+          <b>次优先市场</b>
+          <p style="color:#9db2d0;margin:8px 0 0">例如 <span class="k">MX-墨西哥-T2</span>、<span class="k">PE-秘鲁-T2</span>、<span class="k">BR-巴西-T2</span>、<span class="k">PH-菲律宾-T2</span>。</p>
+        </div>
+        <div class="card">
+          <span class="tag t3">T3</span>
+          <b>其余国家</b>
+          <p style="color:#9db2d0;margin:8px 0 0">不在 T1/T2 名单里的，例如 <span class="k">CN-中国-T3</span>、<span class="k">IN-印度-T3</span>、<span class="k">VE-委内瑞拉-T3</span>。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="head"><h2>三、你怎么人工分配</h2><a class="chip" href="/admin/ai-ops">AI 话术页</a></div>
+    <div class="body">
+      <table>
+        <thead>
+          <tr><th>步骤</th><th>你做什么</th><th>系统做什么</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1. 筛档位</td>
+            <td>点 T1 / T2 / T3 / 全部档位</td>
+            <td>下拉只出现这一档的国家</td>
+          </tr>
+          <tr>
+            <td>2. 选国家</td>
+            <td>选 <span class="k">MX-墨西哥-T2</span> 这种标签</td>
+            <td>记下这个 ISO 码，例如 MX</td>
+          </tr>
+          <tr>
+            <td>3. 选平台</td>
+            <td>选 A–F 里的一个</td>
+            <td>国家指向平台，不另存一条 URL</td>
+          </tr>
+          <tr>
+            <td>4. 保存</td>
+            <td>点「保存这条路由」</td>
+            <td>该国用户下次发下载话术，用这个平台的链接</td>
+          </tr>
+          <tr>
+            <td>5. 改链接</td>
+            <td>仍在「三方平台下载链接」里改 A–F 的网址</td>
+            <td>所有指向这个平台的国家一起变</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="note">一条一条绑。不会因为同是 T2 就自动发同一个平台。你随时可以改或删除某一行。</div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="head"><h2>四、例子</h2></div>
+    <div class="body">
+      <div class="grid three">
+        <div class="card"><span class="tag t1">例</span><b>US-美国-T1 → A平台</b><p style="color:#9db2d0;margin:8px 0 0">已标美国的用户，下载话术发 A 的链接。</p></div>
+        <div class="card"><span class="tag t2">例</span><b>MX-墨西哥-T2 → B平台</b><p style="color:#9db2d0;margin:8px 0 0">已标墨西哥的用户，发 B 的链接。秘鲁另存一行才能跟墨西哥一样。</p></div>
+        <div class="card"><span class="tag t3">例</span><b>没有国家 / 没配</b><p style="color:#9db2d0;margin:8px 0 0">查不到路由，跟接待号绑定；号也没绑，就发默认 A。</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="head"><h2>五、明确不做的事</h2></div>
+    <div class="body">
+      <table>
+        <tbody>
+          <tr><td>不按 IP 定位</td><td>只看已经打上的号码国</td></tr>
+          <tr><td>不看用户自述国家</td><td>自述继续只给聊天和约见</td></tr>
+          <tr><td>不按档位自动发链接</td><td>T1/T2/T3 只是标签，平台必须人工选</td></tr>
+          <tr><td>不给每个国家单独存 URL</td><td>国家选平台，平台才有网址</td></tr>
+          <tr><td>不改话术正文</td><td>还是 {{app_download_url}}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <p class="footer">子页面 · 挂在 <a href="/business-flow.html">ERIS 线上业务流程与规则</a> · 后台分配入口 <a href="/admin/ai-ops">/admin/ai-ops</a></p>
+</main>
+</body>
+</html>

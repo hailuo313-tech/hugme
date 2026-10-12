@@ -13,9 +13,12 @@ from sqlalchemy import text
 
 from core.database import AsyncSessionLocal
 from services.llm_orchestrator import LLMOrchestratorError, generate_reply
-from services.reply_consistency import evaluate_reply_consistency, load_reply_consistency_context
+from services.ai_message_limit import AIMessageLimitReached
+from services.telegram_peer_cache import upsert_telegram_peer_cache
+from services.user_reply_guard import user_allows_auto_reply
+from services.human_takeover_gate import evaluate_human_takeover_gate
 
-CONTEXT_MAX_MESSAGES = 20
+CONTEXT_MAX_MESSAGES = 200
 CONTEXT_TTL_SECONDS = 86400 * 3
 INBOUND_READ_ACK_DELAY_SECONDS = 4.0
 INBOUND_TYPING_START_DELAY_SECONDS = 5.0
@@ -74,7 +77,7 @@ async def _get_or_create_conversation(db, *, user_id: str, channel: str) -> str:
                 """
                 SELECT id
                 FROM conversations
-                WHERE user_id=:user_id AND state NOT IN ('CLOSED','ESCALATED')
+                WHERE user_id=:user_id AND state NOT IN ('CLOSED','ESCALATED','FROZEN')
                 ORDER BY updated_at DESC
                 LIMIT 1
                 """
@@ -189,22 +192,6 @@ async def _mark_read(
         log.bind(error_type=type(exc).__name__).warning("mtproto_auto_reply.read_ack_failed")
 
 
-async def _apply_reply_consistency(db: Any, conversation_id: str, reply_text: str, log: Any) -> str:
-    try:
-        ctx = await load_reply_consistency_context(db, conversation_id)
-    except Exception as exc:
-        log.bind(error_type=type(exc).__name__).warning(
-            "mtproto_auto_reply.consistency.context_failed"
-        )
-        ctx = {}
-    consistency = evaluate_reply_consistency(
-        reply_text=reply_text,
-        character=ctx.get("character"),
-    )
-    log.bind(**consistency.as_log_dict()).info("mtproto_auto_reply.consistency.checked")
-    return consistency.output_text
-
-
 async def handle_mtproto_inbound_auto_reply(
     *,
     client: Any,
@@ -231,10 +218,6 @@ async def handle_mtproto_inbound_auto_reply(
         log.info("mtproto_auto_reply.duplicate_skip")
         return
 
-    if envelope.message_type != "text" or not envelope.content.strip():
-        log.info("mtproto_auto_reply.non_text_skip")
-        return
-
     peer = getattr(raw_event, "chat_id", None) or envelope.metadata.telegram_chat_id or envelope.external_user_id[3:]
     channel = "telegram_real_user"
     async with AsyncSessionLocal() as db:
@@ -245,7 +228,41 @@ async def handle_mtproto_inbound_auto_reply(
         await _mark_read(client, raw_event, int(peer), log)
 
         user_id = await _get_or_create_user(db, channel=channel, external_id=envelope.external_user_id)
+        if not await user_allows_auto_reply(db, user_id):
+            log.info("mtproto_auto_reply.user_reply_blocked")
+            return
+
         conv_id = await _get_or_create_conversation(db, user_id=user_id, channel=channel)
+        try:
+            sender = getattr(raw_event, "sender", None)
+            if sender is None and hasattr(raw_event, "get_sender"):
+                sender = await raw_event.get_sender()
+            await upsert_telegram_peer_cache(
+                db,
+                user_id=user_id,
+                conversation_id=conv_id,
+                account_id=str(account_id),
+                chat_id=int(peer),
+                access_hash=getattr(sender, "access_hash", None),
+                source="telegram_real_user_inbound",
+                trace_id=trace_id,
+                peer_metadata={
+                    "username": getattr(sender, "username", None),
+                    "first_name": getattr(sender, "first_name", None),
+                    "last_name": getattr(sender, "last_name", None),
+                    "inbound_message_type": envelope.message_type,
+                    "captured_before_content_filter": True,
+                },
+            )
+            await db.commit()
+        except Exception as exc:
+            await db.rollback()
+            log.bind(error_type=type(exc).__name__).warning(
+                "mtproto_auto_reply.peer_cache.upsert_failed"
+            )
+        if envelope.message_type not in {"text", "sticker"} or not envelope.content.strip():
+            log.bind(message_type=envelope.message_type).info("mtproto_auto_reply.non_text_skip")
+            return
         inbound_msg_id = await _persist_message(
             db,
             conversation_id=conv_id,
@@ -253,10 +270,78 @@ async def handle_mtproto_inbound_auto_reply(
             sender_id=user_id,
             content=envelope.content,
         )
+
+        from services.call_broadcast.post_inbound_video_fixed_messages import (
+            handle_post_video_fixed_user_reply,
+        )
+
+        if await handle_post_video_fixed_user_reply(
+            db,
+            conversation_id=conv_id,
+            text_value=envelope.content,
+            is_screenshot=str(getattr(envelope, "message_type", "") or "") == "image",
+            trace_id=trace_id,
+        ):
+            log.info("mtproto_auto_reply.post_video_fixed_stopped")
+            return
+
+        from services.post_inbound_video_expert_gate import block_post_inbound_video_auto_reply
+
+        try:
+            chat_id = int(peer)
+        except (TypeError, ValueError):
+            chat_id = None
+        if await block_post_inbound_video_auto_reply(
+            db,
+            user_id=user_id,
+            conversation_id=conv_id,
+            chat_id=chat_id,
+            trace_id=trace_id,
+        ):
+            log.info("mtproto_auto_reply.post_inbound_video_expert_blocked")
+            return
+
+        gate = await evaluate_human_takeover_gate(db, conv_id)
+        await db.commit()
+        if not gate.allows_auto_reply:
+            log.bind(human_gate_reason=gate.reason).info(
+                "mtproto_auto_reply.human_takeover_blocked"
+            )
+            return
+        if gate.released_to_ai:
+            log.bind(human_gate_reason=gate.reason).info(
+                "mtproto_auto_reply.human_takeover_released"
+            )
+
         try:
             await _push_context(redis, conv_id, "user", envelope.content, inbound_msg_id)
         except Exception as exc:
             log.bind(error_type=type(exc).__name__).warning("mtproto_auto_reply.context_push_failed")
+
+        try:
+            from services.video_request_handoff import maybe_queue_live_video_call_operator_review
+
+            peer = getattr(raw_event, "chat_id", None) or envelope.metadata.telegram_chat_id or envelope.external_user_id[3:]
+            video_job_id = await maybe_queue_live_video_call_operator_review(
+                db,
+                user_id=user_id,
+                external_user_id=envelope.external_user_id,
+                conversation_id=conv_id,
+                chat_id=int(peer),
+                account_id=str(account_id),
+                user_text=envelope.content,
+                trace_id=trace_id,
+                telegram_access_hash=getattr(getattr(raw_event, "sender", None), "access_hash", None),
+            )
+            if video_job_id:
+                log.bind(job_id=video_job_id).info(
+                    "mtproto_auto_reply.video_request_handoff.keyword_review_queued"
+                )
+        except Exception as exc:
+            await db.rollback()
+            log.bind(error_type=type(exc).__name__).warning(
+                "mtproto_auto_reply.video_request_handoff.failed"
+            )
 
         try:
             reply_text = await generate_reply(
@@ -268,10 +353,12 @@ async def handle_mtproto_inbound_auto_reply(
                 db=db,
                 trigger_message_id=inbound_msg_id,
             )
+        except AIMessageLimitReached as exc:
+            log.bind(reason=str(exc)).info("mtproto_auto_reply.ai_limit")
+            return
         except LLMOrchestratorError as exc:
             log.bind(reason=str(exc)).warning("mtproto_auto_reply.orchestrator_failed")
             reply_text = "现在有点忙，稍后再聊好吗？"
-        reply_text = await _apply_reply_consistency(db, conv_id, reply_text, log)
 
         try:
             sent = await send_human_like_message(

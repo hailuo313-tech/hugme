@@ -4,15 +4,18 @@ import json
 import re
 import time
 import uuid
+from html import unescape
 from typing import Any, Literal, Optional
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from loguru import logger
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.admin import require_operator
+from core.config import settings
 from core.database import get_db
 from services.llm import chat as llm_chat
 
@@ -48,6 +51,27 @@ class OpsAiTranslateRequest(BaseModel):
     preserve_terms: list[str] = Field(default_factory=list, max_length=20)
 
 
+class OpsAiConversationTranslateRequest(BaseModel):
+    message_ids: list[str] = Field(default_factory=list, max_length=80)
+    target_language: str = Field(default="zh-CN", max_length=16)
+    preserve_terms: list[str] = Field(default_factory=list, max_length=20)
+
+    @field_validator("message_ids")
+    @classmethod
+    def _validate_message_ids(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            try:
+                message_id = str(uuid.UUID(str(value)))
+            except ValueError as exc:
+                raise ValueError("message_ids must contain valid UUID values") from exc
+            if message_id not in seen:
+                seen.add(message_id)
+                normalized.append(message_id)
+        return normalized
+
+
 class OpsAiTranslatedItem(BaseModel):
     id: str
     text: str
@@ -57,6 +81,11 @@ class OpsAiTranslateResponse(BaseModel):
     translations: list[OpsAiTranslatedItem]
     model_used: Optional[str] = None
     latency_ms: Optional[float] = None
+
+
+class OpsAiConversationTranslateResponse(OpsAiTranslateResponse):
+    saved_count: int = 0
+    skipped_count: int = 0
 
 
 def _validate_uuid(value: str, field_name: str) -> str:
@@ -248,6 +277,22 @@ def _items_needing_chinese_repair(
     return needs_repair
 
 
+def _translation_needs_refresh(
+    *,
+    source_text: str,
+    translated_text: str | None,
+    target_language: str,
+) -> bool:
+    if not _has_translatable_text(source_text):
+        return False
+    if _has_cjk(source_text):
+        return False
+    if not str(target_language or "").lower().startswith("zh"):
+        return not (translated_text or "").strip()
+    translated = translated_text or ""
+    return not translated.strip() or not _has_cjk(translated) or _same_after_normalize(source_text, translated)
+
+
 def _merge_translation_repairs(
     translations: list[dict[str, str]],
     repaired: list[dict[str, str]],
@@ -257,6 +302,54 @@ def _merge_translation_repairs(
         {"id": item["id"], "text": repaired_by_id.get(item["id"], item["text"])}
         for item in translations
     ]
+
+
+def _translation_provider() -> str:
+    return (settings.TRANSLATION_PROVIDER or "llm").strip().lower()
+
+
+async def _translate_with_google(
+    *,
+    items: list[OpsAiTranslateItem],
+    target_language: str,
+    trace_id: str,
+) -> list[dict[str, str]]:
+    api_key = (settings.GOOGLE_TRANSLATE_API_KEY or "").strip()
+    if not api_key:
+        raise RuntimeError("GOOGLE_TRANSLATE_API_KEY_MISSING")
+
+    started = time.time()
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        response = await client.post(
+            "https://translation.googleapis.com/language/translate/v2",
+            params={"key": api_key},
+            json={
+                "q": [item.text for item in items],
+                "target": target_language or "zh-CN",
+                "format": "text",
+            },
+        )
+
+    logger.bind(
+        trace_id=trace_id,
+        provider="google_translate",
+        item_count=len(items),
+        status_code=response.status_code,
+        latency_ms=round((time.time() - started) * 1000, 1),
+    ).info("ops_ai.translate.google_response")
+
+    if response.status_code >= 400:
+        raise RuntimeError(f"google_translate_http_{response.status_code}")
+
+    raw_translations = response.json().get("data", {}).get("translations", [])
+    if not isinstance(raw_translations, list) or len(raw_translations) != len(items):
+        raise RuntimeError("google_translate_invalid_response")
+
+    translated_items: list[dict[str, str]] = []
+    for source, translated in zip(items, raw_translations):
+        translated_text = unescape(str(translated.get("translatedText") or "")).strip()
+        translated_items.append({"id": source.id, "text": translated_text or source.text})
+    return translated_items
 
 
 def _build_translation_messages(body: OpsAiTranslateRequest) -> list[dict[str, str]]:
@@ -327,6 +420,170 @@ def _build_translation_repair_messages(
         {"role": "system", "content": system},
         {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
     ]
+
+
+async def _run_operator_translation(
+    *,
+    body: OpsAiTranslateRequest,
+    trace_id: str,
+    operator_id: str | None,
+) -> tuple[list[dict[str, str]], str | None, float]:
+    started = time.time()
+    items = [item for item in body.items if item.text.strip()]
+    if not items:
+        return [], None, 0
+
+    normalized_body = body.model_copy(update={"items": items})
+    logger.bind(
+        operator_id=operator_id,
+        item_count=len(items),
+        target_language=body.target_language,
+        provider=_translation_provider(),
+    ).info("ops_ai.translate.start")
+
+    if _translation_provider() == "google":
+        try:
+            translations = await _translate_with_google(
+                items=items,
+                target_language=body.target_language,
+                trace_id=trace_id,
+            )
+            elapsed_ms = round((time.time() - started) * 1000, 1)
+            logger.bind(
+                operator_id=operator_id,
+                item_count=len(translations),
+                model_used="google:translate-v2",
+                elapsed_ms=elapsed_ms,
+            ).info("ops_ai.translate.success")
+            return translations, "google:translate-v2", elapsed_ms
+        except Exception as exc:
+            logger.bind(
+                operator_id=operator_id,
+                item_count=len(items),
+                elapsed_ms=round((time.time() - started) * 1000, 1),
+                error_type=type(exc).__name__,
+                error=str(exc),
+            ).warning("ops_ai.translate.google_failed_fallback_llm")
+
+    try:
+        result = await llm_chat(
+            messages=_build_translation_messages(normalized_body),
+            trace_id=trace_id,
+            temperature=0.1,
+            max_tokens=1500,
+            purpose="aux",
+        )
+    except Exception as exc:
+        logger.bind(
+            operator_id=operator_id,
+            item_count=len(items),
+            elapsed_ms=round((time.time() - started) * 1000, 1),
+            error=str(exc),
+        ).warning("ops_ai.translate.llm_error")
+        raise HTTPException(status_code=502, detail="翻译生成失败") from exc
+
+    if result.error:
+        logger.bind(
+            operator_id=operator_id,
+            item_count=len(items),
+            elapsed_ms=round((time.time() - started) * 1000, 1),
+            error=result.error,
+        ).warning("ops_ai.translate.llm_error")
+        raise HTTPException(status_code=502, detail="翻译生成失败")
+
+    try:
+        parsed = _extract_json_object(result.content)
+        translations = _normalize_translation_payload(parsed, items)
+    except ValueError as exc:
+        logger.bind(
+            operator_id=operator_id,
+            item_count=len(items),
+            elapsed_ms=round((time.time() - started) * 1000, 1),
+            error=str(exc),
+        ).warning("ops_ai.translate.parse_error")
+        try:
+            repair_result = await llm_chat(
+                messages=_build_translation_repair_messages(
+                    original_content=result.content,
+                    requested_items=items,
+                ),
+                trace_id=trace_id,
+                temperature=0,
+                max_tokens=1500,
+                purpose="aux",
+            )
+            if repair_result.error:
+                raise ValueError(repair_result.error)
+            parsed = _extract_json_object(repair_result.content)
+            translations = _normalize_translation_payload(parsed, items)
+            result = repair_result
+        except Exception as repair_exc:
+            logger.bind(
+                operator_id=operator_id,
+                item_count=len(items),
+                elapsed_ms=round((time.time() - started) * 1000, 1),
+                error=str(repair_exc),
+            ).warning("ops_ai.translate.repair_failed")
+            translations = [{"id": item.id, "text": item.text} for item in items]
+
+    needs_repair = _items_needing_chinese_repair(
+        items,
+        translations,
+        target_language=body.target_language,
+    )
+    if needs_repair:
+        logger.bind(
+            operator_id=operator_id,
+            item_count=len(items),
+            repair_count=len(needs_repair),
+        ).warning("ops_ai.translate.untranslated_items_detected")
+        try:
+            repair_result = await llm_chat(
+                messages=_build_translation_repair_messages(
+                    original_content=result.content,
+                    requested_items=needs_repair,
+                    previous_translations=[
+                        item for item in translations if item["id"] in {source.id for source in needs_repair}
+                    ],
+                ),
+                trace_id=trace_id,
+                temperature=0,
+                max_tokens=1500,
+                purpose="aux",
+            )
+            if repair_result.error:
+                raise ValueError(repair_result.error)
+            parsed = _extract_json_object(repair_result.content)
+            repaired = _normalize_translation_payload(parsed, needs_repair)
+            translations = _merge_translation_repairs(translations, repaired)
+            result = repair_result
+        except Exception as repair_exc:
+            logger.bind(
+                operator_id=operator_id,
+                item_count=len(items),
+                repair_count=len(needs_repair),
+                elapsed_ms=round((time.time() - started) * 1000, 1),
+                error=str(repair_exc),
+            ).warning("ops_ai.translate.untranslated_repair_failed")
+
+    translations = [
+        item
+        for item in translations
+        if not _translation_needs_refresh(
+            source_text=next((source.text for source in items if source.id == item["id"]), ""),
+            translated_text=item.get("text"),
+            target_language=body.target_language,
+        )
+    ]
+
+    elapsed_ms = round((time.time() - started) * 1000, 1)
+    logger.bind(
+        operator_id=operator_id,
+        item_count=len(translations),
+        model_used=result.model_used,
+        elapsed_ms=elapsed_ms,
+    ).info("ops_ai.translate.success")
+    return translations, result.model_used, elapsed_ms
 
 
 def _fallback_reply(rank: int, summary: dict[str, Any]) -> dict[str, Any]:
@@ -487,6 +744,7 @@ async def assist_conversation(
             trace_id=trace_id,
             temperature=0.35,
             max_tokens=900,
+            purpose="chat",
         )
     except Exception as exc:
         logger.bind(
@@ -548,128 +806,224 @@ async def translate_admin_text(
     request: Request,
     operator: dict = Depends(require_operator),
 ):
-    started = time.time()
     trace_id = getattr(request.state, "trace_id", str(uuid.uuid4()))
     operator_id = operator.get("sub")
     items = [item for item in body.items if item.text.strip()]
     if not items:
         return {"translations": [], "model_used": None, "latency_ms": 0}
 
-    normalized_body = body.model_copy(update={"items": items})
-    logger.bind(
+    translations, model_used, elapsed_ms = await _run_operator_translation(
+        body=body.model_copy(update={"items": items}),
+        trace_id=trace_id,
         operator_id=operator_id,
-        item_count=len(items),
-        target_language=body.target_language,
-    ).info("ops_ai.translate.start")
-
-    try:
-        result = await llm_chat(
-            messages=_build_translation_messages(normalized_body),
-            trace_id=trace_id,
-            temperature=0.1,
-            max_tokens=4000,
-        )
-    except Exception as exc:
-        logger.bind(
-            operator_id=operator_id,
-            item_count=len(items),
-            elapsed_ms=round((time.time() - started) * 1000, 1),
-            error=str(exc),
-        ).warning("ops_ai.translate.llm_error")
-        raise HTTPException(status_code=502, detail="翻译生成失败") from exc
-
-    if result.error:
-        logger.bind(
-            operator_id=operator_id,
-            item_count=len(items),
-            elapsed_ms=round((time.time() - started) * 1000, 1),
-            error=result.error,
-        ).warning("ops_ai.translate.llm_error")
-        raise HTTPException(status_code=502, detail="翻译生成失败")
-
-    try:
-        parsed = _extract_json_object(result.content)
-        translations = _normalize_translation_payload(parsed, items)
-    except ValueError as exc:
-        logger.bind(
-            operator_id=operator_id,
-            item_count=len(items),
-            elapsed_ms=round((time.time() - started) * 1000, 1),
-            error=str(exc),
-        ).warning("ops_ai.translate.parse_error")
-        try:
-            repair_result = await llm_chat(
-                messages=_build_translation_repair_messages(
-                    original_content=result.content,
-                    requested_items=items,
-                ),
-                trace_id=trace_id,
-                temperature=0,
-                max_tokens=4000,
-            )
-            if repair_result.error:
-                raise ValueError(repair_result.error)
-            parsed = _extract_json_object(repair_result.content)
-            translations = _normalize_translation_payload(parsed, items)
-            result = repair_result
-        except Exception as repair_exc:
-            logger.bind(
-                operator_id=operator_id,
-                item_count=len(items),
-                elapsed_ms=round((time.time() - started) * 1000, 1),
-                error=str(repair_exc),
-            ).warning("ops_ai.translate.repair_failed")
-            translations = [{"id": item.id, "text": item.text} for item in items]
-
-    needs_repair = _items_needing_chinese_repair(
-        items,
-        translations,
-        target_language=body.target_language,
     )
-    if needs_repair:
-        logger.bind(
-            operator_id=operator_id,
-            item_count=len(items),
-            repair_count=len(needs_repair),
-        ).warning("ops_ai.translate.untranslated_items_detected")
-        try:
-            repair_result = await llm_chat(
-                messages=_build_translation_repair_messages(
-                    original_content=result.content,
-                    requested_items=needs_repair,
-                    previous_translations=[
-                        item for item in translations if item["id"] in {source.id for source in needs_repair}
-                    ],
-                ),
-                trace_id=trace_id,
-                temperature=0,
-                max_tokens=4000,
-            )
-            if repair_result.error:
-                raise ValueError(repair_result.error)
-            parsed = _extract_json_object(repair_result.content)
-            repaired = _normalize_translation_payload(parsed, needs_repair)
-            translations = _merge_translation_repairs(translations, repaired)
-            result = repair_result
-        except Exception as repair_exc:
-            logger.bind(
-                operator_id=operator_id,
-                item_count=len(items),
-                repair_count=len(needs_repair),
-                elapsed_ms=round((time.time() - started) * 1000, 1),
-                error=str(repair_exc),
-            ).warning("ops_ai.translate.untranslated_repair_failed")
-
-    elapsed_ms = round((time.time() - started) * 1000, 1)
-    logger.bind(
-        operator_id=operator_id,
-        item_count=len(translations),
-        model_used=result.model_used,
-        elapsed_ms=elapsed_ms,
-    ).info("ops_ai.translate.success")
 
     return {
         "translations": translations,
-        "model_used": result.model_used,
+        "model_used": model_used,
         "latency_ms": elapsed_ms,
+    }
+
+
+@router.post(
+    "/conversations/{conversation_id}/translate-messages",
+    response_model=OpsAiConversationTranslateResponse,
+)
+async def translate_and_save_conversation_messages(
+    conversation_id: str,
+    body: OpsAiConversationTranslateRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    operator: dict = Depends(require_operator),
+):
+    cid = _validate_uuid(conversation_id, "conversation_id")
+    trace_id = getattr(request.state, "trace_id", str(uuid.uuid4()))
+    operator_id = operator.get("sub")
+
+    if not body.message_ids:
+        return {
+            "translations": [],
+            "model_used": None,
+            "latency_ms": 0,
+            "saved_count": 0,
+            "skipped_count": 0,
+        }
+
+    conversation_row = (
+        await db.execute(
+            text(
+                """
+                SELECT
+                  c.id AS conversation_id,
+                  c.user_id,
+                  u.nickname,
+                  u.external_id
+                FROM conversations c
+                LEFT JOIN users u ON u.id = c.user_id
+                WHERE c.id = CAST(:cid AS uuid)
+                """
+            ),
+            {"cid": cid},
+        )
+    ).fetchone()
+    if conversation_row is None:
+        raise HTTPException(status_code=404, detail="conversation not found")
+
+    user_id = conversation_row._mapping.get("user_id")
+    preserve_terms = [
+        *(body.preserve_terms or []),
+        str(conversation_row._mapping.get("nickname") or ""),
+        str(conversation_row._mapping.get("external_id") or ""),
+    ]
+    preserve_terms = [term for term in preserve_terms if term.strip()]
+
+    msg_query = text(
+        """
+        SELECT
+          m.id::text AS id,
+          m.sender_type,
+          m.content,
+          m.operator_translation_zh
+        FROM messages m
+        WHERE m.id IN :message_ids
+          AND COALESCE(NULLIF(BTRIM(m.content), ''), '') <> ''
+          AND (
+            m.conversation_id = CAST(:cid AS uuid)
+            OR (
+              CAST(:uid AS uuid) IS NOT NULL
+              AND EXISTS (
+                SELECT 1
+                FROM conversations mc
+                WHERE mc.id = m.conversation_id
+                  AND mc.user_id = CAST(:uid AS uuid)
+              )
+            )
+          )
+        ORDER BY m.created_at ASC
+        LIMIT 80
+        """
+    ).bindparams(bindparam("message_ids", expanding=True))
+    msg_rows = (
+        await db.execute(
+            msg_query,
+            {
+                "cid": cid,
+                "uid": str(user_id) if user_id is not None else None,
+                "message_ids": body.message_ids,
+            },
+        )
+    ).fetchall()
+
+    rows_by_id = {
+        str(row._mapping["id"]): {
+            "sender_type": str(row._mapping.get("sender_type") or ""),
+            "content": str(row._mapping.get("content") or ""),
+            "operator_translation_zh": str(row._mapping.get("operator_translation_zh") or ""),
+        }
+        for row in msg_rows
+    }
+    items = []
+    for message_id in body.message_ids:
+        row = rows_by_id.get(message_id)
+        if row is None:
+            continue
+        if not _translation_needs_refresh(
+            source_text=row["content"],
+            translated_text=row["operator_translation_zh"],
+            target_language=body.target_language,
+        ):
+            continue
+        items.append(
+            OpsAiTranslateItem(
+                id=message_id,
+                sender_type=row["sender_type"],
+                text=row["content"],
+            )
+        )
+    skipped_count = max(0, len(body.message_ids) - len(items))
+    if not items:
+        return {
+            "translations": [],
+            "model_used": None,
+            "latency_ms": 0,
+            "saved_count": 0,
+            "skipped_count": skipped_count,
+        }
+
+    translations: list[dict[str, str]] = []
+    model_used_parts: list[str] = []
+    elapsed_ms = 0.0
+    batch_size = 10
+    for offset in range(0, len(items), batch_size):
+        batch = items[offset : offset + batch_size]
+        batch_translations, batch_model_used, batch_elapsed_ms = await _run_operator_translation(
+            body=OpsAiTranslateRequest(
+                items=batch,
+                target_language=body.target_language,
+                preserve_terms=preserve_terms,
+            ),
+            trace_id=trace_id,
+            operator_id=operator_id,
+        )
+        translations.extend(batch_translations)
+        elapsed_ms += batch_elapsed_ms
+        if batch_model_used and batch_model_used not in model_used_parts:
+            model_used_parts.append(batch_model_used)
+    model_used = ",".join(model_used_parts) if model_used_parts else None
+
+    translated_by_id = {
+        str(item.get("id") or "").strip(): str(item.get("text") or "").strip()
+        for item in translations
+        if str(item.get("id") or "").strip()
+        and str(item.get("text") or "").strip()
+        and str(item.get("id") or "").strip() in rows_by_id
+        and not _translation_needs_refresh(
+            source_text=rows_by_id[str(item.get("id") or "").strip()]["content"],
+            translated_text=str(item.get("text") or "").strip(),
+            target_language=body.target_language,
+        )
+    }
+    saved_count = 0
+    try:
+        for message_id, translated_text in translated_by_id.items():
+            result = (
+                await db.execute(
+                    text(
+                        """
+                        UPDATE messages
+                        SET operator_translation_zh = :translation
+                        WHERE id = CAST(:message_id AS uuid)
+                          AND (
+                            COALESCE(NULLIF(BTRIM(operator_translation_zh), ''), '') = ''
+                            OR BTRIM(operator_translation_zh) = BTRIM(content)
+                          )
+                        RETURNING id
+                        """
+                    ),
+                    {"message_id": message_id, "translation": translated_text},
+                )
+            ).fetchone()
+            if result is not None:
+                saved_count += 1
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+
+    logger.bind(
+        operator_id=operator_id,
+        conversation_id=cid,
+        requested_count=len(body.message_ids),
+        translated_count=len(translations),
+        saved_count=saved_count,
+        skipped_count=skipped_count,
+        model_used=model_used,
+    ).info("ops_ai.conversation_translate.saved")
+
+    return {
+        "translations": translations,
+        "model_used": model_used,
+        "latency_ms": elapsed_ms,
+        "saved_count": saved_count,
+        "skipped_count": skipped_count,
     }

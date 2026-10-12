@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.database import AsyncSessionLocal
+from services.runtime_ownership import telegram_worker_advisory_lock_key
 from services.human_delay_calculator import calculate_human_delay
 from services.mtproto.account_pool import AccountPool
 from services.mtproto.account_routing import pin_mtproto_account_route
@@ -47,6 +48,12 @@ except ModuleNotFoundError:
 
 _ADVISORY_LOCK_KEY = 6_300_422
 JOB_ID = "auto_delivery_worker_tick"
+
+
+class _ClientNotReady(Exception):
+    """Live MTProto client is not in this process yet; defer instead of failing."""
+
+
 TIMEOUT_FALLBACK_MESSAGE_TYPE = "timeout_fallback"
 TIMEOUT_FALLBACK_DELIVERY_MODE = "timeout_fallback"
 DEFAULT_TIMEOUT_FALLBACK_SCRIPT_HIT_ID = "default.timeout_fallback.safe_reply"
@@ -567,15 +574,16 @@ async def _send_via_mtproto_account(
     asset: dict[str, Any] | None = None,
 ) -> bool:
     """Send using a specific MTProto account instead of hash routing."""
+    from services.runtime_ownership import legacy_worker_should_handle_account
+
+    if not await legacy_worker_should_handle_account(str(account_id)):
+        raise PermissionError(f"runtime_owned:{account_id}")
     try:
         from services.mtproto.peer_resolve import resolve_telethon_peer
 
         client = await telegram_account_manager.get_client(UUID(account_id))
         if client is None:
-            logger.bind(account_id=account_id, trace_id=trace_id).warning(
-                "auto_delivery_worker.account_client_missing"
-            )
-            return False
+            raise _ClientNotReady(account_id)
 
         delay_result = calculate_human_delay(content)
         await asyncio.sleep(delay_result.delay_seconds)
@@ -610,6 +618,10 @@ async def _send_via_mtproto_account(
             has_asset=bool(asset),
         ).info("auto_delivery_worker.sent_via_account")
         return True
+    except PermissionError:
+        raise
+    except _ClientNotReady:
+        raise
     except Exception as exc:
         logger.bind(
             trace_id=trace_id,
@@ -718,6 +730,10 @@ async def _send_via_account_pool(
 
         return True
 
+    except PermissionError:
+        raise
+    except LookupError:
+        raise
     except Exception as e:
         logger.bind(trace_id=trace_id, user_id=user_id).error(f"auto_delivery_worker.send_error: {e}")
         return False
@@ -738,6 +754,7 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
         "skipped_no_lock": 0,
         "skipped_no_pool": 0,
         "recovered_stale_sending": 0,
+        "deferred_client_not_ready": 0,
         "error": None,
     }
 
@@ -746,10 +763,11 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
     try:
         async with AsyncSessionLocal() as session:
             got_lock = False
+            lock_key = telegram_worker_advisory_lock_key(_ADVISORY_LOCK_KEY)
             got = (
                 await session.execute(
                     text("SELECT pg_try_advisory_lock(:k)"),
-                    {"k": _ADVISORY_LOCK_KEY},
+                    {"k": lock_key},
                 )
             ).scalar()
             if not got:
@@ -760,6 +778,8 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
 
             try:
                 # Check AccountPool
+                if _account_pool is None:
+                    await _init_account_pool()
                 if _account_pool is None:
                     stats["skipped_no_pool"] = 1
                     log.warning("auto_delivery_worker.tick.skip_no_pool")
@@ -942,6 +962,21 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
                                                reason=f"account_gate:{gate_reason}")
                     log.bind(message_id=message_id, reason=gate_reason).info("auto_delivery_worker.account_gate_defer")
                     return stats
+                if preferred_account_id:
+                    from services.runtime_ownership import legacy_worker_should_handle_account
+
+                    if not await legacy_worker_should_handle_account(str(preferred_account_id)):
+                        await _defer_message_until(
+                            session,
+                            message_id=message_id,
+                            send_at=datetime.now(timezone.utc) + timedelta(seconds=30),
+                            reason="runtime_owned_skip_legacy_delivery",
+                        )
+                        stats["skipped_runtime_owned"] = 1
+                        log.bind(message_id=message_id).info(
+                            "auto_delivery_worker.tick.skip_runtime_owned"
+                        )
+                        return stats
                 raw_access_hash = (message.get("metadata") or {}).get("telegram_access_hash")
                 telegram_access_hash = (
                     int(str(raw_access_hash)) if raw_access_hash is not None else None
@@ -960,15 +995,40 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
 
                 # Send via AccountPool
                 if chat_id:
-                    success = await _send_via_account_pool(
-                        user_id=user_id,
-                        chat_id=chat_id,
-                        content=content,
-                        trace_id=trace_id,
-                        preferred_account_id=preferred_account_id,
-                        telegram_access_hash=telegram_access_hash,
-                        asset=asset,
-                    )
+                    try:
+                        success = await _send_via_account_pool(
+                            user_id=user_id,
+                            chat_id=chat_id,
+                            content=content,
+                            trace_id=trace_id,
+                            preferred_account_id=preferred_account_id,
+                            telegram_access_hash=telegram_access_hash,
+                            asset=asset,
+                        )
+                    except PermissionError:
+                        await _defer_message_until(
+                            session,
+                            message_id=message_id,
+                            send_at=datetime.now(timezone.utc) + timedelta(seconds=30),
+                            reason="runtime_owned_skip_legacy_delivery",
+                        )
+                        stats["skipped_runtime_owned"] = 1
+                        log.bind(message_id=message_id).info(
+                            "auto_delivery_worker.tick.skip_runtime_owned"
+                        )
+                        return stats
+                    except (_ClientNotReady, LookupError):
+                        await _defer_message_until(
+                            session,
+                            message_id=message_id,
+                            send_at=datetime.now(timezone.utc) + timedelta(seconds=60),
+                            reason="client_not_ready",
+                        )
+                        stats["deferred_client_not_ready"] = 1
+                        log.bind(message_id=message_id).info(
+                            "auto_delivery_worker.tick.client_not_ready"
+                        )
+                        return stats
 
                     if success:
                         sender_id = "auto_delivery_worker"
@@ -1071,7 +1131,7 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
                     try:
                         await session.execute(
                             text("SELECT pg_advisory_unlock(:k)"),
-                            {"k": _ADVISORY_LOCK_KEY},
+                            {"k": lock_key},
                         )
                         await session.commit()
                     except Exception as unlock_error:

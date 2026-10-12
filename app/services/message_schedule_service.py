@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from uuid import uuid4
 
@@ -12,8 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.database import AsyncSessionLocal
+from services.runtime_ownership import telegram_worker_advisory_lock_key
 from models.message_schedule import MessageSchedule
 from services.app_download_nurture import APP_DOWNLOAD_NURTURE_DELIVERY_MODE
+from services.post_release_ai_followup import DELIVERY_MODE as POST_RELEASE_AI_FOLLOWUP_DELIVERY_MODE
 
 try:
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -24,6 +26,7 @@ except ModuleNotFoundError:
 
 _ADVISORY_LOCK_KEY = 6_300_421
 JOB_ID = "message_schedule_tick"
+VIDEO_CALL_OUTREACH_DELIVERY_MODE = "video_call_outreach"
 
 _scheduler: Optional[AsyncIOScheduler] = None
 
@@ -41,6 +44,8 @@ async def _claim_one_message(session: AsyncSession) -> dict[str, Any] | None:
                       AND (ms.send_at IS NULL OR ms.send_at <= NOW())
                       AND ms.retry_count < ms.max_retries
                       AND COALESCE(ms.metadata->>'delivery_mode', '') <> :app_download_nurture_mode
+                      AND COALESCE(ms.metadata->>'delivery_mode', '') <> :video_call_outreach_mode
+                      AND COALESCE(ms.metadata->>'delivery_mode', '') <> :post_release_ai_followup_mode
                     ORDER BY ms.priority DESC, ms.send_at ASC NULLS LAST, ms.created_at ASC
                     FOR UPDATE OF ms SKIP LOCKED
                     LIMIT 1
@@ -55,7 +60,11 @@ async def _claim_one_message(session: AsyncSession) -> dict[str, Any] | None:
                        ms.metadata, ms.trace_id, ms.retry_count
                 """
             ),
-            {"app_download_nurture_mode": APP_DOWNLOAD_NURTURE_DELIVERY_MODE},
+            {
+                "app_download_nurture_mode": APP_DOWNLOAD_NURTURE_DELIVERY_MODE,
+                "video_call_outreach_mode": VIDEO_CALL_OUTREACH_DELIVERY_MODE,
+                "post_release_ai_followup_mode": POST_RELEASE_AI_FOLLOWUP_DELIVERY_MODE,
+            },
         )
     ).mappings().first()
     if not row:
@@ -185,6 +194,7 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
         "sent": 0,
         "failed": 0,
         "skipped_no_lock": 0,
+        "deferred_client_not_ready": 0,
         "error": None,
     }
 
@@ -193,10 +203,11 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
     try:
         async with AsyncSessionLocal() as session:
             # Get advisory lock
+            lock_key = telegram_worker_advisory_lock_key(_ADVISORY_LOCK_KEY)
             got = (
                 await session.execute(
                     text("SELECT pg_try_advisory_lock(:k)"),
-                    {"k": _ADVISORY_LOCK_KEY},
+                    {"k": lock_key},
                 )
             ).scalar()
             if not got:
@@ -225,6 +236,52 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
 
                 # Send message via Telegram
                 if account_id and chat_id:
+                    from services.runtime_ownership import legacy_worker_should_handle_account
+
+                    if not await legacy_worker_should_handle_account(str(account_id)):
+                        await session.execute(
+                            text(
+                                """
+                                UPDATE message_schedules
+                                SET status = 'pending', updated_at = NOW()
+                                WHERE id = CAST(:id AS uuid)
+                                """
+                            ),
+                            {"id": message_id},
+                        )
+                        await session.commit()
+                        stats["skipped_runtime_owned"] = 1
+                        log.bind(message_id=message_id).info(
+                            "message_schedule_service.tick.skip_runtime_owned"
+                        )
+                        return stats
+                    from uuid import UUID as _UUID
+                    from services.telegram_account_manager import telegram_account_manager
+
+                    live_client = await telegram_account_manager.get_client(_UUID(str(account_id)))
+                    if live_client is None:
+                        await session.execute(
+                            text(
+                                """
+                                UPDATE message_schedules
+                                SET status = 'pending',
+                                    send_at = :send_at,
+                                    failure_reason = 'client_not_ready',
+                                    updated_at = NOW()
+                                WHERE id = CAST(:id AS uuid)
+                                """
+                            ),
+                            {
+                                "id": message_id,
+                                "send_at": datetime.now(timezone.utc) + timedelta(seconds=60),
+                            },
+                        )
+                        await session.commit()
+                        stats["deferred_client_not_ready"] = 1
+                        log.bind(message_id=message_id).info(
+                            "message_schedule_service.tick.client_not_ready"
+                        )
+                        return stats
                     success = await _send_message_via_telegram(
                         account_id=account_id,
                         chat_id=chat_id,

@@ -180,9 +180,24 @@ class TelegramSessionLoginManager:
 
         await self._discard(login_id)
 
+        from services.runtime_ownership import claim_account_for_runtime
+
+        await claim_account_for_runtime(str(account_id))
+
         connected = False
         if auto_connect:
-            connected = await telegram_account_manager.connect_account(account_id)
+            from services.telegram_command_gateway import submit_telegram_command
+
+            async def _legacy_auto_connect():
+                return await telegram_account_manager.connect_account(account_id)
+
+            gated = await submit_telegram_command(
+                command_type="connect_account",
+                account_id=str(account_id),
+                legacy_execute=_legacy_auto_connect,
+                priority=50,
+            )
+            connected = bool(gated.executed and gated.value)
 
         logger.info(
             "telegram_session_login.saved account_id={} phone={} auto_connect={}",

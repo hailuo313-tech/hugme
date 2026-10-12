@@ -16,21 +16,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.messages import get_redis  # 复用 messages.py 已有的 Redis 单例
 from core.database import get_db
+from services.ai_message_limit import AIMessageLimitReached
 from services.llm_orchestrator import (
     LLMOrchestratorError,
     generate_reply,
 )
 from services.app_download_conversion import get_last_app_download_decision
 from services.link_attribution import wrap_text_links_with_tracking
-from services.reply_consistency import (
-    evaluate_reply_consistency,
-    load_reply_consistency_context,
-)
 
 router = APIRouter()
 
 
-CONTEXT_MAX_MESSAGES = 20
+CONTEXT_MAX_MESSAGES = 200
 CONTEXT_TTL_SECONDS = 86400 * 3
 
 
@@ -132,6 +129,9 @@ async def ai_reply(
             db=db,
             trigger_message_id=trigger_msg_id,
         )
+    except AIMessageLimitReached as exc:
+        log.bind(result="blocked", reason=str(exc)).info("conversation.reply.ai_limit")
+        raise HTTPException(status_code=429, detail="Non-T1 AI message limit reached")
     except LLMOrchestratorError as exc:
         log.bind(result="failed", reason=str(exc)).warning(
             "conversation.reply.orchestrator_failed"
@@ -140,20 +140,6 @@ async def ai_reply(
             status_code=503,
             detail="LLM orchestrator unavailable",
         )
-
-    try:
-        ctx = await load_reply_consistency_context(db, conv_id)
-    except Exception as exc:
-        log.bind(error_type=type(exc).__name__).warning(
-            "conversation.reply.consistency_context_failed"
-        )
-        ctx = {}
-    consistency = evaluate_reply_consistency(
-        reply_text=reply_text,
-        character=ctx.get("character"),
-    )
-    reply_text = consistency.output_text
-    log.bind(**consistency.as_log_dict()).info("conversation.reply.consistency_checked")
 
     bot_msg_id = str(uuid.uuid4())
     app_download_decision = get_last_app_download_decision()
@@ -224,7 +210,7 @@ async def ai_reply(
             "id": bot_msg_id,
             "cid": conv_id,
             "ct": reply_text,
-            "cs": consistency.score,
+            "cs": None,
         },
     )
     await db.execute(

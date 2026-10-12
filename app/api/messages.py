@@ -1,7 +1,7 @@
 """
 D1-2: POST /api/v1/messages/inbound
 - 入库（users / conversations / messages 表）
-- Redis 短期上下文写入（最近 20 条，key: ctx:{conversation_id}）
+- Redis 短期上下文写入（最近 200 条，key: ctx:{conversation_id}）
 - 幂等键支持（header Idempotency-Key 或 metadata.tg_message_id）
 - 返回 202 Accepted
 - trace_id 贯穿全链路日志
@@ -21,8 +21,6 @@ import redis.asyncio as aioredis
 
 from services.memory_writer import maybe_write_memory
 from services.age_extraction import maybe_extract_and_write_age
-from services.content_safety import evaluate_inbound_content_safety
-from services.minor_protection import evaluate_inbound_minor_protection
 from services.user_level_service import user_level_service
 from services.geoip_service import get_geoip_service
 from services.profile_intake import (
@@ -53,7 +51,7 @@ async def get_redis():
 
 
 # ── 常量 ──────────────────────────────────────────────
-CONTEXT_MAX_MESSAGES = 20          # 短期上下文保留条数
+CONTEXT_MAX_MESSAGES = 200         # 短期上下文保留条数
 CONTEXT_TTL_SECONDS  = 86400 * 3   # 3 天无活动后过期
 RATE_LIMIT_PER_MIN   = 20          # 每用户每分钟上限
 RATE_LIMIT_PER_HOUR  = 200         # 每用户每小时上限
@@ -122,7 +120,7 @@ async def _push_context(redis, conv_id: str, role: str, content: str, msg_id: st
 
     pipe = redis.pipeline()
     pipe.rpush(key, entry)
-    pipe.ltrim(key, -CONTEXT_MAX_MESSAGES, -1)   # 只保留最后 20 条
+    pipe.ltrim(key, -CONTEXT_MAX_MESSAGES, -1)   # 只保留最后 200 条
     pipe.expire(key, CONTEXT_TTL_SECONDS)
     await pipe.execute()
 
@@ -328,141 +326,22 @@ async def inbound_message(
         )
         log.bind(conversation_id=conv_id).info("message.inbound.conversation.created")
 
-    # ── 未成年人保护 + 内容安全：仅文本 ───────────────────────────
-    safety_result: dict | None = None
-    if data.message_type == "text" and (data.content or "").strip():
-        minor_decision = await evaluate_inbound_minor_protection(
-            db,
-            user_id=user_id,
-            text_value=data.content,
-            is_minor_suspected=is_minor_suspected,
-        )
-        if (
-            minor_decision.suspected_minor
-            or minor_decision.adult_content
-            or minor_decision.updated_user
-        ):
-            safety_result = minor_decision.as_safety_layer()
-        if minor_decision.blocked:
-            msg_id = str(uuid.uuid4())
-            await db.execute(
-                text(
-                    "INSERT INTO messages "
-                    "(id,conversation_id,sender_type,sender_id,content,content_type,safety_result) "
-                    "VALUES (:id,:cid,'user',:sid,:ct,:ctype, CAST(:sr AS jsonb))"
-                ),
-                {
-                    "id": msg_id,
-                    "cid": conv_id,
-                    "sid": user_id,
-                    "ct": data.content,
-                    "ctype": data.message_type,
-                    "sr": json.dumps(safety_result, ensure_ascii=False),
-                },
-            )
-            await db.execute(
-                text(
-                    "UPDATE conversations SET last_message_at=NOW(), updated_at=NOW() WHERE id=:id"
-                ),
-                {"id": conv_id},
-            )
-            await db.commit()
-            log.bind(message_id=msg_id).info("message.inbound.blocked_by_minor_protection")
-            resp_body = {
-                "message_id": msg_id,
-                "conversation_id": conv_id,
-                "status": "blocked_by_safety",
-                "trace_id": trace_id,
-                "block_reason": minor_decision.reason,
-            }
-            if idem_key:
-                await redis.set(f"idem:{idem_key}", json.dumps(resp_body), ex=86400)
-            return JSONResponse(status_code=422, content=resp_body)
-
-    if (
-        settings.CONTENT_SAFETY_ENABLED
-        and data.message_type == "text"
-        and (data.content or "").strip()
-    ):
-        content_safety_result = await evaluate_inbound_content_safety(
-            data.content, trace_id=trace_id
-        )
-        if safety_result is None:
-            safety_result = content_safety_result
-        else:
-            safety_result = {
-                **content_safety_result,
-                "minor_protection": safety_result.get("minor_protection"),
-            }
-        if content_safety_result.get("blocked"):
-            msg_id = str(uuid.uuid4())
-            await db.execute(
-                text(
-                    "INSERT INTO messages "
-                    "(id,conversation_id,sender_type,sender_id,content,content_type,safety_result) "
-                    "VALUES (:id,:cid,'user',:sid,:ct,:ctype, CAST(:sr AS jsonb))"
-                ),
-                {
-                    "id": msg_id,
-                    "cid": conv_id,
-                    "sid": user_id,
-                    "ct": data.content,
-                    "ctype": data.message_type,
-                    "sr": json.dumps(safety_result, ensure_ascii=False),
-                },
-            )
-            await db.execute(
-                text(
-                    "UPDATE conversations SET last_message_at=NOW(), updated_at=NOW() WHERE id=:id"
-                ),
-                {"id": conv_id},
-            )
-            await db.commit()
-            log.bind(message_id=msg_id).info("message.inbound.blocked_by_safety")
-            resp_body = {
-                "message_id": msg_id,
-                "conversation_id": conv_id,
-                "status": "blocked_by_safety",
-                "trace_id": trace_id,
-                "block_reason": safety_result.get("block_reason"),
-            }
-            if idem_key:
-                await redis.set(f"idem:{idem_key}", json.dumps(resp_body), ex=86400)
-            return JSONResponse(status_code=422, content=resp_body)
-
     # ── 写入 messages 表 ─────────────────────────────────
     msg_id = str(uuid.uuid4())
-    if safety_result is not None:
-        await db.execute(
-            text(
-                "INSERT INTO messages "
-                "(id,conversation_id,sender_type,sender_id,content,content_type,safety_result) "
-                "VALUES (:id,:cid,'user',:sid,:ct,:ctype, CAST(:sr AS jsonb))"
-            ),
-            {
-                "id": msg_id,
-                "cid": conv_id,
-                "sid": user_id,
-                "ct": data.content,
-                "ctype": data.message_type,
-                "sr": json.dumps(safety_result, ensure_ascii=False),
-            },
-        )
-    else:
-        await db.execute(
-            text(
-                "INSERT INTO messages "
-                "(id,conversation_id,sender_type,sender_id,content,content_type) "
-                "VALUES (:id,:cid,'user',:sid,:ct,:ctype)"
-            ),
-            {
-                "id": msg_id,
-                "cid": conv_id,
-                "sid": user_id,
-                "ct": data.content,
-                "ctype": data.message_type,
-            },
-        )
+    await db.execute(
+        text(
+            "INSERT INTO messages "
+            "(id,conversation_id,sender_type,sender_id,content,content_type) "
+            "VALUES (:id,:cid,'user',:sid,:ct,:ctype)"
+        ),
+        {
+            "id": msg_id,
+            "cid": conv_id,
+            "sid": user_id,
+            "ct": data.content,
+            "ctype": data.message_type,
+        },
+    )
     await db.execute(
         text("UPDATE conversations SET last_message_at=NOW(), updated_at=NOW() WHERE id=:id"),
         {"id": conv_id}
@@ -470,7 +349,7 @@ async def inbound_message(
     await db.commit()
     log.bind(message_id=msg_id).info("message.inbound.persisted")
 
-    # ── Redis 短期上下文（最近 20 条）────────────────────
+    # ── Redis 短期上下文（最近 200 条）───────────────────
     try:
         await _push_context(redis, conv_id, "user", data.content, msg_id)
         log.bind(conversation_id=conv_id).info("message.inbound.context.pushed")

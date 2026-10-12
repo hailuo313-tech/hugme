@@ -10,6 +10,7 @@ interface TelegramAccount {
   status: string;
   is_active: boolean;
   display_name: string | null;
+  admin_display_name?: string | null;
   username: string | null;
   user_id: number | null;
   is_connected: boolean;
@@ -17,6 +18,10 @@ interface TelegramAccount {
   last_connected_at: string | null;
   last_error_at: string | null;
   error_message: string | null;
+  reply_mode: "ai" | "fixed";
+  app_download_platform?: string;
+  api_credential_id?: string | null;
+  api_credential_name?: string | null;
 }
 
 interface TelegramAccountsResponse {
@@ -40,13 +45,52 @@ interface SessionLoginVerifyResponse {
   message: string;
 }
 
+interface TelegramApiCredential {
+  id: string | null;
+  name: string;
+  serial_no: number;
+  serial_label: string;
+  api_id: number;
+  api_hash_masked: string;
+  is_default: boolean;
+  is_active: boolean;
+  max_accounts: number | null;
+  note: string | null;
+  account_count: number;
+}
+
+interface TelegramApiCredentialListResponse {
+  credentials: TelegramApiCredential[];
+  total: number;
+}
+
 const emptyLoginForm = {
   phone: "",
   display_name: "",
   code: "",
   password: "",
   auto_connect: true,
+  api_credential_id: "",
 };
+
+const emptyCredentialForm = {
+  sort_order: "",
+  name: "",
+  api_id: "",
+  api_hash: "",
+  max_accounts: "",
+  note: "",
+};
+
+const APP_DOWNLOAD_PLATFORM_OPTIONS = [
+  { value: "default", label: "跟随A设为默认" },
+  { value: "platform_a", label: "A平台" },
+  { value: "platform_b", label: "B平台" },
+  { value: "platform_c", label: "C平台" },
+  { value: "platform_d", label: "D平台" },
+  { value: "platform_e", label: "E平台" },
+  { value: "platform_f", label: "F平台" },
+];
 
 export default function TelegramAccountsPage() {
   return (
@@ -58,31 +102,52 @@ export default function TelegramAccountsPage() {
 
 function TelegramAccountsManager() {
   const [accounts, setAccounts] = useState<TelegramAccount[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [credentials, setCredentials] = useState<TelegramApiCredential[]>([]);
+  const [credentialForm, setCredentialForm] = useState(emptyCredentialForm);
+  const [showCredentialForm, setShowCredentialForm] = useState(false);
+  const [listLoading, setListLoading] = useState(false);
+  const [formBusy, setFormBusy] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [visibleCount, setVisibleCount] = useState(40);
   const [showAddModal, setShowAddModal] = useState(false);
   const [form, setForm] = useState(emptyLoginForm);
   const [loginId, setLoginId] = useState<string | null>(null);
   const [codePhone, setCodePhone] = useState<string | null>(null);
   const [requiresPassword, setRequiresPassword] = useState(false);
 
-  const loadAccounts = async () => {
-    setLoading(true);
-    setError(null);
+  const loadCredentials = async () => {
+    try {
+      const resp = await apiFetch<TelegramApiCredentialListResponse>("/telegram/api-credentials");
+      setCredentials(resp.credentials);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "加载开发者应用失败");
+    }
+  };
+
+  const loadAccounts = async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setListLoading(true);
+    if (!opts?.silent) setError(null);
     try {
       const resp = await apiFetch<TelegramAccountsResponse>("/telegram/accounts");
       setAccounts(resp.accounts);
     } catch (e) {
       setError(e instanceof Error ? e.message : "加载账号列表失败");
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setListLoading(false);
     }
   };
 
   useEffect(() => {
-    loadAccounts();
+    void loadAccounts();
+    void loadCredentials();
   }, []);
+
+  useEffect(() => {
+    setVisibleCount(40);
+  }, [query]);
 
   const filteredAccounts = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -91,14 +156,21 @@ function TelegramAccountsManager() {
       const fields = [
         account.phone,
         account.display_name,
+        account.admin_display_name,
         account.username,
         account.username ? `@${account.username}` : null,
         account.user_id ? String(account.user_id) : null,
         account.status,
+        account.api_credential_name,
       ];
       return fields.some((field) => field?.toLowerCase().includes(needle));
     });
   }, [accounts, query]);
+
+  const visibleAccounts = useMemo(
+    () => filteredAccounts.slice(0, visibleCount),
+    [filteredAccounts, visibleCount],
+  );
 
   const resetLoginForm = () => {
     setForm(emptyLoginForm);
@@ -109,7 +181,7 @@ function TelegramAccountsManager() {
 
   const startLogin = async (e: FormEvent) => {
     e.preventDefault();
-    setLoading(true);
+    setFormBusy(true);
     setError(null);
     try {
       const resp = await apiFetch<SessionLoginStartResponse>("/telegram/session-login/start", {
@@ -117,6 +189,7 @@ function TelegramAccountsManager() {
         body: JSON.stringify({
           phone: form.phone,
           display_name: form.display_name,
+          api_credential_id: form.api_credential_id || null,
         }),
       });
       setLoginId(resp.login_id);
@@ -125,14 +198,14 @@ function TelegramAccountsManager() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "发送验证码失败");
     } finally {
-      setLoading(false);
+      setFormBusy(false);
     }
   };
 
   const verifyLogin = async (e: FormEvent) => {
     e.preventDefault();
     if (!loginId) return;
-    setLoading(true);
+    setFormBusy(true);
     setError(null);
     try {
       const resp = await apiFetch<SessionLoginVerifyResponse>("/telegram/session-login/verify", {
@@ -151,79 +224,194 @@ function TelegramAccountsManager() {
       }
       setShowAddModal(false);
       resetLoginForm();
-      await loadAccounts();
+      setQuery("");
+      setVisibleCount(40);
+      if (resp.account_id) {
+        const optimistic: TelegramAccount = {
+          id: resp.account_id,
+          phone: resp.phone || form.phone,
+          status: resp.status || "active",
+          is_active: true,
+          display_name: form.display_name || null,
+          username: null,
+          user_id: null,
+          is_connected: Boolean(form.auto_connect),
+          is_bot: false,
+          last_connected_at: null,
+          last_error_at: null,
+          error_message: null,
+          reply_mode: "ai",
+        };
+        setAccounts((prev) => [optimistic, ...prev.filter((item) => item.id !== resp.account_id)]);
+      }
+      void loadAccounts({ silent: true });
     } catch (e) {
       setError(e instanceof Error ? e.message : "验证登录失败");
     } finally {
-      setLoading(false);
+      setFormBusy(false);
     }
   };
 
   const connectAccount = async (accountId: string) => {
-    setLoading(true);
+    setBusyId(accountId);
     setError(null);
     try {
       await apiFetch(`/telegram/accounts/${accountId}/connect`, { method: "POST" });
-      await loadAccounts();
+      await loadAccounts({ silent: true });
     } catch (e) {
       setError(e instanceof Error ? e.message : "连接账号失败");
     } finally {
-      setLoading(false);
+      setBusyId(null);
     }
   };
 
   const disconnectAccount = async (accountId: string) => {
-    setLoading(true);
+    setBusyId(accountId);
     setError(null);
     try {
       await apiFetch(`/telegram/accounts/${accountId}/disconnect`, { method: "POST" });
-      await loadAccounts();
+      await loadAccounts({ silent: true });
     } catch (e) {
       setError(e instanceof Error ? e.message : "断开账号失败");
     } finally {
-      setLoading(false);
+      setBusyId(null);
     }
   };
 
   const deleteAccount = async (account: TelegramAccount) => {
     const label = account.display_name || account.username || account.phone;
     if (!confirm(`确定要删除 Telegram 账号「${label}」吗？删除后需要重新发送验证码才能接入。`)) return;
-    setLoading(true);
+    setBusyId(account.id);
     setError(null);
+    setAccounts((prev) => prev.filter((item) => item.id !== account.id));
     try {
-      await apiFetch(`/telegram/accounts/${account.id}`, { method: "DELETE" });
-      await loadAccounts();
+      const resp = await apiFetch<{ status?: string; executed?: boolean; message?: string }>(
+        `/telegram/accounts/${account.id}`,
+        { method: "DELETE" },
+      );
+      if (resp.status !== "deleted") {
+        throw new Error(resp.message || "删除未完成，请刷新后重试");
+      }
+      void loadAccounts({ silent: true });
     } catch (e) {
       setError(e instanceof Error ? e.message : "删除账号失败");
+      await loadAccounts();
     } finally {
-      setLoading(false);
+      setBusyId(null);
     }
   };
 
+  const updateAdminDisplayName = async (accountId: string, adminDisplayName: string) => {
+    setBusyId(accountId);
+    setError(null);
+    try {
+      await apiFetch(`/telegram/accounts/${accountId}/admin-display-name`, {
+        method: "PATCH",
+        body: JSON.stringify({ admin_display_name: adminDisplayName }),
+      });
+      setAccounts((prev) =>
+        prev.map((item) =>
+          item.id === accountId ? { ...item, admin_display_name: adminDisplayName } : item,
+        ),
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "修改显示名称失败");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const updateReplyMode = async (accountId: string, replyMode: "ai" | "fixed") => {
+    setBusyId(accountId);
+    setError(null);
+    try {
+      await apiFetch(`/telegram/accounts/${accountId}/reply-mode`, {
+        method: "PATCH",
+        body: JSON.stringify({ reply_mode: replyMode }),
+      });
+      setAccounts((prev) =>
+        prev.map((item) => (item.id === accountId ? { ...item, reply_mode: replyMode } : item)),
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "修改回复模式失败");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const updateAppDownloadPlatform = async (accountId: string, platformKey: string) => {
+    setBusyId(accountId);
+    setError(null);
+    try {
+      await apiFetch(`/telegram/accounts/${accountId}/app-download-platform`, {
+        method: "PATCH",
+        body: JSON.stringify({ app_download_platform: platformKey }),
+      });
+      setAccounts((prev) =>
+        prev.map((item) =>
+          item.id === accountId ? { ...item, app_download_platform: platformKey } : item,
+        ),
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "修改下载平台失败");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const createCredential = async (e: FormEvent) => {
+    e.preventDefault();
+    setFormBusy(true);
+    setError(null);
+    try {
+      await apiFetch("/telegram/api-credentials", {
+        method: "POST",
+        body: JSON.stringify({
+          sort_order: credentialForm.sort_order ? Number(credentialForm.sort_order) : null,
+          name: credentialForm.name.trim(),
+          api_id: Number(credentialForm.api_id),
+          api_hash: credentialForm.api_hash.trim(),
+          max_accounts: credentialForm.max_accounts ? Number(credentialForm.max_accounts) : null,
+          note: credentialForm.note.trim() || null,
+        }),
+      });
+      setCredentialForm(emptyCredentialForm);
+      setShowCredentialForm(false);
+      await loadCredentials();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "创建开发者应用失败");
+    } finally {
+      setFormBusy(false);
+    }
+  };
+
+  const defaultCredential = credentials.find((item) => item.is_default) ?? credentials[0] ?? null;
+  const rowBusy = (accountId: string) => busyId === accountId || bulkBusy;
+
   const connectAll = async () => {
-    setLoading(true);
+    setBulkBusy(true);
     setError(null);
     try {
       await apiFetch("/telegram/accounts/connect-all", { method: "POST" });
-      await loadAccounts();
+      await loadAccounts({ silent: true });
     } catch (e) {
       setError(e instanceof Error ? e.message : "连接所有账号失败");
     } finally {
-      setLoading(false);
+      setBulkBusy(false);
     }
   };
 
   const disconnectAll = async () => {
     if (!confirm("确定要断开所有账号吗？")) return;
-    setLoading(true);
+    setBulkBusy(true);
     setError(null);
     try {
       await apiFetch("/telegram/accounts/disconnect-all", { method: "POST" });
-      await loadAccounts();
+      await loadAccounts({ silent: true });
     } catch (e) {
       setError(e instanceof Error ? e.message : "断开所有账号失败");
     } finally {
-      setLoading(false);
+      setBulkBusy(false);
     }
   };
 
@@ -241,10 +429,10 @@ function TelegramAccountsManager() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <button onClick={connectAll} disabled={loading} className="rounded-lg bg-green-600 px-4 py-2 text-sm transition hover:bg-green-500 disabled:opacity-50">
-              连接所有账号
+            <button onClick={connectAll} disabled={bulkBusy} className="rounded-lg bg-green-600 px-4 py-2 text-sm transition hover:bg-green-500 disabled:opacity-50">
+              {bulkBusy ? "处理中..." : "连接所有账号"}
             </button>
-            <button onClick={disconnectAll} disabled={loading} className="rounded-lg bg-red-600 px-4 py-2 text-sm transition hover:bg-red-500 disabled:opacity-50">
+            <button onClick={disconnectAll} disabled={bulkBusy} className="rounded-lg bg-red-600 px-4 py-2 text-sm transition hover:bg-red-500 disabled:opacity-50">
               断开所有账号
             </button>
             <button onClick={() => setShowAddModal(true)} className="rounded-lg bg-blue-600 px-4 py-2 text-sm transition hover:bg-blue-500">
@@ -261,6 +449,66 @@ function TelegramAccountsManager() {
       )}
 
       <main className="p-6">
+        <section className="mb-6 overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-700 px-6 py-4">
+            <div>
+              <h2 className="text-lg font-semibold">开发者应用 (API ID)</h2>
+              <p className="mt-1 text-sm text-slate-400">
+                每个 TG 号绑定一个开发者应用；现有账号默认走「{defaultCredential?.name || "default"}」，不影响当前业务。
+              </p>
+            </div>
+            <button
+              onClick={() => setShowCredentialForm((value) => !value)}
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm transition hover:bg-indigo-500"
+            >
+              {showCredentialForm ? "取消添加" : "添加开发者应用"}
+            </button>
+          </div>
+
+          {showCredentialForm && (
+            <form onSubmit={createCredential} className="grid gap-4 border-b border-slate-700 px-6 py-4 md:grid-cols-2">
+              <TextInput label="序列号（运营可见，如 1、2、3）" value={credentialForm.sort_order} onChange={(sort_order) => setCredentialForm({ ...credentialForm, sort_order })} placeholder="1" required />
+              <TextInput label="名称" value={credentialForm.name} onChange={(name) => setCredentialForm({ ...credentialForm, name })} placeholder="#1 · 12602041988" required />
+              <TextInput label="api_id" value={credentialForm.api_id} onChange={(api_id) => setCredentialForm({ ...credentialForm, api_id })} placeholder="12345678" required />
+              <TextInput label="api_hash" value={credentialForm.api_hash} onChange={(api_hash) => setCredentialForm({ ...credentialForm, api_hash })} placeholder="从 my.telegram.org 获取" required />
+              <TextInput label="账号上限（留空表示无上限）" value={credentialForm.max_accounts} onChange={(max_accounts) => setCredentialForm({ ...credentialForm, max_accounts })} placeholder="无上限可留空" />
+              <div className="md:col-span-2">
+                <TextInput label="备注" value={credentialForm.note} onChange={(note) => setCredentialForm({ ...credentialForm, note })} placeholder="可选" />
+              </div>
+              <div className="md:col-span-2">
+                <button type="submit" disabled={formBusy} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm transition hover:bg-indigo-500 disabled:opacity-50">
+                  {formBusy ? "保存中..." : "保存开发者应用"}
+                </button>
+              </div>
+            </form>
+          )}
+
+          <div className="divide-y divide-slate-700">
+            {credentials.length === 0 ? (
+              <div className="p-6 text-sm text-slate-400">暂无开发者应用配置，系统将回退到环境变量中的默认 api_id。</div>
+            ) : (
+              credentials.map((credential) => (
+                <div key={credential.id || credential.name} className="grid gap-2 px-6 py-4 text-sm md:grid-cols-5">
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-slate-500">序列号</div>
+                    <div className="mt-1 text-lg font-semibold text-amber-300">{credential.serial_label}</div>
+                  </div>
+                  <div>
+                    <div className="font-medium text-white">{credential.name}</div>
+                    {credential.is_default && <span className="mt-1 inline-block rounded bg-blue-900/50 px-2 py-0.5 text-xs text-blue-200">默认</span>}
+                    {credential.note && <div className="mt-1 text-xs text-slate-500">{credential.note}</div>}
+                  </div>
+                  <div className="text-slate-300">api_id: {credential.api_id}</div>
+                  <div className="text-slate-300">hash: {credential.api_hash_masked}</div>
+                  <div className="text-slate-300">
+                    已绑定 {credential.account_count} 个账号 / 上限 {credential.max_accounts ?? "无"}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
         <section className="overflow-hidden rounded-xl border border-slate-700 bg-slate-800">
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-700 px-6 py-4">
             <div>
@@ -268,6 +516,7 @@ function TelegramAccountsManager() {
               <div className="mt-1 text-sm text-slate-400">
                 总计: <span className="font-semibold text-white">{accounts.length}</span> | 已连接:{" "}
                 <span className="font-semibold text-green-400">{accounts.filter((a) => a.is_connected).length}</span>
+                {listLoading ? <span className="ml-2 text-slate-500">刷新中...</span> : null}
               </div>
             </div>
             <input
@@ -281,14 +530,20 @@ function TelegramAccountsManager() {
 
           {filteredAccounts.length === 0 ? (
             <div className="p-12 text-center text-slate-400">
-              <p>{accounts.length === 0 ? "暂无 Telegram 账号" : "没有匹配的 Telegram 账号"}</p>
+              <p>
+                {listLoading
+                  ? "正在加载账号..."
+                  : accounts.length === 0
+                    ? "暂无 Telegram 账号"
+                    : "没有匹配的 Telegram 账号"}
+              </p>
               <button onClick={() => setShowAddModal(true)} className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm transition hover:bg-blue-500">
                 添加账号
               </button>
             </div>
           ) : (
             <div className="divide-y divide-slate-700">
-              {filteredAccounts.map((account) => (
+              {visibleAccounts.map((account) => (
                 <div key={account.id} className="p-4 transition hover:bg-slate-700/50">
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0 flex-1">
@@ -302,30 +557,101 @@ function TelegramAccountsManager() {
                       </div>
                       <div className="grid gap-1 text-sm md:grid-cols-2">
                         <Info label="手机号" value={account.phone} />
-                        <Info label="显示名称" value={account.display_name} />
+                        <Info label="TG 资料名" value={account.display_name} />
                         <Info label="用户名" value={account.username ? `@${account.username}` : null} />
                         <Info label="用户ID" value={account.user_id ? String(account.user_id) : null} />
+                        <Info label="开发者应用" value={account.api_credential_name || "default"} />
                         <Info label="最后连接" value={formatDate(account.last_connected_at)} />
                         <Info label="最近错误" value={account.error_message} danger />
+                        <div className="md:col-span-2">
+                          <label className="flex max-w-xs flex-col gap-1 text-sm text-slate-400">
+                            显示名称
+                            <input
+                              type="text"
+                              defaultValue={account.admin_display_name || ""}
+                              placeholder="例如：86号机"
+                              disabled={rowBusy(account.id)}
+                              onBlur={(event) => {
+                                const nextValue = event.target.value.trim();
+                                const currentValue = (account.admin_display_name || "").trim();
+                                if (nextValue !== currentValue) {
+                                  void updateAdminDisplayName(account.id, nextValue);
+                                }
+                              }}
+                              className="rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white outline-none transition focus:border-blue-500 disabled:opacity-50"
+                            />
+                          </label>
+                          <p className="mt-1 text-xs text-slate-500">
+                            这是运营备注名，会显示在数据页的「显示名称」列。
+                          </p>
+                        </div>
+                        <div className="md:col-span-1">
+                          <label className="flex max-w-xs flex-col gap-1 text-sm text-slate-400">
+                            回复模式
+                            <select
+                              value={account.reply_mode || "ai"}
+                              onChange={(e) => updateReplyMode(account.id, e.target.value === "fixed" ? "fixed" : "ai")}
+                              disabled={rowBusy(account.id)}
+                              className="rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white outline-none transition focus:border-blue-500 disabled:opacity-50"
+                            >
+                              <option value="ai">AI系统</option>
+                              <option value="fixed">固定回复</option>
+                            </select>
+                          </label>
+                          <p className="mt-1 text-xs text-slate-500">
+                            AI系统走现有话术和 AI 链路；固定回复只走固定回复规则。
+                          </p>
+                        </div>
+                        <div className="md:col-span-1">
+                          <label className="flex max-w-xs flex-col gap-1 text-sm text-slate-400">
+                            下载平台
+                            <select
+                              value={account.app_download_platform || "default"}
+                              onChange={(e) => updateAppDownloadPlatform(account.id, e.target.value)}
+                              disabled={rowBusy(account.id)}
+                              className="rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white outline-none transition focus:border-blue-500 disabled:opacity-50"
+                            >
+                              {APP_DOWNLOAD_PLATFORM_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <p className="mt-1 text-xs text-slate-500">
+                            该号发出的下载链接走对应平台；跟随A设为默认时用 A 平台链接。
+                          </p>
+                        </div>
                       </div>
                     </div>
                     <div className="flex shrink-0 flex-col gap-2">
                       {account.is_connected ? (
-                        <button onClick={() => disconnectAccount(account.id)} disabled={loading} className="rounded bg-red-600 px-3 py-1.5 text-sm transition hover:bg-red-500 disabled:opacity-50">
-                          断开
+                        <button onClick={() => disconnectAccount(account.id)} disabled={rowBusy(account.id)} className="rounded bg-red-600 px-3 py-1.5 text-sm transition hover:bg-red-500 disabled:opacity-50">
+                          {busyId === account.id ? "处理中..." : "断开"}
                         </button>
                       ) : (
-                        <button onClick={() => connectAccount(account.id)} disabled={loading} className="rounded bg-green-600 px-3 py-1.5 text-sm transition hover:bg-green-500 disabled:opacity-50">
-                          连接
+                        <button onClick={() => connectAccount(account.id)} disabled={rowBusy(account.id)} className="rounded bg-green-600 px-3 py-1.5 text-sm transition hover:bg-green-500 disabled:opacity-50">
+                          {busyId === account.id ? "处理中..." : "连接"}
                         </button>
                       )}
-                      <button onClick={() => deleteAccount(account)} disabled={loading} className="rounded border border-red-500/70 px-3 py-1.5 text-sm text-red-300 transition hover:bg-red-500/10 disabled:opacity-50">
-                        删除
+                      <button onClick={() => deleteAccount(account)} disabled={rowBusy(account.id)} className="rounded border border-red-500/70 px-3 py-1.5 text-sm text-red-300 transition hover:bg-red-500/10 disabled:opacity-50">
+                        {busyId === account.id ? "删除中..." : "删除"}
                       </button>
                     </div>
                   </div>
                 </div>
               ))}
+              {visibleCount < filteredAccounts.length && (
+                <div className="p-4 text-center">
+                  <button
+                    type="button"
+                    onClick={() => setVisibleCount((count) => count + 40)}
+                    className="rounded-lg border border-slate-600 px-4 py-2 text-sm text-slate-200 transition hover:bg-slate-700"
+                  >
+                    加载更多（还有 {filteredAccounts.length - visibleCount} 个）
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </section>
@@ -338,6 +664,29 @@ function TelegramAccountsManager() {
             <form onSubmit={loginId ? verifyLogin : startLogin} className="space-y-4">
               <TextInput label="手机号" value={form.phone} onChange={(phone) => setForm({ ...form, phone })} placeholder="+1234567890" disabled={!!loginId} required />
               <TextInput label="显示名称" value={form.display_name} onChange={(display_name) => setForm({ ...form, display_name })} placeholder="可选" />
+              <label className="flex flex-col gap-1 text-sm text-slate-400">
+                开发者应用
+                <select
+                  value={form.api_credential_id}
+                  onChange={(e) => setForm({ ...form, api_credential_id: e.target.value })}
+                  disabled={!!loginId}
+                  className="rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-white outline-none focus:border-blue-500 disabled:opacity-60"
+                >
+                  <option value="">
+                    默认 ({defaultCredential?.name || "default"})
+                  </option>
+                  {credentials
+                    .filter((item) => item.id && item.is_active)
+                    .map((item) => (
+                      <option key={item.id!} value={item.id!}>
+                        {item.serial_label} · {item.name} ({item.account_count}/上限{item.max_accounts ?? "无"})
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <p className="text-xs text-slate-500">
+                新号登录时选定开发者应用；Session 创建后不可随意更换 api_id。
+              </p>
               {loginId && <div className="rounded-lg border border-blue-800 bg-blue-950/30 p-3 text-sm text-blue-200">验证码已发送到 {codePhone}</div>}
               {loginId && !requiresPassword && (
                 <TextInput label="验证码" value={form.code} onChange={(code) => setForm({ ...form, code })} placeholder="Telegram 验证码" required />
@@ -353,8 +702,8 @@ function TelegramAccountsManager() {
                 <button type="button" onClick={() => { setShowAddModal(false); resetLoginForm(); }} className="flex-1 rounded-lg bg-slate-600 px-4 py-2 text-sm transition hover:bg-slate-500">
                   取消
                 </button>
-                <button type="submit" disabled={loading} className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm transition hover:bg-blue-500 disabled:opacity-50">
-                  {loading ? "处理中..." : loginId ? "验证并添加" : "发送验证码"}
+                <button type="submit" disabled={formBusy} className="flex-1 rounded-lg bg-blue-600 px-4 py-2 text-sm transition hover:bg-blue-500 disabled:opacity-50">
+                  {formBusy ? "处理中..." : loginId ? "验证并添加" : "发送验证码"}
                 </button>
               </div>
             </form>

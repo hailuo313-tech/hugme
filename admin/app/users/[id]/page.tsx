@@ -15,6 +15,7 @@ import {
   Operator,
 } from "@/lib/auth";
 import AuthGate from "@/components/AuthGate";
+import InboundUserMedia, { looksLikeUserPhoto } from "@/components/InboundUserMedia";
 
 // ── 类型 ──────────────────────────────────────────────────────────
 
@@ -85,6 +86,31 @@ interface CharacterUpdateResponse {
   character: CharacterOption;
   updated_conversations: number | null;
 }
+
+interface ChatHistoryRow {
+  id: string;
+  conversation_id: string;
+  conversation_channel: string | null;
+  conversation_state: string | null;
+  sender_type: string | null;
+  sender_id: string | null;
+  content: string | null;
+  content_type: string | null;
+  is_operator_message: boolean | null;
+  model_name: string | null;
+  safety_result: unknown;
+  operator_translation_zh: string | null;
+  created_at: string | null;
+}
+
+interface ChatHistoryResponse {
+  items: ChatHistoryRow[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+const CHAT_PAGE_SIZE = 100;
 
 // ── 工具函数 ──────────────────────────────────────────────────────
 
@@ -208,6 +234,11 @@ function UserProfileContent({ operator }: { operator: Operator }) {
   const [error, setError] = useState<string | null>(null);
   const [characterSaving, setCharacterSaving] = useState(false);
   const [characterMessage, setCharacterMessage] = useState<string | null>(null);
+  const [chatHistory, setChatHistory] = useState<ChatHistoryRow[]>([]);
+  const [chatTotal, setChatTotal] = useState(0);
+  const [chatPage, setChatPage] = useState(1);
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!userId) return;
@@ -226,6 +257,25 @@ function UserProfileContent({ operator }: { operator: Operator }) {
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
   }, [userId]);
+
+  useEffect(() => {
+    if (!userId) return;
+    setChatLoading(true);
+    setChatError(null);
+    apiFetch<ChatHistoryResponse>(
+      `/admin/users/${encodeURIComponent(userId)}/chat-history?page=${chatPage}&page_size=${CHAT_PAGE_SIZE}`,
+      { retries: 1 },
+    )
+      .then((response) => {
+        setChatHistory(response.items || []);
+        setChatTotal(response.total || 0);
+      })
+      .catch((e) => {
+        setChatError(e instanceof Error ? e.message : String(e));
+        setChatHistory([]);
+      })
+      .finally(() => setChatLoading(false));
+  }, [chatPage, userId]);
 
   async function handleCharacterSave() {
     if (!userId || !selectedCharacterId) return;
@@ -658,6 +708,90 @@ function UserProfileContent({ operator }: { operator: Operator }) {
                 </>
               )}
             </Section>
+
+            <div id="chat-history">
+              <Section title={`全部聊天记录（共 ${chatTotal} 条）`}>
+                {chatError && (
+                  <div className="mb-4 rounded-md border border-rose-800 bg-rose-950/40 px-4 py-3 text-sm text-rose-200">
+                    加载失败：{chatError}
+                  </div>
+                )}
+                {chatLoading ? (
+                  <p className="py-8 text-center text-sm text-slate-500">聊天记录加载中…</p>
+                ) : chatHistory.length === 0 ? (
+                  <p className="text-sm text-slate-500">暂无聊天记录</p>
+                ) : (
+                  <div className="space-y-3">
+                    {chatHistory.map((message) => {
+                      const isUser = message.sender_type === "user";
+                      const isOperator = message.sender_type === "operator" || message.is_operator_message;
+                      const senderLabel = isUser ? "用户" : isOperator ? "人工" : "AI";
+                      return (
+                        <div
+                          key={message.id}
+                          className={`rounded-lg border p-4 ${
+                            isUser
+                              ? "border-sky-800/70 bg-sky-950/20"
+                              : isOperator
+                                ? "border-amber-800/70 bg-amber-950/20"
+                                : "border-violet-800/60 bg-violet-950/20"
+                          }`}
+                        >
+                          <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className={isUser ? "text-sky-300" : isOperator ? "text-amber-300" : "text-violet-300"}>
+                                {senderLabel}
+                              </span>
+                              <span className="text-slate-500">{message.content_type || "text"}</span>
+                              <a
+                                href={`/admin/conversations?conversation_id=${message.conversation_id}`}
+                                className="font-mono text-slate-500 hover:text-sky-300"
+                              >
+                                会话 {message.conversation_id.slice(0, 8)}
+                              </a>
+                            </div>
+                            <span className="text-slate-500">{fmtTime(message.created_at)}</span>
+                          </div>
+                          <div className="whitespace-pre-wrap break-words text-sm leading-6 text-slate-100">
+                            {looksLikeUserPhoto(message.content, message.content_type) ? (
+                              <InboundUserMedia messageId={message.id} content={message.content} contentType={message.content_type} />
+                            ) : (
+                              message.content || "（空内容）"
+                            )}
+                          </div>
+                          {message.operator_translation_zh && (
+                            <div className="mt-3 border-t border-slate-700/60 pt-3 text-sm text-slate-400">
+                              中文翻译：{message.operator_translation_zh}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                <div className="mt-5 flex items-center justify-between border-t border-slate-700 pt-4">
+                  <button
+                    type="button"
+                    disabled={chatPage <= 1 || chatLoading}
+                    onClick={() => setChatPage((current) => Math.max(1, current - 1))}
+                    className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    上一页
+                  </button>
+                  <span className="text-xs text-slate-500">
+                    第 {chatPage} / {Math.max(1, Math.ceil(chatTotal / CHAT_PAGE_SIZE))} 页，每页 {CHAT_PAGE_SIZE} 条
+                  </span>
+                  <button
+                    type="button"
+                    disabled={chatPage >= Math.max(1, Math.ceil(chatTotal / CHAT_PAGE_SIZE)) || chatLoading}
+                    onClick={() => setChatPage((current) => current + 1)}
+                    className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    下一页
+                  </button>
+                </div>
+              </Section>
+            </div>
           </>
         )}
 

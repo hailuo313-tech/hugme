@@ -10,6 +10,7 @@ from loguru import logger
 
 from services.inbound.adapter_protocol import ChannelAdapter, enqueue_standard_inbound
 from services.inbound.envelope import InboundMetadata, StandardInboundEnvelope
+from services.mtproto.inbound_text import inbound_text_for_reply
 from services.user_level_service import user_level_service
 
 INBOUND_QUEUE_STREAM = "inbound_queue"
@@ -51,6 +52,9 @@ def _message_type(message: Any) -> str:
     if getattr(message, "voice", None):
         return "voice"
 
+    if getattr(message, "sticker", None):
+        return "sticker"
+
     document = getattr(message, "document", None)
     mime_type = getattr(document, "mime_type", "") or getattr(message, "mime_type", "")
     if str(mime_type).startswith("audio/ogg"):
@@ -69,13 +73,15 @@ def _message_type(message: Any) -> str:
 
 
 def _message_content(message: Any, message_type: str) -> str:
-    text = getattr(message, "raw_text", None) or getattr(message, "text", None) or getattr(message, "message", None)
+    text = inbound_text_for_reply(message)
     if text:
-        return str(text)
+        return text
     if message_type == "image":
         return "[photo]"
     if message_type == "voice":
         return "[voice]"
+    if message_type == "sticker":
+        return "[emoji]"
     return ""
 
 

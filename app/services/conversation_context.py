@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 CONVERSATION_CONTEXT_PREFIX = "conv:"
-CONVERSATION_CONTEXT_MAX_MESSAGES = 100
+CONVERSATION_CONTEXT_MAX_MESSAGES = 200
 CONVERSATION_CONTEXT_DEFAULT_READ_LIMIT = 50
 CONVERSATION_CONTEXT_TTL_SECONDS = 60 * 60 * 24 * 30
 
@@ -79,7 +79,7 @@ async def append_conversation_context(
     max_messages: int = CONVERSATION_CONTEXT_MAX_MESSAGES,
     ttl_seconds: int = CONVERSATION_CONTEXT_TTL_SECONDS,
 ) -> str:
-    """Append one message to conv:{user_id}, retaining 50 turns / 100 messages."""
+    """Append one message to conv:{user_id}, retaining 200 recent messages."""
     key = conversation_context_key(user_id)
     entry = ConversationContextItem(role=role, content=content, msg_id=msg_id).to_redis_json()
     pipe = redis.pipeline()

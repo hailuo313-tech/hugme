@@ -12,10 +12,10 @@ session_manager_module = importlib.import_module("services.mtproto.session_manag
 
 
 class FakeAccount:
-    def __init__(self, account_id, *, is_active=True):
+    def __init__(self, account_id, *, is_active=True, status="connected"):
         self.id = account_id
         self.is_active = is_active
-        self.status = "connected"
+        self.status = status
         self.last_connected_at = None
         self.last_error_at = None
         self.error_message = None
@@ -33,6 +33,11 @@ class FakeTelegramAccountManager:
 
     async def get_account(self, account_id):
         return self.account
+
+    async def get_active_accounts(self):
+        if isinstance(self.account, list):
+            return self.account
+        return [self.account] if self.account else []
 
     async def connect_account(self, account_id):
         self.connect_calls.append(account_id)
@@ -54,6 +59,27 @@ async def test_p1_18_disconnect_schedules_reconnect(monkeypatch):
 
     assert fake_manager.status_updates == [(account_id, "disconnected", "socket closed")]
     assert manager.reconnect_tasks[account_id] == "scheduled"
+
+
+@pytest.mark.asyncio
+async def test_p1_18_restore_connects_active_disconnected_accounts(monkeypatch):
+    connected_id = uuid4()
+    disconnected_id = uuid4()
+    banned_id = uuid4()
+    accounts = [
+        FakeAccount(connected_id, status="connected"),
+        FakeAccount(disconnected_id, status="disconnected"),
+        FakeAccount(banned_id, status="banned"),
+    ]
+    fake_manager = FakeTelegramAccountManager(connect_results=[True, True], account=accounts)
+    monkeypatch.setattr(session_manager_module, "telegram_account_manager", fake_manager)
+
+    manager = SessionManager(reconnect_interval=30, max_reconnect_attempts=2)
+
+    await manager._restore_sessions()
+
+    assert fake_manager.connect_calls == [connected_id, disconnected_id]
+    assert banned_id not in fake_manager.connect_calls
 
 
 @pytest.mark.asyncio

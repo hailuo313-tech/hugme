@@ -268,41 +268,6 @@
       "priority": 96,
       "confidence": 0.9,
       "keywords": ["delete my data", "what do you store", "privacy", "删除数据", "隐私"]
-    },
-    {
-      "id": "safety.self_harm_ideation.core",
-      "intent": "safety.self_harm_ideation",
-      "priority": 100,
-      "confidence": 0.98,
-      "keywords": ["kill myself", "end it all", "suicide", "不想活", "自杀"]
-    },
-    {
-      "id": "safety.minor_signal.core",
-      "intent": "safety.minor_signal",
-      "priority": 100,
-      "confidence": 0.94,
-      "keywords": ["i am 15", "i'm 16", "under 18", "我15岁", "未成年"]
-    },
-    {
-      "id": "safety.sexual_explicit.core",
-      "intent": "safety.sexual_explicit",
-      "priority": 100,
-      "confidence": 0.92,
-      "keywords": ["explicit sexual", "nude", "sex chat", "露骨", "裸照"]
-    },
-    {
-      "id": "safety.abuse_threat.core",
-      "intent": "safety.abuse_threat",
-      "priority": 100,
-      "confidence": 0.94,
-      "keywords": ["hurt you", "blackmail", "forced me", "威胁", "伤害你"]
-    },
-    {
-      "id": "safety.illegal_request.core",
-      "intent": "safety.illegal_request",
-      "priority": 100,
-      "confidence": 0.92,
-      "keywords": ["fraud", "hacking", "buy drugs", "诈骗", "黑客"]
     }
   ]
 }

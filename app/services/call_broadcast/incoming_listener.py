@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from types import SimpleNamespace
 from typing import Any
 from uuid import UUID
 
@@ -52,14 +53,67 @@ from services.telegram_account_manager import telegram_account_manager
 
 _registered_accounts: set[str] = set()
 _bound_wrapper_ids: dict[str, int] = {}
+_bound_telethon_handlers: dict[str, tuple[Any, Any]] = {}
 _inflight_calls: set[tuple[str, int]] = set()
+_recent_incoming: dict[tuple[str, int], float] = {}
+_incoming_claim_lock: asyncio.Lock | None = None
 _local_active_by_account: dict[str, int] = {}
 _stashed_live_calls: dict[tuple[str, int], tuple[Any, Any]] = {}
 _consecutive_answer_timeouts: dict[str, int] = {}
 _bootstrap_task: asyncio.Task[Any] | None = None
 _running = False
-_ANSWER_TIMEOUT_RESET_AFTER = 1
+_ANSWER_TIMEOUT_RESET_AFTER = 2
+_TELETHON_YIELD_TO_PYTGCALLS_SECONDS = 0.45
+_RECENT_INCOMING_TTL_SECONDS = 20.0
 _REGISTER_CONCURRENCY = 6
+
+
+def _get_incoming_claim_lock() -> asyncio.Lock:
+    global _incoming_claim_lock
+    if _incoming_claim_lock is None:
+        _incoming_claim_lock = asyncio.Lock()
+    return _incoming_claim_lock
+
+
+def _incoming_source(*, incoming_pytgcalls: Any | None) -> str:
+    return "pytgcalls" if incoming_pytgcalls is not None else "telethon"
+
+
+def _prune_recent_incoming(now: float | None = None) -> None:
+    current = time.monotonic() if now is None else now
+    expired = [key for key, expires_at in _recent_incoming.items() if expires_at <= current]
+    for key in expired:
+        _recent_incoming.pop(key, None)
+
+
+async def _claim_incoming_call(
+    account_id: str,
+    chat_id: int,
+    *,
+    source: str,
+) -> bool:
+    """Atomically claim one inbound ring. Telethon waits so PyTgCalls can win."""
+    key = (str(account_id), int(chat_id))
+    if source == "telethon":
+        await asyncio.sleep(_TELETHON_YIELD_TO_PYTGCALLS_SECONDS)
+    async with _get_incoming_claim_lock():
+        now = time.monotonic()
+        _prune_recent_incoming(now)
+        if key in _inflight_calls or key in _recent_incoming:
+            logger.bind(
+                component="call_broadcast_incoming",
+                account_id=account_id,
+                chat_id=chat_id,
+                source=source,
+            ).info(
+                "call_broadcast.incoming.telethon_skipped_pytgcalls_claimed"
+                if source == "telethon"
+                else "call_broadcast.incoming.duplicate_skipped"
+            )
+            return False
+        _inflight_calls.add(key)
+        _recent_incoming[key] = now + _RECENT_INCOMING_TTL_SECONDS
+        return True
 
 
 def _is_answer_timeout_failure(exc: Exception) -> bool:
@@ -84,11 +138,16 @@ def _incoming_failure_requires_listener_reset(
         "call declined",
         "call discarded",
         "already declined",
+        "already accepted",
     )
     if any(marker in message for marker in expected_outcomes):
         if account_id:
             _consecutive_answer_timeouts.pop(account_id, None)
         return False
+    if _is_transient_accept_failure(exc):
+        if account_id:
+            _consecutive_answer_timeouts.pop(account_id, None)
+        return True
     if _is_answer_timeout_failure(exc):
         if not account_id:
             return True
@@ -98,10 +157,17 @@ def _incoming_failure_requires_listener_reset(
     if _is_missing_incoming_phone_call(exc):
         if account_id:
             _consecutive_answer_timeouts.pop(account_id, None)
-        return False
+        return True
     if account_id:
         _consecutive_answer_timeouts.pop(account_id, None)
     return True
+
+
+def _is_transient_accept_failure(exc: Exception) -> bool:
+    """First-call AcceptCallRequest often fails once; do not rebuild the wrapper yet."""
+    name = type(exc).__name__.strip().lower()
+    message = str(exc).strip().lower()
+    return name == "telegramservererror" or "telegramservererror" in message
 
 
 def _is_missing_incoming_phone_call(exc: Exception) -> bool:
@@ -274,6 +340,8 @@ def _bind_incoming_handler(pytgcalls: Any, account_id: str) -> bool:
 
     @pytgcalls.on_update(handler_filter)
     async def _on_incoming(_pytg: Any, update: ChatUpdate) -> None:
+        if _bound_wrapper_ids.get(account_id) != id(_pytg):
+            return
         # Capture InputPhoneCall in this turn, before a later PhoneCallDiscarded
         # update can drop PyTgCalls' P2P cache.
         incoming_phone_call = None
@@ -282,7 +350,7 @@ def _bind_incoming_handler(pytgcalls: Any, account_id: str) -> bool:
             incoming_phone_call = await capture_incoming_phone_call(
                 _pytg,
                 chat_id,
-                timeout_seconds=0.05,
+                timeout_seconds=0.75,
             )
         asyncio.create_task(
             _handle_incoming_call(
@@ -295,6 +363,62 @@ def _bind_incoming_handler(pytgcalls: Any, account_id: str) -> bool:
 
     _bound_wrapper_ids[account_id] = wrapper_id
     return True
+
+
+def _bind_telethon_incoming_handler(client: Any, account_id: str) -> bool:
+    """Fallback for calls missed by the PyTgCalls update dispatcher."""
+    existing = _bound_telethon_handlers.get(account_id)
+    if existing is not None and existing[0] is client:
+        return True
+    if existing is not None:
+        try:
+            existing[0].remove_event_handler(existing[1])
+        except Exception:
+            pass
+
+    try:
+        from telethon import events
+        from telethon.tl import types
+
+        async def _on_raw_phone_call(event: Any) -> None:
+            update = getattr(event, "update", event)
+            phone_call = getattr(update, "phone_call", None)
+            if not isinstance(phone_call, types.PhoneCallRequested):
+                return
+            chat_id = int(getattr(phone_call, "admin_id", 0) or 0)
+            if not chat_id:
+                return
+            access_hash = None
+            try:
+                entity = await client.get_entity(chat_id)
+                value = getattr(entity, "access_hash", None)
+                access_hash = int(value) if value is not None else None
+            except Exception:
+                pass
+            asyncio.create_task(
+                _handle_incoming_call(
+                    account_id,
+                    SimpleNamespace(
+                        chat_id=chat_id,
+                        access_hash=access_hash,
+                        call_id=getattr(phone_call, "id", None),
+                        call=phone_call,
+                    ),
+                    None,
+                )
+            )
+
+        client.add_event_handler(_on_raw_phone_call, events.Raw(types.UpdatePhoneCall))
+        _bound_telethon_handlers[account_id] = (client, _on_raw_phone_call)
+        logger.bind(account_id=account_id).info(
+            "call_broadcast.incoming.telethon_fallback_registered"
+        )
+        return True
+    except Exception as exc:
+        logger.bind(account_id=account_id, error_type=type(exc).__name__).warning(
+            "call_broadcast.incoming.telethon_fallback_failed"
+        )
+        return False
 
 
 async def _handle_incoming_call(
@@ -310,10 +434,14 @@ async def _handle_incoming_call(
     if not chat_id:
         return
 
-    inflight_key = (account_id, chat_id)
-    if inflight_key in _inflight_calls:
+    account = await telegram_account_manager.get_account(UUID(account_id))
+    if account is None or not account.is_active or (account.metadata_json or {}).get("duplicate_of"):
         return
-    _inflight_calls.add(inflight_key)
+
+    inflight_key = (str(account_id), int(chat_id))
+    source = _incoming_source(incoming_pytgcalls=incoming_pytgcalls)
+    if not await _claim_incoming_call(account_id, chat_id, source=source):
+        return
 
     trace_id = f"incoming-{account_id[:8]}-{chat_id}-{int(time.time())}"
     log = logger.bind(
@@ -323,23 +451,42 @@ async def _handle_incoming_call(
         chat_id=chat_id,
     )
     log.info("call_broadcast.incoming.received")
-    if not incoming_phone_call and incoming_pytgcalls is not None:
-        incoming_phone_call = await capture_incoming_phone_call(
-            incoming_pytgcalls,
-            chat_id,
-            timeout_seconds=2.0,
-        )
-    if incoming_phone_call:
-        log.info("call_broadcast.incoming.phone_call_cached")
-    else:
-        log.warning("call_broadcast.incoming.phone_call_cache_empty")
-
     job_id: str | None = None
     send_03 = False
     pytgcalls_warm_task: asyncio.Task[Any] | None = None
-    if incoming_pytgcalls is None:
-        pytgcalls_warm_task = asyncio.create_task(get_pytgcalls(UUID(account_id)))
     try:
+        update_phone_call = getattr(update, "call", None)
+        if incoming_phone_call is None and update_phone_call is not None:
+            if getattr(update_phone_call, "id", None) is not None:
+                incoming_phone_call = update_phone_call
+        if not incoming_phone_call and incoming_pytgcalls is not None:
+            incoming_phone_call = await capture_incoming_phone_call(
+                incoming_pytgcalls,
+                chat_id,
+                timeout_seconds=8.0,
+            )
+        if incoming_pytgcalls is None:
+            try:
+                incoming_pytgcalls = await asyncio.wait_for(
+                    get_pytgcalls(UUID(account_id)),
+                    timeout=2.0,
+                )
+            except Exception as exc:
+                log.bind(error_type=type(exc).__name__).warning(
+                    "call_broadcast.incoming.pytgcalls_warm_failed"
+                )
+                incoming_pytgcalls = None
+                pytgcalls_warm_task = asyncio.create_task(get_pytgcalls(UUID(account_id)))
+            if incoming_pytgcalls is not None and not incoming_phone_call:
+                incoming_phone_call = await capture_incoming_phone_call(
+                    incoming_pytgcalls,
+                    chat_id,
+                    timeout_seconds=2.0,
+                )
+        if incoming_phone_call:
+            log.info("call_broadcast.incoming.phone_call_cached")
+        else:
+            log.warning("call_broadcast.incoming.phone_call_cache_empty")
         async with AsyncSessionLocal() as db:
             from services.telegram_user_migration import migration_video_cutover
             from services.post_inbound_video_expert_gate import (
@@ -347,7 +494,8 @@ async def _handle_incoming_call(
                 post_inbound_video_release_review_calls,
             )
 
-            event_key = _incoming_call_event_key(update)
+            phone_call_id = getattr(incoming_phone_call, "id", None)
+            event_key = f"telegram:{phone_call_id}" if phone_call_id else _incoming_call_event_key(update)
             inserted = await record_inbound_call_event(
                 db,
                 account_id=account_id,
@@ -356,6 +504,9 @@ async def _handle_incoming_call(
                 trace_id=trace_id,
             )
             await db.commit()
+            if not inserted:
+                log.info("call_broadcast.incoming.duplicate_event_skipped")
+                return
             inbound_event_count = await count_inbound_call_events_for_chat(db, chat_id)
             release_review_threshold = post_inbound_video_release_review_calls()
             if inserted and inbound_event_count >= release_review_threshold:
@@ -503,7 +654,15 @@ async def _handle_incoming_call(
 
         if pytgcalls_warm_task is not None:
             try:
-                await pytgcalls_warm_task
+                warmed_pytgcalls = await pytgcalls_warm_task
+                if warmed_pytgcalls is not None:
+                    incoming_pytgcalls = warmed_pytgcalls
+                    if not incoming_phone_call:
+                        incoming_phone_call = await capture_incoming_phone_call(
+                            incoming_pytgcalls,
+                            chat_id,
+                            timeout_seconds=3.0,
+                        )
             except Exception as exc:
                 log.bind(error_type=type(exc).__name__).warning(
                     "call_broadcast.incoming.pytgcalls_warm_failed"
@@ -627,7 +786,7 @@ async def _handle_incoming_call(
                         db,
                         job_id=job_id,
                         status="failed",
-                        failure_reason=str(exc)[:500],
+                        failure_reason=(str(exc).strip() or type(exc).__name__)[:500],
                     )
                     await db.commit()
             except Exception:
@@ -677,8 +836,6 @@ async def _send_later_inbound_03(
 
 async def _register_account_listener(account_id: UUID) -> bool:
     key = str(account_id)
-    if key in _registered_accounts:
-        return True
 
     from services.runtime_ownership import this_process_may_hold_telegram_session
 
@@ -688,6 +845,7 @@ async def _register_account_listener(account_id: UUID) -> bool:
     client = await telegram_account_manager.get_client(account_id)
     if client is None:
         return False
+    _bind_telethon_incoming_handler(client, key)
 
     try:
         wrapper = await asyncio.wait_for(get_pytgcalls(account_id), timeout=20)
@@ -700,9 +858,8 @@ async def _register_account_listener(account_id: UUID) -> bool:
         logger.bind(account_id=key).warning("call_broadcast.incoming.no_client")
         return False
 
-    # Bind after start as well: some PyTgCalls versions drop handlers attached
-    # only before start(), and a matching wrapper id would otherwise skip it.
-    _bound_wrapper_ids.pop(key, None)
+    # Registration runs every 15 seconds. Keep the existing handler when the
+    # wrapper is unchanged rather than accumulating callbacks indefinitely.
     if not _bind_incoming_handler(wrapper, key):
         return False
 
@@ -826,7 +983,7 @@ async def _start_incoming_call_listeners_background() -> None:
 
 async def shutdown_incoming_call_listeners() -> None:
     """Stop the bootstrap loop; process exit tears down PyTgCalls handlers."""
-    global _bootstrap_task, _running
+    global _bootstrap_task, _running, _incoming_claim_lock
 
     _running = False
     if _bootstrap_task is not None and not _bootstrap_task.done():
@@ -839,4 +996,6 @@ async def shutdown_incoming_call_listeners() -> None:
     _registered_accounts.clear()
     _bound_wrapper_ids.clear()
     _inflight_calls.clear()
+    _recent_incoming.clear()
+    _incoming_claim_lock = None
     _local_active_by_account.clear()

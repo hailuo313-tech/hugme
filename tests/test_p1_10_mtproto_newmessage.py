@@ -65,6 +65,9 @@ def _message(**overrides) -> SimpleNamespace:
         "voice": None,
         "audio": None,
         "document": None,
+        "sticker": None,
+        "media": None,
+        "entities": None,
     }
     base.update(overrides)
     return SimpleNamespace(**base)
@@ -126,6 +129,19 @@ async def test_voice_newmessage_enqueues_voice_envelope():
     assert fields["message_type"] == "voice"
     assert fields["content"] == "[voice]"
     assert json.loads(fields["metadata"])["media_kind"] == "voice"
+
+
+@pytest.mark.asyncio
+async def test_sticker_newmessage_keeps_replyable_emoji_content():
+    document = SimpleNamespace(
+        mime_type="image/webp",
+        attributes=[SimpleNamespace(alt="😂")],
+    )
+    fields = await _enqueue(_message(document=document, sticker=True, message=""))
+
+    assert fields["message_type"] == "sticker"
+    assert fields["content"] == "😂"
+    assert json.loads(fields["metadata"])["media_kind"] == "sticker"
 
 
 def test_telegram_message_dedupe_key_matches_contract():

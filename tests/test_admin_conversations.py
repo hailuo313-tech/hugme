@@ -320,6 +320,34 @@ def test_delete_conversation_404_when_missing():
     db.commit.assert_not_awaited()
 
 
+def test_join_premium_chat_updates_profile_without_deleting_conversation():
+    conversation_id = "11111111-2222-3333-4444-555555555555"
+    user_id = "33333333-2222-3333-4444-555555555555"
+    db = _db_with([
+        _result(rows=[(conversation_id, user_id, "tg_111", "C")]),
+        _result(),
+        _result(),
+    ])
+    client = TestClient(_build_app(db=db))
+
+    r = client.post(f"/api/v1/admin/conversations/{conversation_id}/join-premium-chat")
+
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["status"] == "success"
+    assert data["conversation_id"] == conversation_id
+    assert data["user_id"] == user_id
+    assert data["user_level"] == "A"
+    assert data["chat_route"] == "manual_premium"
+    db.commit.assert_awaited_once()
+    executed_sql = "\n".join(str(call.args[0]) for call in db.execute.await_args_list)
+    assert "INSERT INTO user_profiles" in executed_sql
+    assert "manual_premium" in executed_sql
+    assert "UPDATE handoff_tasks" in executed_sql
+    assert "DELETE FROM conversations" not in executed_sql
+    assert "DELETE FROM handoff_tasks" not in executed_sql
+
+
 def test_accept_conversation_assigns_operator_and_locks_state():
     conversation_id = "11111111-2222-3333-4444-555555555555"
     db = _db_with([
@@ -512,37 +540,33 @@ def test_operator_reply_sends_telegram_real_user(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_operator_reply_real_user_resolves_peer_after_dialog_warmup(monkeypatch):
+async def test_operator_reply_real_user_uses_peer_cache_and_resolve_telethon(monkeypatch):
     from api.admin import _send_operator_reply_to_telegram_real_user
 
     class FakeClient:
-        def __init__(self) -> None:
-            self.dialogs_loaded = False
-            self.input_entity_calls: list[Any] = []
-
-        async def get_input_entity(self, peer: Any) -> str:
-            self.input_entity_calls.append(peer)
-            if not self.dialogs_loaded:
-                raise ValueError("missing input entity")
-            return "input-peer-after-dialogs"
-
-        async def get_dialogs(self, limit: int) -> list[Any]:
-            assert limit == 200
-            self.dialogs_loaded = True
-            return []
+        pass
 
     class FakeManager:
-        def __init__(self, client: FakeClient) -> None:
-            self.client = client
-
-        async def get_any_connected_client(self) -> FakeClient:
-            return self.client
+        async def get_client(self, account_id: uuid.UUID) -> FakeClient:
+            assert str(account_id) == "44444444-4444-4444-4444-444444444444"
+            return FakeClient()
 
     class FakeSent:
         id = 777
 
-    fake_client = FakeClient()
     sent_peers: list[Any] = []
+
+    async def _resolve_cached(**kwargs: Any) -> dict[str, Any]:
+        assert kwargs["chat_id"] == 123456789
+        return {
+            "account_id": "44444444-4444-4444-4444-444444444444",
+            "access_hash": 987654321,
+        }
+
+    async def _resolve_peer(client: Any, chat_id: int, *, access_hash: int | None = None) -> str:
+        assert chat_id == 123456789
+        assert access_hash == 987654321
+        return "resolved-peer"
 
     async def _send_human_like(client: Any, peer: Any, text: str, **kwargs: Any) -> FakeSent:
         sent_peers.append(peer)
@@ -551,7 +575,15 @@ async def test_operator_reply_real_user_resolves_peer_after_dialog_warmup(monkey
 
     monkeypatch.setattr(
         "services.telegram_account_manager.telegram_account_manager",
-        FakeManager(fake_client),
+        FakeManager(),
+    )
+    monkeypatch.setattr(
+        "services.telegram_peer_cache.resolve_cached_telegram_peer",
+        _resolve_cached,
+    )
+    monkeypatch.setattr(
+        "services.mtproto.peer_resolve.resolve_telethon_peer",
+        _resolve_peer,
     )
     monkeypatch.setattr(
         "services.mtproto.human_like_send.send_human_like_message",
@@ -562,12 +594,14 @@ async def test_operator_reply_real_user_resolves_peer_after_dialog_warmup(monkey
         chat_id=123456789,
         content="hello real user",
         trace_id="trace-test",
+        db=object(),
+        conversation_id="11111111-2222-3333-4444-555555555555",
+        user_id="33333333-2222-3333-4444-555555555555",
     )
 
     assert ok is True
     assert provider_message_id == "777"
-    assert fake_client.dialogs_loaded is True
-    assert sent_peers == ["input-peer-after-dialogs"]
+    assert sent_peers == ["resolved-peer"]
 
 
 def test_operator_reply_rolls_back_when_send_fails(monkeypatch):

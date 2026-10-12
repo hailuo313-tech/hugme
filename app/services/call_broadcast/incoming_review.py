@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
@@ -29,6 +30,25 @@ from services.call_broadcast.jobs import (
     resolve_inbound_call_context,
 )
 from services.call_broadcast.session import reject_inbound_call, run_call_broadcast
+
+
+async def _gated_reject_inbound_call(*, account_id, chat_id, trace_id):
+    from services.telegram_command_gateway import submit_telegram_command
+
+    async def _legacy():
+        return await reject_inbound_call(
+            account_id=account_id,
+            chat_id=chat_id,
+            trace_id=trace_id,
+        )
+
+    return await submit_telegram_command(
+        command_type="reject_call",
+        account_id=str(account_id),
+        legacy_execute=_legacy,
+        payload={"chat_id": chat_id},
+        trace_id=trace_id,
+    )
 
 
 def inbound_call_should_auto_answer(
@@ -59,13 +79,13 @@ def inbound_call_requires_operator_review(
     operator_review_attempts: int = 0,
     auto_answer_threshold: int | None = None,
 ) -> bool:
-    """Video-sequence completion never routes an inbound call to manual takeover.
-
-    The sixth independent inbound call is handled separately by the release-review
-    gate. Keeping this predicate false prevents calls 3-5 and later calls from
-    creating ordinary ``pending_operator`` jobs.
-    """
-    return False
+    """True after the auto-answer videos have already played successfully."""
+    return not inbound_call_should_auto_answer(
+        completed_playbacks=completed_playbacks,
+        recorded_attempts=recorded_attempts,
+        operator_review_attempts=operator_review_attempts,
+        auto_answer_threshold=auto_answer_threshold,
+    )
 
 
 async def queue_inbound_operator_review(
@@ -120,6 +140,34 @@ async def queue_inbound_operator_review(
         ttl_seconds=ttl,
     )
     return job_id
+
+
+async def _wait_operator_job_progress(
+    job_id: str, *, timeout_seconds: float = 20
+) -> str | None:
+    """Wait until a queued accept leaves pending_operator, or time out."""
+    deadline = time.monotonic() + max(1.0, float(timeout_seconds))
+    last_status = "pending_operator"
+    while time.monotonic() < deadline:
+        async with AsyncSessionLocal() as db:
+            row = (
+                await db.execute(
+                    text(
+                        """
+                        SELECT status
+                        FROM call_broadcast_jobs
+                        WHERE id = CAST(:job_id AS uuid)
+                        LIMIT 1
+                        """
+                    ),
+                    {"job_id": job_id},
+                )
+            ).first()
+        last_status = str(row[0]) if row is not None else None
+        if last_status and last_status != "pending_operator":
+            return last_status
+        await asyncio.sleep(0.3)
+    return last_status
 
 
 async def _load_video_asset(db: AsyncSession, video_asset_id: str) -> dict[str, Any] | None:
@@ -181,22 +229,48 @@ def _review_ttl_seconds(trigger_source: str) -> int:
     return int(getattr(settings, "CALL_BROADCAST_INBOUND_REVIEW_TTL_SECONDS", 90))
 
 
+def _created_at_epoch(created_at: Any) -> float | None:
+    """Unix seconds for DB timestamps. Naive values are treated as UTC."""
+    if created_at is None:
+        return None
+    if isinstance(created_at, datetime):
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        return created_at.timestamp()
+    if hasattr(created_at, "timestamp"):
+        return float(created_at.timestamp())
+    return None
+
+
 def _review_is_expired(*, trigger_source: str, created_at: Any) -> bool:
     """Text keyword requests stay actionable while DB row is pending_operator."""
     if trigger_source == "inbound_keyword_review":
         return False
-    if created_at is None or not hasattr(created_at, "timestamp"):
+    created_epoch = _created_at_epoch(created_at)
+    if created_epoch is None:
         return False
     ttl = _review_ttl_seconds(trigger_source)
-    return created_at.timestamp() + ttl <= time.time()
+    return created_epoch + ttl <= time.time()
+
+
+def _remaining_review_seconds(*, trigger_source: str, created_at: Any) -> int:
+    ttl = _review_ttl_seconds(trigger_source)
+    if trigger_source == "inbound_keyword_review":
+        return ttl
+    created_epoch = _created_at_epoch(created_at)
+    if created_epoch is None:
+        return ttl
+    return max(0, int(created_epoch + ttl - time.time()))
 
 
 async def hydrate_pending_review_from_job(
     db: AsyncSession,
     job_id: str,
+    *,
+    allow_expired: bool = False,
 ) -> PendingIncomingReview | None:
     """Re-register in-memory review after API restart (DB row still pending)."""
-    review = get_pending_review(job_id)
+    review = get_pending_review(job_id, include_expired=allow_expired)
     if review is not None:
         return review
 
@@ -206,18 +280,14 @@ async def hydrate_pending_review_from_job(
 
     metadata = _metadata_dict(job.get("metadata"))
     trigger_source = str(job.get("trigger_source") or "")
-    if _review_is_expired(trigger_source=trigger_source, created_at=job.get("created_at")):
-        return None
-
-    ttl = _review_ttl_seconds(trigger_source)
-    created_at = job.get("created_at")
-    if trigger_source == "inbound_keyword_review":
-        remaining = ttl
-    elif created_at is not None and hasattr(created_at, "timestamp"):
-        expires_at = created_at.timestamp() + ttl
-        remaining = max(30, int(expires_at - time.time()))
-    else:
-        remaining = ttl
+    remaining = _remaining_review_seconds(
+        trigger_source=trigger_source,
+        created_at=job.get("created_at"),
+    )
+    if remaining <= 0:
+        if not allow_expired:
+            return None
+        remaining = 30
 
     access_hash_raw = metadata.get("telegram_access_hash")
     access_hash = int(access_hash_raw) if access_hash_raw is not None else None
@@ -242,7 +312,7 @@ async def accept_operator_review(
     operator_id: str,
 ) -> dict[str, Any]:
     async with AsyncSessionLocal() as db:
-        review = await hydrate_pending_review_from_job(db, job_id)
+        review = await hydrate_pending_review_from_job(db, job_id, allow_expired=True)
         if review is None:
             return {"ok": False, "reason": "review_expired_or_missing"}
 
@@ -258,6 +328,94 @@ async def accept_operator_review(
         asset = await _load_video_asset(db, video_asset_id)
         if asset is None:
             return {"ok": False, "reason": "video_asset_not_found"}
+
+        duration = int(
+            asset.get("duration_seconds")
+            or getattr(settings, "CALL_BROADCAST_DEFAULT_DURATION_SECONDS", 30)
+        )
+
+        from services.runtime_ownership import get_account_ownership
+        from services.telegram_command_gateway import submit_telegram_command
+
+        ownership = await get_account_ownership(str(job["account_id"]), db)
+        if ownership.is_runtime:
+            async def _noop():
+                return None
+
+            gated = await submit_telegram_command(
+                command_type="answer_call",
+                account_id=str(job["account_id"]),
+                legacy_execute=_noop,
+                payload={
+                    "job_id": job_id,
+                    "video_asset_id": video_asset_id,
+                    "operator_id": operator_id,
+                    "chat_id": review.chat_id,
+                    "video_path": str(asset.get("file_path") or ""),
+                    "duration_seconds": duration,
+                    "access_hash": review.access_hash,
+                    "trace_id": str(job.get("trace_id") or job_id),
+                },
+                idempotency_key=f"answer_call:{job_id}",
+                trace_id=str(job.get("trace_id") or job_id),
+            )
+            if not gated.accepted_not_sent:
+                return {
+                    "ok": False,
+                    "reason": gated.reason or "telegram_gateway_rejected",
+                }
+            await db.execute(
+                text(
+                    """
+                    UPDATE call_broadcast_jobs
+                    SET video_asset_id = CAST(:video_asset_id AS uuid),
+                        metadata = metadata || CAST(:meta_patch AS jsonb),
+                        updated_at = NOW()
+                    WHERE id = CAST(:job_id AS uuid)
+                      AND status = 'pending_operator'
+                    """
+                ),
+                {
+                    "job_id": job_id,
+                    "video_asset_id": video_asset_id,
+                    "meta_patch": json.dumps(
+                        {
+                            "operator_id": operator_id,
+                            "accepted": True,
+                            "queued_for_runtime": True,
+                            "command_id": gated.command_id,
+                            "video_asset_id": video_asset_id,
+                        },
+                        ensure_ascii=False,
+                    ),
+                },
+            )
+            await db.commit()
+            pop_pending_review(job_id)
+            answered = await _wait_operator_job_progress(
+                job_id, timeout_seconds=20
+            )
+            if answered in {"streaming", "completed"}:
+                return {
+                    "ok": True,
+                    "job_id": job_id,
+                    "status": answered,
+                    "executed": True,
+                    "command_id": gated.command_id,
+                }
+            if answered in {"failed", "cancelled"}:
+                return {
+                    "ok": False,
+                    "reason": f"runtime_{answered}",
+                    "command_id": gated.command_id,
+                }
+            return {
+                "ok": True,
+                "job_id": job_id,
+                "status": "accepted",
+                "executed": False,
+                "command_id": gated.command_id,
+            }
 
     pop_pending_review(job_id)
     trace_id = review.trace_id
@@ -297,18 +455,37 @@ async def accept_operator_review(
             )
             await db.commit()
 
-        duration = int(
-            asset.get("duration_seconds")
-            or getattr(settings, "CALL_BROADCAST_DEFAULT_DURATION_SECONDS", 30)
-        )
-        playback = await run_call_broadcast(
-            account_id=UUID(review.account_id),
-            chat_id=int(review.chat_id),
-            video_path=str(asset["file_path"]),
-            duration_seconds=duration,
+        from services.telegram_command_gateway import submit_telegram_command
+
+        async def _legacy_answer():
+            return await run_call_broadcast(
+                account_id=UUID(review.account_id),
+                chat_id=int(review.chat_id),
+                video_path=str(asset["file_path"]),
+                duration_seconds=duration,
+                trace_id=trace_id,
+                telegram_access_hash=review.access_hash,
+                job_id=str(job_id),
+            )
+
+        gated = await submit_telegram_command(
+            command_type="answer_call",
+            account_id=str(review.account_id),
+            legacy_execute=_legacy_answer,
+            payload={"job_id": job_id, "chat_id": review.chat_id},
             trace_id=trace_id,
-            telegram_access_hash=review.access_hash,
         )
+        if gated.accepted_not_sent:
+            return {
+                "ok": True,
+                "job_id": job_id,
+                "status": "accepted",
+                "executed": False,
+                "command_id": gated.command_id,
+            }
+        if not gated.executed:
+            raise RuntimeError(gated.reason or "telegram_gateway_rejected")
+        playback = gated.value
 
         async with AsyncSessionLocal() as db:
             await finalize_job(
@@ -348,7 +525,7 @@ async def reject_operator_review(
             review_chat = int(job["chat_id"])
             review_account = str(job["account_id"])
             review_trace = str(job.get("trace_id") or "")
-        await reject_inbound_call(
+        await _gated_reject_inbound_call(
             account_id=UUID(review_account),
             chat_id=review_chat,
             trace_id=review_trace,
@@ -371,7 +548,7 @@ async def reject_operator_review(
         chat_id=review.chat_id,
     )
     try:
-        await reject_inbound_call(
+        await _gated_reject_inbound_call(
             account_id=UUID(review.account_id),
             chat_id=int(review.chat_id),
             trace_id=review.trace_id,
@@ -411,54 +588,162 @@ async def reject_operator_review(
     return {"ok": True, "job_id": job_id, "status": "cancelled"}
 
 
-async def expire_stale_operator_reviews() -> int:
-    expired_ids = list_expired_job_ids()
-    if not expired_ids:
-        return 0
+async def list_stale_operator_review_job_ids(db: AsyncSession) -> list[str]:
+    """Pending inbound reviews left in DB after the operator grace window.
 
-    for job_id in expired_ids:
-        try:
-            async with AsyncSessionLocal() as db:
-                row = (
-                    await db.execute(
-                        text(
-                            """
-                            SELECT chat_id, account_id::text, trace_id, trigger_source
-                            FROM call_broadcast_jobs
-                            WHERE id = CAST(:job_id AS uuid)
-                              AND status = 'pending_operator'
-                            LIMIT 1
-                            """
-                        ),
-                        {"job_id": job_id},
+    Memory TTL (default 90s) still expires the live ring. DB-only leftovers
+    wait longer so a just-timeout card can still be answered from admin.
+    """
+    ttl = int(getattr(settings, "CALL_BROADCAST_INBOUND_REVIEW_TTL_SECONDS", 90))
+    zombie_after = max(ttl * 2, 300)
+    rows = (
+        await db.execute(
+            text(
+                """
+                SELECT id::text
+                FROM call_broadcast_jobs
+                WHERE status = 'pending_operator'
+                  AND COALESCE(trigger_source, '') <> 'inbound_keyword_review'
+                  AND created_at < NOW() - make_interval(secs => :zombie_after)
+                ORDER BY created_at ASC
+                LIMIT 50
+                """
+            ),
+            {"zombie_after": zombie_after},
+        )
+    ).fetchall()
+    return [str(row[0]) for row in rows]
+
+
+async def cancel_stale_operator_review(
+    job_id: str,
+    *,
+    reject_telegram: bool = False,
+) -> bool:
+    """Mark a stale inbound review cancelled. Telegram reject is opt-in.
+
+    Zombie DB rows must not call hang-up: empty-arg fallbacks on the account
+    wrapper can hit a different live incoming call.
+    """
+    try:
+        async with AsyncSessionLocal() as db:
+            row = (
+                await db.execute(
+                    text(
+                        """
+                        SELECT chat_id, account_id::text, trace_id, trigger_source, metadata
+                        FROM call_broadcast_jobs
+                        WHERE id = CAST(:job_id AS uuid)
+                          AND status = 'pending_operator'
+                        LIMIT 1
+                        """
+                    ),
+                    {"job_id": job_id},
+                )
+            ).first()
+            if row is None:
+                return False
+            mapping = dict(row._mapping)
+            trigger_source = str(mapping.get("trigger_source") or "")
+            meta = _metadata_dict(mapping.get("metadata"))
+            if meta.get("queued_for_runtime") or meta.get("accepted"):
+                return False
+            # Text "video chat" requests stay in DB until an operator acts; do not auto-cancel.
+            if trigger_source == "inbound_keyword_review":
+                await hydrate_pending_review_from_job(db, job_id)
+                return False
+            if reject_telegram:
+                try:
+                    await _gated_reject_inbound_call(
+                        account_id=UUID(str(mapping["account_id"])),
+                        chat_id=int(mapping["chat_id"]),
+                        trace_id=str(mapping.get("trace_id") or ""),
                     )
-                ).first()
-                if row is None:
-                    continue
-                mapping = dict(row._mapping)
-                trigger_source = str(mapping.get("trigger_source") or "")
-                # Text "video chat" requests stay in DB until an operator acts; do not auto-cancel.
-                if trigger_source == "inbound_keyword_review":
-                    await hydrate_pending_review_from_job(db, job_id)
-                    continue
-                await reject_inbound_call(
-                    account_id=UUID(str(mapping["account_id"])),
-                    chat_id=int(mapping["chat_id"]),
-                    trace_id=str(mapping.get("trace_id") or ""),
-                )
-                await finalize_job(
-                    db,
-                    job_id=job_id,
-                    status="cancelled",
-                    failure_reason="review_expired",
-                )
-                await db.commit()
-            logger.bind(job_id=job_id).info("call_broadcast.incoming_review.expired")
-        except Exception as exc:
-            logger.bind(job_id=job_id, error_type=type(exc).__name__).warning(
-                "call_broadcast.incoming_review.expire_failed"
+                except Exception as exc:
+                    logger.bind(
+                        job_id=job_id,
+                        error_type=type(exc).__name__,
+                    ).warning("call_broadcast.incoming_review.expire_reject_failed")
+            await finalize_job(
+                db,
+                job_id=job_id,
+                status="cancelled",
+                failure_reason="review_expired",
             )
-    return len(expired_ids)
+            await db.commit()
+        pop_pending_review(job_id)
+        logger.bind(job_id=job_id).info("call_broadcast.incoming_review.expired")
+        return True
+    except Exception as exc:
+        logger.bind(job_id=job_id, error_type=type(exc).__name__).warning(
+            "call_broadcast.incoming_review.expire_failed"
+        )
+        return False
+
+
+async def expire_stale_operator_reviews() -> int:
+    memory_ids = set(list_expired_job_ids())
+    async with AsyncSessionLocal() as db:
+        db_ids = set(await list_stale_operator_review_job_ids(db))
+    cancelled = 0
+    for job_id in memory_ids:
+        if await cancel_stale_operator_review(job_id, reject_telegram=True):
+            cancelled += 1
+    for job_id in db_ids - memory_ids:
+        if await cancel_stale_operator_review(job_id, reject_telegram=False):
+            cancelled += 1
+    return cancelled
+
+
+async def restore_pending_reviews(db: AsyncSession) -> dict[str, int]:
+    """Rebuild in-memory review registry from pending_operator rows.
+
+    Memory remains the live working copy after restore. DB is the restart
+    source of truth. Failures are counted, not raised.
+    """
+    restored = 0
+    skipped = 0
+    rows = (
+        await db.execute(
+            text(
+                """
+                SELECT id::text
+                FROM call_broadcast_jobs
+                WHERE status = 'pending_operator'
+                ORDER BY created_at ASC
+                LIMIT 200
+                """
+            )
+        )
+    ).fetchall()
+    for row in rows:
+        mapping = dict(row._mapping) if hasattr(row, "_mapping") else {"id": row[0]}
+        job_id = str(mapping.get("id") or row[0])
+        review = await hydrate_pending_review_from_job(db, job_id)
+        if review is None:
+            skipped += 1
+        else:
+            restored += 1
+    return {"restored": restored, "skipped": skipped, "total": restored + skipped}
+
+
+async def restore_pending_reviews_from_db() -> dict[str, Any]:
+    try:
+        async with AsyncSessionLocal() as db:
+            stats = await restore_pending_reviews(db)
+        logger.bind(**stats).info("call_broadcast.incoming_review.restored_from_db")
+        return {"ok": True, **stats}
+    except Exception as exc:
+        logger.bind(error_type=type(exc).__name__).warning(
+            "call_broadcast.incoming_review.restore_failed"
+        )
+        return {
+            "ok": False,
+            "restored": 0,
+            "skipped": 0,
+            "total": 0,
+            "error": type(exc).__name__,
+        }
 
 
 def spawn_accept_operator_review(**kwargs: Any) -> None:

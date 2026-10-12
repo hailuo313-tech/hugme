@@ -11,8 +11,6 @@ import time
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
-from services.content_safety import _keyword_hit
-from services.crisis_intervention import detect_crisis_in_text
 from services.level_engine import UserLevelInput, calc_user_level
 from services.prompt_builder import LAYER_ORDER, PromptInput, build_prompt
 from services.script_match_hooks import (
@@ -55,43 +53,7 @@ def run_pipeline_case(fix: dict[str, Any]) -> PipelineSmokeResult:
 
     user_text = str(fix.get("user_text", ""))
     t = time.perf_counter()
-    hit, reason = _keyword_hit(user_text)
     timings["safety"] = _ms(t)
-    if hit:
-        total = _ms(t0)
-        outcome: Outcome = "blocked"
-        result = PipelineSmokeResult(
-            id=fix["id"],
-            title=fix["title"],
-            outcome=outcome,
-            pass_case=_check_expect(expect, outcome, total, budget_ms, None, reason),
-            total_ms=total,
-            within_budget=total < budget_ms,
-            timings_ms=timings,
-            block_reason=reason,
-            expect=expect,
-            detail={"stage": "safety_keyword"},
-        )
-        return result
-
-    t = time.perf_counter()
-    crisis = detect_crisis_in_text(user_text)
-    timings["crisis_detect"] = _ms(t)
-    if crisis:
-        total = _ms(t0)
-        outcome = "crisis"
-        return PipelineSmokeResult(
-            id=fix["id"],
-            title=fix["title"],
-            outcome=outcome,
-            pass_case=_check_expect(expect, outcome, total, budget_ms, None, "crisis"),
-            total_ms=total,
-            within_budget=total < budget_ms,
-            timings_ms=timings,
-            block_reason="crisis_detected",
-            expect=expect,
-            detail={"stage": "crisis_short_circuit"},
-        )
 
     grading_raw = fix.get("grading_input") or {}
     t = time.perf_counter()

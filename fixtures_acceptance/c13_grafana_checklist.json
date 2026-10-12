@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "description": "C-13 Grafana dashboard and alert rules walkthrough",
+  "items": [
+    { "id": "C13-01", "title": "Prometheus scrape + rule_files", "gate": "monitoring/prometheus.yml" },
+    { "id": "C13-02", "title": "14 alert rules in eris-alerts.yml", "gate": "audit script" },
+    { "id": "C13-03", "title": "6 core metrics each have alerts", "gate": "CORE_METRIC_ALERTS map" },
+    { "id": "C13-04", "title": "Grafana ERIS MVP Overview panels", "gate": "grafana-dashboard-eris-mvp.json" },
+    { "id": "C13-05", "title": "Alertmanager severity routing", "gate": "alertmanager.yml" },
+    { "id": "C13-06", "title": "Monitoring compose stack", "gate": "docker-compose.monitoring.yml" },
+    { "id": "C13-07", "title": "No notification secrets in repo", "gate": "audit script" },
+    { "id": "C13-08", "title": "Walkthrough signoff", "gate": "docs/C13_GRAFANA_WALKTHROUGH.md" }
+  ]
+}

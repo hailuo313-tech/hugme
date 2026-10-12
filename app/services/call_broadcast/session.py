@@ -361,7 +361,7 @@ async def _wait_for_incoming_phone_call(
     pytgcalls: Any,
     chat_id: int,
     *,
-    timeout_seconds: float = 4.0,
+    timeout_seconds: float = 10.0,
 ) -> bool:
     """Wait until PyTgCalls has cached InputPhoneCall for this P2P chat."""
     peer = await capture_incoming_phone_call(

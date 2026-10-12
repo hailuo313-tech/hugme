@@ -15,8 +15,62 @@ try {
   process.exit(2);
 }
 
-const tasks = eval(html.match(/const TASKS = (\[[\s\S]*?\]);/)[1]);
-const parallel = eval("(" + html.match(/const PARALLEL = (\{[\s\S]*?\});/)[1] + ")");
+const rulesMatch = html.match(/const RULES = (\[[\s\S]*?\]);/);
+if (rulesMatch) {
+  const rules = JSON.parse(rulesMatch[1]);
+  const active = rules.filter((r) => r.active).length;
+  const required = [
+    "channel.mtproto_direct",
+    "channel.bot_webhook",
+    "conversion.asset_keyword",
+    "deprecated.eight_hooks",
+  ];
+  const missing = required.filter((id) => !rules.some((r) => r.id === id));
+  if (missing.length) {
+    console.log(
+      JSON.stringify({
+        path,
+        bom,
+        bytes: fs.statSync(path).size,
+        syntax: "OK",
+        rules: "ERR",
+        missing,
+      })
+    );
+    process.exit(3);
+  }
+  console.log(
+    JSON.stringify({
+      path,
+      bom,
+      bytes: fs.statSync(path).size,
+      syntax: "OK",
+      rules: "OK",
+      total: rules.length,
+      active,
+    })
+  );
+  process.exit(0);
+}
+
+const tasksMatch = html.match(/const TASKS = (\[[\s\S]*?\]);/);
+const parallelMatch = html.match(/const PARALLEL = (\{[\s\S]*?\});/);
+if (!tasksMatch || !parallelMatch) {
+  console.log(
+    JSON.stringify({
+      path,
+      bom,
+      bytes: fs.statSync(path).size,
+      syntax: "OK",
+      rules: "ERR",
+      message: "missing RULES or legacy TASKS block",
+    })
+  );
+  process.exit(3);
+}
+
+const tasks = eval(tasksMatch[1]);
+const parallel = eval("(" + parallelMatch[1] + ")");
 const paraBlock = html.match(/const PARA_UI = \{([\s\S]*?)\};/);
 const paraUiKeys = new Set(
   paraBlock ? [...paraBlock[1].matchAll(/^\s*(\w+):/gm)].map((x) => x[1]) : []

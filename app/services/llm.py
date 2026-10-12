@@ -1,10 +1,10 @@
-"""OpenAI-compatible LLM client with Novita/OpenRouter routing."""
+"""OpenAI-compatible LLM client with per-purpose Novita/OpenRouter routing."""
 
 from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 from loguru import logger
@@ -19,6 +19,8 @@ FALLBACK_TIMEOUT_S = 20.0
 HTTP_REFERER = "https://hugme2.com"
 APP_TITLE = "ERIS Emotional Companion"
 DEFAULT_FALLBACK_REPLY = "现在有点忙，稍后再聊好吗？"
+
+LLMPurpose = Literal["chat", "aux"]
 
 
 class LLMResult(BaseModel):
@@ -59,16 +61,50 @@ def _provider_for(name: str, *, model: str | None = None) -> LLMProvider:
     )
 
 
-def _primary_provider(*, force_model: str | None = None) -> LLMProvider:
-    return _provider_for(settings.LLM_PROVIDER, model=force_model)
+def _resolve_provider_name(
+    *,
+    purpose: LLMPurpose | None = None,
+    provider: str | None = None,
+) -> str:
+    if provider:
+        return provider.strip().lower()
+    if purpose == "chat":
+        return (settings.LLM_CHAT_PROVIDER or settings.LLM_PROVIDER or "openrouter").strip().lower()
+    if purpose == "aux":
+        return (settings.LLM_AUX_PROVIDER or "openrouter").strip().lower()
+    return (settings.LLM_PROVIDER or "openrouter").strip().lower()
 
 
-def _fallback_provider() -> LLMProvider | None:
-    primary = (settings.LLM_PROVIDER or "openrouter").strip().lower()
-    if primary == "novita" and settings.OPENROUTER_API_KEY:
-        return _provider_for("openrouter", model=settings.LLM_FALLBACK_MODEL)
-    if primary != "novita" and settings.NOVITA_API_KEY:
-        return _provider_for("novita", model=settings.LLM_PRIMARY_MODEL)
+def _resolve_model(provider_name: str, *, purpose: LLMPurpose | None, force_model: str | None) -> str:
+    if force_model:
+        return force_model
+    if purpose == "chat" and (settings.LLM_CHAT_MODEL or "").strip():
+        return settings.LLM_CHAT_MODEL.strip()
+    if purpose == "aux" and (settings.LLM_AUX_MODEL or "").strip():
+        return settings.LLM_AUX_MODEL.strip()
+    if provider_name == "novita":
+        return settings.LLM_PRIMARY_MODEL
+    return settings.LLM_FALLBACK_MODEL
+
+
+def _primary_provider(
+    *,
+    purpose: LLMPurpose | None = None,
+    provider: str | None = None,
+    force_model: str | None = None,
+) -> LLMProvider:
+    provider_name = _resolve_provider_name(purpose=purpose, provider=provider)
+    model = _resolve_model(provider_name, purpose=purpose, force_model=force_model)
+    return _provider_for(provider_name, model=model)
+
+
+def _fallback_provider(primary: LLMProvider) -> LLMProvider | None:
+    if primary.name == "novita" and settings.OPENROUTER_API_KEY:
+        model = settings.LLM_AUX_MODEL or settings.LLM_FALLBACK_MODEL
+        return _provider_for("openrouter", model=model)
+    if primary.name != "novita" and settings.NOVITA_API_KEY:
+        model = settings.LLM_CHAT_MODEL or settings.LLM_PRIMARY_MODEL
+        return _provider_for("novita", model=model)
     return None
 
 
@@ -141,10 +177,19 @@ async def chat(
     temperature: float = 0.85,
     max_tokens: int = 800,
     force_model: str | None = None,
+    purpose: LLMPurpose | None = None,
+    provider: str | None = None,
 ) -> LLMResult:
-    """Send chat messages to the configured OpenAI-compatible provider."""
+    """Send chat messages to the configured OpenAI-compatible provider.
+
+    purpose:
+      - ``chat``: user replies + operator AI assist drafts (Novita by default)
+      - ``aux``: translation / memory scoring / age extraction (OpenRouter by default)
+      - ``None``: legacy ``LLM_PROVIDER`` routing (e.g. /api/v1/llm/chat)
+    """
     start_ts = time.time()
-    primary = _primary_provider(force_model=force_model)
+    primary = _primary_provider(purpose=purpose, provider=provider, force_model=force_model)
+    allow_fallback = purpose in (None, "chat", "aux")
 
     try:
         content, usage = await _call_once(
@@ -174,7 +219,7 @@ async def chat(
             f"[{trace_id}] llm.primary.error"
         )
 
-    fallback = None if force_model else _fallback_provider()
+    fallback = _fallback_provider(primary) if allow_fallback and not force_model else None
     if fallback is None:
         logger.error(f"[{trace_id}] llm.no_fallback primary_err={primary_err}")
         return LLMResult(

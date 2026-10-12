@@ -313,6 +313,32 @@ async def test_llm_error_skips_gracefully(mw, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_invalid_llm_json_uses_rule_fallback_for_preference(mw, monkeypatch):
+    async def invalid_json_llm(*, messages, trace_id, **_kwargs):
+        return _LLMStub(content="sure, this user likes older women")
+
+    monkeypatch.setattr(mw, "llm_chat", invalid_json_llm)
+    monkeypatch.setattr(mw.settings, "MEMORY_WRITE_ENABLED", True)
+    monkeypatch.setattr(mw.settings, "MEMORY_WRITE_FALLBACK_ENABLED", True)
+    monkeypatch.setattr(mw.settings, "MEMORY_IMPORTANCE_THRESHOLD", 5)
+
+    db = _CapturingDB()
+    result = await mw.maybe_write_memory(
+        user_id="u",
+        conversation_id="c",
+        message_id="m",
+        content="I like women over 30 and curvy type",
+        trace_id="t",
+        db=db,
+    )
+
+    assert result is not None
+    _, params = db.calls[0]
+    assert params["mt"] == "preference"
+    assert "women over 30" in params["ct"]
+
+
+@pytest.mark.asyncio
 async def test_llm_exception_does_not_propagate(mw, monkeypatch):
     async def kaboom(*_a, **_k):
         raise TimeoutError("upstream timeout")

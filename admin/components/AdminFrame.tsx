@@ -5,12 +5,10 @@ import { clearAuth, LOGIN_PATH, Operator } from "@/lib/auth";
 const navItems = [
   { key: "home", label: "总后台", href: "/admin" },
   { key: "conversations", label: "会话流控", href: "/admin/conversations" },
-  { key: "telegram", label: "TG账号", href: "/admin/telegram-accounts" },
+  { key: "user-collection", label: "用户收集数据", href: "/admin/user-collection" },
   { key: "data", label: "数据总览", href: "/admin/data" },
-  { key: "ai", label: "AI话术", href: "/admin/ai-ops" },
-  { key: "characters", label: "角色", href: "/admin/characters" },
-  { key: "approvals", label: "运营审批", href: "/admin/approvals" },
-  { key: "delivery", label: "推送监控", href: "/admin/delivery" },
+  { key: "fixed", label: "固定回复", href: "/admin/fixed-replies" },
+  { key: "broadcast", label: "视频通话", href: "/admin/video-broadcast" },
 ];
 
 export default function AdminFrame({

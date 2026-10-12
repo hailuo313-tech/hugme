@@ -85,7 +85,7 @@ async def resolve_default_video_asset(db: AsyncSession) -> dict[str, Any] | None
     return _row_mapping(row) if row is not None else None
 
 
-INBOUND_PLAY_SEQUENCE_MAX = 3
+INBOUND_PLAY_SEQUENCE_MAX = 2
 
 
 async def record_inbound_call_event(
@@ -250,7 +250,7 @@ async def resolve_inbound_call_context(
         "completed_inbound_calls": completed_inbound,
         "prior_inbound_attempts": recorded_attempts,
         "recorded_attempts": recorded_attempts,
-        # Next video sequence slot (1/2/3) after successful playbacks.
+        # Next auto-answer slot (1/2) after successful playbacks; 3+ is operator review.
         "inbound_call_number": completed_inbound + 1,
         # How many times the user has already rung (including cancelled reviews).
         "call_attempt_number": recorded_attempts + 1,
@@ -286,7 +286,7 @@ async def resolve_inbound_sequence_video_asset(
     *,
     completed_count: int | None = None,
 ) -> dict[str, Any] | None:
-    """Pick video for the next inbound call: 1st→seq1, 2nd→seq2, 3rd→seq3."""
+    """Pick video for the next auto-answer: 1st→seq1, 2nd→seq2. 3rd+ is operator review."""
     completed = (
         int(completed_count)
         if completed_count is not None
@@ -573,6 +573,30 @@ async def finalize_stale_active_jobs(db: AsyncSession) -> int:
         )
     ).first()
     return int(_row_mapping(row).get("cnt") or 0)
+
+
+async def load_call_broadcast_job(
+    db: AsyncSession,
+    job_id: str | None,
+) -> dict[str, Any] | None:
+    """Load a call_broadcast job by id regardless of status."""
+    if not job_id:
+        return None
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT id::text, account_id::text, chat_id, video_asset_id::text,
+                       metadata, trace_id, status
+                FROM call_broadcast_jobs
+                WHERE id = CAST(:job_id AS uuid)
+                LIMIT 1
+                """
+            ),
+            {"job_id": job_id},
+        )
+    ).first()
+    return _row_mapping(row) if row is not None else None
 
 
 async def load_video_asset_for_job(

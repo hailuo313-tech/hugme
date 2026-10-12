@@ -8,6 +8,7 @@ from uuid import UUID
 
 from loguru import logger
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
@@ -41,6 +42,7 @@ async def _claim_archive_task(session: AsyncSession) -> dict[str, Any] | None:
                     FROM message_schedules
                     WHERE status = 'sent'
                       AND metadata->>'script_hit_id' IS NOT NULL
+                      AND metadata->>'archive_skip_reason' IS NULL
                       AND id NOT IN (
                           SELECT DISTINCT source_message_id::text::uuid
                           FROM conversation_script_hits
@@ -114,6 +116,46 @@ async def _create_archive_record(
     archive_id = str(result.scalar())
     await session.commit()
     return archive_id
+
+
+async def _conversation_exists(session: AsyncSession, conversation_id: str) -> bool:
+    row = (
+        await session.execute(
+            text("SELECT 1 FROM conversations WHERE id = CAST(:conversation_id AS uuid) LIMIT 1"),
+            {"conversation_id": conversation_id},
+        )
+    ).first()
+    return row is not None
+
+
+async def _mark_archive_skipped(
+    session: AsyncSession,
+    *,
+    source_message_id: str,
+    reason: str,
+    trace_id: str | None = None,
+) -> None:
+    await session.execute(
+        text(
+            """
+            UPDATE message_schedules
+            SET metadata = COALESCE(metadata, '{}'::jsonb) || CAST(:patch AS jsonb),
+                updated_at = NOW()
+            WHERE id = CAST(:source_message_id AS uuid)
+            """
+        ),
+        {
+            "source_message_id": source_message_id,
+            "patch": _json_dumps(
+                {
+                    "archive_skip_reason": reason,
+                    "archive_skipped_at": datetime.now(timezone.utc).isoformat(),
+                    "archive_skipped_trace_id": trace_id,
+                }
+            ),
+        },
+    )
+    await session.commit()
 
 
 async def _get_message_details(
@@ -248,6 +290,7 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
         "archived": 0,
         "failed": 0,
         "skipped_no_lock": 0,
+        "skipped_orphan": 0,
         "error": None,
     }
 
@@ -290,12 +333,33 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
                 # Get message details
                 if not conversation_id:
                     log.warning("archive_service.tick.no_conversation_id")
-                    stats["failed"] = 1
+                    await _mark_archive_skipped(
+                        session,
+                        source_message_id=source_message_id,
+                        reason="missing_conversation_id",
+                        trace_id=trace_id,
+                    )
+                    stats["skipped_orphan"] = 1
                     return stats
+
+                if not await _conversation_exists(session, conversation_id):
+                    log.bind(
+                        source_message_id=source_message_id,
+                        conversation_id=conversation_id,
+                    ).warning("archive_service.tick.orphan_conversation")
+                    await _mark_archive_skipped(
+                        session,
+                        source_message_id=source_message_id,
+                        reason="orphan_conversation",
+                        trace_id=trace_id,
+                    )
+                    stats["skipped_orphan"] = 1
+                    return stats
+
                 message_details = (
                     await _get_message_details(session, message_id)
                     if message_id else {}
-                )
+                ) or {}
 
                 # Create archive record
                 archive_id = await _create_archive_record(
@@ -319,6 +383,24 @@ async def run_one_tick(trace_id: Optional[str] = None) -> dict[str, Any]:
                     message_id=message_id,
                 ).info("archive_service.tick.archived")
 
+            except IntegrityError as e:
+                err = str(e).lower()
+                if "conversation_script_hits_conversation_id_fkey" in err or "conversation_id" in err:
+                    log.bind(
+                        source_message_id=source_message_id,
+                        conversation_id=conversation_id,
+                    ).warning("archive_service.tick.orphan_conversation_fk")
+                    await _mark_archive_skipped(
+                        session,
+                        source_message_id=source_message_id,
+                        reason="orphan_conversation",
+                        trace_id=trace_id,
+                    )
+                    stats["skipped_orphan"] = 1
+                else:
+                    log.error(f"archive_service.tick.error: {e}")
+                    stats["error"] = str(e)
+                    stats["failed"] = 1
             except Exception as e:
                 log.error(f"archive_service.tick.error: {e}")
                 stats["error"] = str(e)

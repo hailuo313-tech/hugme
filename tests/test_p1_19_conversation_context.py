@@ -59,10 +59,10 @@ class FakeRedis:
 
 
 @pytest.mark.asyncio
-async def test_append_context_uses_conv_user_key_and_retains_50_rounds() -> None:
+async def test_append_context_uses_conv_user_key_and_retains_200_messages() -> None:
     redis = FakeRedis()
 
-    for i in range(105):
+    for i in range(205):
         await append_conversation_context(
             redis,
             user_id="u1",
@@ -78,7 +78,7 @@ async def test_append_context_uses_conv_user_key_and_retains_50_rounds() -> None
     first = json.loads(redis.lists[key][0])
     last = json.loads(redis.lists[key][-1])
     assert first["content"] == "msg-5"
-    assert last["content"] == "msg-104"
+    assert last["content"] == "msg-204"
 
 
 @pytest.mark.asyncio

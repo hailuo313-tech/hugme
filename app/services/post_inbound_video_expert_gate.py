@@ -42,6 +42,25 @@ async def inbound_calls_reached_release_review(db: AsyncSession, chat_id: int) -
     )
 
 
+async def user_has_inbound_release_waiver(db: AsyncSession, user_id: str) -> bool:
+    """True after this user was released once; they must not re-enter the queue."""
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT 1
+                FROM conversations
+                WHERE user_id = CAST(:uid AS uuid)
+                  AND post_inbound_video_expert_waived_at IS NOT NULL
+                LIMIT 1
+                """
+            ),
+            {"uid": user_id},
+        )
+    ).fetchone()
+    return row is not None
+
+
 async def resolve_chat_id_for_user(db: AsyncSession, user_id: str) -> int | None:
     row = (
         await db.execute(
@@ -182,7 +201,10 @@ async def resolve_chat_id_for_user_by_conversation(
 async def ensure_release_review_after_inbound_call(
     db: AsyncSession, *, chat_id: int, trace_id: str | None = None
 ) -> bool:
-    """At the sixth independent ring, put a normal user into release review."""
+    """At the sixth independent ring, put a normal user into release review.
+
+    After one successful release, later rings must not re-open this queue.
+    """
     if not await inbound_calls_reached_release_review(db, chat_id):
         return False
     row = (await db.execute(
@@ -198,7 +220,11 @@ async def ensure_release_review_after_inbound_call(
                 LIMIT 1"""),
         {"external_id": f"tg_{int(chat_id)}"},
     )).mappings().one_or_none()
-    if not row or row["status"] == "frozen" or row["post_inbound_video_expert_waived_at"] is not None:
+    if not row or row["status"] == "frozen":
+        return False
+    if row["post_inbound_video_expert_waived_at"] is not None:
+        return False
+    if await user_has_inbound_release_waiver(db, str(row["user_id"])):
         return False
     if str(row["user_level"] or "") in ("S", "A") or int(row["vip_level"] or 0) >= 2:
         return False
@@ -429,6 +455,14 @@ async def release_post_inbound_video_expert_to_ai(
     conversation_id: str,
     operator_id: str | None = None,
 ) -> None:
+    if await is_post_inbound_video_expert_waived(db, conversation_id):
+        logger.bind(
+            component="post_inbound_video_expert_gate",
+            conversation_id=conversation_id,
+            operator_id=operator_id,
+        ).info("post_inbound_video_expert.already_released")
+        return
+
     if not await conversation_release_eligible(db, conversation_id):
         raise ValueError("conversation_not_eligible_for_post_inbound_video_release")
 

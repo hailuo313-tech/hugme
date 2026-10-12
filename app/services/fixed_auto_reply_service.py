@@ -13,8 +13,10 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 import re
+import shutil
 import uuid
 from collections import defaultdict
+from pathlib import Path
 from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -30,6 +32,7 @@ from services.link_attribution import (
     wrap_text_links_with_tracking,
 )
 from services.mtproto.peer_resolve import resolve_telethon_peer
+from services.mtproto.inbound_media import operator_media_dir
 from services.script_asset_delivery import send_mtproto_asset
 from services.telegram_account_manager import telegram_account_manager
 
@@ -311,6 +314,7 @@ async def _enqueue_new_user_jobs(db) -> int:
                     COALESCE(activated_at, created_at, NOW()) AS start_at
                 FROM fixed_auto_reply_rules
                 WHERE is_active = TRUE
+                  AND name NOT LIKE '视频后发过去的信息%'
             ),
             eligible AS (
                 SELECT DISTINCT ON (r.rule_id, u.id)
@@ -434,6 +438,7 @@ async def enqueue_jobs_for_fixed_mode_inbound(
                     COALESCE(activated_at, created_at, NOW()) AS start_at
                 FROM fixed_auto_reply_rules
                 WHERE is_active = TRUE
+                  AND name NOT LIKE '视频后发过去的信息%'
             ),
             fixed_user_seen AS (
                 SELECT COALESCE(
@@ -460,8 +465,11 @@ async def enqueue_jobs_for_fixed_mode_inbound(
                 JOIN telegram_accounts ta
                     ON ta.id = CAST(:account_id AS UUID)
                    AND COALESCE(ta.metadata->>'reply_mode', 'ai') = 'fixed'
+                JOIN users u
+                    ON u.id = CAST(:user_id AS UUID)
                 CROSS JOIN fixed_user_seen fus
                 WHERE r.start_at <= fus.first_seen_at
+                  AND u.created_at >= r.start_at
             ),
             reserved AS (
                 INSERT INTO fixed_auto_reply_rule_recipients (
@@ -549,6 +557,7 @@ async def _claim_due_jobs_fair(
                   LEFT JOIN video_reinvite_account_state hs ON hs.account_id=j.account_id
                  WHERE j.status = 'pending'
                    AND j.send_at <= NOW()
+                   AND j.created_at >= NOW() - INTERVAL '14 days'
                    AND j.account_id IS NOT NULL
                    AND COALESCE(hs.status,'active')='active'
                    AND COALESCE(hs.health_check_status,'healthy')='healthy'
@@ -590,9 +599,11 @@ async def _claim_due_jobs_fair(
 
 
 async def _send_due_jobs(*, trace_id: str) -> tuple[int, int]:
-    per_account_limit = _cfg("FIXED_AUTO_REPLY_PER_ACCOUNT_BATCH", 10)
-    max_total = _cfg("FIXED_AUTO_REPLY_MAX_TOTAL_BATCH", 200)
-    max_parallel = _cfg("FIXED_AUTO_REPLY_MAX_PARALLEL_ACCOUNTS", 16)
+    # A recovered backlog must never burst multiple sends through one TG account.
+    # Keep configured values as upper bounds, with conservative runtime caps.
+    per_account_limit = min(_cfg("FIXED_AUTO_REPLY_PER_ACCOUNT_BATCH", 10), 1)
+    max_total = min(_cfg("FIXED_AUTO_REPLY_MAX_TOTAL_BATCH", 200), 20)
+    max_parallel = min(_cfg("FIXED_AUTO_REPLY_MAX_PARALLEL_ACCOUNTS", 16), 8)
 
     async with AsyncSessionLocal() as db:
         await ensure_schema(db)
@@ -624,6 +635,29 @@ async def _send_due_jobs(*, trace_id: str) -> tuple[int, int]:
     semaphore = asyncio.Semaphore(max_parallel)
 
     async def _send_account_jobs(account_id: str, account_jobs: list[dict[str, Any]]) -> tuple[int, int]:
+        from services.runtime_ownership import this_process_may_hold_telegram_session
+
+        if account_id != "unknown" and not await this_process_may_hold_telegram_session(account_id):
+            logger.bind(account_id=account_id).info("fixed_auto_reply.skip_runtime_owned")
+            ids = [str(job.get("id")) for job in account_jobs if job.get("id")]
+            if ids:
+                async with AsyncSessionLocal() as skip_db:
+                    for job_id in ids:
+                        await skip_db.execute(
+                            text(
+                                """
+                                UPDATE fixed_auto_reply_jobs
+                                   SET status = 'pending',
+                                       failure_reason = 'runtime_owned',
+                                       updated_at = NOW()
+                                 WHERE id = CAST(:id AS uuid)
+                                   AND status = 'sending'
+                                """
+                            ),
+                            {"id": job_id},
+                        )
+                    await skip_db.commit()
+            return 0, 0
         async with semaphore:
             sent_count = 0
             failed_count = 0
@@ -861,6 +895,7 @@ async def _send_one_job(db, job: dict[str, Any], *, trace_id: str) -> tuple[bool
                 await _mark_job(db, job["id"], "failed", "asset_send_failed")
                 return False, "asset_send_failed"
             await _record_delivery(db, job, asset["asset_type"], asset["id"], "sent", None)
+            await _persist_assistant_media_message(db, job, asset)
 
         if not text_content and not assets:
             await _mark_job(db, job["id"], "skipped", "empty_rule")
@@ -1143,6 +1178,8 @@ async def _persist_assistant_message(
     content: str,
     *,
     message_id: str | None = None,
+    content_type: str = "text",
+    created_at: datetime | None = None,
 ) -> None:
     conversation_id = job.get("conversation_id")
     if not conversation_id:
@@ -1166,9 +1203,9 @@ async def _persist_assistant_message(
                 'assistant',
                 :sender_id,
                 :content,
-                'text',
+                :content_type,
                 'fixed_auto_reply',
-                NOW()
+                COALESCE(:created_at, NOW())
             )
             """
         ),
@@ -1177,6 +1214,8 @@ async def _persist_assistant_message(
             "conversation_id": conversation_id,
             "sender_id": str(job.get("account_id") or "fixed_auto_reply"),
             "content": content,
+            "content_type": content_type,
+            "created_at": created_at,
         },
     )
     await db.execute(
@@ -1184,3 +1223,40 @@ async def _persist_assistant_message(
         {"id": conversation_id},
     )
     await db.commit()
+
+
+async def _persist_assistant_media_message(
+    db,
+    job: dict[str, Any],
+    asset: dict[str, Any],
+    *,
+    created_at: datetime | None = None,
+) -> bool:
+    """Persist a sent fixed attachment for admin chat history without affecting delivery."""
+    try:
+        source = Path(str(asset.get("storage_path") or ""))
+        if not source.is_file() or source.stat().st_size <= 0:
+            return False
+        message_id = str(uuid.uuid4())
+        directory = operator_media_dir()
+        directory.mkdir(parents=True, exist_ok=True)
+        target = directory / f"{message_id}{source.suffix.lower()}"
+        shutil.copy2(source, target)
+        asset_type = str(asset.get("asset_type") or "media").lower()
+        content_type = "audio" if asset_type in {"voice", "audio"} else asset_type
+        await _persist_assistant_message(
+            db,
+            job,
+            str(asset.get("caption") or f"[{content_type}]"),
+            message_id=message_id,
+            content_type=content_type,
+            created_at=created_at,
+        )
+        return True
+    except Exception as exc:
+        logger.bind(
+            job_id=str(job.get("id") or ""),
+            asset_id=str(asset.get("id") or ""),
+            error_type=type(exc).__name__,
+        ).warning("fixed_auto_reply.media_history_persist_failed")
+        return False

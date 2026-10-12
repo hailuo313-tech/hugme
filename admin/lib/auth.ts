@@ -57,26 +57,86 @@ function resolveApiPath(path: string): string {
   return `${API_BASE}/${path}`;
 }
 
+type FastApiErrorItem = {
+  msg?: string;
+  loc?: (string | number)[];
+};
+
+export function formatApiErrorDetail(detail: unknown, fallback = "Request failed"): string {
+  if (detail == null || detail === "") return fallback;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const parts = detail
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (item && typeof item === "object" && "msg" in item) {
+          const err = item as FastApiErrorItem;
+          const loc = Array.isArray(err.loc) ? err.loc.join(".") : "";
+          return loc ? `${loc}: ${err.msg}` : (err.msg || null);
+        }
+        return null;
+      })
+      .filter((part): part is string => Boolean(part));
+    return parts.length > 0 ? parts.join("; ") : fallback;
+  }
+  if (typeof detail === "object") {
+    try {
+      return JSON.stringify(detail);
+    } catch {
+      return fallback;
+    }
+  }
+  return String(detail);
+}
+
+const TRANSIENT_GATEWAY_STATUSES = new Set([502, 503, 504]);
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+export type ApiFetchOptions = RequestInit & {
+  /** Retry count for transient gateway errors (502/503/504). */
+  retries?: number;
+};
+
 export async function apiFetch<T>(
   path: string,
-  options: RequestInit = {}
+  options: ApiFetchOptions = {},
 ): Promise<T> {
+  const { retries = 0, ...fetchOptions } = options;
   const token = getToken();
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(options.headers as Record<string, string>),
-  };
+  const headers: Record<string, string> = { ...(fetchOptions.headers as Record<string, string>) };
+  if (!(fetchOptions.body instanceof FormData)) headers["Content-Type"] = "application/json";
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(resolveApiPath(path), { ...options, headers });
-  if (res.status === 401) {
-    clearAuth();
-    window.location.href = LOGIN_PATH;
-    throw new Error("Unauthorized");
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    let res: Response;
+    try {
+      res = await fetch(resolveApiPath(path), { ...fetchOptions, headers });
+    } catch (error) {
+      if (attempt < retries) {
+        await sleep(400 * (attempt + 1));
+        continue;
+      }
+      throw error;
+    }
+    if (res.status === 401) {
+      clearAuth();
+      window.location.href = LOGIN_PATH;
+      throw new Error("Unauthorized");
+    }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({})) as { detail?: unknown };
+      const message = formatApiErrorDetail(err.detail, res.statusText);
+      if (TRANSIENT_GATEWAY_STATUSES.has(res.status) && attempt < retries) {
+        await sleep(400 * (attempt + 1));
+        continue;
+      }
+      throw new Error(message);
+    }
+    return res.json() as Promise<T>;
   }
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({})) as { detail?: string };
-    throw new Error(err.detail || res.statusText);
-  }
-  return res.json() as Promise<T>;
+
+  throw new Error("Request failed");
 }

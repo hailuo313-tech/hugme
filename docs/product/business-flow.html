@@ -22,10 +22,82 @@
     * { box-sizing: border-box; }
     body {
       margin: 0;
+      padding-top: 74px;
       background: var(--bg);
       color: var(--text);
       font-family: Inter, "Microsoft YaHei", Arial, sans-serif;
       line-height: 1.72;
+    }
+    .section-nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 1000;
+      height: 74px;
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      padding: 10px 24px;
+      border-bottom: 1px solid #34445f;
+      background: rgba(7, 11, 23, .97);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, .32);
+      backdrop-filter: blur(12px);
+    }
+    .section-nav-brand {
+      flex: 0 0 auto;
+      color: #c4b5fd;
+      font-size: 17px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+    .section-nav-links {
+      min-width: 0;
+      flex: 1 1 auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 5px 2px 8px;
+      scrollbar-width: thin;
+      scrollbar-color: #526682 #10182a;
+    }
+    .section-nav a {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      height: 36px;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #10182a;
+      color: #c9d7ee;
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1;
+      text-decoration: none;
+      white-space: nowrap;
+      transition: border-color .18s ease, background .18s ease, color .18s ease;
+    }
+    .section-nav a:hover,
+    .section-nav a:focus-visible,
+    .section-nav a.active {
+      border-color: var(--purple);
+      background: #2a2050;
+      color: #fff;
+      outline: none;
+    }
+    .section-nav a.ext {
+      border-color: #6d4ad4;
+      background: #24184a;
+      color: #f3e8ff;
+    }
+    .doc-entry h3 a {
+      color: #e9d5ff;
+      text-decoration: none;
+    }
+    .doc-entry h3 a:hover {
+      color: #fff;
     }
     header {
       padding: 42px 56px 24px;
@@ -36,7 +108,7 @@
     h2 { margin: 0; font-size: 24px; }
     h3 { margin: 0 0 10px; font-size: 18px; }
     p { margin: 8px 0; color: var(--muted); }
-    main { padding: 28px 56px 64px; }
+    main { padding: 28px 56px calc(100vh - 90px); }
     .meta { display: flex; gap: 12px; flex-wrap: wrap; color: var(--muted); }
     .tag {
       display: inline-flex;
@@ -55,6 +127,7 @@
       background: var(--panel);
       border-radius: 10px;
       overflow: hidden;
+      scroll-margin-top: 90px;
     }
     .section-head {
       padding: 20px 24px;
@@ -200,6 +273,19 @@
       .flow-node:nth-child(3)::after { content: ""; }
     }
     @media (max-width: 760px) {
+      body { padding-top: 96px; }
+      .section-nav {
+        height: 96px;
+        display: block;
+        padding: 8px 14px;
+      }
+      .section-nav-brand {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 15px;
+      }
+      .section-nav-links { padding-bottom: 6px; }
+      section { scroll-margin-top: 110px; }
       header, main { padding-left: 18px; padding-right: 18px; }
       h1 { font-size: 28px; }
       .flow-row { grid-template-columns: 1fr; }
@@ -214,13 +300,21 @@
   </style>
 </head>
 <body>
+  <nav class="section-nav" aria-label="业务流程章节目录">
+    <div class="section-nav-brand">ERIS 线上业务流程与规则</div>
+    <div id="section-nav-links" class="section-nav-links"></div>
+  </nav>
   <header>
     <h1>ERIS 线上业务流程与规则</h1>
     <div class="meta">
-      <span class="tag">更新时间：2026-08-09</span>
-      <span class="tag">页面标记：eris-business-flow-done-v4</span>
+      <span class="tag">更新时间：2026-08-23</span>
+      <span class="tag">页面标记：eris-business-flow-done-v12</span>
+      <span class="tag">兼容标记：eris-business-flow-done-v3</span>
       <span class="tag">统计日界线：北京时间 00:00-24:00</span>
-      <span class="tag">当前说明：以线上服务器规则为准</span>
+      <span class="tag">当前说明：以 2026-08-23 仓库代码与线上 Runtime 实测为准</span>
+      <a class="tag" href="/runtime-split-tracker.html" style="color:#e9d5ff;text-decoration:none;border-color:#6d4ad4">安全拆分执行跟踪</a>
+      <a class="tag" href="/inbound-user-flow.html" style="color:#bae6fd;text-decoration:none;border-color:#1d4e72">用户入站流程图</a>
+      <a class="tag" href="/app-download-country-route.html" style="color:#bbf7d0;text-decoration:none;border-color:#166534">三方下载国家路由</a>
     </div>
   </header>
 
@@ -240,7 +334,7 @@
           <div class="flow-node">
             <div class="flow-step">2</div>
             <div class="flow-title">保存与延迟读取</div>
-            <div class="flow-desc">系统先保存入站消息，等待 4 秒合并连续输入，再判断账号模式。</div>
+            <div class="flow-desc">系统先保存入站消息；截图下载到本地。等待 4 秒合并连续输入，再判断账号模式。</div>
           </div>
           <div class="flow-node">
             <div class="flow-step">3</div>
@@ -277,9 +371,9 @@
           </div>
           <div class="flow-branch">
             <h3><span class="flow-dot"></span>视频通话链路</h3>
-            <p>用户命中视频关键词或主动来电时进入视频规则；前两次有效来电自动接听，依次播放视频 11、视频 22；后续来电进入人工队列。</p>
-            <p>同一接听 TG 账号同时只处理 1 路通话；账号占线时的新来电直接跳过，不创建任务、不计来电次数，也不消耗视频播放顺序。</p>
-            <p class="rule">自动接听满第 2 次后，如果缺城市或年龄，马上追问城市和年龄，不问国家。</p>
+            <p>用户主动打来电：前两次<strong>成功播放</strong>自动接听，依次播视频 11、视频 22；第 3 次起进人工队列。两次自动接听成功后发「视频后发过去的信息01」，等 5 秒再发「02」。第 3 次及以后每次来电发「03」。用户发截图，或漏斗内被判定「已经注册」后，停止 03 并切断该会话全部自动回复。</p>
+            <p>同一接听 TG 账号同时只处理 1 路通话；占线来电跳过：不建任务、不推进成功播放序号。失败/取消保留尝试记录，但不消耗 11/22 顺序。</p>
+            <p class="rule">自动接听满第 2 次后，缺城市或年龄马上追问，不问国家。第 6 次独立来电进入待放行审核；人工放行一次后，该用户不再进入此队列。</p>
           </div>
           <div class="flow-branch">
             <h3><span class="flow-dot"></span>人工与精聊链路</h3>
@@ -289,7 +383,7 @@
         </div>
 
         <div class="flow-note">
-          总体原则：用户消息进来后，先保存、再判断账号模式，再根据用户历史和当前意图选择回复。国家、城市、年龄缺失不能阻塞聊天、链接、媒体和视频引导；所有统计均按北京时间 00:00-24:00 计算。
+          总体原则：只处理私聊。消息先保存（截图先落盘），再按账号 <code>AI系统</code> / <code>固定回复</code> 分流。分级国家优先用 Telegram 号码国，锁定后不被自述覆盖。下载链接先走国家路由，再接待号绑定，再默认 A。国家、城市、年龄缺失不能阻塞聊天、链接、媒体和视频引导。视频后漏斗一旦因截图或已经注册停止，该会话不再自动回复。所有统计按北京时间 00:00-24:00。
         </div>
       </div>
     </section>
@@ -302,17 +396,32 @@
       <div class="section-body grid">
         <div class="card">
           <h3>真人 TG 账号接入</h3>
-          <p>MTProto 真人账号收到用户消息后，先保存消息、等待 4 秒合并同一用户连续输入，再进入对应模式。</p>
-          <p class="rule">触发条件：用户给接入 TG 账号发文字、表情、图片、语音、视频或来电。</p>
+          <p>MTProto 真人账号只处理<strong>私聊</strong>。收到消息后先入库；若是截图则下载到 <code>inbound-photos/{消息UUID}.jpg</code>。等待 4 秒合并同一用户连续输入，延迟 4 秒标记已读，再进入对应模式。</p>
+          <p class="rule">触发条件：用户给接入 TG 账号发文字、表情、图片、语音、视频或打视频电话。群/频道消息不建用户、不回复。</p>
         </div>
         <div class="card">
           <h3>账号模式选择</h3>
           <p>每个接入 TG 账号可选择 <code>AI系统</code> 或 <code>固定回复</code>。两条链路独立运行，避免互相抢回复。</p>
-          <p class="rule">AI系统走画像、记忆、话术库、链接、培育、精聊；固定回复只走固定规则和固定媒体。</p>
+          <p class="rule">AI系统走画像、记忆、话术库、链接、培育、精聊；固定回复只走固定规则和固定媒体。标题匹配「视频后发过去的信息%」的话术不走固定回复入队，只走视频后漏斗。</p>
         </div>
         <div class="card">
-          <h3>Bot/Webhook 兼容入口</h3>
-          <p>保留 Bot/Webhook 入口用于兼容旧链路和测试，但核心生产接待以真人 MTProto 账号为主。</p>
+          <h3>进程分工</h3>
+          <p>主 API（<code>PROCESS_ROLE=api</code>）提供后台 HTTP；Telegram Runtime（<code>PROCESS_ROLE=telegram_runtime</code>）持有 MTProto 会话、来电监听、入站回复。同一账号同一时刻只允许一个进程持有 session。</p>
+        </div>
+        <div class="card doc-entry">
+          <h3><a href="/runtime-split-tracker.html">安全拆分执行跟踪</a></h3>
+          <p>记录这次 API 与 Telegram Runtime 安全拆分的全过程：阶段 0–10、步骤 A–H、验收结果、回滚位置和红线。</p>
+          <p class="rule">这是一次大改动的执行档案。普通接口发版不应重启 Runtime；同一 Session 不允许双连接。</p>
+        </div>
+        <div class="card doc-entry">
+          <h3><a href="/inbound-user-flow.html">用户入站流程图</a></h3>
+          <p>用户进系统后的细化分支：门禁、漏斗停止、AI / 固定回复、视频 11/22/人工、待放行、下载国家路由，以及「没回复」对应哪条规则。</p>
+          <p class="rule">只处理私聊。消息先保存再分流。漏斗因截图或已经注册停止后，该会话不再自动回复。</p>
+        </div>
+        <div class="card doc-entry">
+          <h3><a href="/app-download-country-route.html">三方下载链接：按国家选平台</a></h3>
+          <p>下载话术里的链接先看用户号码国：后台按 <code>US-美国-T1</code> 这种标签人工绑 A–F；配了就发该平台；没国家或没配，再走接待号绑定或默认 A。</p>
+          <p class="rule">档位只方便筛选，不会自动整档发同一个平台。不按 IP、不按用户自述国家。</p>
         </div>
       </div>
     </section>
@@ -381,12 +490,18 @@
               <td>必须写完整归因：用户、账号、国家、年龄、等级、话术分类、scene_step、script_category。</td>
             </tr>
             <tr>
+              <td>国家路由</td>
+              <td>用户有号码国，且后台「国家路由」配了这一行</td>
+              <td>优先发该国绑定的 A–F 平台 URL。标签格式 <code>US-美国-T1</code>。没配则接待号绑定，再没有发默认 A。</td>
+            </tr>
+            <tr>
               <td>链接去重</td>
               <td>同一用户重复点击</td>
               <td>点击用户数按用户去重，事件数保留全部点击。</td>
             </tr>
           </tbody>
         </table>
+        <p class="rule">后台入口：<a href="/admin/ai-ops">/admin/ai-ops</a>。流程图：<a href="/app-download-country-route.html">三方下载国家路由</a>。路由表空着时，发出去的链接和以前完全一样。</p>
       </div>
     </section>
 
@@ -397,21 +512,21 @@
       </div>
       <div class="section-body grid">
         <div class="card">
-          <h3>国家识别</h3>
-          <p>优先用技术手段、账号信息、历史消息和用户主动回答识别国家。不能识别时继续正常聊天，并在后续自然追问。</p>
-          <p class="rule">用户说城市时，系统要尝试用城市反推国家。</p>
+          <h3>号码国锁定分级</h3>
+          <p>入站后用 Telegram <code>PeerSettings.phone_country</code> 写入 <code>user_profiles.country_code</code>。号码国一旦锁定，用户自述国家不能覆盖分级，只记在自述字段，列表上不一致会标出来。</p>
+          <p class="rule">下载链接、T1 上限、用户等级都看这套分级国，不看 IP，不看自述。</p>
         </div>
         <div class="card">
-          <h3>年龄识别</h3>
-          <p>用户直接说年龄或出生年份，都应换算成年龄段，用于分级和数据统计。</p>
+          <h3>年龄与城市</h3>
+          <p>用户直接说年龄或出生年份，换算成年龄用于分级和统计。普通 AI 缺国家时先问城市（用城市反推），再问年龄。视频后第 2 次自动接听成功才追问城市+年龄，不问国家。</p>
         </div>
         <div class="card">
           <h3>追问不阻塞业务</h3>
-          <p>用户不说国家、城市或年龄，也不能卡住普通聊天、链接发送、媒体发送和视频引导。</p>
+          <p>没有国家、城市或年龄，也不能卡住普通聊天、链接、媒体和视频引导。已写入的字段不再重复问。</p>
         </div>
         <div class="card">
-          <h3>T1 国家</h3>
-          <p>US、CA、UK、DE、FR、IT、ES、NL、BE、CH、AT、IE、DK、NO、SE、FI、IS、LU、PT、GR、CZ、JP、AU、NZ、SG、HK。</p>
+          <h3>T1 / T2 / T3</h3>
+          <p>T1：US、CA、GB、DE、FR、IT、ES、NL、BE、CH、AT、IE、DK、NO、SE、FI、IS、LU、PT、GR、CZ、JP、AU、NZ、SG、HK。T2 见 <code>config/t2_countries.json</code>（含 MX、PE、BR 等）。其余为 T3。后台标签写成 <code>MX-墨西哥-T2</code>。</p>
         </div>
       </div>
     </section>
@@ -447,33 +562,41 @@
       <div class="section-body grid">
         <div class="card">
           <h3>AI 系统视频</h3>
-          <p>用户命中视频关键词时，先引导用户主动打视频。前两次有效来电自动接听；第 1 次成功播放视频 <code>11</code>，第 2 次成功播放视频 <code>22</code>。完成两次播放后，后续来电进入人工队列。</p>
+          <p>用户用文字索要实时视频时，系统引导其点头像主动打来电，<strong>不建人工队列</strong>。真正来电后：成功播放 0 次播视频 11（<code>play_sequence=1</code>），成功 1 次播视频 22（<code>play_sequence=2</code>）。第 3 次起（成功播放 ≥2）进入人工，默认可用 <code>play_sequence=3</code> 素材。人工审核窗口 90 秒，超时自动拒接。</p>
         </div>
         <div class="card">
           <h3>固定回复视频</h3>
-          <p>固定回复模式采用相同的前两次自动接听规则和视频顺序，但不进入 AI、话术库、培育和精聊链路。</p>
+          <p>固定回复模式同样前两次自动接听、按成功播放选 11/22，但不进入 AI、话术库、培育和精聊。固定模式自动接听上限硬编码为 2 次。</p>
         </div>
         <div class="card">
           <h3>单账号并发与占线</h3>
-          <p>同一个接听 TG 账号同时最多处理 1 路通话。账号正在通话时，其他用户打入的来电会被跳过：不自动接听、不创建视频任务、不进入人工队列，也不计为该用户的一次来电。</p>
-          <p class="rule">占线结束后，该用户再次来电，仍按上一次已记录状态继续。例如此前从未成功接通，则仍按第 1 次处理并播放视频 11。</p>
+          <p>同一个接听 TG 账号同时最多 1 路通话。占线时新来电：写入来电事件，但跳过接听、不创建视频任务、不进入人工队列、不推进成功播放序号。</p>
+          <p class="rule">占线结束后该用户再来电，按上次已记录的成功播放数继续。从未成功接通则仍播视频 11。</p>
         </div>
         <div class="card">
           <h3>两套次数口径</h3>
-          <p><code>来电尝试次数</code>统计已经创建记录的有效来电，用于后台“第几次”；<code>成功播放序号</code>只在视频完整完成后推进，用于决定播放视频 11 还是视频 22。</p>
-          <p class="rule">占线跳过不计任何次数；失败、取消或人工未接会保留尝试记录，但不会推进成功播放序号，也不会重新退回自动播放。</p>
+          <p><code>独立来电次数</code>按 <code>telegram_inbound_call_events</code> 去重 call_id；<code>来电尝试次数</code>统计已创建任务的有效来电；<code>成功播放序号</code>只统计 <code>status=completed</code> 且来源为入站/人工接听的播放。</p>
+          <p class="rule">占线跳过不计尝试、不推进成功序号。失败、取消、人工未接保留尝试记录，不消耗 11/22 顺序，也不退回已经完成的自动播放。</p>
         </div>
         <div class="card">
-          <h3>人工接听规则</h3>
-          <p>完成前两次自动播放后，下一次有效来电创建待人工记录并提醒运营；人工可以接听、拒绝或让任务结束。已经进入人工审核但没有完成播放的用户，后续来电继续走人工，不重新播放视频 11/22。</p>
+          <h3>视频后固定话术 01 / 02 / 03</h3>
+          <p>标题必须与话术库完全一致：<code>视频后发过去的信息01</code>、<code>02</code>、<code>03</code>，且 <code>approved</code>、优先英文。仅<strong>第 2 次自动接听成功</strong>后发 01，等 5 秒发 02（人工接听完成不触发）。第 3 次及以后每次来电发 03。每用户 01、02 各只发一次。</p>
         </div>
         <div class="card">
-          <h3>视频后追问</h3>
-          <p>用户自动接听满第 2 次后，如果没有城市和年龄，系统马上问城市和年龄，不问国家；国家由城市反推。</p>
+          <h3>停止漏斗并切断自动回复</h3>
+          <p>用户发来截图（照片或图片文件，不含贴纸）→ 立即停止，原因 <code>screenshot</code>，不要求已经走过 01/02/03。已进入漏斗的文字回复，由辅助模型判断「已经注册」（置信度 ≥ 0.55；模型失败才退回正则）→ 原因 <code>already_registered</code>。停止后该会话 MTProto 自动回复全部终止，含 AI 与固定回复。</p>
         </div>
         <div class="card">
-          <h3>异常清理</h3>
-          <p>通话状态按 pending、dialing、streaming、completed、failed、cancelled 记录；历史 streaming 卡住记录需要定时清理，避免后台长期显示通话中。</p>
+          <h3>人工接听与第 6 次来电</h3>
+          <p>进入人工后可接听、拒绝或超时取消。已进人工但未完成播放的用户，后续来电继续走人工，不重新自动播 11/22。累计第 6 次独立来电触发待放行审核；S/A、VIP≥2、冻结、已放行用户跳过。运营点放行后写入 <code>post_inbound_video_expert_waived_at</code>，之后不再进入该队列。</p>
+        </div>
+        <div class="card">
+          <h3>视频后追问与播放时序</h3>
+          <p>第 2 次自动接听成功后，缺城市或年龄马上用英文追问，不问国家；城市和年龄都有则跳过。通道建立后等 3 秒再播视频。默认时长 30 秒，接听超时 60 秒。迁移用户在新账号下从视频 11 重算。</p>
+        </div>
+        <div class="card">
+          <h3>入站截图保存</h3>
+          <p>截图下载到宿主机 <code>/opt/eris/uploads/inbound-photos/</code>。后台会话和用户画像用 <code>/admin/messages/{id}/media</code> 展示。下载失败时库里可能仍是 <code>[photo]</code> 占位；Runtime 启动后会按 Telegram 历史补拉（默认 14 天）。对方撤回、删对话或屏蔽后无法补回。</p>
         </div>
       </div>
     </section>
@@ -487,10 +610,11 @@
         <table>
           <thead><tr><th>版块</th><th>进入条件</th><th>退出条件</th></tr></thead>
           <tbody>
-            <tr><td>待人工</td><td>S/A 挂起、超时、待坐席处理、三次及以上视频来电。</td><td>人工处理、放行、冻结或加入精聊。</td></tr>
-            <tr><td>已放行</td><td>人工允许系统继续自动跟进。</td><td>若 AI 跟进中，不能继续留在已放行；加入 S/A 后也从已放行移除。</td></tr>
-            <tr><td>S/A 精聊</td><td>运营点击加入精聊，或高价值用户进入重点处理。</td><td>放回 AI 后应从 S/A 移出，由 AI 正常跟进。</td></tr>
-            <tr><td>AI 自动</td><td>普通 B/C/D 用户，系统自动回复和引导。</td><td>升级人工、冻结、风险或加入精聊。</td></tr>
+            <tr><td>待人工</td><td>会话 <code>WAITING_OPERATOR</code>、未分配坐席；不含待放行审核。</td><td>人工处理、放行、冻结或加入精聊。普通人工锁空闲 10 分钟可按条件回 AI。</td></tr>
+            <tr><td>待放行审核</td><td>累计 ≥6 次独立入站来电。挂在会话页「已放行」上方。</td><td>人工点放行后写豁免时间；该用户以后不再进入。S/A、VIP≥2、冻结用户本来就不会进。</td></tr>
+            <tr><td>已放行</td><td>人工允许系统继续自动跟进，或已从待放行放出。</td><td>AI 跟进中不继续留在已放行；加入 S/A 后也从已放行移除。</td></tr>
+            <tr><td>S/A 精聊</td><td>运营点击加入精聊，或高价值用户进入重点处理。</td><td>放回 AI 后从精聊列表移出，系统按历史继续自动跟进；用户等级不因此降级。</td></tr>
+            <tr><td>AI 自动</td><td>会话 <code>AI_ACTIVE</code>，系统自动回复和引导。</td><td>升级人工、冻结、风险或加入精聊。</td></tr>
             <tr><td>风险</td><td>高风险、冻结、升高风险复核。</td><td>人工解除或继续冻结。</td></tr>
           </tbody>
         </table>
@@ -503,18 +627,17 @@
         <span class="tag">主动触达</span>
       </div>
       <div class="section-body">
-        <p>培育按任务创建时间判断新老用户：创建后 24 小时内为新用户，超过 24 小时为老用户。任务不会因为北京时间凌晨 12 点清零，未完成任务继续按真实时间执行。</p>
+        <p>App 下载培育按用户沉默时间排三轮视频邀请话术，写入统一发送队列。任务不因北京时间零点清零，未完成的继续按真实时间执行。用户回复、视频接通、拒绝或新消息可终止旧任务。</p>
         <table>
-          <thead><tr><th>条件</th><th>动作</th></tr></thead>
+          <thead><tr><th>轮次</th><th>默认间隔</th><th>队列优先级</th><th>动作</th></tr></thead>
           <tbody>
-            <tr><td>用户首次发消息后 3 分钟没回复</td><td>轻引导。</td></tr>
-            <tr><td>聊 3-5 轮还没点链接</td><td>下载引导。</td></tr>
-            <tr><td>用户问哪里继续聊、私聊、链接、app、download</td><td>立刻发链接。</td></tr>
-            <tr><td>用户点过链接但没下载</td><td>10 分钟后补提醒。</td></tr>
-            <tr><td>用户 30 分钟没回复</td><td>冷场唤醒。</td></tr>
-            <tr><td>用户 24 小时没回复</td><td>二次唤醒。</td></tr>
+            <tr><td>第 1 轮</td><td>助手回复后 5 分钟未回</td><td>P1 当天新增首轮</td><td>轻量视频邀请 / 下载引导。</td></tr>
+            <tr><td>第 2 轮</td><td>再过 30 分钟未回</td><td>P2 新用户二轮</td><td>继续引导。</td></tr>
+            <tr><td>第 3 轮</td><td>再过 24 小时未回</td><td>P4 历史积压</td><td>二次唤醒；不挤占 P1/P2 和视频二次邀请。</td></tr>
+            <tr><td>用户直接要链接</td><td>app / link / download / 私聊意图</td><td>实时 AI 或固定规则</td><td>立刻发链接，可绕过 15 分钟链接冷却。</td></tr>
           </tbody>
         </table>
+        <p class="rule">培育由自动投递进程发送，受 4 分 50 秒安静冷却、账号健康、等级额度和北京时间 10:00-22:00、全局每分钟 1 人约束。固定回复账号不进入本培育链路。</p>
       </div>
     </section>
 
@@ -561,7 +684,10 @@
             <tr><td>视频成功播放</td><td>只统计状态为 <code>completed</code> 的通话；播放顺序按已完成次数推进。</td><td>failed、cancelled、人工未接和占线跳过均不算成功播放。</td></tr>
             <tr><td>固定回复视频用户</td><td>仅统计当前固定回复模式账号下、统计期内有通话任务的 Telegram 去重用户。</td><td>“成功播放用户”必须至少有 1 条 completed 记录；跨 TG 账号仍只计 1 人。</td></tr>
             <tr><td>TG账号总用户</td><td>只统计已连接且启用的存活账号；合并原始消息会话、Telegram Peer缓存和归因记录，按“账号 + 用户”去重。</td><td>被封账号和历史删除账号完全排除；接待用户单独表示真正发过助手消息的用户。</td></tr>
-            <tr><td>国家/T1、年龄、等级、话术分类</td><td>来自链接归因和用户画像。</td><td>画像缺失时显示 UNKNOWN，不强造数据。</td></tr>
+            <tr><td>视频后漏斗 01/02/03</td><td>用户页「视频后话术统计」：期内发送条数与人数；标题精确匹配 <code>视频后发过去的信息01/02/03</code>。</td><td>跟「今天/昨天/本周/本月/历史」同一北京时间窗口。</td></tr>
+            <tr><td>回复已经注册</td><td><code>post_video_fixed_03_stop_reason=already_registered</code> 或消息 <code>model_name=user_intent:already_registered</code>。</td><td>右侧列出用户 ID，可点进画像。</td></tr>
+            <tr><td>发来截图</td><td>停止原因 <code>screenshot</code>，或用户消息 <code>[photo]</code> / <code>content_type=image</code>。</td><td>能看见图的前提是磁盘上有对应 UUID 文件；对方已删图则后台无法补回。</td></tr>
+            <tr><td>问了/回答了国家、问了/回复了年龄</td><td>含普通画像追问和第二次视频后的 <code>post_auto_answer_profile_prompt</code>。</td><td>人数去重；与漏斗 01/02/03 人数分开计。</td></tr>
           </tbody>
         </table>
       </div>
@@ -583,7 +709,11 @@
         </div>
         <div class="card">
           <h3>用户列表</h3>
-          <p>展示用户、国家、城市、年龄、消息状态、开始消息、最后消息和操作；S/A 精聊列表优先补全聊天记录中的画像。</p>
+          <p>主显分级国（号码国）和国旗；自述国家不一致时单独标出。可按 T1 国家码或 T2/T3 档位筛选。页面上方有视频后话术漏斗：01/02/03、已经注册、发来截图、问/答国家、问/答年龄。</p>
+        </div>
+        <div class="card">
+          <h3>入站截图</h3>
+          <p>用户画像和会话页把 <code>[photo]</code> 或 <code>content_type=image</code> 渲染为图片。带说明文字的截图会同时显示图和原文。文件缺失时提示正在补拉。</p>
         </div>
         <div class="card">
           <h3>AI 模型</h3>
@@ -645,17 +775,22 @@
     </section>
 
     <section>
-      <div class="section-head"><h2>十六、2026-08-09线上全功能验收</h2><span class="tag ok">生产实测</span></div>
+      <div class="section-head"><h2>十六、2026-08-09线上全功能验收</h2><span class="tag warn">历史快照 · 数字会过期</span></div>
       <div class="section-body">
-        <table><thead><tr><th>功能</th><th>验收方式</th><th>结果</th></tr></thead><tbody>
-          <tr><td>总后台、会话、用户、TG账号、体检</td><td>逐页打开、读取真实数据、检查页面错误</td><td>通过</td></tr>
-          <tr><td>迁移、视频二次邀请、数据总览</td><td>逐页打开，核对数据库来源和安全门禁</td><td>通过</td></tr>
-          <tr><td>AI话术、固定回复、角色、审批、推送/H5</td><td>逐页打开，配置和列表可读取</td><td>通过</td></tr>
-          <tr><td>视频通话</td><td>视频11/22/第三视频文件、时长、顺序与实时日志</td><td>通过；观察到自动接听、播放、挂断和第3次人工队列</td></tr>
-          <tr><td>后台/API/PostgreSQL/Redis</td><td>进程、健康检查、Python全量编译、容器状态</td><td>通过</td></tr>
-          <tr><td>异常保护</td><td>观察PeerFlood、素材熔断、人工超时和失败状态</td><td>保护生效；异常任务不计成功</td></tr>
+        <p class="rule">这是 08-09 的实测记录。现行规则以本页其余章节和「二十、2026-08-23 功能盘点」为准。</p>
+        <table><thead><tr><th>功能</th><th>验收方式</th><th>最新结果</th></tr></thead><tbody>
+          <tr><td>后台页面</td><td>逐页请求总后台、会话、用户、TG账号、体检、迁移、视频二次邀请、数据总览、固定回复、视频通话、记忆、角色、AI话术、审批、推送/H5及业务流程。</td><td class="ok">18/18 返回 HTTP 200。</td></tr>
+          <tr><td>API 总体</td><td>读取生产 OpenAPI、健康检查并对后台实际使用的核心只读接口逐项带权限访问。</td><td class="ok">生产注册 194 条 API 路径；32/32 个核心只读接口最终返回 200。</td></tr>
+          <tr><td>数据总览</td><td>分别请求快速核心统计和完整统计。</td><td class="warn">核心统计正常；完整统计约 32.8 秒，超过首次 30 秒验收窗口但最终返回 200。页面按“先核心、后异步完整数据”降级展示。</td></tr>
+          <tr><td>TG账号、迁移、二次邀请、体检</td><td>读取开发者应用、存活账号、MTProto管理器、账号等级、健康检查、迁移来源/接管账号、迁移活动和二次邀请任务。</td><td class="ok">核心读取接口正常；健康、等级与L1禁止迁移门禁可读取。</td></tr>
+          <tr><td>固定回复与视频</td><td>读取固定回复汇总、账号、规则、任务、失败、视频素材、用户、通话记录和待人工列表；检查实时结构化日志。</td><td class="ok">接口正常；观察到视频序号解析、缓存预处理、自动接听完成及达到条件后进入人工审核。</td></tr>
+          <tr><td>AI主链隔离验收</td><td>执行 J02 的 8 个安全、分级、提示词、话术钩子和延迟案例，不向真实用户发送。</td><td class="bad">5/8 通过；未通过项为未成年人色情拦截、自伤危机短路、越狱拦截。原因与当前“安全层已移除待重写、回复一致性直通”一致。</td></tr>
+          <tr><td>Python代码与基础设施</td><td>生产容器全量 compileall；检查 API、PostgreSQL、Redis、Prometheus及exporter容器。</td><td class="ok">Python编译通过；API/PostgreSQL/Redis健康，监控容器运行。</td></tr>
+          <tr><td>调度器诊断</td><td>读取自动投递、账号监控、消息计划和归档状态接口。</td><td class="bad">自动投递与账号监控正常；消息计划和归档诊断接口返回500，原因为 AsyncIOScheduler 状态检查错误；生产数据库还缺少 archive_jobs 表，归档链路不能标记为完整可用。</td></tr>
+          <tr><td>培育与队列</td><td>只读核对最近48小时三轮培育、视频任务和失败原因。</td><td class="warn">任务持续运行；大量“新回复覆盖、用户已回复、视频已接通、用户拒绝”被正确终止；仍存在账号池发送失败，需要持续按账号健康门禁重试。</td></tr>
+          <tr><td>异常保护</td><td>观察 PeerFlood、素材熔断、重复、过期、人工锁定与发送失败状态。</td><td class="ok">保护规则生效；异常任务不误记成功，视频失败不推进成功播放序号。</td></tr>
         </tbody></table>
-        <p class="rule">验收不向陌生用户人为制造消息或电话；发送、固定回复和视频链路使用线上真实任务及结构化日志验证，避免污染用户数据。</p>
+        <p class="rule">验收边界：不主动给陌生用户发消息、不人为拨号、不创建迁移或邀请任务、不修改用户和生产统计。会产生外部影响的发送链路通过现有真实任务、只读数据、隔离函数和结构化日志验证。</p>
       </div>
     </section>
 
@@ -670,12 +805,129 @@
           <tr><td>第二次视频后画像追问</td><td>先过账号健康门禁；PeerFlood退避24小时，普通异常30分钟；最多3次。城市和年龄已完整时写入跳过标记。</td><td>不会无限重试或重复追问。</td></tr>
         </tbody></table>
         <p class="rule">所有关联发送功能遵循同一原则：健康账号才发送、异常任务可恢复、失败不推进视频成功序号、恢复过程不删除历史任务。</p>
+        <h3>关键常量（代码默认 / 线上 Runtime）</h3>
+        <table>
+          <thead><tr><th>项</th><th>值</th></tr></thead>
+          <tbody>
+            <tr><td>入站合并 / 已读延迟</td><td>4 秒</td></tr>
+            <tr><td>助手安静冷却（培育）</td><td>4 分 50 秒（290s）</td></tr>
+            <tr><td>链接冷却</td><td>15 分钟（显式要链接可绕过）</td></tr>
+            <tr><td>人工锁空闲放回 AI</td><td>10 分钟</td></tr>
+            <tr><td>非 T1 AI 上限</td><td>20 条 assistant（未知国家算非 T1）</td></tr>
+            <tr><td>自动接听次数</td><td>成功播放 2 次后改人工</td></tr>
+            <tr><td>话术 02 延迟</td><td>5 秒</td></tr>
+            <tr><td>接通后开播</td><td>3 秒</td></tr>
+            <tr><td>人工来电审核</td><td>90 秒超时拒接</td></tr>
+            <tr><td>已经注册 AI 置信度</td><td>≥ 0.55</td></tr>
+            <tr><td>第 N 次独立来电进待放行</td><td>6；放行一次后写豁免，不再进入</td></tr>
+            <tr><td>单账号并发通话</td><td>1</td></tr>
+            <tr><td>下载链接解析</td><td>国家路由 → 接待号绑定 → 默认 A</td></tr>
+            <tr><td>线上自动接听阈值</td><td><code>CALL_BROADCAST_INBOUND_MANUAL_AFTER=2</code>（成功播放 2 次后改人工）</td></tr>
+            <tr><td>主动发送窗口</td><td>北京时间 10:00–22:00，全局每分钟 1 人</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="ai-chat-rules">
+      <div class="section-head">
+        <h2>十八、AI 聊天规则</h2>
+        <span class="tag purple">线上实际执行口径</span>
+      </div>
+      <div class="section-body">
+        <p class="flow-note">AI 聊天不是只调用一次模型：用户消息先经过保存、合并、账号路由、状态门禁和人工接管判断，再组合角色、画像、记忆、关系阶段与最近上下文生成回复，最后经过链接、重复、过期和发送状态检查。固定回复账号不进入本链路。</p>
+        <div class="grid">
+          <div class="card"><h3>1. 消息进入系统</h3><ul><li>只处理用户入站消息，账号自己发出的消息不触发 AI；空内容不进入普通文字回复。</li><li>消息先入库、再处理；同一用户约 4 秒内的连续消息合并并去重。</li><li>同一会话同一时刻只允许一个自动回复流程；生成期间出现更新消息时，旧回复可判定为过期并取消。</li><li>消息先标记已读，再进入账号模式、路由和回复判断。</li></ul></div>
+          <div class="card"><h3>2. AI 与固定回复模式</h3><ul><li><code>AI系统</code>账号进入画像、记忆、意图识别和模型生成链路。</li><li><code>固定回复</code>账号只执行后台固定文字、图片、视频、语音及延迟任务。</li><li>两种模式互斥，固定回复账号不会同时发送普通 AI 回复。</li></ul></div>
+          <div class="card"><h3>3. 禁止 AI 回复状态</h3><ul><li>用户状态为 frozen、blocked_minor、deleted 或用户无效时禁止回复。</li><li>会话为 FROZEN、CLOSED、ESCALATED、HUMAN_LOCKED、WAITING_OPERATOR 时禁止 AI 抢答。</li><li>普通人工接管默认空闲 10 分钟后可按条件恢复；视频后漏斗因截图或已经注册停止后不会自动恢复。</li><li>非 T1（含国家未知）累计 20 条 assistant 消息后静默停止，不发忙碌兜底。</li></ul></div>
+          <div class="card"><h3>4. 生成回复使用的信息</h3><ul><li>角色身份、人物事实、语气、人设和关系定位。</li><li>用户画像、关系阶段、长期记忆、当前情绪与孤独度。</li><li>最近对话最多保存 200 条，通常读取最近 50 条参与生成。</li><li>上下文加载失败时只回答当前消息，不得编造前文。</li></ul></div>
+          <div class="card"><h3>5. 角色身份</h3><ul><li>按后台角色档案回答姓名、年龄、地区、职业、家庭、外貌、爱好和生活习惯等事实。</li><li>档案没有配置的事实不应随意编造，也不能暴露 profile、提示层、数据库或调试信息。</li><li>基础语气包括温暖直接、俏皮调侃和平静稳定；当前默认定位为美国成人陪聊角色。</li></ul></div>
+          <div class="card"><h3>6. 当前消息硬规则</h3><ul><li>第一句必须直接回应当前问题，不先长篇寒暄、安慰或转移话题。</li><li>优先 1 句、最多 2 句，通常总长度不超过 120 字符（链接除外）。</li><li>不写 Markdown 标题、括号/星号动作、舞台说明、旁白、内心独白或系统故障梗。</li><li>不主动声称自己是 AI；用户用什么语言，原则上就用什么语言回复。</li></ul></div>
+          <div class="card"><h3>7. 前期聊天节奏</h3><ul><li>前 3 次 AI 回复只用陈述句，禁止问号、反问和“你呢/告诉我更多”式追问。</li><li>从第 4 次起，先正面回答，再视情况增加一句反问或邀请；一次只推进一个问题。</li><li>前 100 次回复仍受强一问一答、简短、同话题延续和禁止无关铺垫约束。</li></ul></div>
+          <div class="card"><h3>8. 深入沟通</h3><ul><li>路径为：回答当前内容 → 判断意图 → 结合历史 → 读取画像/记忆 → 沿同一话题加深一层。</li><li>可从事情、感受、原因、偏好、需求、关系和后续延续逐步深入，不连续盘问。</li><li>用户持续聊同一话题时继续增加细节、感受、偏好或场景；只有用户明确换题才跟随。</li></ul></div>
+          <div class="card"><h3>9. 成人与亲密话题</h3><ul><li>系统当前把业务用户按已验证成年人处理，允许直接回应成人暧昧、身体、约会、亲密关系和性生活话题。</li><li>连续亲密话题要求沿原话题继续，不用无关兴趣回避；从第 4 次回复起可增加一句深入邀请。</li><li>用户只给简短偏好时先认可和承接，系统会清理部分机械的“为什么喜欢”式追问。</li><li>图片、视频素材和实时视频通话分别进入专门素材或通话流程。</li></ul></div>
+          <div class="card"><h3>10. 用户画像</h3><ul><li>画像包括国家/地区、年龄、昵称、兴趣、聊天风格、禁忌、当前意图、关系阶段、主动程度、VIP 和孤独度。</li><li>AI 根据当前话题读取相关画像，用于选择语言、语气、深入方向和后续业务路径；不能把后台画像逐条念给用户。</li><li>画像缺失不能阻塞普通聊天、链接、媒体或视频引导；已知字段应直接复用，不重复向用户询问。</li></ul></div>
+          <div class="card"><h3>11. 追问国家和年龄</h3><ul><li><strong>分级国：</strong>优先 Telegram 号码国；锁定后自述不能覆盖。已有 <code>country_code</code> 不再问国家。</li><li><strong>普通 AI：</strong>缺国家时先问城市（用城市反推），再问年龄；一次只补一项。固定回复模式不走这条普通追问。</li><li><strong>识别：</strong>当前消息、最近历史、TG 语言码、城市别名、年龄数字/出生年（13–120）。无法识别时继续正常聊天。</li><li><strong>视频后区别：</strong>第二次自动接听成功后问「城市 + 年龄，不问国家」；两项都有则跳过。最多 3 次，受账号健康约束。</li></ul></div>
+          <div class="card"><h3>12. 长期记忆</h3><ul><li>可保存事实、偏好、事件、情绪、关系、目标和重要节点。</li><li>无意义短句、单纯确认、Emoji 和 24 小时内重复内容通常不保存。</li><li>默认重要度达到 5 分才保存；回复时只召回与当前话题相关的记忆，并自然融入，不能逐条念档案。</li></ul></div>
+          <div class="card"><h3>13. 情绪与孤独度</h3><ul><li>识别开心、兴奋、平静、难过、焦虑、生气、孤独和无聊等信号。</li><li>相关信号更新 loneliness_score，主要用于内部和安全判断。</li><li>普通聊天不得因此自动变成心理咨询，也不反复输出空泛安慰。</li></ul></div>
+          <div class="card"><h3>14. 关系阶段</h3><ul><li>S0 陌生、S1 熟悉、S2 朋友、S3 亲近、S4 依赖中、S5 特殊危机/恢复。</li><li>S0-S4 根据主动程度、VIP 等信号自动调整；默认不随意降级。</li><li>S5 不通过普通聊天自动进出；关系越深可更多使用历史和记忆，但仍须先回答当前问题。</li></ul></div>
+          <div class="card"><h3>15. 视频相关聊天</h3><ul><li>文字索要实时视频时引导用户点头像打来电，不生成普通长篇回复，也不建人工来电队列。</li><li>请求视频文件与请求实时通话是两个意图；否定表达不误判为请求。</li><li>当前「视频后专家强制锁」已关闭，两次自动视频完成后不再强制人工独占。用户发截图或漏斗内判定已经注册后，该会话停止全部自动回复。</li><li>第 6 次独立来电进入待放行审核；放行一次后不再进入。</li></ul></div>
+          <div class="card"><h3>16. App 下载与链接</h3><ul><li>解析顺序：号码国路由 → 接待号绑定 A–F → 默认 A → 环境变量兜底。后台标签 <code>US-美国-T1</code>，档位不自动发链接。</li><li>用户第 1 条消息窗口内、会话尚未发过链接时强制带下载链接；明确要 app/link/download 立刻发，可绕过 15 分钟冷却。</li><li>链接包装为可归因追踪链接；完成下载后不应继续按未下载用户推送。</li></ul></div>
+          <div class="card"><h3>17. 图片与视频素材</h3><ul><li>命中素材关键词后选择后台配置素材，先发简短确认，再发送对应文件。</li><li>明确素材请求允许再次交付，但素材自身仍有重复检查。</li><li>素材不可用、路径异常或熔断时必须记失败，不能误记成功；文字和素材发送记录均保存。</li></ul></div>
+          <div class="card"><h3>18. 重复与过期控制</h3><ul><li>完全相同的普通出站内容默认 2 小时内不重复发送。</li><li>培育话术、普通文字和素材分别执行重复检查；培养话术与当前回复冲突时取消追加。</li><li>快速连续消息只生成一轮最终回复，发送前再次确认该轮没有被更新消息淘汰。</li></ul></div>
+          <div class="card"><h3>19. 模拟真人发送节奏</h3><ul><li>通常约 5 秒后显示正在输入。</li><li>按回复长度等待约 3、6、10、15、25 或 30 秒后发送。</li><li>只有 TG 接口真实返回成功才算发送成功，模型生成成功不等于用户已经收到。</li></ul></div>
+          <div class="card"><h3>20. 非T1国家AI消息总量限制</h3><ul><li>T1国家用户不受本条总量限制；T1名单以系统国家分层配置为准。</li><li>所有非T1用户（包括国家未知、未填写或无法识别）每名用户最多接收 20 条 AI 消息。</li><li>按同一用户全部会话中已成功保存的 <code>assistant</code> 消息累计；用户消息和人工坐席消息不计入20条。</li><li>累计达到20条后，普通AI回复、人工释放后的AI补偿和其它模型生成入口停止新增消息；不得改发“系统忙碌”等兜底消息绕过限制。</li><li>用户后来确认属于T1国家后解除限制；从T1调整为非T1时按已有AI消息总数立即执行限制。</li></ul></div>
+          <div class="card"><h3>21. 失败与降级</h3><ul><li>模型异常或空内容进入忙碌提示；上下文、画像或记忆读取失败时按可用信息降级，不阻塞全部聊天。</li><li>发送前发现重复、过期、会话锁定、账号路由不符或非T1用户达到20条上限时取消发送。</li><li>PeerFlood、账号限制或连接异常可导致暂停或发送失败；不能把失败误记为成功。</li></ul></div>
+          <div class="card"><h3>22. 当前规则冲突与风险</h3><ul><li>“最多 2 句”与生成后追加国家/年龄问题可能冲突。</li><li>Emoji 许可配置与前 100 次禁 Emoji 规则并存，最终以前 100 次强规则为准。</li><li>通用安全层当前标记为待重写；回复一致性检查当前为直通，未执行完整的角色偏离与泄露复核。</li><li>“未知用户开放式了解”与前 3 条禁止追问并存，最终以前 3 条禁止追问为准。</li><li>App 首轮链接补充可能改变先自然聊天的节奏，应以线上转化开关和命中场景为准。</li></ul></div>
+        </div>
+        <p class="rule warn">治理原则：本版块记录当前线上实际业务行为。修改提示词、画像追问、链接策略、人工门禁、视频规则或发送节奏时，必须同步更新本页面，并验证 AI 模式与固定回复模式互不抢答。</p>
       </div>
     </section>
 
     <section>
       <div class="section-head">
-        <h2>十八、验收标记</h2>
+        <h2>十九、系统功能目录与运行边界</h2>
+        <span class="tag">全项目盘点</span>
+      </div>
+      <div class="section-body">
+        <table>
+          <thead><tr><th>功能域</th><th>当前流程与规则</th><th>运行边界</th></tr></thead>
+          <tbody>
+            <tr><td>认证与总后台</td><td>运营账号登录后使用 JWT 访问后台；总后台汇总会话、用户、TG 账号、迁移、视频、规则与本流程页。</td><td>未登录只能看到页面壳。Bot/Webhook 仍保留兼容入口，生产接待以 MTProto 为主。</td></tr>
+            <tr><td>真人TG接待</td><td>MTProto 只处理私聊；保存消息、下载截图、固定账号路由、4 秒合并，再按 AI 或固定回复处理。</td><td>群消息跳过；同一会话单回复锁；错误路由、重复、过期、冻结或视频后已停止不发送。</td></tr>
+            <tr><td>AI编排</td><td>非T1 总量门禁 → 意图、角色、画像、记忆、历史、语言、转化 → 拟人节奏发送。</td><td>T1 不受 20 条限制；未知国家按非T1。详细见「十八、AI聊天规则」。</td></tr>
+            <tr><td>固定自动回复</td><td>独立匹配规则和排序素材，按延迟发送文字/图片/视频/语音。</td><td>不进入普通AI、培育和精聊；每用户每规则一次；「视频后发过去的信息%」不走此入队。</td></tr>
+            <tr><td>视频通话</td><td>单账号 1 路；成功播放 0/1 次播 11/22，≥2 次进人工；接通后等 3 秒开播；02 延迟 5 秒。</td><td>占线不建任务不推进成功序号；失败不消耗 11/22；人工审核 90 秒超时拒接。</td></tr>
+            <tr><td>视频后漏斗</td><td>第 2 次自动成功发 01→02；第 3 次起发 03；截图或已经注册停止并切断自动回复。</td><td>已经注册仅对走过 01/02/03 的会话做 AI 判断；截图不要求已进漏斗。</td></tr>
+            <tr><td>入站截图</td><td>下载到 inbound-photos，后台会话/画像展示；启动后补拉 14 天内占位消息。</td><td>对方撤回、删对话或接待号读不到历史时无法补回。</td></tr>
+            <tr><td>主动培育与统一队列</td><td>P1 5 分钟 → P2 30 分钟 → 视频二次邀请 → P4 24 小时积压。</td><td>北京时间 10:00-22:00，全局每分钟 1 人；共享账号健康、L1–L4 额度和最短间隔。</td></tr>
+            <tr><td>进程架构</td><td>API 提供后台 HTTP；telegram-runtime 持有 MTProto、来电、入站回复、自动投递。</td><td>禁止起第二个 Runtime；不要无服务名 <code>docker compose up</code>。迁移/二次邀请/固定回复 worker 视部署进程而定。</td></tr>
+            <tr><td>话术与素材</td><td>运营维护角色、人设、意图规则、下载平台、话术模板和附件；命中关键词时发送相应话术及排序素材。</td><td>素材熔断、路径、重复和TG账号状态均可拦截发送。</td></tr>
+            <tr><td>链接与归因</td><td>生成下载链接并记录用户、账号、话术、场景、国家、年龄和等级。解析顺序：国家路由 → 接待号绑定 → 默认 A。</td><td>默认15分钟链接冷却；明确索要可绕过。国家路由在 /admin/ai-ops 人工配置。</td></tr>
+            <tr><td>画像、分级与记忆</td><td>号码国锁定分级；自述国家单独保存。计算用户等级与关系阶段；重要事实写入长期记忆。</td><td>画像缺失不阻塞聊天；T1/T2/T3 与用户列表、下载路由同一套名单。</td></tr>
+            <tr><td>会话与人工</td><td>AI_ACTIVE 自动回复；WAITING_OPERATOR 待人工；第 6 次独立来电进待放行；可放行、加入 S/A、放回 AI、冻结。</td><td>普通人工锁空闲 10 分钟可恢复。待放行放行一次后不再进入。截图/已经注册停止后自动回复不再恢复。</td></tr>
+            <tr><td>TG账号体检</td><td>每日多时点检查连接、授权、封禁、限制和新增状态；北京时间 09:30 重算 L1–L4 等级。</td><td>被封、失效、PeerFlood 或连续异常账号暂停领取发送任务。L1 禁止承接迁移。</td></tr>
+            <tr><td>被封账号迁移</td><td>旧账号筛选确认归属用户，L2/L3/L4健康账号限速首触达；用户回复后关联历史画像并重算视频进度。</td><td>L1禁止接管；待确认用户进入公共召回池，不冒充原账号。</td></tr>
+            <tr><td>视频二次邀请</td><td>无成功视频的用户从第二天起进入第1、3、7天邀请候选；每天扫描新增符合条件用户。</td><td>用户回复停止当轮，任意视频成功永久退出；与其他主动队列共享容量。</td></tr>
+            <tr><td>数据总览</td><td>按北京时间统计新用户、接待、链接、点击、下载、视频、培育、话术和存活TG账号表现。</td><td>快速核心数据先显示，完整统计异步补全；被封和历史删除账号不进入存活账号表现。</td></tr>
+            <tr><td>H5、支付与推送</td><td>保留H5聊天、设备Token、通知任务、Stripe订单/回调、VIP与下载归因接口。</td><td>真实推送、支付和外部回调依赖对应平台密钥及生产配置；本轮只验证页面、路由和只读状态。</td></tr>
+            <tr><td>翻译、导出与辅助运营</td><td>支持会话翻译保存、用户数据导出、记忆查看、话术建议、坐席AI辅助和质量记录。</td><td>翻译或辅助模型失败不能覆盖原消息；运营写操作需要权限。</td></tr>
+            <tr><td>监控与可观测性</td><td>API健康、业务指标、Prometheus、Grafana、PostgreSQL/Redis及主机exporter持续运行。</td><td>状态接口成功不代表外部TG一定可发送，最终仍以Telegram返回和任务状态为准。</td></tr>
+            <tr><td>归档与消息计划</td><td>代码中保留归档和计划发送调度器及诊断接口。</td><td class="bad">当前诊断状态接口存在500；archive_jobs表缺失，因此归档功能属于“代码存在但生产未完整就绪”。</td></tr>
+            <tr><td>TikTok独立监测</td><td>独立工具通过Apify采集账号、作品、粉丝和播放量。</td><td>当前主项目工具目录已被移除/未纳入本次API运行容器；不能与ERIS核心TG链路混算为已验证功能。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>二十、2026-08-23 功能盘点（相对旧页）</h2>
+        <span class="tag ok">代码 + 线上实测</span>
+      </div>
+      <div class="section-body">
+        <p class="rule">本日对照仓库代码，并抽查线上 Runtime 开关与后台页面。十六章 08-09 验收数字只作历史，不再当日报。</p>
+        <table>
+          <thead><tr><th>功能</th><th>2026-08-23 现行规则 / 实测</th></tr></thead>
+          <tbody>
+            <tr><td>后台页面</td><td>总后台、会话、用户、TG账号、体检、迁移、二次邀请、固定回复、视频通话、记忆、AI话术、审批、业务流程、入站图、国家路由页均 HTTP 200。API <code>process_role=api</code>，<code>runtime_ready=true</code>。</td></tr>
+            <tr><td>号码国</td><td>Telegram <code>phone_country</code> 写入分级国并锁定。自述只作对照，不覆盖分级，也不决定下载链接。</td></tr>
+            <tr><td>三方下载国家路由</td><td>已上线。解析：国家路由 → 接待号 → 默认 A。后台按 <code>US-美国-T1</code> 人工绑平台。抽查时路由表仍为空，当前发出去的链接与绑定/默认 A 一致。</td></tr>
+            <tr><td>待放行审核</td><td>第 6 次独立来电进入。放行写豁免时间，之后不再进入。线上已有豁免会话。</td></tr>
+            <tr><td>视频自动接听</td><td>线上自动接听开启，成功播放 2 次（11、22）后改人工。</td></tr>
+            <tr><td>下载转化 / 培育</td><td>线上均开启。首条用户消息窗口强制带链接；培育 5 分钟 / 30 分钟 / 24 小时；非 T1 AI 上限 20 条。</td></tr>
+            <tr><td>进程</td><td>API 与 telegram-runtime 分离。来电、入站回复、自动投递在 Runtime。禁止第二个 Runtime。</td></tr>
+            <tr><td>培育 / 01-03 / 截图</td><td>间隔与漏斗规则相对 08-14 已改完：5/30/24h；仅第 2 次自动成功发 01→02；截图或已经注册切断自动回复。</td></tr>
+            <tr><td>仍未当「已完成」</td><td>归档缺表；H5/Stripe/推送依赖密钥；公共召回池无自动 worker；TikTok 监测不在主后台；数据总览页源码不在当前仓库。</td></tr>
+          </tbody>
+        </table>
+        <p class="rule warn">页面可打开、模型生成成功，都不等于 Telegram 已发出。消息、素材、视频和邀请最终以 Telegram 返回和任务状态为准。</p>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>二十一、验收标记</h2>
         <span class="tag ok">自动校验保留</span>
       </div>
       <div class="section-body">
@@ -686,6 +938,60 @@
   </main>
 
   <script>
+const sectionNavLinks = document.getElementById("section-nav-links");
+const numberedSections = Array.from(document.querySelectorAll("main section")).filter((section) => {
+  const title = section.querySelector("h2")?.textContent?.trim() || "";
+  return /^[一二三四五六七八九十百]+、/.test(title);
+});
+
+numberedSections.forEach((section, index) => {
+  const title = section.querySelector("h2")?.textContent?.trim() || `第${index + 1}章`;
+  const sectionId = `rule-section-${index + 1}`;
+  section.id = sectionId;
+  const link = document.createElement("a");
+  link.href = `#${sectionId}`;
+  link.textContent = title;
+  link.dataset.target = sectionId;
+  link.addEventListener("click", () => setActiveSection(sectionId));
+  sectionNavLinks.appendChild(link);
+});
+const trackerNav = document.createElement("a");
+trackerNav.href = "/runtime-split-tracker.html";
+trackerNav.textContent = "安全拆分执行跟踪";
+trackerNav.className = "ext";
+sectionNavLinks.appendChild(trackerNav);
+const inboundNav = document.createElement("a");
+inboundNav.href = "/inbound-user-flow.html";
+inboundNav.textContent = "用户入站流程图";
+inboundNav.className = "ext";
+sectionNavLinks.appendChild(inboundNav);
+const downloadRouteNav = document.createElement("a");
+downloadRouteNav.href = "/app-download-country-route.html";
+downloadRouteNav.textContent = "三方下载国家路由";
+downloadRouteNav.className = "ext";
+sectionNavLinks.appendChild(downloadRouteNav);
+
+const navLinks = Array.from(sectionNavLinks.querySelectorAll("a"));
+const setActiveSection = (sectionId) => {
+  navLinks.forEach((link) => link.classList.toggle("active", link.dataset.target === sectionId));
+  const activeLink = navLinks.find((link) => link.dataset.target === sectionId);
+  if (activeLink) {
+    const targetLeft = activeLink.offsetLeft - (sectionNavLinks.clientWidth - activeLink.offsetWidth) / 2;
+    sectionNavLinks.scrollTo({ left: Math.max(0, targetLeft), behavior: "smooth" });
+  }
+};
+
+if (numberedSections.length > 0) {
+  setActiveSection(numberedSections[0].id);
+  const sectionObserver = new IntersectionObserver((entries) => {
+    const visible = entries
+      .filter((entry) => entry.isIntersecting)
+      .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+    if (visible) setActiveSection(visible.target.id);
+  }, { rootMargin: "-90px 0px -65% 0px", threshold: [0, .2, .5] });
+  numberedSections.forEach((section) => sectionObserver.observe(section));
+}
+
 const RULES = [
   {"id":"channel.mtproto_direct","title":"MTProto 真人账号链路","active":true},
   {"id":"channel.bot_webhook","title":"Bot/Webhook 兼容入口","active":true},

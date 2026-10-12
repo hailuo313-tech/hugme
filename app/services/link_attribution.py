@@ -10,6 +10,67 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+DEVICE_OS_ANDROID = "Android"
+DEVICE_OS_IOS = "iOS"
+DEVICE_OS_DESKTOP = "Desktop"
+DEVICE_OS_UNKNOWN = "Unknown"
+
+
+def normalize_device_os(value: str | None) -> str:
+    raw = str(value or "").strip().casefold()
+    if raw == "android":
+        return DEVICE_OS_ANDROID
+    if raw in {"ios", "iphone", "ipad", "ipod"}:
+        return DEVICE_OS_IOS
+    if raw in {"desktop", "windows", "macos", "linux", "chromeos"}:
+        return DEVICE_OS_DESKTOP
+    return DEVICE_OS_UNKNOWN
+
+
+def detect_device_os(user_agent: str | None) -> str:
+    ua = str(user_agent or "").casefold()
+    if "android" in ua:
+        return DEVICE_OS_ANDROID
+    if any(token in ua for token in ("iphone", "ipad", "ipod")):
+        return DEVICE_OS_IOS
+    if any(token in ua for token in ("windows nt", "macintosh", "x11", "cros")):
+        return DEVICE_OS_DESKTOP
+    return DEVICE_OS_UNKNOWN
+
+
+async def _save_user_device(
+    db: AsyncSession,
+    *,
+    user_id: Any,
+    device_os: str,
+    user_agent: str | None,
+) -> None:
+    if not user_id or device_os == DEVICE_OS_UNKNOWN:
+        return
+    await db.execute(
+        text(
+            """
+            INSERT INTO user_profiles (
+                user_id, device_os, device_user_agent,
+                device_first_detected_at, device_last_detected_at, updated_at
+            ) VALUES (
+                CAST(:user_id AS uuid), :device_os, :user_agent,
+                NOW(), NOW(), NOW()
+            )
+            ON CONFLICT (user_id) DO UPDATE
+            SET device_os = EXCLUDED.device_os,
+                device_user_agent = EXCLUDED.device_user_agent,
+                device_first_detected_at = COALESCE(
+                    user_profiles.device_first_detected_at,
+                    EXCLUDED.device_first_detected_at
+                ),
+                device_last_detected_at = EXCLUDED.device_last_detected_at,
+                updated_at = NOW()
+            """
+        ),
+        {"user_id": user_id, "device_os": device_os, "user_agent": user_agent},
+    )
+
 
 TRACKING_ID_LENGTH = 18
 TRACKING_ID_ALPHABET = string.ascii_letters + string.digits
@@ -53,6 +114,20 @@ async def create_attribution_link(
     user_level: str | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> str:
+    if platform in (None, "", "telegram_real_user"):
+        from services.app_download_platforms import resolve_app_download_route_context
+
+        route = await resolve_app_download_route_context(
+            db,
+            destination_url=destination_url,
+            account_id=sender_account_id,
+            conversation_id=str(conversation_id) if conversation_id else None,
+            user_id=str(user_id) if user_id else None,
+        )
+        platform = str(route.get("platform_key") or "default")
+        country_code = country_code or route.get("country_code")
+        if is_t1_country is None:
+            is_t1_country = bool(route.get("is_t1_country"))
     tracking_id = tracking_id or new_tracking_id()
     await db.execute(
         text(
@@ -64,7 +139,8 @@ async def create_attribution_link(
                 is_t1_country, country_code, age, user_level, metadata
             )
             VALUES (
-                :tracking_id, :destination_url, :user_id, :conversation_id,
+                :tracking_id, :destination_url, :user_id,
+                (SELECT id FROM conversations WHERE id = CAST(:conversation_id AS uuid)),
                 (SELECT id FROM messages WHERE id = CAST(:message_id AS uuid)),
                 :script_hit_id, :script_template_id, :campaign_id, :platform,
                 :persona_slug, :intent, :sender_account_id, :scene_step, :script_category,
@@ -202,6 +278,7 @@ async def record_attribution_event(
     if event_type not in ALLOWED_EVENT_TYPES:
         raise ValueError(f"unsupported attribution event_type: {event_type}")
 
+    resolved_device_os = normalize_device_os(device_os) if device_os else detect_device_os(user_agent)
     await db.execute(
         text(
             """
@@ -229,13 +306,14 @@ async def record_attribution_event(
             "country_code": country_code.upper() if country_code else None,
             "age": age,
             "user_level": user_level.upper() if user_level else None,
-            "device_os": device_os,
+            "device_os": resolved_device_os,
             "ip_address": ip_address,
             "user_agent": user_agent,
             "referrer": referrer,
             "metadata": metadata_json,
         },
     )
+    await _save_user_device(db, user_id=user_id, device_os=resolved_device_os, user_agent=user_agent)
 
 
 async def record_unique_click_event(
@@ -253,6 +331,7 @@ async def record_unique_click_event(
     metadata_json: str = "{}",
 ) -> None:
     """Record only the first click for a tracked user/link pair."""
+    resolved_device_os = normalize_device_os(device_os) if device_os else detect_device_os(user_agent)
     await db.execute(
         text(
             """
@@ -287,13 +366,14 @@ async def record_unique_click_event(
             "country_code": country_code.upper() if country_code else None,
             "age": age,
             "user_level": user_level.upper() if user_level else None,
-            "device_os": device_os,
+            "device_os": resolved_device_os,
             "ip_address": ip_address,
             "user_agent": user_agent,
             "referrer": referrer,
             "metadata": metadata_json,
         },
     )
+    await _save_user_device(db, user_id=user_id, device_os=resolved_device_os, user_agent=user_agent)
 
 
 def tracking_url(base_url: str, tracking_id: str) -> str:
@@ -303,16 +383,24 @@ def tracking_url(base_url: str, tracking_id: str) -> str:
 def render_tracking_links_as_html_cta(
     text_value: str,
     *,
-    cta_label: str = "OPEN APP LINK - TAP HERE",
+    cta_label: str | None = None,
+    language: str | None = None,
+    user_text: str | None = None,
 ) -> str:
-    """Render tracked short links as a large Telegram HTML text link.
+    """Render each tracked URL as exactly one Telegram click target.
 
-    Telegram controls which parts of its native link preview card are clickable.
-    Adding a prominent text-link CTA gives users a predictable clickable target
-    while keeping the original short link visible for attribution/debugging.
+    Keep the CTA label as plain text and make only the canonical ``/r/{id}``
+    URL clickable.  Binding both the label and the visible URL to the same href
+    makes Telegram present two links for one attribution record and confuses
+    users even though both destinations are identical.
     """
     if not text_value or "/r/" not in text_value:
         return text_value
+
+    if not cta_label:
+        from services.product_i18n import tracking_cta_label
+
+        cta_label = tracking_cta_label(language, user_text=user_text)
 
     output: list[str] = []
     last = 0
@@ -326,8 +414,8 @@ def render_tracking_links_as_html_cta(
         escaped_url_text = html.escape(tracked_url)
         escaped_label = html.escape(cta_label)
         output.append(
-            f'<a href="{escaped_url_attr}">{escaped_label}</a>\n'
-            f'<a href="{escaped_url_attr}">{escaped_url_text}</a>'
+            f'{escaped_label}\n'
+            f'🔗 <a href="{escaped_url_attr}">{escaped_url_text}</a>'
         )
         output.append(html.escape(suffix))
         last = match.end()

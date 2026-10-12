@@ -96,6 +96,7 @@ async def extract_age_with_llm(
         trace_id=trace_id,
         temperature=0.0,
         max_tokens=120,
+        purpose="aux",
     )
     if getattr(result, "error", None):
         return AgeExtractionResult(age=None, confidence=0.0, reason="llm_error")

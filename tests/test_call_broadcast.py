@@ -171,14 +171,11 @@ async def test_run_call_broadcast_uses_pytgcalls(monkeypatch) -> None:
     )
     assert playback.playback_seconds == 10.5
     assert playback.probed_seconds == 10.5
-    assert fake_pytgcalls.play.await_count == 2
+    assert fake_pytgcalls.play.await_count == 1
     connect_args = fake_pytgcalls.play.await_args_list[0].args
     assert connect_args[0] == 999
-    assert connect_args[1] is None
-    play_args = fake_pytgcalls.play.await_args_list[1].args
-    assert play_args[0] == 999
-    assert play_args[1] == "/tmp/demo.mp4"
-    assert [call.args[0] for call in sleep_mock.await_args_list] == [3.0, 10.5]
+    assert connect_args[1] == "/tmp/demo.mp4"
+    assert [call.args[0] for call in sleep_mock.await_args_list] == [10.5]
     stop_mock.assert_awaited_once()
 
 
@@ -195,8 +192,8 @@ async def test_run_call_broadcast_waits_for_answer_before_playback(monkeypatch) 
 
     async def _delayed_connect(_chat_id: int, path: str | None, _config: object = None) -> None:
         play_started.set()
-        if path is None:
-            await answer_event.wait()
+        assert path == "/tmp/demo.mp4"
+        await answer_event.wait()
 
     fake_pytgcalls.play = _delayed_connect
     monkeypatch.setattr(
@@ -337,9 +334,8 @@ async def test_run_call_broadcast_uses_incoming_wrapper(monkeypatch) -> None:
         pytgcalls=incoming_wrapper,
     )
 
-    assert incoming_wrapper.play.await_count == 2
-    assert incoming_wrapper.play.await_args_list[0].args[1] is None
-    assert incoming_wrapper.play.await_args_list[1].args[1] == "/tmp/demo.mp4"
+    assert incoming_wrapper.play.await_count == 1
+    assert incoming_wrapper.play.await_args_list[0].args[1] == "/tmp/demo.mp4"
     manager_get.assert_not_awaited()
 
 

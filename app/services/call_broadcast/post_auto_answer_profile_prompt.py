@@ -12,6 +12,7 @@ from loguru import logger
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.config import settings
 from services.mtproto.peer_resolve import resolve_telethon_peer
 from services.profile_intake import age_from_preferences, normalize_country_code
 from services.telegram_account_manager import telegram_account_manager
@@ -115,6 +116,9 @@ async def maybe_send_second_auto_answer_profile_prompt(
         job_id=job_id,
         chat_id=chat_id,
     )
+    if not getattr(settings, "CALL_BROADCAST_POST_CALL_NURTURE_ENABLED", True):
+        log.info("post_auto_profile_prompt.disabled")
+        return False
     if completed_auto_answer_count < 2:
         return False
 
@@ -237,6 +241,8 @@ async def run_pending_second_auto_answer_profile_prompts(
         component="call_broadcast_post_auto_answer_profile_prompt",
         trace_id=trace_id,
     )
+    if not getattr(settings, "CALL_BROADCAST_POST_CALL_NURTURE_ENABLED", True):
+        return {"candidates": 0, "sent": 0, "skipped": 0, "failed": 0}
     rows = (
         await db.execute(
             text(

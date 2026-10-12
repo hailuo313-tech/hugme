@@ -449,10 +449,17 @@ function ConversationsContent({ operator }: { operator: Operator }) {
   const listRequestSeqRef = useRef(0);
   const detailRequestSeqRef = useRef(0);
   const detailRef = useRef<DetailResponse | null>(null);
+  const queueReleaseLockRef = useRef(false);
 
   useEffect(() => {
     detailRef.current = detail;
   }, [detail]);
+
+  useEffect(() => {
+    if (!actionToast) return;
+    const timer = window.setTimeout(() => setActionToast(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [actionToast]);
 
   const load = useCallback(async (options?: { silent?: boolean }) => {
     if (options?.silent && listInFlightRef.current) return;
@@ -544,8 +551,8 @@ function ConversationsContent({ operator }: { operator: Operator }) {
 
   const { connState, lastAlert, dismissAlert, reconnect } = useOperatorTaskWs({
     operatorId: operator.operator_id,
-    onTaskUpsert: () => void load(),
-    onUserUpgraded: () => void load(),
+    onTaskUpsert: () => void load({ silent: true }),
+    onUserUpgraded: () => void load({ silent: true }),
   });
 
   const stats = useMemo(() => {
@@ -747,27 +754,59 @@ function ConversationsContent({ operator }: { operator: Operator }) {
   }
 
   async function releasePostInboundVideoExpert(row: ConversationRow) {
-    if (!isExpertPendingRelease(row) || queueReleaseId) return;
+    if (!isExpertPendingRelease(row) || queueReleaseId || queueReleaseLockRef.current) return;
     const name = row.nickname || row.external_id || row.conversation_id;
     const confirmed = window.confirm(
       `确认放行？\n\n${name}\n\n放行后该用户将恢复与普通用户一样：\n- AI 自动回复\n- 固定话术 / TikTok 引导等\n- 之后再打视频，不会第二次进入待放行审核\n\n之后可在「已放行」标签或会话详情点击「收回人工」。`,
     );
     if (!confirmed) return;
 
+    queueReleaseLockRef.current = true;
     setQueueReleaseId(row.conversation_id);
     setError(null);
+    setActionToast(null);
     try {
       await apiFetch<{ status: string; state: string }>(
         `/admin/conversations/${row.conversation_id}/post-inbound-video-release`,
         { method: "POST" },
       );
-      setTab("released");
-      setActionToast("已放行：该用户已恢复 AI/话术自动回复。可在此页或详情点击「收回人工」。");
-      await openDetail(row.conversation_id);
-      await load();
+      const waivedAt = new Date().toISOString();
+      setItems((current) =>
+        current.map((item) =>
+          item.conversation_id === row.conversation_id
+            ? {
+                ...item,
+                state: "AI_ACTIVE",
+                assigned_operator_id: null,
+                post_inbound_video_expert_waived_at: waivedAt,
+                post_inbound_video_expert_release_eligible: false,
+              }
+            : item,
+        ),
+      );
+      if (detail?.conversation.conversation_id === row.conversation_id) {
+        setDetail((current) =>
+          current
+            ? {
+                ...current,
+                conversation: {
+                  ...current.conversation,
+                  state: "AI_ACTIVE",
+                  assigned_operator_id: null,
+                  post_inbound_video_expert_waived_at: waivedAt,
+                  post_inbound_video_expert_release_eligible: false,
+                },
+              }
+            : current,
+        );
+      }
+      setActionToast("已放行：该用户已恢复 AI/话术自动回复。可在「AI自动」标签或详情点击「收回人工」。");
+      void load({ silent: true });
     } catch (err) {
+      setActionToast(null);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
+      queueReleaseLockRef.current = false;
       setQueueReleaseId(null);
     }
   }
@@ -1449,7 +1488,17 @@ function Panel({ title, action, children }: { title: string; action?: React.Reac
 
 function Metric({ title, value, hint, tone, onClick }: { title: string; value: number; hint: string; tone: "amber" | "violet" | "emerald" | "rose"; onClick?: () => void }) {
   const toneClass = { amber: "text-amber-300", violet: "text-violet-300", emerald: "text-emerald-300", rose: "text-rose-300" }[tone];
-  const clickableClass = onClick
+  const workbenchTab = title.includes("待人工")
+    ? "handoff"
+    : title.includes("S/A")
+      ? "premium"
+      : title.includes("已放行")
+        ? "released"
+        : null;
+  const handleClick = workbenchTab
+    ? () => window.location.assign(`/admin/conversation-workbench?tab=${workbenchTab}`)
+    : onClick;
+  const clickableClass = handleClick
     ? "cursor-pointer hover:border-sky-700 hover:bg-slate-800/70 focus:outline-none focus:ring-2 focus:ring-sky-600"
     : "";
   const content = (
@@ -1457,12 +1506,12 @@ function Metric({ title, value, hint, tone, onClick }: { title: string; value: n
       <div className="text-sm text-slate-400">{title}</div>
       <div className={`mt-2 text-3xl font-semibold ${toneClass}`}>{value}</div>
       <div className="mt-2 text-xs text-slate-500">{hint}</div>
-      {onClick ? <div className="mt-2 text-xs text-sky-300">点击定位到用户列表</div> : null}
+      {handleClick ? <div className="mt-2 text-xs text-sky-300">点击进入会话处理台</div> : null}
     </>
   );
-  if (onClick) {
+  if (handleClick) {
     return (
-      <button type="button" onClick={onClick} className={`w-full rounded-lg border border-slate-800 bg-slate-900 px-5 py-4 text-left transition ${clickableClass}`}>
+      <button type="button" onClick={handleClick} className={`w-full rounded-lg border border-slate-800 bg-slate-900 px-5 py-4 text-left transition ${clickableClass}`}>
         {content}
       </button>
     );
@@ -1791,7 +1840,7 @@ function MessageBubble({ message, translatedText, deleteLoading, onDelete }: { m
       </div>
       <div className="whitespace-pre-wrap break-words text-sm text-slate-100">
         {looksLikeUserPhoto(message.content, message.content_type) ? (
-          <InboundUserMedia messageId={message.id} content={message.content} />
+          <InboundUserMedia messageId={message.id} content={message.content} contentType={message.content_type} />
         ) : (
           message.content || "（空）"
         )}

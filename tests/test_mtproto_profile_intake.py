@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from sqlalchemy.exc import ProgrammingError
 
 from services.mtproto import auto_reply
 
@@ -28,6 +29,23 @@ class _Db:
         if "SELECT preferences" in sql:
             return _Result(SimpleNamespace(_mapping={"preferences": self.prefs}))
         return _Result()
+
+
+class _LegacyProfileDb(_Db):
+    def __init__(self, prefs: dict | None = None):
+        super().__init__(prefs)
+        self._failed_country_select = False
+        self._failed_country_update = False
+
+    async def _execute(self, query, params=None):
+        sql = str(query)
+        if "SELECT country_code, preferences" in sql and not self._failed_country_select:
+            self._failed_country_select = True
+            raise ProgrammingError("SELECT country_code", {}, Exception("missing column"))
+        if "SET country_code = :country_code" in sql and not self._failed_country_update:
+            self._failed_country_update = True
+            raise ProgrammingError("UPDATE country_code", {}, Exception("missing column"))
+        return await super()._execute(query, params)
 
 
 @pytest.mark.asyncio
@@ -134,8 +152,35 @@ async def test_mtproto_profile_intake_continues_chat_for_unrecognized_country(mo
         log=SimpleNamespace(info=lambda *a, **k: None, bind=lambda **k: SimpleNamespace(info=lambda *a, **kw: None)),
     )
 
-    assert reply is None
+    assert reply == auto_reply.PROFILE_COUNTRY_RETRY
     assert db.prefs["profile_intake_pending"] == "country"
+
+
+@pytest.mark.asyncio
+async def test_mtproto_profile_intake_infers_country_from_city_then_asks_age(monkeypatch):
+    db = _Db({"profile_intake_pending": "country"})
+    monkeypatch.setattr(
+        auto_reply,
+        "read_profile_completeness",
+        AsyncMock(return_value=SimpleNamespace(country_code=None, age=None)),
+    )
+    write_city = AsyncMock()
+    monkeypatch.setattr(auto_reply, "write_city_country", write_city)
+    level_service = SimpleNamespace(calculate_and_persist_user_level=AsyncMock(return_value={}))
+    monkeypatch.setattr(auto_reply, "user_level_service", level_service)
+
+    reply = await auto_reply._handle_required_profile_intake(
+        db,
+        user_id="00000000-0000-0000-0000-000000000001",
+        external_id="tg_1",
+        text_value="I'm in Barcelona",
+        log=SimpleNamespace(info=lambda *a, **k: None, bind=lambda **k: SimpleNamespace(info=lambda *a, **kw: None)),
+    )
+
+    assert reply == auto_reply.PROFILE_AGE_QUESTION
+    write_city.assert_awaited_once()
+    assert write_city.await_args.kwargs["city"] == "Barcelona"
+    assert write_city.await_args.kwargs["country_code"] == "ES"
 
 
 @pytest.mark.asyncio
@@ -165,6 +210,25 @@ async def test_mtproto_profile_intake_collects_country_then_asks_age(monkeypatch
     assert write_country.await_args.kwargs["country_code"] == "US"
     level_service.calculate_and_persist_user_level.assert_awaited_once()
     assert db.commit.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_mtproto_profile_intake_falls_back_when_country_column_missing(monkeypatch):
+    db = _LegacyProfileDb({"profile_intake_pending": "country"})
+    level_service = SimpleNamespace(calculate_and_persist_user_level=AsyncMock(return_value={}))
+    monkeypatch.setattr(auto_reply, "user_level_service", level_service)
+
+    reply = await auto_reply._handle_required_profile_intake(
+        db,
+        user_id="00000000-0000-0000-0000-000000000001",
+        external_id="tg_1",
+        text_value="US",
+        log=SimpleNamespace(info=lambda *a, **k: None, bind=lambda **k: SimpleNamespace(info=lambda *a, **kw: None)),
+    )
+
+    assert reply == auto_reply.PROFILE_AGE_QUESTION
+    assert db.rollback.await_count >= 1
+    assert db.prefs["profile_intake_pending"] == "age"
 
 
 @pytest.mark.asyncio
@@ -248,7 +312,9 @@ async def test_mtproto_profile_intake_asks_age_without_blocking_when_missing(mon
         log=SimpleNamespace(info=lambda *a, **k: None, bind=lambda **k: SimpleNamespace(info=lambda *a, **kw: None)),
     )
 
-    assert reply == auto_reply.PROFILE_AGE_RETRY
+    assert reply == auto_reply._profile_copy(
+        "age_retry", "not telling", auto_reply.PROFILE_AGE_RETRY
+    )
 
 
 def test_mtproto_memory_writer_spawn_uses_fire_and_forget(monkeypatch):
@@ -293,3 +359,8 @@ def test_mtproto_memory_writer_spawn_uses_fire_and_forget(monkeypatch):
     assert calls[0]["message_id"] == "00000000-0000-0000-0000-000000000003"
     assert calls[0]["trace_id"] == "trace-memory"
     assert calls[0]["is_onboarding"] is False
+
+
+def test_mtproto_profile_intake_extracts_birth_year_as_age():
+    assert auto_reply.extract_age_from_text("I was born in 1990") is not None
+    assert auto_reply.extract_age_from_text("I was born in 1990") >= 30

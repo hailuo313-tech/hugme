@@ -5,6 +5,18 @@ from typing import Any, Sequence
 
 ROUTE_KEY_PREFIX = "mtproto:route:"
 ACCOUNT_KEY_PREFIX = "mtproto:acct:"
+DEFAULT_ROUTE_TTL_SECONDS = 86400
+
+
+def _decode_redis_value(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, bytes):
+        text = value.decode("utf-8")
+    else:
+        text = str(value)
+    text = text.strip()
+    return text or None
 
 def route_redis_key(user_id: str | int) -> str:
     return f"{ROUTE_KEY_PREFIX}{user_id}"
@@ -24,12 +36,54 @@ def assign_account_id(user_id: str | int, account_ids: Sequence[str]) -> str:
     return account_ids[account_index_for_user(user_id, len(account_ids))]
 
 
+async def get_mtproto_account_route(
+    redis: Any,
+    *,
+    user_id: str | int,
+) -> str | None:
+    """Return the pinned MTProto account id for a user, if any."""
+    if redis is None:
+        return None
+    redis_key = route_redis_key(user_id)
+    return _decode_redis_value(await redis.get(redis_key))
+
+
+async def ensure_mtproto_account_route_for_reply(
+    redis: Any,
+    *,
+    user_id: str | int,
+    account_id: str,
+    ttl_seconds: int | None = DEFAULT_ROUTE_TTL_SECONDS,
+) -> bool:
+    """Return True when this account may auto-reply (first claim or already pinned)."""
+    if redis is None:
+        return True
+    account_key = str(account_id or "").strip()
+    if not account_key:
+        return False
+
+    redis_key = route_redis_key(user_id)
+    pinned = _decode_redis_value(await redis.get(redis_key))
+    if pinned:
+        if pinned == account_key:
+            if ttl_seconds is not None:
+                await redis.expire(redis_key, ttl_seconds)
+            return True
+        return False
+
+    claimed = await redis.set(redis_key, account_key, ex=ttl_seconds, nx=True)
+    if claimed:
+        return True
+    pinned = _decode_redis_value(await redis.get(redis_key))
+    return pinned == account_key
+
+
 async def pin_mtproto_account_route(
     redis: Any,
     *,
     user_id: str | int,
     account_id: str,
-    ttl_seconds: int | None = 86400,
+    ttl_seconds: int | None = DEFAULT_ROUTE_TTL_SECONDS,
 ) -> None:
     """Pin a user to the MTProto account that already owns the live dialog."""
     if redis is None:

@@ -19,7 +19,7 @@ from services.telegram_send import send_telegram_text, telegram_chat_id_from_ext
 
 router = APIRouter()
 
-CONTEXT_MAX_MESSAGES = 20
+CONTEXT_MAX_MESSAGES = 200
 CONTEXT_TTL_SECONDS = 86400 * 3
 
 

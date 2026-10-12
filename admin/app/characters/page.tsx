@@ -334,13 +334,13 @@ function CharactersContent({ operator }: { operator: Operator }) {
   function startCreate() {
     setEditing(null);
     setForm({ ...EMPTY_FORM, profile_details: { ...EMPTY_PROFILE_DETAILS } });
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    document.getElementById("character-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function startEdit(row: CharacterRow) {
     setEditing(row);
     setForm(rowToForm(row));
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    document.getElementById("character-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function updateField<K extends keyof CharacterFormData>(
@@ -448,7 +448,72 @@ function CharactersContent({ operator }: { operator: Operator }) {
           </div>
         )}
 
+        <section className="rounded-2xl border border-slate-700 bg-slate-800/60 overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-700 flex items-center justify-between">
+            <h2 className="text-lg font-semibold">角色列表</h2>
+            <span className="text-sm text-slate-500">
+              {loading ? "加载中…" : `${characters.length} 个角色`}
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-900/60 text-slate-400">
+                <tr>
+                  <th className="text-left px-4 py-3 font-medium">名称</th>
+                  <th className="text-left px-4 py-3 font-medium">状态</th>
+                  <th className="text-left px-4 py-3 font-medium">职业 / 地区</th>
+                  <th className="text-left px-4 py-3 font-medium">结构化字段</th>
+                  <th className="text-left px-4 py-3 font-medium">更新时间</th>
+                  <th className="text-right px-4 py-3 font-medium">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {!loading && characters.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                      暂无角色
+                    </td>
+                  </tr>
+                )}
+                {characters.map((row) => {
+                  const detailCount = Object.keys(
+                    normalizeJsonObject(row.profile_details)
+                  ).length;
+                  return (
+                    <tr key={row.id} className="border-t border-slate-800">
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-slate-100">{row.name}</div>
+                        <div className="text-xs text-slate-500">{row.id}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex rounded-full border px-2 py-1 text-xs ${statusColor(row.status)}`}>
+                          {row.status ?? "unknown"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-300">
+                        <div>{row.occupation || "—"}</div>
+                        <div className="text-xs text-slate-500">{row.region || "—"}</div>
+                      </td>
+                      <td className="px-4 py-3 text-slate-300">{detailCount}</td>
+                      <td className="px-4 py-3 text-slate-400">{fmtTime(row.updated_at)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          onClick={() => startEdit(row)}
+                          className="text-violet-300 hover:text-violet-200"
+                        >
+                          编辑
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
         <form
+          id="character-form"
           onSubmit={handleSubmit}
           className="rounded-2xl border border-slate-700 bg-slate-800/60 p-6 space-y-6"
         >
@@ -584,70 +649,6 @@ function CharactersContent({ operator }: { operator: Operator }) {
             </button>
           </div>
         </form>
-
-        <section className="rounded-2xl border border-slate-700 bg-slate-800/60 overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-700 flex items-center justify-between">
-            <h2 className="text-lg font-semibold">角色列表</h2>
-            <span className="text-sm text-slate-500">
-              {loading ? "加载中…" : `${characters.length} 个角色`}
-            </span>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-900/60 text-slate-400">
-                <tr>
-                  <th className="text-left px-4 py-3 font-medium">名称</th>
-                  <th className="text-left px-4 py-3 font-medium">状态</th>
-                  <th className="text-left px-4 py-3 font-medium">职业 / 地区</th>
-                  <th className="text-left px-4 py-3 font-medium">结构化字段</th>
-                  <th className="text-left px-4 py-3 font-medium">更新时间</th>
-                  <th className="text-right px-4 py-3 font-medium">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {!loading && characters.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
-                      暂无角色
-                    </td>
-                  </tr>
-                )}
-                {characters.map((row) => {
-                  const detailCount = Object.keys(
-                    normalizeJsonObject(row.profile_details)
-                  ).length;
-                  return (
-                    <tr key={row.id} className="border-t border-slate-800">
-                      <td className="px-4 py-3">
-                        <div className="font-medium text-slate-100">{row.name}</div>
-                        <div className="text-xs text-slate-500">{row.id}</div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex rounded-full border px-2 py-1 text-xs ${statusColor(row.status)}`}>
-                          {row.status ?? "unknown"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-slate-300">
-                        <div>{row.occupation || "—"}</div>
-                        <div className="text-xs text-slate-500">{row.region || "—"}</div>
-                      </td>
-                      <td className="px-4 py-3 text-slate-300">{detailCount}</td>
-                      <td className="px-4 py-3 text-slate-400">{fmtTime(row.updated_at)}</td>
-                      <td className="px-4 py-3 text-right">
-                        <button
-                          onClick={() => startEdit(row)}
-                          className="text-violet-300 hover:text-violet-200"
-                        >
-                          编辑
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </section>
       </main>
     </div>
   );

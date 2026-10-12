@@ -39,6 +39,8 @@ class SessionManager:
         self.health_check_task: Optional[asyncio.Task] = None
         self._lock = asyncio.Lock()
         self._running = False
+        self._connection_failures: Dict[UUID, int] = {}
+        self._health_cursor = 0
 
     async def start(self):
         """Start session manager background tasks."""
@@ -49,11 +51,11 @@ class SessionManager:
         self._running = True
         logger.info("Starting session manager")
 
-        # Start health check task
-        self.health_check_task = asyncio.create_task(self._health_check_loop())
-
-        # Restore sessions from database
+        # Finish restoring all accounts before health checks begin. Otherwise
+        # not-yet-restored clients are falsely marked missing and reconnected.
         await self._restore_sessions()
+        if self._running:
+            self.health_check_task = asyncio.create_task(self._health_check_loop())
 
     async def stop(self):
         """Stop session manager background tasks."""
@@ -85,17 +87,44 @@ class SessionManager:
         """Restore active sessions from database on startup."""
         logger.info("Restoring sessions from database")
         accounts = await telegram_account_manager.get_active_accounts()
-
+        if not accounts:
+            return
         for account in accounts:
-            if account.status == "connected":
-                logger.info(f"Restoring session for account {account.id}")
-                success = await telegram_account_manager.connect_account(account.id)
-                if success:
-                    logger.info(f"Successfully restored session for account {account.id}")
-                else:
-                    logger.warning(f"Failed to restore session for account {account.id}, will retry")
-                    # Schedule reconnect
-                    self._schedule_reconnect(account.id)
+            if account.status == "banned":
+                logger.warning(f"Skipping banned Telegram account {account.id}")
+                continue
+            from services.runtime_ownership import this_process_may_hold_telegram_session
+
+            if not await this_process_may_hold_telegram_session(str(account.id)):
+                logger.info(f"Skipping restore for account {account.id}; owned by another runtime")
+                continue
+
+            logger.info(f"Restoring session for account {account.id} status={account.status}")
+            from services.telegram_command_gateway import submit_telegram_command
+
+            async def _legacy_restore(account_id=account.id):
+                return await telegram_account_manager.connect_account(account_id)
+
+            gated = await submit_telegram_command(
+                command_type="connect_account",
+                account_id=str(account.id),
+                legacy_execute=_legacy_restore,
+            )
+            if gated.accepted_not_sent:
+                logger.info(f"Session restore for account {account.id} queued for runtime")
+                continue
+            if not gated.executed:
+                logger.warning(
+                    f"Failed to restore session for account {account.id}: {gated.reason}"
+                )
+                self._schedule_reconnect(account.id)
+                continue
+            success = bool(gated.value)
+            if success:
+                logger.info(f"Successfully restored session for account {account.id}")
+            else:
+                logger.warning(f"Failed to restore session for account {account.id}, will retry")
+                self._schedule_reconnect(account.id)
 
     async def _health_check_loop(self):
         """Periodically check connection health of all sessions."""
@@ -111,23 +140,53 @@ class SessionManager:
     async def _check_all_connections(self):
         """Check health of all connected accounts."""
         accounts = await telegram_account_manager.get_active_accounts()
+        if not accounts:
+            return
+        # Probe a bounded rotating slice. Full scans every minute overload both
+        # Telegram and PostgreSQL and synchronize reconnects across all accounts.
+        batch_size = min(20, len(accounts))
+        start = self._health_cursor % len(accounts)
+        ordered = accounts[start:] + accounts[:start]
+        accounts = ordered[:batch_size]
+        self._health_cursor = (start + batch_size) % len(ordered)
 
         for account in accounts:
+            from services.runtime_ownership import this_process_may_hold_telegram_session
+
+            if not await this_process_may_hold_telegram_session(str(account.id)):
+                continue
             if account.status == "connected":
-                client = await telegram_account_manager.get_client(account.id)
+                client = telegram_account_manager.clients.get(account.id)
+                reason = ""
                 if client and client.is_connected():
                     try:
-                        # Send a simple request to verify connection
                         await client.get_me()
-                    except Exception as e:
-                        logger.warning(f"Account {account.id} connection unhealthy: {e}")
-                        await self._handle_disconnect(account.id, str(e))
+                        self._connection_failures.pop(account.id, None)
+                        continue
+                    except Exception as exc:
+                        reason = str(exc)
                 else:
-                    logger.warning(f"Account {account.id} is marked connected but client not available")
-                    await self._handle_disconnect(account.id, "Client not available")
+                    reason = "Client not available"
+
+                failures = self._connection_failures.get(account.id, 0) + 1
+                self._connection_failures[account.id] = failures
+                logger.bind(account_id=str(account.id), consecutive_failures=failures).warning(
+                    "mtproto.session_health.transient_failure"
+                )
+                if failures < 3:
+                    continue
+
+                self._connection_failures.pop(account.id, None)
+                await telegram_account_manager.disconnect_account(account.id)
+                await self._handle_disconnect(account.id, reason)
 
     async def _handle_disconnect(self, account_id: UUID, reason: str):
         """Handle unexpected disconnection."""
+        from services.runtime_ownership import this_process_may_hold_telegram_session
+
+        if not await this_process_may_hold_telegram_session(str(account_id)):
+            logger.info(f"Skip disconnect handling for account {account_id}; owned by another runtime")
+            return
         logger.warning(f"Handling disconnect for account {account_id}: {reason}")
 
         # Update status in database
@@ -143,8 +202,16 @@ class SessionManager:
         if account_id in self.reconnect_tasks:
             return  # Already scheduled
 
+        async def _guarded_schedule():
+            from services.runtime_ownership import this_process_may_hold_telegram_session
+
+            if not await this_process_may_hold_telegram_session(str(account_id)):
+                logger.info(f"Skip reconnect schedule for account {account_id}; owned by another runtime")
+                return
+            await self._reconnect_with_backoff(account_id)
+
         logger.info(f"Scheduling reconnect for account {account_id} in {self.reconnect_interval}s")
-        task = asyncio.create_task(self._reconnect_with_backoff(account_id))
+        task = asyncio.create_task(_guarded_schedule())
         self.reconnect_tasks[account_id] = task
 
     async def _reconnect_with_backoff(self, account_id: UUID, attempt: int = 1):
@@ -171,7 +238,23 @@ class SessionManager:
             return
 
         try:
-            success = await telegram_account_manager.connect_account(account_id)
+            from services.telegram_command_gateway import submit_telegram_command
+
+            async def _legacy_reconnect():
+                return await telegram_account_manager.connect_account(account_id)
+
+            gated = await submit_telegram_command(
+                command_type="connect_account",
+                account_id=str(account_id),
+                legacy_execute=_legacy_reconnect,
+            )
+            if gated.accepted_not_sent:
+                logger.info(f"Reconnect for account {account_id} queued for runtime")
+                self.reconnect_tasks.pop(account_id, None)
+                return
+            if not gated.executed:
+                raise RuntimeError(gated.reason or "telegram_gateway_rejected")
+            success = bool(gated.value)
             if success:
                 logger.info(f"Successfully reconnected account {account_id}")
                 self.reconnect_tasks.pop(account_id, None)

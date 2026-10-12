@@ -1,3 +1,4 @@
+import asyncio
 import os
 import tempfile
 from pathlib import Path
@@ -46,9 +47,29 @@ from api.device_tokens import router as device_tokens_router
 from api.metrics import router as metrics_router
 from api.feature_flags import router as feature_flags_router
 from api.attribution import router as attribution_router
+from api.call_broadcast_admin import router as call_broadcast_admin_router
+from api.fixed_auto_replies_admin import router as fixed_auto_replies_admin_router
+from api.telegram_user_migration_admin import router as telegram_user_migration_admin_router
+from api.video_reinvite_admin import router as video_reinvite_admin_router
 from core.database import init_db
 from core.config import settings
+from core.process_role import (
+    get_runtime_status,
+    is_dedicated_telegram_runtime,
+    is_shadow_runtime,
+    mark_runtime_ready,
+    normalize_process_role,
+    owns_api_workers,
+    owns_telegram_runtime,
+    reset_runtime_state,
+    set_active_process_role,
+    warn_if_multi_worker,
+)
+from services.call_broadcast.incoming_review import restore_pending_reviews_from_db
 from services.mtproto.session_manager import session_manager
+from services.runtime_command_consumer import start_runtime_consumer, stop_runtime_consumer
+from services.runtime_shadow_consumer import start_shadow_consumer, stop_shadow_consumer
+from services.runtime_shadow_state import start_shadow_heartbeat, stop_shadow_heartbeat
 from services.account_monitor import account_monitor
 from services.alert_scheduler import alert_scheduler
 from services.silent_reactivation_scheduler import (
@@ -78,6 +99,34 @@ from services.auto_delivery_worker import (
 from services.archive_service import (
     start_scheduler as start_archive_worker,
     shutdown_scheduler as shutdown_archive_worker,
+)
+from services.human_takeover_release_worker import (
+    start_scheduler as start_human_takeover_release_worker,
+)
+from services.call_broadcast.worker import (
+    start_scheduler as start_call_broadcast_worker,
+    shutdown_scheduler as shutdown_call_broadcast_worker,
+)
+from services.call_broadcast.incoming_listener import (
+    start_incoming_call_listeners,
+    shutdown_incoming_call_listeners,
+)
+from services.fixed_auto_reply_service import (
+    start_scheduler as start_fixed_auto_reply_worker,
+    shutdown_scheduler as shutdown_fixed_auto_reply_worker,
+)
+from services.telegram_user_migration import (
+    start_scheduler as start_telegram_user_migration_worker,
+    shutdown_scheduler as shutdown_telegram_user_migration_worker,
+)
+from services.video_reinvite import (
+    start_scheduler as start_video_reinvite_worker,
+    shutdown_scheduler as shutdown_video_reinvite_worker,
+)
+from services.telegram_account_health import run_health_check as run_telegram_account_health_check
+from services.account_recovery_worker import (
+    start_scheduler as start_account_recovery_worker,
+    shutdown_scheduler as shutdown_account_recovery_worker,
 )
 
 
@@ -115,6 +164,55 @@ def _shutdown_scheduler(name: str, shutdown_func) -> None:
         ).warning("runtime_worker.scheduler.stop_failed")
 
 
+API_SCHEDULERS = (
+    ("embedding_worker", start_embedding_worker, shutdown_embedding_worker),
+    ("profile_score_scheduler", start_profile_score_scheduler, shutdown_profile_score_scheduler),
+    ("archive_worker", start_archive_worker, shutdown_archive_worker),
+    ("human_takeover_release_worker", start_human_takeover_release_worker, None),
+)
+
+TELEGRAM_SCHEDULERS = (
+    ("account_recovery_worker", start_account_recovery_worker, shutdown_account_recovery_worker),
+    ("silent_reactivation_scheduler", start_silent_reactivation_scheduler, shutdown_silent_reactivation_scheduler),
+    ("notification_sender_worker", start_notification_sender_worker, shutdown_notification_sender_worker),
+    ("message_schedule_scheduler", start_message_schedule_scheduler, shutdown_message_schedule_scheduler),
+    ("auto_delivery_worker", start_auto_delivery_worker, shutdown_auto_delivery_worker),
+    ("fixed_auto_reply_worker", start_fixed_auto_reply_worker, shutdown_fixed_auto_reply_worker),
+    ("telegram_user_migration_worker", start_telegram_user_migration_worker, shutdown_telegram_user_migration_worker),
+    ("video_reinvite_worker", start_video_reinvite_worker, shutdown_video_reinvite_worker),
+    ("call_broadcast_worker", start_call_broadcast_worker, shutdown_call_broadcast_worker),
+)
+
+RUNTIME_NURTURE_SCHEDULERS = (
+    ("account_recovery_worker", start_account_recovery_worker, shutdown_account_recovery_worker),
+    ("message_schedule_scheduler", start_message_schedule_scheduler, shutdown_message_schedule_scheduler),
+    ("auto_delivery_worker", start_auto_delivery_worker, shutdown_auto_delivery_worker),
+    ("fixed_auto_reply_worker", start_fixed_auto_reply_worker, shutdown_fixed_auto_reply_worker),
+    ("telegram_user_migration_worker", start_telegram_user_migration_worker, shutdown_telegram_user_migration_worker),
+    ("video_reinvite_worker", start_video_reinvite_worker, shutdown_video_reinvite_worker),
+)
+
+
+def _active_process_role() -> str:
+    return set_active_process_role(getattr(settings, "PROCESS_ROLE", "all"))
+
+
+def _mtproto_runtime_enabled() -> bool:
+    return bool(
+        getattr(settings, "MTProto_ENABLED", False)
+        or getattr(settings, "SESSION_MANAGER_ENABLED", False)
+    )
+
+
+def _shadow_account_snapshot() -> list[tuple[str, str]]:
+    from services.telegram_account_manager import telegram_account_manager
+
+    return [
+        (str(account_id), "connected")
+        for account_id in getattr(telegram_account_manager, "clients", {})
+    ]
+
+
 def request_trace_id(request: Request) -> str:
     trace_id = request.headers.get("x-trace-id") or request.headers.get("x-request-id")
     return trace_id or str(uuid.uuid4())
@@ -129,53 +227,218 @@ app = FastAPI(
 )
 
 
+
+async def _run_delayed_telegram_health_check() -> None:
+    """Run the expensive all-account probe after session restore has settled."""
+    await asyncio.sleep(1800)
+    try:
+        await run_telegram_account_health_check("startup_delayed")
+    except Exception as exc:
+        logger.bind(error_type=type(exc).__name__).warning(
+            "telegram_account_health.delayed_start_failed"
+        )
+
 @app.on_event("startup")
 async def start_runtime_workers():
-    _start_scheduler("embedding_worker", start_embedding_worker)
-    _start_scheduler("profile_score_scheduler", start_profile_score_scheduler)
-    _start_scheduler(
-        "silent_reactivation_scheduler",
-        start_silent_reactivation_scheduler,
-    )
-    _start_scheduler("notification_sender_worker", start_notification_sender_worker)
-    _start_scheduler("message_schedule_scheduler", start_message_schedule_scheduler)
-    _start_scheduler("auto_delivery_worker", start_auto_delivery_worker)
-    _start_scheduler("archive_worker", start_archive_worker)
+    role = _active_process_role()
+    reset_runtime_state(role)
+    logger.bind(component="runtime", process_role=role).info("process_role.startup.begin")
+    if warn_if_multi_worker(os.environ.get("API_WORKERS", "1"), role):
+        logger.bind(
+            component="runtime",
+            process_role=role,
+            api_workers=os.environ.get("API_WORKERS"),
+        ).warning("process_role.telegram_runtime.multi_worker_risk")
 
-    mtproto_runtime_enabled = bool(
-        getattr(settings, "MTProto_ENABLED", False)
-        or getattr(settings, "SESSION_MANAGER_ENABLED", False)
-    )
-    if mtproto_runtime_enabled:
+    if owns_api_workers(role) and not is_shadow_runtime(role):
+        for name, start_func, _shutdown_func in API_SCHEDULERS:
+            _start_scheduler(name, start_func)
+
+    telegram_ready = True
+    if is_shadow_runtime(role):
+        mark_runtime_ready(True)
         try:
-            await session_manager.start()
-            logger.info("mtproto.session_manager.started")
+            await start_shadow_consumer()
         except Exception as exc:
-            logger.bind(error_type=type(exc).__name__).error(
-                "mtproto.session_manager.start_failed"
+            logger.bind(error_type=type(exc).__name__).warning(
+                "runtime_shadow.consumer.start_failed"
             )
+    elif is_dedicated_telegram_runtime(role):
+        telegram_ready = True
+        if _mtproto_runtime_enabled():
+            try:
+                await session_manager.start()
+                logger.info("mtproto.session_manager.started")
+                from services.mtproto.inbound_media import schedule_startup_photo_backfill
+
+                schedule_startup_photo_backfill()
+            except Exception as exc:
+                telegram_ready = False
+                logger.bind(error_type=type(exc).__name__).error(
+                    "mtproto.session_manager.start_failed"
+                )
+        if getattr(settings, "CALL_BROADCAST_ENABLED", False):
+            try:
+                await start_incoming_call_listeners()
+            except Exception as exc:
+                logger.bind(error_type=type(exc).__name__).error(
+                    "call_broadcast.incoming.listeners_start_failed"
+                )
+        try:
+            await start_runtime_consumer()
+        except Exception as exc:
+            telegram_ready = False
+            logger.bind(error_type=type(exc).__name__).error(
+                "runtime_consumer.start_failed"
+            )
+        mark_runtime_ready(telegram_ready)
+        if telegram_ready:
+            asyncio.create_task(_run_delayed_telegram_health_check())
+        for name, start_func, _shutdown_func in RUNTIME_NURTURE_SCHEDULERS:
+            _start_scheduler(name, start_func)
+        try:
+            await restore_pending_reviews_from_db()
+        except Exception as exc:
+            logger.bind(error_type=type(exc).__name__).warning(
+                "call_broadcast.incoming.reviews_restore_failed"
+            )
+    elif owns_telegram_runtime(role):
+        if _mtproto_runtime_enabled():
+            try:
+                await session_manager.start()
+                logger.info("mtproto.session_manager.started")
+                asyncio.create_task(_run_delayed_telegram_health_check())
+            except Exception as exc:
+                telegram_ready = False
+                logger.bind(error_type=type(exc).__name__).error(
+                    "mtproto.session_manager.start_failed"
+                )
+        mark_runtime_ready(telegram_ready)
+        # Publish live account state before slower listener/scheduler startup.
+        # Otherwise the 45-second Redis account shadows expire while hundreds
+        # of Telegram listeners are still being initialized, and the admin UI
+        # incorrectly reports zero connected accounts.
+        try:
+            await start_shadow_heartbeat(
+                process_role=role,
+                runtime_ready_getter=lambda: get_runtime_status()["runtime_ready"],
+                account_snapshot_getter=_shadow_account_snapshot,
+            )
+        except Exception as exc:
+            logger.bind(error_type=type(exc).__name__).warning(
+                "runtime_shadow.heartbeat.start_failed"
+            )
+        for name, start_func, _shutdown_func in TELEGRAM_SCHEDULERS:
+            _start_scheduler(name, start_func)
+        if getattr(settings, "CALL_BROADCAST_ENABLED", False):
+            try:
+                await start_incoming_call_listeners()
+            except Exception as exc:
+                logger.bind(error_type=type(exc).__name__).error(
+                    "call_broadcast.incoming.listeners_start_failed"
+                )
+        await restore_pending_reviews_from_db()
+    else:
+        mark_runtime_ready(True)
+
+    try:
+        await start_shadow_heartbeat(
+            process_role=role,
+            runtime_ready_getter=lambda: get_runtime_status()["runtime_ready"],
+            account_snapshot_getter=(
+                _shadow_account_snapshot if owns_telegram_runtime(role) else None
+            ),
+        )
+    except Exception as exc:
+        logger.bind(error_type=type(exc).__name__).warning(
+            "runtime_shadow.heartbeat.start_failed"
+        )
+
+    runtime = get_runtime_status()
+    logger.bind(
+        component="runtime",
+        process_role=role,
+        runtime_ready=runtime["runtime_ready"],
+        owns_api_workers=runtime["owns_api_workers"],
+        owns_telegram_runtime=runtime["owns_telegram_runtime"],
+    ).info("process_role.startup.ready")
 
 
 @app.on_event("shutdown")
 async def stop_runtime_workers():
-    _shutdown_scheduler("archive_worker", shutdown_archive_worker)
-    _shutdown_scheduler("auto_delivery_worker", shutdown_auto_delivery_worker)
-    _shutdown_scheduler("message_schedule_scheduler", shutdown_message_schedule_scheduler)
-    _shutdown_scheduler("notification_sender_worker", shutdown_notification_sender_worker)
-    _shutdown_scheduler(
-        "silent_reactivation_scheduler",
-        shutdown_silent_reactivation_scheduler,
-    )
-    _shutdown_scheduler("profile_score_scheduler", shutdown_profile_score_scheduler)
-    _shutdown_scheduler("embedding_worker", shutdown_embedding_worker)
-
+    role = normalize_process_role(getattr(settings, "PROCESS_ROLE", "all"))
+    logger.bind(component="runtime", process_role=role).info("process_role.shutdown.begin")
     try:
-        await session_manager.stop()
-        logger.info("mtproto.session_manager.stopped")
+        await stop_shadow_heartbeat()
     except Exception as exc:
         logger.bind(error_type=type(exc).__name__).warning(
-            "mtproto.session_manager.stop_failed"
+            "runtime_shadow.heartbeat.stop_failed"
         )
+    try:
+        await stop_shadow_consumer()
+    except Exception as exc:
+        logger.bind(error_type=type(exc).__name__).warning(
+            "runtime_shadow.consumer.stop_failed"
+        )
+    try:
+        await stop_runtime_consumer()
+    except Exception as exc:
+        logger.bind(error_type=type(exc).__name__).warning(
+            "runtime_consumer.stop_failed"
+        )
+
+    if is_shadow_runtime(role):
+        mark_runtime_ready(False)
+        logger.bind(component="runtime", process_role=role).info("process_role.shutdown.complete")
+        return
+
+    if is_dedicated_telegram_runtime(role):
+        try:
+            await shutdown_incoming_call_listeners()
+        except Exception as exc:
+            logger.bind(error_type=type(exc).__name__).warning(
+                "call_broadcast.incoming.listeners_shutdown_failed"
+            )
+        for name, _start_func, shutdown_func in reversed(RUNTIME_NURTURE_SCHEDULERS):
+            if shutdown_func is not None:
+                _shutdown_scheduler(name, shutdown_func)
+        if _mtproto_runtime_enabled():
+            try:
+                await session_manager.stop()
+                logger.info("mtproto.session_manager.stopped")
+            except Exception as exc:
+                logger.bind(error_type=type(exc).__name__).warning(
+                    "mtproto.session_manager.stop_failed"
+                )
+        mark_runtime_ready(False)
+        logger.bind(component="runtime", process_role=role).info("process_role.shutdown.complete")
+        return
+
+    if owns_telegram_runtime(role):
+        try:
+            await shutdown_incoming_call_listeners()
+        except Exception as exc:
+            logger.bind(error_type=type(exc).__name__).warning(
+                "call_broadcast.incoming.listeners_shutdown_failed"
+            )
+        for name, _start_func, shutdown_func in reversed(TELEGRAM_SCHEDULERS):
+            if shutdown_func is not None:
+                _shutdown_scheduler(name, shutdown_func)
+        try:
+            await session_manager.stop()
+            logger.info("mtproto.session_manager.stopped")
+        except Exception as exc:
+            logger.bind(error_type=type(exc).__name__).warning(
+                "mtproto.session_manager.stop_failed"
+            )
+
+    if owns_api_workers(role):
+        for name, _start_func, shutdown_func in reversed(API_SCHEDULERS):
+            if shutdown_func is not None:
+                _shutdown_scheduler(name, shutdown_func)
+
+    mark_runtime_ready(False)
+    logger.bind(component="runtime", process_role=role).info("process_role.shutdown.complete")
 
 
 # Database initialization flag
@@ -232,6 +495,26 @@ app.include_router(device_tokens_router, prefix="/api/v1/device-tokens", tags=["
 app.include_router(metrics_router, tags=["metrics"])
 app.include_router(feature_flags_router, prefix="/api/v1", tags=["feature-flags"])
 app.include_router(attribution_router, tags=["attribution"])
+app.include_router(
+    call_broadcast_admin_router,
+    prefix="/api/v1/call-broadcast/admin",
+    tags=["call-broadcast-admin"],
+)
+app.include_router(
+    fixed_auto_replies_admin_router,
+    prefix="/api/v1/fixed-auto-replies/admin",
+    tags=["fixed-auto-replies-admin"],
+)
+app.include_router(
+    telegram_user_migration_admin_router,
+    prefix="/api/v1/telegram-user-migration/admin",
+    tags=["telegram-user-migration-admin"],
+)
+app.include_router(
+    video_reinvite_admin_router,
+    prefix="/api/v1/video-reinvite/admin",
+    tags=["video-reinvite-admin"],
+)
 
 def _resolve_media_upload_dir() -> Path:
     path = Path(settings.MEDIA_UPLOAD_DIR)

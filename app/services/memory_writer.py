@@ -70,6 +70,7 @@ from loguru import logger
 from core.config import settings
 from core.database import AsyncSessionLocal
 from services.llm import chat as llm_chat
+from services.profile_intake import extract_age_from_text, normalize_country_code
 
 
 # ─────────────────────────────────────────────────────────────
@@ -202,10 +203,17 @@ async def maybe_write_memory(
         return None
 
     if evaluation is None:
+        evaluation = _fallback_evaluation_from_rules(content)
+        if evaluation is None or not getattr(settings, "MEMORY_WRITE_FALLBACK_ENABLED", True):
+            log.bind(
+                duration_ms=round((time.time() - started) * 1000, 1),
+                reason="invalid_or_empty_evaluation",
+            ).warning("memory.write.llm.failed")
+            return None
         log.bind(
             duration_ms=round((time.time() - started) * 1000, 1),
-        ).warning("memory.write.llm.failed")
-        return None
+            memory_type=evaluation.get("memory_type"),
+        ).warning("memory.write.llm.fallback_used")
 
     if not evaluation.get("is_memory_worthy"):
         log.bind(memory_type=evaluation.get("memory_type")).info(
@@ -353,6 +361,7 @@ async def _score_with_llm(content: str, trace_id: str) -> Optional[dict]:
         temperature=0.2,
         max_tokens=300,
         force_model=settings.LLM_MEMORY_MODEL or None,
+        purpose="aux",
     )
 
     if result.error or not result.content:
@@ -419,6 +428,114 @@ def _parse_evaluation(raw: str) -> Optional[dict]:
     obj["emotion_tags"] = [str(t).strip() for t in tags if str(t).strip()][:3]
 
     return obj
+
+
+def _fallback_evaluation_from_rules(content: str) -> Optional[dict]:
+    """Deterministic fallback for clear profile facts when LLM JSON is unusable."""
+    text = (content or "").strip()
+    if not text:
+        return None
+    lower = text.lower()
+
+    age = extract_age_from_text(text)
+    if age is not None:
+        return _fallback_eval(
+            memory_type="fact",
+            content=f"用户年龄是 {age} 岁",
+            importance_score=8,
+            tags=[],
+        )
+
+    country = normalize_country_code(text)
+    if country:
+        return _fallback_eval(
+            memory_type="fact",
+            content=f"用户国家是 {country}",
+            importance_score=8,
+            tags=[],
+        )
+
+    preference_match = re.search(
+        r"\b(?:i\s+)?(?:like|love|prefer|enjoy|want|need)\s+(.{3,120})",
+        lower,
+    )
+    if preference_match:
+        preference = _clean_memory_fragment(preference_match.group(1))
+        if preference:
+            return _fallback_eval(
+                memory_type="preference",
+                content=f"用户喜欢或想要：{preference}",
+                importance_score=6,
+                tags=[],
+            )
+
+    dislike_match = re.search(r"\b(?:i\s+)?(?:hate|dislike|don't like|do not like)\s+(.{3,120})", lower)
+    if dislike_match:
+        dislike = _clean_memory_fragment(dislike_match.group(1))
+        if dislike:
+            return _fallback_eval(
+                memory_type="preference",
+                content=f"用户不喜欢：{dislike}",
+                importance_score=6,
+                tags=[],
+            )
+
+    schedule_match = re.search(
+        r"\b(?:i\s+)?(?:work|finish|get off|wake up|sleep)\b.{0,80}\b(?:at|around|by)\s+([0-9]{1,2}(?::[0-9]{2})?\s*(?:am|pm)?)",
+        lower,
+    )
+    if schedule_match:
+        return _fallback_eval(
+            memory_type="event",
+            content=f"用户提到日程时间：{schedule_match.group(1).strip()}",
+            importance_score=5,
+            tags=[],
+        )
+
+    family_match = re.search(
+        r"\b(?:my|i have)\s+(.{0,30})(?:wife|husband|girlfriend|boyfriend|kids?|children|son|daughter)\b.{0,80}",
+        lower,
+    )
+    if family_match:
+        return _fallback_eval(
+            memory_type="relationship",
+            content=f"用户提到家庭或关系：{_clean_memory_fragment(text)}",
+            importance_score=8,
+            tags=[],
+        )
+
+    emotion_match = re.search(r"\b(?:i\s+am|i'm|im|feeling)\s+(lonely|sad|happy|excited|angry|anxious|bored)\b", lower)
+    if emotion_match:
+        return _fallback_eval(
+            memory_type="emotion",
+            content=f"用户情绪状态：{emotion_match.group(1)}",
+            importance_score=5,
+            tags=[emotion_match.group(1)],
+        )
+
+    return None
+
+
+def _fallback_eval(
+    *,
+    memory_type: str,
+    content: str,
+    importance_score: int,
+    tags: list[str],
+) -> dict:
+    return {
+        "is_memory_worthy": True,
+        "memory_type": memory_type,
+        "content": content[:500],
+        "importance_score": importance_score,
+        "confidence": 0.65,
+        "emotion_tags": tags[:3],
+    }
+
+
+def _clean_memory_fragment(value: str) -> str:
+    cleaned = re.sub(r"\s+", " ", value or "").strip(" .,!?\n\t")
+    return cleaned[:120]
 
 
 # ─────────────────────────────────────────────────────────────

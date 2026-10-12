@@ -5,14 +5,14 @@
 
 七条（任一命中且通过门控则建单；同轮只建一张单，取最高优先级命中）：
 
-1. **keyword_human** — 用户显式索要真人/人工/客服（非危机；危机仍走 ``crisis_intervention``）。
+1. **keyword_human** — 用户显式索要真人/人工/客服。
 2. **account_risk_level** — ``users.risk_level`` ∈ {high, critical}。
 3. **profile_risk_score** — ``user_profiles.risk_score`` ≥ ``POLICY_RISK_SCORE_THRESHOLD``。
 4. **loneliness_high** — ``user_profiles.loneliness_score`` ≥ ``POLICY_LONELINESS_THRESHOLD``。
 5. **initiation_hot** — ``initiation_score`` ≥ ``trigger_threshold``（与 D4-4 画像分语义对齐）。
 6. **vip_tier** — ``user_profiles.vip_level`` ≥ ``POLICY_VIP_LEVEL_THRESHOLD``。
-7. **safeguard** — ``users.is_minor_suspected`` 或 ``conversations.handoff_count`` ≥
-   ``POLICY_HANDOFF_COUNT_THRESHOLD``（重复接管风暴 / 未成年疑似）。
+7. **safeguard** — 仅 ``users.is_minor_suspected``。历史人工接管次数不再触发
+   自动转人工，避免用户被放回 AI 后反复进入待人工队列。
 
 门控：本会话已有未关闭 handoff、或会话状态不适合自动建单时跳过。
 ``trigger_reason`` 形如 ``policy:keyword_human``（``VARCHAR(100)`` 内）。
@@ -30,7 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 
-# ── 关键词：显式人工诉求（危机短语由 crisis_intervention 独占）────────────
+# ── 关键词：显式人工诉求 ─────────────────────────────────────────────
 
 _HUMAN_KEYWORD_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(
@@ -94,11 +94,9 @@ def evaluate_policy_hits(
             PolicyHit(code="account_risk_level", priority="P1", wait_operator=False)
         )
 
-    try:
-        hc = int(handoff_count)
-    except (TypeError, ValueError):
-        hc = 0
-    if is_minor_suspected or hc >= int(settings.POLICY_HANDOFF_COUNT_THRESHOLD):
+    # ``handoff_count`` is retained in the function signature for API compatibility,
+    # but it must never be used as an automatic handoff trigger.
+    if is_minor_suspected:
         hits.append(PolicyHit(code="safeguard", priority="P1", wait_operator=True))
 
     if profile:

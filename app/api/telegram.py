@@ -7,13 +7,13 @@ D1-1 + D1-3 + D2-2 + D2-3: Telegram Webhook 接入 + Onboarding + LLM Orchestrat
   Onboarding 完成（step >= 6）         → 走 LLM Orchestrator 生成回复（D2-2）
 
 幂等：Redis SET NX tg-{update_id}
-Redis 短期上下文：ctx:{conv_id} 保留最近 20 条
+Redis 短期上下文：ctx:{conv_id} 保留最近 200 条
 """
 from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
-from core.database import get_db
+from core.database import AsyncSessionLocal, get_db
 from core.config import settings
 from loguru import logger
 import uuid, time, json
@@ -37,16 +37,21 @@ from api.onboarding import (
     DEFAULT_CHARACTER_ID,
 )
 from services.llm_orchestrator import generate_reply, LLMOrchestratorError
+from services.ai_message_limit import AIMessageLimitReached, maybe_handoff_t1_after_ai_cap
 from services.app_download_conversion import get_last_app_download_decision
+from services.app_download_nurture import (
+    schedule_asset_keyword_followup_after_reply,
+    schedule_download_followups_after_reply,
+)
 from services.link_attribution import render_tracking_links_as_html_cta, wrap_text_links_with_tracking
 from services.script_asset_delivery import send_telegram_bot_asset
 from services.memory_writer import maybe_write_memory
 from services.age_extraction import maybe_extract_and_write_age
-from services.content_safety import evaluate_inbound_content_safety
 from services.emotion_lexicon import detect_language_from_text, normalize_language
-from services.minor_protection import evaluate_inbound_minor_protection
 from services.user_level_service import user_level_service
 from services.profile_intake import (
+    city_country_from_text,
+    clear_profile_intake_pending,
     country_from_recent_user_messages,
     country_from_locale,
     country_from_text_language,
@@ -55,21 +60,19 @@ from services.profile_intake import (
     read_profile_completeness,
     write_age,
     write_country_code,
+    write_city_country,
 )
-from services.reply_consistency import (
-    evaluate_reply_consistency,
-    load_reply_consistency_context,
-)
+from services.product_i18n import profile_intake_text
 import asyncio
 import re
 
 router = APIRouter()
 INBOUND_TYPING_START_DELAY_SECONDS = 5.0
 PROFILE_COUNTRY_QUESTION = (
-    "Before we continue, which country are you in? You can reply with a country name or code, like US, Canada, Japan, or Germany."
+    "Before we continue, which city are you in? I'll use it to identify your country."
 )
 PROFILE_COUNTRY_RETRY = (
-    "I could not recognize that country. Please reply with your country name or a two-letter code, like US, GB, JP, or SG."
+    "I couldn't identify that city. Which city are you in?"
 )
 PROFILE_AGE_QUESTION = "Thanks. How old are you?"
 PROFILE_AGE_RETRY = "Lmao you completely ignored my question! How old are you anyway? Tell me a number so I know if you're a big boy or just a baby. 😜"
@@ -85,40 +88,10 @@ TELEGRAM_ONBOARDING_SKIPPED_STEPS = {
     "forbidden_topics": "skipped",
 }
 
-_PROFILE_COPY = {
-    "es": {
-        "country_question": "Antes de seguir, ¿en qué país estás? Puedes responder con el país o el código, como US, Canada, Japan o Germany.",
-        "country_retry": "No pude reconocer ese país. Responde con el nombre de tu país o un código de dos letras, como US, GB, JP o SG.",
-        "age_question": "Gracias. ¿Cuántos años tienes?",
-        "age_retry": "Responde con tu edad en número, por ejemplo 24.",
-    },
-    "pt": {
-        "country_question": "Antes de continuar, em que país você está? Pode responder com o país ou o código, como US, Canada, Japan ou Germany.",
-        "country_retry": "Não consegui reconhecer esse país. Responda com o nome do país ou um código de duas letras, como US, GB, JP ou SG.",
-        "age_question": "Obrigado. Quantos anos você tem?",
-        "age_retry": "Responda com sua idade em número, por exemplo 24.",
-    },
-    "ja": {
-        "country_question": "続ける前に、どの国にいますか？US、Canada、Japan、Germany のように国名かコードで答えてください。",
-        "country_retry": "その国を認識できませんでした。US、GB、JP、SG のように国名か2文字コードで答えてください。",
-        "age_question": "ありがとう。何歳ですか？",
-        "age_retry": "年齢を数字で答えてください。例: 24",
-    },
-    "ko": {
-        "country_question": "계속하기 전에 어느 나라에 있나요? US, Canada, Japan, Germany처럼 나라 이름이나 코드로 답해 주세요.",
-        "country_retry": "그 국가는 인식하지 못했어요. US, GB, JP, SG처럼 국가명이나 두 글자 코드로 답해 주세요.",
-        "age_question": "고마워요. 몇 살인가요?",
-        "age_retry": "나이를 숫자로 답해 주세요. 예: 24",
-    },
-}
-
+from services.product_i18n import profile_intake_text
 
 def _profile_copy(kind: str, text_content: str, fallback: str) -> str:
-    language = normalize_language(
-        detect_language_from_text(text_content or "", default="en"),
-        default="en",
-    )
-    return _PROFILE_COPY.get(language, {}).get(kind, fallback)
+    return profile_intake_text(kind, None, user_text=text_content) or fallback
 
 # ── Redis 单例 ────────────────────────────────────────
 _redis_client = None
@@ -132,7 +105,7 @@ async def get_redis():
     return _redis_client
 
 # ── 常量 ──────────────────────────────────────────────
-CONTEXT_MAX_MESSAGES = 20
+CONTEXT_MAX_MESSAGES = 200
 CONTEXT_TTL_SECONDS  = 86400 * 3
 IDEM_TTL_SECONDS     = 86400
 
@@ -359,21 +332,27 @@ async def _handle_required_profile_intake(
     completeness = await read_profile_completeness(db, user_id=user_id)
 
     if pending == "country":
-        country_code = normalize_country_code(text_content)
+        city, country_code = city_country_from_text(text_content)
+        country_code = country_code or normalize_country_code(text_content)
         if not country_code:
             country_code = await country_from_recent_user_messages(
                 db,
                 user_id=user_id,
             )
         if not country_code:
-            log.info("tg.profile.country_still_missing_continue_chat")
-            return None
-        await write_country_code(
-            db,
-            user_id=user_id,
-            country_code=country_code,
-            source="chat_answer",
-        )
+            retry = _profile_copy("country_retry", text_content, PROFILE_COUNTRY_RETRY)
+            await _send_tg(chat_id, retry, trace_id, typing_delay=True)
+            log.info("tg.profile.city_still_missing")
+            return retry
+        if city:
+            await write_city_country(db, user_id=user_id, city=city, country_code=country_code)
+        else:
+            await write_country_code(
+                db,
+                user_id=user_id,
+                country_code=country_code,
+                source="chat_answer",
+            )
         prefs["profile_intake_pending"] = "age"
         await db.execute(
             text("UPDATE user_profiles SET preferences=:v, updated_at=NOW() WHERE user_id=:uid"),
@@ -389,17 +368,26 @@ async def _handle_required_profile_intake(
         await db.commit()
         age_question = _profile_copy("age_question", text_content, PROFILE_AGE_QUESTION)
         await _send_tg(chat_id, age_question, trace_id, typing_delay=True)
-        log.bind(country_code=country_code).info("tg.profile.country_collected")
+        log.bind(city=city, country_code=country_code).info("tg.profile.country_collected")
         return age_question
 
     if pending == "age":
+        if completeness.age is not None:
+            prefs.pop("profile_intake_pending", None)
+            await clear_profile_intake_pending(db, user_id=user_id)
+            await db.commit()
+            log.bind(age=completeness.age).info("tg.profile.age_already_known")
+            return None
         age = extract_age_from_text(text_content)
         if age is None:
             retry = _profile_copy("age_retry", text_content, PROFILE_AGE_RETRY)
             await _send_tg(chat_id, retry, trace_id, typing_delay=True)
             return retry
         await write_age(db, user_id=user_id, age=age, source="chat_answer")
+        prefs["age"] = age
+        prefs["age_source"] = "chat_answer"
         prefs.pop("profile_intake_pending", None)
+        await clear_profile_intake_pending(db, user_id=user_id)
         await db.execute(
             text("UPDATE user_profiles SET preferences=:v, updated_at=NOW() WHERE user_id=:uid"),
             {"v": json.dumps(prefs, ensure_ascii=False), "uid": user_id},
@@ -747,14 +735,11 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
     await db.commit()
     user_status_row = (
         await db.execute(
-            text("SELECT status, is_minor_suspected FROM users WHERE id=:uid"),
+            text("SELECT status FROM users WHERE id=:uid"),
             {"uid": user_id},
         )
     ).fetchone()
     user_status = str(user_status_row[0] or "active") if user_status_row else "active"
-    is_minor_suspected = (
-        bool(user_status_row[1]) if user_status_row and len(user_status_row) > 1 else False
-    )
     if user_status != "active":
         log.bind(user_status=user_status).info("tg.user_status_blocked")
         return JSONResponse(
@@ -788,44 +773,10 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
         await db.commit()
         log.bind(conv_id=conv_id).info("tg.conversation.created")
 
-    # ── Onboarding 状态 + 未成年人保护 + 内容安全 ────────────────
+    # ── Onboarding 状态 ────────────────
     prefs = await _get_profile_prefs(db, user_id)
     onboarding_step = prefs.get("onboarding_step", 0)
     onboarding_done = onboarding_step >= ONBOARDING_STEPS + 1
-
-    safety_result: dict | None = None
-    safety_blocked = False
-    if text_content != "[non-text]":
-        minor_decision = await evaluate_inbound_minor_protection(
-            db,
-            user_id=user_id,
-            text_value=text_content,
-            is_minor_suspected=is_minor_suspected,
-        )
-        if (
-            minor_decision.suspected_minor
-            or minor_decision.adult_content
-            or minor_decision.updated_user
-        ):
-            safety_result = minor_decision.as_safety_layer()
-        safety_blocked = bool(minor_decision.blocked)
-
-    if (
-        onboarding_done
-        and text_content != "[non-text]"
-        and settings.CONTENT_SAFETY_ENABLED
-    ):
-        content_safety_result = await evaluate_inbound_content_safety(
-            text_content, trace_id=trace_id
-        )
-        if safety_result is None:
-            safety_result = content_safety_result
-        else:
-            safety_result = {
-                **content_safety_result,
-                "minor_protection": safety_result.get("minor_protection"),
-            }
-        safety_blocked = safety_blocked or bool(content_safety_result.get("blocked"))
 
     # ── 持久化用户消息 ────────────────────────────────
     msg_id = await _persist_message(
@@ -834,29 +785,8 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
         "user",
         user_id,
         text_content,
-        safety_result=safety_result,
     )
     log.bind(msg_id=msg_id).info("tg.message.persisted")
-
-    if safety_blocked:
-        await _send_tg(
-            tg_chat_id,
-            "这个话题我没办法聊，换个方向说说？",
-            trace_id,
-        )
-        log.bind(
-            block_reason=safety_result.get("block_reason") if safety_result else None
-        ).info("tg.content_safety.blocked")
-        elapsed = (time.time() - start_ts) * 1000
-        log.bind(elapsed_ms=round(elapsed, 1)).info("tg.webhook.complete")
-        return JSONResponse(
-            {
-                "ok": True,
-                "trace_id": trace_id,
-                "message_id": msg_id,
-                "safety_blocked": True,
-            }
-        )
 
     # Redis 上下文：用户消息
     try:
@@ -877,6 +807,20 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
         external_id=external_id,
         log=log,
     )
+    try:
+        handed = await maybe_handoff_t1_after_ai_cap(
+            db,
+            user_id=user_id,
+            conversation_id=conv_id,
+            trace_id=trace_id,
+        )
+        if handed:
+            await db.commit()
+            elapsed = (time.time() - start_ts) * 1000
+            log.bind(elapsed_ms=round(elapsed, 1)).info("tg.t1_handoff.before_generate")
+            return JSONResponse({"ok": True, "ai_reply": "t1_handoff"})
+    except Exception:
+        await db.rollback()
     if intake_reply:
         try:
             bot_msg_id = await _persist_message(
@@ -941,6 +885,7 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
     bot_reply = None
     bot_reply_message_id = None
     bot_consistency_score = None
+    app_download_decision = None
 
     if not onboarding_done:
         # Onboarding 模式
@@ -952,6 +897,15 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
     else:
         # 普通模式：通过 LLM Orchestrator 生成回复（D2-2 / D2-2.1：带 Redis 短期上下文）
         try:
+            handed = await maybe_handoff_t1_after_ai_cap(
+                db,
+                user_id=user_id,
+                conversation_id=conv_id,
+                trace_id=trace_id,
+            )
+            if handed:
+                await db.commit()
+                return JSONResponse({"ok": True, "ai_reply": "t1_handoff"})
             reply_text = await generate_reply(
                 user_id=user_id,
                 conversation_id=conv_id,
@@ -961,24 +915,24 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
                 db=db,
                 trigger_message_id=msg_id,
             )
+        except AIMessageLimitReached as exc:
+            log.bind(reason=str(exc), is_t1=getattr(exc, "is_t1", False)).info("tg.reply.ai_limit")
+            if getattr(exc, "is_t1", False):
+                try:
+                    handed = await maybe_handoff_t1_after_ai_cap(
+                        db,
+                        user_id=user_id,
+                        conversation_id=conv_id,
+                        trace_id=trace_id,
+                    )
+                    if handed:
+                        await db.commit()
+                except Exception:
+                    await db.rollback()
+            return JSONResponse({"ok": True, "ai_reply": "limited"})
         except LLMOrchestratorError as exc:
             log.bind(result="failed", reason=str(exc)).warning("tg.orchestrator.failed")
             reply_text = "现在有点忙，稍后再聊好吗？"
-
-        try:
-            ctx = await load_reply_consistency_context(db, conv_id)
-        except Exception as exc:
-            log.bind(error_type=type(exc).__name__).warning(
-                "tg.consistency.context_failed"
-            )
-            ctx = {}
-        consistency = evaluate_reply_consistency(
-            reply_text=reply_text,
-            character=ctx.get("character"),
-        )
-        reply_text = consistency.output_text
-        bot_consistency_score = consistency.score
-        log.bind(**consistency.as_log_dict()).info("tg.consistency.checked")
 
         app_download_decision = get_last_app_download_decision()
         bot_reply_message_id = str(uuid.uuid4())
@@ -1078,7 +1032,49 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
                 message_id=bot_reply_message_id,
             )
             await _push_context(redis, conv_id, "assistant", bot_reply, bot_msg_id)
+            try:
+                handed = await maybe_handoff_t1_after_ai_cap(
+                    db,
+                    user_id=user_id,
+                    conversation_id=conv_id,
+                    trace_id=trace_id,
+                )
+                if handed:
+                    await db.commit()
+            except Exception:
+                await db.rollback()
             log.bind(bot_msg_id=bot_msg_id).info("tg.bot_reply.persisted")
+            if tg_chat_id and onboarding_done:
+                is_asset_keyword_reply = (
+                    getattr(app_download_decision, "intent", None) == "asset_keyword_request"
+                )
+                async with AsyncSessionLocal() as nurture_db:
+                    try:
+                        if is_asset_keyword_reply:
+                            await schedule_asset_keyword_followup_after_reply(
+                                nurture_db,
+                                user_id=user_id,
+                                external_user_id=external_id,
+                                conversation_id=conv_id,
+                                chat_id=int(tg_chat_id),
+                                assistant_message_id=bot_msg_id,
+                                trace_id=trace_id,
+                            )
+                        else:
+                            await schedule_download_followups_after_reply(
+                                nurture_db,
+                                user_id=user_id,
+                                external_user_id=external_id,
+                                conversation_id=conv_id,
+                                chat_id=int(tg_chat_id),
+                                assistant_message_id=bot_msg_id,
+                                trace_id=trace_id,
+                            )
+                    except Exception as nurture_exc:
+                        await nurture_db.rollback()
+                        log.bind(error_type=type(nurture_exc).__name__).warning(
+                            "tg.app_download_nurture.schedule_failed"
+                        )
         except Exception as e:
             log.warning(f"tg.bot_reply.persist_failed err={e}")
 

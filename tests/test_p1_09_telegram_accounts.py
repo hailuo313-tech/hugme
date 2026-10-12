@@ -222,6 +222,51 @@ async def test_disconnect_account(account_manager):
 
 
 @pytest.mark.asyncio
+async def test_delete_account_purges_dependencies(account_manager):
+    """Delete should remove dependent rows before removing telegram_accounts."""
+    account_id = uuid4()
+    mock_account = TelegramAccount(
+        id=account_id,
+        phone="+1234567890",
+        session_string="encrypted_session",
+        status="connected",
+        is_active=True,
+    )
+
+    with patch("app.services.telegram_account_manager.AsyncSessionLocal") as mock_session_factory:
+        mock_session = AsyncMock()
+        mock_session.get = AsyncMock(return_value=mock_account)
+        mock_session.delete = MagicMock()
+        mock_session.commit = AsyncMock()
+        mock_session.execute = AsyncMock()
+        mock_session_factory.return_value = _mock_session_context(mock_session)
+
+        success = await account_manager.delete_account(account_id)
+
+        assert success is True
+        assert mock_session.execute.await_count == 3
+        mock_session.delete.assert_called_once_with(mock_account)
+        mock_session.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_delete_account_not_found(account_manager):
+    """Delete returns False when the account does not exist."""
+    account_id = uuid4()
+
+    with patch("app.services.telegram_account_manager.AsyncSessionLocal") as mock_session_factory:
+        mock_session = AsyncMock()
+        mock_session.get = AsyncMock(return_value=None)
+        mock_session_factory.return_value = _mock_session_context(mock_session)
+
+        success = await account_manager.delete_account(account_id)
+
+        assert success is False
+        mock_session.delete.assert_not_called()
+        mock_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_get_any_connected_client(account_manager):
     """Test getting any connected client."""
     # No clients

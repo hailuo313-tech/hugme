@@ -13,6 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.admin import require_operator
 from core.database import get_db
+from core.report_time import beijing_report_window
+from services.admin_attribution_panels import fetch_nurture_summary, fetch_telegram_accounts
 from services.link_attribution import (
     ALLOWED_EVENT_TYPES,
     create_attribution_link as insert_attribution_link,
@@ -274,6 +276,434 @@ async def record_app_attribution_event(
     return {"status": "accepted", "tracking_id": data.tracking_id}
 
 
+@router.get("/api/v1/admin/attribution/summary/core")
+async def admin_attribution_summary_core(
+    days: int = Query(7, ge=1, le=90),
+    selected_date: date_type | None = Query(default=None, alias="date"),
+    _: dict = Depends(require_operator),
+    db: AsyncSession = Depends(get_db),
+):
+    """Lightweight first-screen summary for /admin/data.
+
+    Keep the legacy /summary endpoint intact for the heavier panels while this
+    endpoint returns only the metrics rendered above the fold and the four
+    attribution breakdown blocks.
+    """
+    window = beijing_report_window(days=days, selected_date=selected_date)
+    params = {
+        "days": window["days"],
+        "start_at": window["start_at"],
+        "end_at": window["end_at"],
+        "today_start": window["today_start"],
+        "today_end": window["today_end"],
+    }
+    link_window = "COALESCE(sent_at, created_at) >= :start_at AND COALESCE(sent_at, created_at) < :end_at"
+    event_window = "created_at >= :start_at AND created_at < :end_at"
+    event_window_alias = "e.created_at >= :start_at AND e.created_at < :end_at"
+
+    overview = (
+        await db.execute(
+            text(
+                f"""
+                WITH links AS (
+                    SELECT tracking_id, user_id, sent_at, created_at
+                    FROM attribution_links
+                    WHERE {link_window}
+                ),
+                events AS (
+                    SELECT e.*
+                    FROM attribution_events e
+                    WHERE {event_window_alias}
+                ),
+                first_events AS (
+                    SELECT
+                        tracking_id,
+                        MIN(created_at) FILTER (WHERE event_type = 'click') AS first_click_at,
+                        MIN(created_at) FILTER (WHERE event_type = 'app_register') AS first_register_at,
+                        MIN(created_at) FILTER (WHERE event_type = 'payment') AS first_payment_at
+                    FROM attribution_events
+                    WHERE {event_window}
+                    GROUP BY tracking_id
+                )
+                SELECT
+                    COUNT(DISTINCT l.tracking_id) AS sent_links,
+                    COUNT(DISTINCT l.user_id) AS sent_users,
+                    COUNT(DISTINCT e.tracking_id) FILTER (WHERE e.event_type = 'link_exposed') AS exposed_links,
+                    COUNT(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'link_exposed') AS exposed_users,
+                    COUNT(DISTINCT e.tracking_id) FILTER (WHERE e.event_type = 'click') AS clicked_links,
+                    COUNT(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'click') AS click_users,
+                    COUNT(*) FILTER (WHERE e.event_type = 'click') AS click_events,
+                    COUNT(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'download_page') AS download_page_users,
+                    COUNT(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'download') AS download_users,
+                    COUNT(DISTINCT COALESCE(e.app_user_id, e.user_id::text)) FILTER (WHERE e.event_type = 'app_register') AS register_users,
+                    COUNT(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'payment') AS paid_users,
+                    COALESCE(SUM(e.amount_cents) FILTER (WHERE e.event_type = 'payment'), 0) AS revenue_cents,
+                    COUNT(DISTINCT e.user_id) FILTER (
+                        WHERE e.event_type = 'payment' AND e.user_level IN ('A', 'S')
+                    ) AS upgraded_paid_users,
+                    COUNT(DISTINCT e.user_id) FILTER (
+                        WHERE e.event_type = 'click'
+                          AND e.created_at >= :today_start
+                          AND e.created_at < :today_end
+                    ) AS today_click_users,
+                    COALESCE(AVG(EXTRACT(EPOCH FROM (f.first_click_at - COALESCE(l.sent_at, l.created_at)))) FILTER (
+                        WHERE f.first_click_at IS NOT NULL
+                    ), 0) AS avg_sent_to_click_seconds,
+                    COALESCE(AVG(EXTRACT(EPOCH FROM (f.first_register_at - f.first_click_at))) FILTER (
+                        WHERE f.first_click_at IS NOT NULL AND f.first_register_at IS NOT NULL
+                    ), 0) AS avg_click_to_register_seconds,
+                    COALESCE(AVG(EXTRACT(EPOCH FROM (f.first_payment_at - f.first_click_at))) FILTER (
+                        WHERE f.first_click_at IS NOT NULL AND f.first_payment_at IS NOT NULL
+                    ), 0) AS avg_click_to_payment_seconds
+                FROM links l
+                LEFT JOIN events e ON e.tracking_id = l.tracking_id
+                LEFT JOIN first_events f ON f.tracking_id = l.tracking_id
+                """
+            ),
+            params,
+        )
+    ).fetchone()
+
+    tg_overview = (
+        await db.execute(
+            text(
+                f"""
+                SELECT
+                    (
+                        SELECT COUNT(*)
+                        FROM (
+                            SELECT c.user_id
+                            FROM messages m
+                            JOIN conversations c ON c.id = m.conversation_id
+                            JOIN users u ON u.id = c.user_id
+                            WHERE m.sender_type = 'user'
+                              AND m.telegram_account_id IS NOT NULL
+                              AND u.channel = 'telegram_real_user'
+                            GROUP BY c.user_id
+                            HAVING MIN(m.created_at) >= :start_at
+                               AND MIN(m.created_at) < :end_at
+                        ) real_inbound_users
+                    ) AS tg_new_users,
+                    (
+                        SELECT COUNT(DISTINCT c.user_id)
+                        FROM messages m
+                        JOIN conversations c ON c.id = m.conversation_id
+                        JOIN users u ON u.id = c.user_id
+                        WHERE m.sender_type = 'assistant'
+                          AND m.created_at >= :start_at
+                          AND m.created_at < :end_at
+                          AND u.channel = 'telegram_real_user'
+                    ) AS tg_served_users
+                """
+            ),
+            params,
+        )
+    ).fetchone()
+
+    # Video cards are above the fold too. Returning placeholder zeroes here
+    # made the page show incorrect data whenever the heavier summary request
+    # was slow or failed, even though call_broadcast_jobs already had records.
+    operator_review_source_sql = "'inbound_operator_review', 'inbound_keyword_review'"
+    video_call_overview = (
+        await db.execute(
+            text(
+                f"""
+                SELECT
+                    COUNT(DISTINCT chat_id) FILTER (WHERE chat_id IS NOT NULL),
+                    COUNT(*) FILTER (WHERE status = 'completed'),
+                    COUNT(*) FILTER (
+                        WHERE trigger_source = 'inbound_call' AND status = 'completed'
+                    ),
+                    COUNT(*) FILTER (
+                        WHERE trigger_source IN ({operator_review_source_sql})
+                    ),
+                    COUNT(*) FILTER (
+                        WHERE trigger_source IN ({operator_review_source_sql})
+                          AND status = 'completed'
+                    ),
+                    COUNT(*) FILTER (
+                        WHERE trigger_source IN ({operator_review_source_sql})
+                          AND status = 'cancelled'
+                    ),
+                    COUNT(*),
+                    COALESCE(
+                        AVG(EXTRACT(EPOCH FROM (ended_at - started_at))) FILTER (
+                            WHERE status = 'completed'
+                              AND started_at IS NOT NULL AND ended_at IS NOT NULL
+                        ), 0
+                    )
+                FROM call_broadcast_jobs
+                WHERE created_at >= :start_at AND created_at < :end_at
+                """
+            ),
+            params,
+        )
+    ).fetchone()
+
+    async def fetch_rows(sql: str) -> list[Any]:
+        return list((await db.execute(text(sql), params)).fetchall())
+
+    dimension_sql = f"""
+        SELECT
+            {{key_expr}} AS key,
+            COUNT(*) FILTER (WHERE e.event_type = 'link_exposed') AS exposures,
+            COUNT(*) FILTER (WHERE e.event_type = 'click') AS clicks,
+            COUNT(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'click') AS click_users,
+            COUNT(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'download') AS downloads,
+            COUNT(DISTINCT COALESCE(e.app_user_id, e.user_id::text)) FILTER (WHERE e.event_type = 'app_register') AS registrations,
+            COUNT(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'payment') AS payments,
+            COALESCE(SUM(e.amount_cents) FILTER (WHERE e.event_type = 'payment'), 0) AS revenue_cents
+        FROM attribution_events e
+        LEFT JOIN attribution_links l ON l.tracking_id = e.tracking_id
+        WHERE {event_window_alias}
+        GROUP BY 1
+        ORDER BY {{order_expr}} DESC, clicks DESC
+        LIMIT 10
+    """
+    country_rows = await fetch_rows(
+        f"""
+        SELECT
+            COALESCE(e.country_code, l.country_code, 'UNKNOWN') AS key,
+            COUNT(*) FILTER (WHERE e.event_type = 'link_exposed') AS exposures,
+            COUNT(*) FILTER (WHERE e.event_type = 'click') AS clicks,
+            COUNT(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'click') AS click_users,
+            COUNT(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'download') AS downloads,
+            COUNT(DISTINCT COALESCE(e.app_user_id, e.user_id::text)) FILTER (WHERE e.event_type = 'app_register') AS registrations,
+            COUNT(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'payment') AS payments,
+            COALESCE(SUM(e.amount_cents) FILTER (WHERE e.event_type = 'payment'), 0) AS revenue_cents,
+            BOOL_OR(COALESCE(l.is_t1_country, false)) AS is_t1_country
+        FROM attribution_events e
+        LEFT JOIN attribution_links l ON l.tracking_id = e.tracking_id
+        WHERE {event_window_alias}
+        GROUP BY 1
+        ORDER BY clicks DESC, payments DESC
+        LIMIT 10
+        """
+    )
+    age_rows = await fetch_rows(
+        dimension_sql.format(
+            key_expr=(
+                "CASE "
+                "WHEN COALESCE(e.age, l.age) IS NULL THEN 'unknown' "
+                "WHEN COALESCE(e.age, l.age) < 18 THEN '<18' "
+                "WHEN COALESCE(e.age, l.age) BETWEEN 18 AND 24 THEN '18-24' "
+                "WHEN COALESCE(e.age, l.age) BETWEEN 25 AND 34 THEN '25-34' "
+                "WHEN COALESCE(e.age, l.age) BETWEEN 35 AND 44 THEN '35-44' "
+                "ELSE '45+' END"
+            ),
+            order_expr="clicks",
+        )
+    )
+    level_rows = await fetch_rows(
+        dimension_sql.format(key_expr="COALESCE(e.user_level, l.user_level, 'UNKNOWN')", order_expr="payments")
+    )
+    category_rows = await fetch_rows(
+        dimension_sql.format(key_expr="COALESCE(l.script_category, 'unknown')", order_expr="payments")
+    )
+    script_sql = f"""
+        SELECT
+            COALESCE(l.script_hit_id, l.script_template_id::text, 'unknown') AS script_key,
+            MIN(l.script_template_id::text) AS script_template_id,
+            MIN(l.script_hit_id) AS script_hit_id,
+            MIN(l.intent) AS intent,
+            MIN(l.persona_slug) AS persona,
+            MIN(l.scene_step) AS scene_step,
+            MIN(l.sender_account_id) AS sender_account_id,
+            COUNT(*) FILTER (WHERE e.event_type = 'click') AS clicks,
+            COUNT(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'download') AS downloads,
+            COUNT(DISTINCT COALESCE(e.app_user_id, e.user_id::text)) FILTER (WHERE e.event_type = 'app_register') AS registrations,
+            COUNT(DISTINCT e.user_id) FILTER (WHERE e.event_type = 'payment') AS payments,
+            COALESCE(SUM(e.amount_cents) FILTER (WHERE e.event_type = 'payment'), 0) AS revenue_cents,
+            MIN(st.content) AS script_content,
+            MIN(st.operator_translation_zh) AS operator_translation_zh
+        FROM attribution_events e
+        LEFT JOIN attribution_links l ON l.tracking_id = e.tracking_id
+        LEFT JOIN script_templates st
+          ON st.id = l.script_template_id
+          OR st.id::text = l.script_hit_id
+        WHERE {event_window_alias}
+        GROUP BY 1
+        ORDER BY {{order_expr}} DESC, clicks DESC
+        LIMIT 10
+    """
+    top_click_scripts = await fetch_rows(script_sql.format(order_expr="clicks"))
+    top_download_scripts = await fetch_rows(script_sql.format(order_expr="downloads"))
+
+    def value(row: Any, idx: int, default: Any = 0) -> Any:
+        try:
+            return row[idx]
+        except Exception:
+            return default
+
+    def rate(numerator: int, denominator: int) -> float:
+        return numerator / denominator if denominator else 0
+
+    def dimension(row: Any) -> dict[str, Any]:
+        return {
+            "key": value(row, 0, "unknown"),
+            "exposures": int(value(row, 1) or 0),
+            "clicks": int(value(row, 2) or 0),
+            "click_users": int(value(row, 3) or 0),
+            "downloads": int(value(row, 4) or 0),
+            "registrations": int(value(row, 5) or 0),
+            "payments": int(value(row, 6) or 0),
+            "revenue_cents": int(value(row, 7) or 0),
+        }
+
+    def script(row: Any) -> dict[str, Any]:
+        return {
+            "script_key": value(row, 0, "unknown"),
+            "script_template_id": value(row, 1, None),
+            "script_hit_id": value(row, 2, None),
+            "intent": value(row, 3, None),
+            "persona": value(row, 4, None),
+            "scene_step": value(row, 5, None),
+            "sender_account_id": value(row, 6, None),
+            "clicks": int(value(row, 7) or 0),
+            "downloads": int(value(row, 8) or 0),
+            "registrations": int(value(row, 9) or 0),
+            "payments": int(value(row, 10) or 0),
+            "revenue_cents": int(value(row, 11) or 0),
+            "content": value(row, 12, None),
+            "operator_translation_zh": value(row, 13, None),
+        }
+
+    sent_links = int(value(overview, 0) or 0)
+    sent_users = int(value(overview, 1) or 0)
+    exposed_links = int(value(overview, 2) or 0)
+    exposed_users = int(value(overview, 3) or 0)
+    click_users = int(value(overview, 5) or 0)
+    click_events = int(value(overview, 6) or 0)
+    download_page_users = int(value(overview, 7) or 0)
+    downloads = int(value(overview, 8) or 0)
+    registrations = int(value(overview, 9) or 0)
+    payments = int(value(overview, 10) or 0)
+    revenue_cents = int(value(overview, 11) or 0)
+    video_participating_users = int(value(video_call_overview, 0) or 0)
+    video_completed_calls = int(value(video_call_overview, 1) or 0)
+    video_auto_answer_completed = int(value(video_call_overview, 2) or 0)
+    video_operator_queue_entered = int(value(video_call_overview, 3) or 0)
+    video_operator_accepted = int(value(video_call_overview, 4) or 0)
+    video_operator_cancelled = int(value(video_call_overview, 5) or 0)
+    video_total_jobs = int(value(video_call_overview, 6) or 0)
+    video_avg_duration_seconds = float(value(video_call_overview, 7) or 0)
+
+    return {
+        "days": days,
+        "date": window["date"].isoformat() if window["date"] else None,
+        "mode": window["mode"],
+        "timezone": window["timezone"],
+        "range_start_date": window["range_start_date"],
+        "range_end_date": window["range_end_date"],
+        "overview": {
+            "sent_links": sent_links,
+            "sent_users": sent_users,
+            "exposed_links": exposed_links,
+            "exposed_users": exposed_users,
+            "clicked_links": int(value(overview, 4) or 0),
+            "click_events": click_events,
+            "click_users": click_users,
+            "unique_click_users": click_users,
+            "today_click_users": int(value(overview, 13) or 0),
+            "download_page_users": download_page_users,
+            "download_users": downloads,
+            "register_users": registrations,
+            "paid_users": payments,
+            "upgraded_paid_users": int(value(overview, 12) or 0),
+            "revenue_cents": revenue_cents,
+            "click_rate": rate(click_users, sent_users or exposed_users),
+            "click_to_download_page_rate": rate(download_page_users, click_users),
+            "click_to_download_rate": rate(downloads, click_users),
+            "download_to_register_rate": rate(registrations, downloads),
+            "click_to_register_rate": rate(registrations, click_users),
+            "register_to_pay_rate": rate(payments, registrations),
+            "click_to_pay_rate": rate(payments, click_users),
+            "avg_sent_to_click_seconds": float(value(overview, 14) or 0),
+            "avg_click_to_register_seconds": float(value(overview, 15) or 0),
+            "avg_click_to_payment_seconds": float(value(overview, 16) or 0),
+            "tg_new_users": int(value(tg_overview, 0) or 0),
+            "tg_served_users": int(value(tg_overview, 1) or 0),
+        },
+        "video_calls": {
+            "participating_users": video_participating_users,
+            "completed_calls": video_completed_calls,
+            "auto_answer_completed": video_auto_answer_completed,
+            "operator_queue_entered": video_operator_queue_entered,
+            "operator_accepted": video_operator_accepted,
+            "operator_cancelled": video_operator_cancelled,
+            "total_jobs": video_total_jobs,
+            "completion_rate": rate(video_completed_calls, video_total_jobs),
+            "operator_accept_rate": rate(video_operator_accepted, video_operator_queue_entered),
+            "auto_answer_share": rate(video_auto_answer_completed, video_completed_calls),
+            "avg_duration_seconds": video_avg_duration_seconds,
+        },
+        "nurture": {"buckets": [], "stop_reasons": [], "failure_reasons": []},
+        "funnel": [
+            {"step": "话术发送", "users": sent_users, "events": sent_links},
+            {"step": "链接曝光", "users": exposed_users, "events": exposed_links},
+            {"step": "链接点击", "users": click_users, "events": click_events},
+            {"step": "下载页访问", "users": download_page_users, "events": download_page_users},
+            {"step": "App 下载", "users": downloads, "events": downloads},
+            {"step": "App 注册", "users": registrations, "events": registrations},
+            {"step": "首次付费", "users": payments, "events": payments},
+        ],
+        "countries": [
+            {**dimension(r), "country_code": value(r, 0, "UNKNOWN"), "is_t1_country": bool(value(r, 8, False))}
+            for r in country_rows
+        ],
+        "age_bands": [dimension(r) for r in age_rows],
+        "levels": [dimension(r) for r in level_rows],
+        "personas": [],
+        "intents": [],
+        "platforms": [],
+        "devices": [],
+        "sender_accounts": [],
+        "script_categories": [dimension(r) for r in category_rows],
+        "top_click_scripts": [script(r) for r in top_click_scripts],
+        "top_download_scripts": [script(r) for r in top_download_scripts],
+        "top_register_scripts": [],
+        "top_payment_scripts": [],
+        "top_scripts": [],
+        "links": [],
+        "clicked_users": [],
+        "telegram_accounts": [],
+    }
+
+
+@router.get("/api/v1/admin/attribution/nurture")
+async def admin_attribution_nurture(
+    _: dict = Depends(require_operator),
+    db: AsyncSession = Depends(get_db),
+):
+    """Independent nurture panel. Not tied to the selected report date."""
+    return await fetch_nurture_summary(db)
+
+
+@router.get("/api/v1/admin/attribution/telegram-accounts")
+async def admin_attribution_telegram_accounts(
+    days: int = Query(7, ge=1, le=90),
+    selected_date: date_type | None = Query(default=None, alias="date"),
+    refresh: bool = Query(False),
+    _: dict = Depends(require_operator),
+    db: AsyncSession = Depends(get_db),
+):
+    window = beijing_report_window(days=days, selected_date=selected_date)
+    params = {
+        "days": window["days"],
+        "start_at": window["start_at"],
+        "end_at": window["end_at"],
+        "today_start": window["today_start"],
+        "today_end": window["today_end"],
+    }
+    event_window = "created_at >= :start_at AND created_at < :end_at"
+    call_window = "j.created_at >= :start_at AND j.created_at < :end_at"
+    return {
+        "telegram_accounts": await fetch_telegram_accounts(
+            db, params, event_window, call_window, bypass_cache=refresh
+        )
+    }
+
+
 @router.get("/api/v1/admin/attribution/summary")
 async def admin_attribution_summary(
     days: int = Query(7, ge=1, le=90),
@@ -281,24 +711,25 @@ async def admin_attribution_summary(
     _: dict = Depends(require_operator),
     db: AsyncSession = Depends(get_db),
 ):
-    if selected_date:
-        params = {
-            "days": days,
-            "start_at": selected_date,
-            "end_at": selected_date + timedelta(days=1),
-        }
-        link_window = "COALESCE(sent_at, created_at) >= :start_at AND COALESCE(sent_at, created_at) < :end_at"
-        link_window_alias = "COALESCE(l.sent_at, l.created_at) >= :start_at AND COALESCE(l.sent_at, l.created_at) < :end_at"
-        event_window = "created_at >= :start_at AND created_at < :end_at"
-        event_window_alias = "e.created_at >= :start_at AND e.created_at < :end_at"
-        user_window = "u.created_at >= :start_at AND u.created_at < :end_at"
-    else:
-        params = {"days": days}
-        link_window = "COALESCE(sent_at, created_at) >= NOW() - (:days * INTERVAL '1 day')"
-        link_window_alias = "COALESCE(l.sent_at, l.created_at) >= NOW() - (:days * INTERVAL '1 day')"
-        event_window = "created_at >= NOW() - (:days * INTERVAL '1 day')"
-        event_window_alias = "e.created_at >= NOW() - (:days * INTERVAL '1 day')"
-        user_window = "u.created_at >= NOW() - (:days * INTERVAL '1 day')"
+    window = beijing_report_window(days=days, selected_date=selected_date)
+    params = {
+        "days": window["days"],
+        "start_at": window["start_at"],
+        "end_at": window["end_at"],
+        "today_start": window["today_start"],
+        "today_end": window["today_end"],
+    }
+    link_window = "COALESCE(sent_at, created_at) >= :start_at AND COALESCE(sent_at, created_at) < :end_at"
+    link_window_alias = "COALESCE(l.sent_at, l.created_at) >= :start_at AND COALESCE(l.sent_at, l.created_at) < :end_at"
+    event_window = "created_at >= :start_at AND created_at < :end_at"
+    event_window_alias = "e.created_at >= :start_at AND e.created_at < :end_at"
+    call_window = "j.created_at >= :start_at AND j.created_at < :end_at"
+    operator_review_sources = (
+        "'inbound_operator_review'",
+        "'inbound_keyword_review'",
+    )
+    operator_review_source_sql = ", ".join(operator_review_sources)
+    user_window = "u.created_at >= :start_at AND u.created_at < :end_at"
     overview = (
         await db.execute(
             text(
@@ -342,7 +773,9 @@ async def admin_attribution_summary(
                         WHERE e.event_type = 'payment' AND e.user_level IN ('A', 'S')
                     ) AS upgraded_paid_users,
                     COUNT(DISTINCT e.user_id) FILTER (
-                        WHERE e.event_type = 'click' AND e.created_at::date = CURRENT_DATE
+                        WHERE e.event_type = 'click'
+                          AND e.created_at >= :today_start
+                          AND e.created_at < :today_end
                     ) AS today_click_users,
                     COALESCE(AVG(EXTRACT(EPOCH FROM (f.first_click_at - COALESCE(l.sent_at, l.created_at)))) FILTER (
                         WHERE f.first_click_at IS NOT NULL
@@ -352,7 +785,35 @@ async def admin_attribution_summary(
                     ), 0) AS avg_click_to_register_seconds,
                     COALESCE(AVG(EXTRACT(EPOCH FROM (f.first_payment_at - f.first_click_at))) FILTER (
                         WHERE f.first_click_at IS NOT NULL AND f.first_payment_at IS NOT NULL
-                    ), 0) AS avg_click_to_payment_seconds
+                    ), 0) AS avg_click_to_payment_seconds,
+                    (
+                        SELECT COUNT(*)
+                        FROM (
+                            SELECT c.user_id
+                            FROM messages m
+                            JOIN conversations c ON c.id = m.conversation_id
+                            JOIN users u ON u.id = c.user_id
+                            WHERE m.sender_type = 'user'
+                              AND m.telegram_account_id IS NOT NULL
+                              AND u.channel = 'telegram_real_user'
+                            GROUP BY c.user_id
+                            HAVING MIN(m.created_at) >= :start_at
+                               AND MIN(m.created_at) < :end_at
+                        ) real_inbound_users
+                    ) AS tg_new_users,
+                    (
+                        SELECT COUNT(DISTINCT c.user_id)
+                        FROM messages m
+                        JOIN conversations c ON c.id = m.conversation_id
+                        JOIN users u ON u.id = c.user_id
+                        WHERE m.sender_type = 'assistant'
+                          AND m.sender_id IN (
+                              SELECT ta.id::text FROM telegram_accounts ta
+                          )
+                          AND m.created_at >= :start_at
+                          AND m.created_at < :end_at
+                          AND u.channel = 'telegram_real_user'
+                    ) AS tg_served_users
                 FROM links l
                 LEFT JOIN events e ON e.tracking_id = l.tracking_id
                 LEFT JOIN first_events f ON f.tracking_id = l.tracking_id
@@ -544,32 +1005,45 @@ async def admin_attribution_summary(
         LIMIT 500
         """
     )
-    telegram_account_rows = await fetch_rows(
-        f"""
-        SELECT
-            ta.id::text AS account_id,
-            COALESCE(NULLIF(ta.display_name, ''), NULLIF(ta.username, ''), ta.phone, ta.id::text) AS account_label,
-            ta.phone,
-            ta.username,
-            COUNT(DISTINCT c.user_id) FILTER (WHERE m.id IS NOT NULL) AS served_users,
-            COUNT(DISTINCT c.user_id) FILTER (
-                WHERE m.id IS NOT NULL
-                  AND {user_window}
-            ) AS new_users,
-            COUNT(m.id) AS assistant_messages,
-            MAX(m.created_at) AS last_message_at
-        FROM telegram_accounts ta
-        LEFT JOIN messages m
-          ON m.sender_id = ta.id::text
-         AND m.sender_type = 'assistant'
-         AND {event_window.replace("created_at", "m.created_at")}
-        LEFT JOIN conversations c ON c.id = m.conversation_id
-        LEFT JOIN users u ON u.id = c.user_id AND u.channel = 'telegram_real_user'
-        GROUP BY ta.id, ta.display_name, ta.username, ta.phone
-        ORDER BY served_users DESC, new_users DESC, assistant_messages DESC, account_label ASC
-        LIMIT 50
-        """
-    )
+    video_call_overview = (
+        await db.execute(
+            text(
+                f"""
+                SELECT
+                    COUNT(DISTINCT chat_id) FILTER (WHERE chat_id IS NOT NULL) AS participating_users,
+                    COUNT(*) FILTER (WHERE status = 'completed') AS completed_calls,
+                    COUNT(*) FILTER (
+                        WHERE trigger_source = 'inbound_call' AND status = 'completed'
+                    ) AS auto_answer_completed,
+                    COUNT(*) FILTER (
+                        WHERE trigger_source IN ({operator_review_source_sql})
+                    ) AS operator_queue_entered,
+                    COUNT(*) FILTER (
+                        WHERE trigger_source IN ({operator_review_source_sql})
+                          AND status = 'completed'
+                    ) AS operator_accepted,
+                    COUNT(*) FILTER (
+                        WHERE trigger_source IN ({operator_review_source_sql})
+                          AND status = 'cancelled'
+                    ) AS operator_cancelled,
+                    COUNT(*) AS total_jobs,
+                    COALESCE(
+                        AVG(EXTRACT(EPOCH FROM (ended_at - started_at))) FILTER (
+                            WHERE status = 'completed'
+                              AND started_at IS NOT NULL
+                              AND ended_at IS NOT NULL
+                        ),
+                        0
+                    ) AS avg_duration_seconds
+                FROM call_broadcast_jobs j
+                WHERE {call_window}
+                """
+            ),
+            params,
+        )
+    ).fetchone()
+    # Nurture + TG reception live on dedicated endpoints so this payload
+    # no longer waits on those two heavy queries.
 
     def value(row: Any, idx: int, default: Any = 0) -> Any:
         try:
@@ -624,12 +1098,26 @@ async def admin_attribution_summary(
     revenue_cents = int(value(overview, 11) or 0)
     upgraded_paid_users = int(value(overview, 12) or 0)
     today_click_users = int(value(overview, 13) or 0)
-    tg_new_users = sum(int(value(r, 5) or 0) for r in telegram_account_rows)
-    tg_served_users = sum(int(value(r, 4) or 0) for r in telegram_account_rows)
+    # These headline metrics are global user counts. Do not derive them by
+    # summing per-account rows: that excludes new users awaiting their first
+    # reply and can double-count users served by more than one account.
+    tg_new_users = int(value(overview, 17) or 0)
+    tg_served_users = int(value(overview, 18) or 0)
+    video_participating_users = int(value(video_call_overview, 0) or 0)
+    video_completed_calls = int(value(video_call_overview, 1) or 0)
+    video_auto_answer_completed = int(value(video_call_overview, 2) or 0)
+    video_operator_queue_entered = int(value(video_call_overview, 3) or 0)
+    video_operator_accepted = int(value(video_call_overview, 4) or 0)
+    video_operator_cancelled = int(value(video_call_overview, 5) or 0)
+    video_total_jobs = int(value(video_call_overview, 6) or 0)
+    video_avg_duration_seconds = float(value(video_call_overview, 7) or 0)
     return {
         "days": days,
-        "date": selected_date.isoformat() if selected_date else None,
-        "mode": "daily" if selected_date else "range",
+        "date": window["date"].isoformat() if window["date"] else None,
+        "mode": window["mode"],
+        "timezone": window["timezone"],
+        "range_start_date": window["range_start_date"],
+        "range_end_date": window["range_end_date"],
         "overview": {
             "sent_links": sent_links,
             "sent_users": sent_users,
@@ -659,6 +1147,20 @@ async def admin_attribution_summary(
             "tg_new_users": tg_new_users,
             "tg_served_users": tg_served_users,
         },
+        "video_calls": {
+            "participating_users": video_participating_users,
+            "completed_calls": video_completed_calls,
+            "auto_answer_completed": video_auto_answer_completed,
+            "operator_queue_entered": video_operator_queue_entered,
+            "operator_accepted": video_operator_accepted,
+            "operator_cancelled": video_operator_cancelled,
+            "total_jobs": video_total_jobs,
+            "completion_rate": rate(video_completed_calls, video_total_jobs),
+            "operator_accept_rate": rate(video_operator_accepted, video_operator_queue_entered),
+            "auto_answer_share": rate(video_auto_answer_completed, video_completed_calls),
+            "avg_duration_seconds": video_avg_duration_seconds,
+        },
+        "nurture": {"buckets": [], "stop_reasons": [], "failure_reasons": []},
         "funnel": [
             {"step": "话术发送", "users": sent_users, "events": sent_links},
             {"step": "链接曝光", "users": exposed_users, "events": exposed_links},
@@ -724,19 +1226,7 @@ async def admin_attribution_summary(
             }
             for r in clicked_user_rows
         ],
-        "telegram_accounts": [
-            {
-                "account_id": value(r, 0, ""),
-                "account_label": value(r, 1, "unknown"),
-                "phone": value(r, 2, None),
-                "username": value(r, 3, None),
-                "served_users": int(value(r, 4) or 0),
-                "new_users": int(value(r, 5) or 0),
-                "assistant_messages": int(value(r, 6) or 0),
-                "last_message_at": value(r, 7, None).isoformat() if value(r, 7, None) else None,
-            }
-            for r in telegram_account_rows
-        ],
+        "telegram_accounts": [],
     }
 
 

@@ -41,8 +41,8 @@ class Settings(BaseSettings):
     # 同一会话硬性限制：距上一条含链接的助手消息不足 N 分钟则不得再发链接
     APP_DOWNLOAD_LINK_COOLDOWN_MINUTES: int = 15
     APP_DOWNLOAD_CONVERSION_ENABLED: bool = True
-    # 用户第 N 条消息内必须收到一次 App 链接；1 表示第一条用户消息后的回复就要带链接。
-    APP_DOWNLOAD_EARLY_LINK_USER_MESSAGE_LIMIT: int = 1
+    # 已关闭：开场不再强制发 App 链接。
+    APP_DOWNLOAD_EARLY_LINK_USER_MESSAGE_LIMIT: int = 0
     APP_DOWNLOAD_NURTURE_ENABLED: bool = True
     # 培育 v3：沉默三轮视频邀请（秒）
     APP_DOWNLOAD_NURTURE_ROUND1_SECONDS: int = 300

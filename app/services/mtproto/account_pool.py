@@ -93,6 +93,10 @@ class AccountPool:
         **send_kwargs: Any,
     ) -> AccountPoolSendResult:
         route = await self.resolve_account(user_id)
+        from services.runtime_ownership import legacy_worker_should_handle_account
+
+        if not await legacy_worker_should_handle_account(route.account_id):
+            raise PermissionError(f"runtime_owned:{route.account_id}")
         client = await self.client_resolver(route.account_id)
         if client is None:
             raise LookupError(f"no connected MTProto client for account_id={route.account_id}")

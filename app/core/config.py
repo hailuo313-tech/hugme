@@ -43,8 +43,8 @@ class Settings(BaseSettings):
     # 同一会话硬性限制：距上一条含链接的助手消息不足 N 分钟则不得再发链接
     APP_DOWNLOAD_LINK_COOLDOWN_MINUTES: int = 15
     APP_DOWNLOAD_CONVERSION_ENABLED: bool = True
-    # 用户第 N 条消息内必须收到一次 App 链接；1 表示第一条用户消息后的回复就要带链接。
-    APP_DOWNLOAD_EARLY_LINK_USER_MESSAGE_LIMIT: int = 1
+    # 已关闭：开场不再强制发 App 链接。0 表示不启用该规则。
+    APP_DOWNLOAD_EARLY_LINK_USER_MESSAGE_LIMIT: int = 0
     APP_DOWNLOAD_NURTURE_ENABLED: bool = True
     # 培育 v3：沉默三轮视频邀请（秒）
     APP_DOWNLOAD_NURTURE_ROUND1_SECONDS: int = 300
@@ -82,6 +82,37 @@ class Settings(BaseSettings):
     def _empty_api_id_to_none(cls, v: object) -> object:
         if v is None or v == "":
             return None
+        return v
+
+    @field_validator("PROCESS_ROLE", mode="before")
+    @classmethod
+    def _normalize_process_role(cls, v: object) -> object:
+        if v is None or v == "":
+            return "all"
+        raw = str(v).strip().lower()
+        if raw not in {"all", "api", "telegram_runtime"}:
+            return "all"
+        return raw
+
+    @field_validator("RUNTIME_SHADOW_MODE", mode="before")
+    @classmethod
+    def _empty_shadow_mode_to_false(cls, v: object) -> object:
+        if v is None or v == "":
+            return False
+        return v
+
+    @field_validator("RUNTIME_CANARY_ENABLED", mode="before")
+    @classmethod
+    def _empty_canary_to_false(cls, v: object) -> object:
+        if v is None or v == "":
+            return False
+        return v
+
+    @field_validator("LEGACY_TELEGRAM_RUNTIME_ENABLED", mode="before")
+    @classmethod
+    def _empty_legacy_runtime_to_true(cls, v: object) -> object:
+        if v is None or v == "":
+            return True
         return v
     # D2-2: 上游 LLM 失败时是否回退为 "echo: <user_text>"。
     # 默认 False（失败抛 LLMOrchestratorError，调用方决定如何兜底）；
@@ -210,6 +241,14 @@ class Settings(BaseSettings):
     APNS_KEY_PATH: Optional[str] = None  # APNs 私钥文件路径（.p8）
     APNS_BUNDLE_ID: str = 'com.hugme.app'  # App Bundle ID
     APNS_PRODUCTION: bool = False  # 是否使用生产环境 APNs（False = 开发环境）
+    # 运行角色：all 保持当前单体行为；api / telegram_runtime 供后续拆分。
+    PROCESS_ROLE: str = "all"
+    # 阶段 4：仅 telegram_runtime + 本开关才启动影子消费者。生产默认关。
+    RUNTIME_SHADOW_MODE: bool = False
+    # 阶段 8：Canary 逐账号迁移。生产默认关，没有人工打开时不会切换任何账号。
+    RUNTIME_CANARY_ENABLED: bool = False
+    # 阶段 9：关闭 Legacy Telegram Runtime。生产默认 true，没有人工关闭时 Legacy 继续跑。
+    LEGACY_TELEGRAM_RUNTIME_ENABLED: bool = True
     # P1-18：Session 管理器配置（自动重连 + 健康检查）
     SESSION_MANAGER_ENABLED: bool = False  # 是否启用 Session 管理器
     SESSION_RECONNECT_INTERVAL: int = 30  # 重连间隔（秒）
@@ -261,6 +300,16 @@ class Settings(BaseSettings):
     CALL_BROADCAST_STALE_ACTIVE_MIN_SECONDS: int = 300
     # Optional ceiling for inbound auto-answer dial+stream wall clock (0 = derive from media).
     CALL_BROADCAST_INCOMING_WALL_TIMEOUT_SECONDS: int = 0
+    # 自动播放视频通话时抓对方画面：首帧立刻存，之后每 N 秒一张。
+    CALL_BROADCAST_REMOTE_STILL_ENABLED: bool = True
+    CALL_BROADCAST_REMOTE_STILL_INTERVAL_SECONDS: int = 10
+    CALL_BROADCAST_REMOTE_STILL_MAX: int = 60
+    # 手机来电帧多为横图侧放：宽>高时顺时针转 90° 存成竖图。none / cw90 / ccw90
+    CALL_BROADCAST_REMOTE_STILL_ROTATE: str = "cw90"
+    # 同时把对方画面完整录成 mp4，挂断后 mux 保存。
+    CALL_BROADCAST_REMOTE_RECORD_ENABLED: bool = True
+    CALL_BROADCAST_REMOTE_RECORD_MAX_SECONDS: int = 180
+    CALL_BROADCAST_REMOTE_RECORD_MAX_FRAMES: int = 3600
     # 用户索要视频（文件或实时通话）时转人工，不自动拨打/发视频文件。
     VIDEO_REQUEST_OPERATOR_HANDOFF_ENABLED: bool = True
 

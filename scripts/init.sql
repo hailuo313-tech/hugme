@@ -44,6 +44,10 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     trigger_threshold       FLOAT DEFAULT 65,
     score_updated_at        TIMESTAMP,
     notes                   TEXT,
+    device_os               VARCHAR(20),
+    device_user_agent       TEXT,
+    device_first_detected_at TIMESTAMPTZ,
+    device_last_detected_at TIMESTAMPTZ,
     updated_at              TIMESTAMP DEFAULT NOW()
 );
 

@@ -160,20 +160,96 @@ _LANG_ALIASES: Final[dict[str, str]] = {
 }
 
 _LANG_HINTS: Final[dict[str, tuple[str, ...]]] = {
-    "es": (" que ", " estoy ", " siento ", " hola ", " gracias ", " solo", " sola", " feliz", " quiero ", " donde "),
-    "pt": (" que ", " estou ", " sinto ", " olá ", " ola ", " obrigado ", " obrigada ", " sozinho", " sozinha", " feliz", " quero "),
-    "fr": (" je ", " suis ", " très ", " merci ", " bonjour ", " seul", " seule", " triste"),
-    "de": (" ich ", " bin ", " sehr ", " danke ", " hallo ", " einsam", " traurig", " glücklich"),
-    "it": (" che ", " sono ", " ciao ", " grazie ", " voglio ", " triste", " felice"),
-    "nl": (" ik ", " ben ", " hallo ", " dank je ", " bedankt ", " wil ", " verdrietig"),
-    "sv": (" jag ", " är ", " hej ", " tack ", " vill ", " ledsen"),
-    "da": (" jeg ", " er ", " hej ", " tak ", " vil ", " trist"),
-    "no": (" jeg ", " er ", " hei ", " takk ", " vil ", " trist"),
-    "fi": (" minä ", " olen ", " hei ", " kiitos ", " haluan ", " surullinen"),
-    "is": (" ég ", " er ", " hæ ", " takk ", " vil ", " leiður"),
-    "el": (" είμαι ", " γεια ", " ευχαριστώ ", " θέλω "),
-    "cs": (" jsem ", " ahoj ", " děkuji ", " chci ", " smutný"),
+    "es": (
+        " que ", " estoy ", " siento ", " hola ", " gracias ", " solo", " sola", " feliz",
+        " quiero ", " donde ", " mandame ", " mándame ", " fotos ", " foto ", " imagen ",
+        " puedes ", " tienes ", " cuantos ", " cuántos ", " años ", " edad ", " mi vida ",
+    ),
+    "pt": (
+        " que ", " estou ", " sinto ", " olá ", " ola ", " obrigado ", " obrigada ",
+        " sozinho", " sozinha", " feliz", " quero ", " cadê ", " cade ", " você ", " voce ",
+        " sexo ", " agora ", " chamada ", " vídeo ", " video ",
+    ),
+    "fr": (" je ", " suis ", " très ", " merci ", " bonjour ", " seul", " seule", " triste", " veux ", " photo ", " vidéo "),
+    "de": (" ich ", " bin ", " sehr ", " danke ", " hallo ", " einsam", " traurig", " glücklich", " möchte ", " foto ", " video "),
+    "it": (" che ", " sono ", " ciao ", " grazie ", " voglio ", " triste", " felice", " foto ", " video ", " italiano ", " dimmi "),
+    "nl": (" ik ", " ben ", " hallo ", " dank je ", " bedankt ", " wil ", " verdrietig", " foto ", " video "),
+    "sv": (" jag ", " är ", " hej ", " tack ", " vill ", " ledsen", " foto ", " video "),
+    "da": (" jeg ", " er ", " hej ", " tak ", " vil ", " trist", " foto ", " video "),
+    "no": (" jeg ", " er ", " hei ", " takk ", " vil ", " trist", " foto ", " video "),
+    "fi": (" minä ", " olen ", " hei ", " kiitos ", " haluan ", " surullinen", " kuva ", " video "),
+    "is": (" ég ", " er ", " hæ ", " takk ", " vil ", " leiður", " mynd ", " myndband "),
+    "el": (" είμαι ", " γεια ", " ευχαριστώ ", " θέλω ", " φωτο ", " βίντεο "),
+    "cs": (" jsem ", " ahoj ", " děkuji ", " chci ", " smutný", " foto ", " video "),
+    "ja": (" です ", " ます ", " こんにちは ", " ありがとう ", " 写真 ", " 動画 "),
+    "ko": (" 입니다 ", " 합니다 ", " 안녕 ", " 감사 ", " 사진 ", " 영상 "),
 }
+
+
+_ENGLISH_STRONG_HINTS: Final[tuple[str, ...]] = (
+    " the ", " you ", " your ", " are ", " isn't ", " don't ", " didn't ",
+    " i'm ", " it's ", " that's ", " that ", " this ", " what ", " where ",
+    " have ", " will ", " please ", " daddy ", " babe ", " feel ", " lonely ",
+    " want ", " need ", " like ", " love ", " with ", " from ", " just ",
+    " really ", " about ", " not ",
+)
+
+_COUNTRY_LANGUAGE: Final[dict[str, str]] = {
+    "IT": "it",
+    "ES": "es",
+    "MX": "es",
+    "AR": "es",
+    "CO": "es",
+    "CL": "es",
+    "PE": "es",
+    "UY": "es",
+    "VE": "es",
+    "EC": "es",
+    "GT": "es",
+    "CR": "es",
+    "PA": "es",
+    "DO": "es",
+    "FR": "fr",
+    "DE": "de",
+    "AT": "de",
+    "PT": "pt",
+    "BR": "pt",
+    "NL": "nl",
+    "BE": "nl",
+    "SE": "sv",
+    "NO": "no",
+    "DK": "da",
+    "FI": "fi",
+    "IS": "is",
+    "GR": "el",
+    "CZ": "cs",
+    "JP": "ja",
+    "KR": "ko",
+    "US": "en",
+    "GB": "en",
+    "AU": "en",
+    "CA": "en",
+    "IE": "en",
+    "NZ": "en",
+    "SG": "en",
+    "CN": "zh",
+    "TW": "zh",
+    "HK": "zh",
+}
+
+
+def language_from_country_code(country_code: str | None) -> str:
+    code = str(country_code or "").strip().upper()
+    return _COUNTRY_LANGUAGE.get(code, "")
+
+
+def _padded_words(text_value: str) -> str:
+    return f" {re.sub(r'[^\w]+', ' ', (text_value or '').lower(), flags=re.UNICODE)} "
+
+
+def _has_strong_english(text_value: str) -> bool:
+    padded = _padded_words(text_value)
+    return any(hint in padded for hint in _ENGLISH_STRONG_HINTS)
 
 
 def normalize_language(value: str | None, default: str = "zh") -> str:
@@ -205,6 +281,72 @@ def detect_language_from_text(text_value: str, default: str = "zh") -> str:
         if any(hint in padded for hint in hints):
             return lang
     return "en" if re.search(r"[a-zA-Z]", text_value) else default
+
+
+def _pick_text_language(
+    text_value: str | None,
+    *,
+    country_language: str,
+    default: str,
+) -> str:
+    """Map one user utterance to a reply language.
+
+    Script matches (zh/ja/ko/el) and non-English keyword hits always win.
+    Bare Latin like ``amo`` is classified as English by ``detect_language_from_text``;
+    without a strong English signal, prefer the country language so Italian/Spanish
+    users are not answered in English or Chinese. Never overlay country ``zh`` onto
+    Latin text.
+    """
+    detected = detect_language_from_text(text_value or "", default="")
+    if not detected:
+        return ""
+    if detected != "en":
+        return normalize_language(detected, default=default)
+    if _has_strong_english(text_value or ""):
+        return "en"
+    if country_language and country_language != "zh":
+        return country_language
+    return "en"
+
+
+def resolve_reply_language(
+    current_text: str | None,
+    *,
+    recent_user_texts: list[str] | tuple[str, ...] | None = None,
+    profile_language: str | None = None,
+    country_code: str | None = None,
+    default: str = "en",
+) -> str:
+    """Resolve one language for every part of an outbound reply.
+
+    The current user message always wins.  If it has no usable language signal
+    (for example an emoji or a number), inspect at most the five newest user
+    messages, then the phone/profile country, then the stored profile language,
+    and finally English.
+    """
+    country_language = language_from_country_code(country_code)
+    picked = _pick_text_language(
+        current_text,
+        country_language=country_language,
+        default=default,
+    )
+    if picked:
+        return picked
+    for text_value in list(recent_user_texts or ())[:5]:
+        picked = _pick_text_language(
+            text_value,
+            country_language=country_language,
+            default=default,
+        )
+        if picked:
+            return picked
+    if country_language:
+        return country_language
+    if profile_language:
+        return normalize_language(profile_language, default=default)
+    if not default:
+        return ""
+    return normalize_language(default, default="en")
 
 
 def keyword_in_text(text_value: str, keyword: str) -> bool:

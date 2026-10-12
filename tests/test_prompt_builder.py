@@ -18,6 +18,7 @@ import pytest
 
 from services.prompt_builder import (  # type: ignore
     DEFAULT_SYSTEM_PROMPT,
+    EARLY_REPLY_NO_QUESTION_LIMIT,
     FIRST_DIRECT_QA_REPLY_LIMIT,
     LAYER_ORDER,
     PromptInput,
@@ -135,6 +136,22 @@ def test_l10_anchor_repeats_critical_rules():
     assert "不要情感陪护" in body
     assert "禁止括号动作" in body
     assert "不要说\"资料里写着\"" in body
+    assert "见面意图" in body
+    assert "禁止拒绝" in body
+
+
+def test_meetup_request_injects_forced_deferral_rule():
+    out = build_prompt(PromptInput(user_text="我们见面吧"))
+    system = out.system_content
+    assert "见面请求" in system
+    assert "绝对禁止拒绝" in system
+    assert "成为朋友" in system
+    assert "视频通话不算见面" in out.layers["L2_IDENTITY"] or "不含视频通话" in system
+
+
+def test_video_call_does_not_inject_meetup_rule():
+    out = build_prompt(PromptInput(user_text="给我打视频"))
+    assert "【见面请求 - 本条强制】" not in out.system_content
 
 
 def test_short_adult_preference_answers_do_not_force_interview_questions():
@@ -525,3 +542,26 @@ def test_estimated_tokens_grows_with_content():
         )
     )
     assert long.estimated_tokens > short.estimated_tokens
+
+
+def test_early_spoken_style_applies_through_first_10_replies():
+    assert EARLY_REPLY_NO_QUESTION_LIMIT == 10
+    tenth = build_prompt(
+        PromptInput(user_text="你多大？", current_assistant_reply_number=10)
+    ).system_content
+    assert "前10条口语直答" in tenth
+    assert "必须口语化、日常聊天化" in tenth
+    assert "禁止疑问语" in tenth
+    assert "禁止书面陈述语" in tenth
+    assert "禁止感叹语" in tenth
+    assert "禁止夸张描绘" in tenth
+    assert "【深入引导】" not in tenth
+
+
+def test_early_spoken_style_lifts_after_reply_10():
+    eleventh = build_prompt(
+        PromptInput(user_text="你多大？", current_assistant_reply_number=11)
+    ).system_content
+    assert "前10条口语直答" not in eleventh
+    assert "已过前 10 条" in eleventh
+    assert "【深入引导】" in eleventh

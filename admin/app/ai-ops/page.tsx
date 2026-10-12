@@ -538,8 +538,7 @@ function AiOpsContent({ operator }: { operator: Operator }) {
         >
           国家路由
         </a>
-      </div>
-      <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-4">
+      </div>      <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-4">
         <Metric label="全部话术" value={`${totalActiveCount}`} hint="未归档的所有话术，不限制数量" />
         <Metric label="下载引导话术" value={`${appDownloadCount}`} hint="未归档的 App 下载类目话术" />
         <Metric label="当前列表启用" value={`${approvedCount}`} hint="当前筛选下会被系统自动匹配使用" />

@@ -74,7 +74,7 @@ def test_safeguard_minor():
     assert pick_best_hit(hits).code == "safeguard"
 
 
-def test_safeguard_handoff_storm():
+def test_handoff_count_never_triggers_safeguard():
     hits = evaluate_policy_hits(
         user_text="x",
         profile=None,
@@ -82,7 +82,7 @@ def test_safeguard_handoff_storm():
         is_minor_suspected=False,
         handoff_count=5,
     )
-    assert pick_best_hit(hits).code == "safeguard"
+    assert pick_best_hit(hits) is None
 
 
 @pytest.mark.asyncio

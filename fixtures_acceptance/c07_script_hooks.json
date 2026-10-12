@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "hooks": [
+    {"hook": "inbound", "test_id": "C07-H-01", "platform": "telegram_real_user"},
+    {"hook": "consumption", "test_id": "C07-H-02", "user_level": "B"},
+    {"hook": "probe", "test_id": "C07-H-03", "user_level": "D"},
+    {"hook": "grading", "test_id": "C07-H-04", "user_level": "A"},
+    {"hook": "reply", "test_id": "C07-H-05", "intent_id": "emotional_support.lonely"},
+    {"hook": "operator", "test_id": "C07-H-06", "user_level": "S"},
+    {"hook": "outbound", "test_id": "C07-H-07"},
+    {"hook": "archive", "test_id": "C07-H-08", "user_level": "S"}
+  ]
+}

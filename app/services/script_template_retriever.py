@@ -24,6 +24,12 @@ VALID_HOOKS = {
     "archive",
 }
 
+# Operator-only rows: content is a comma-separated trigger list, never outgoing copy.
+INTERNAL_TRIGGER_TITLES: tuple[str, ...] = (
+    "用户聊天中想要看本人视频的关键词",
+    "用户聊天中想要看本人图片的关键词",
+)
+
 
 @dataclass(frozen=True)
 class ScriptTemplateQuery:
@@ -147,6 +153,9 @@ async def _query_candidates(
     if query.category_key:
         params["category_key"] = query.category_key
         where.append("category_key = :category_key")
+
+    params["internal_trigger_titles"] = list(INTERNAL_TRIGGER_TITLES)
+    where.append("NOT (title = ANY(:internal_trigger_titles))")
 
     if qvec:
         params["qvec"] = _vector_literal(qvec)

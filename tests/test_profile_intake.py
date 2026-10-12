@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 
 from services.profile_intake import (
+    city_country_from_text,
     country_from_headers,
     country_from_locale,
     country_from_metadata,
@@ -58,18 +59,29 @@ def test_country_from_recent_user_messages_uses_explicit_country_only() -> None:
             ]
 
     class _Db:
-        async def execute(self, *_args, **_kwargs):
+        params = None
+
+        async def execute(self, _statement, params):
+            self.params = params
             return _Result()
 
+    db = _Db()
     assert (
         asyncio.run(
             country_from_recent_user_messages(
-                _Db(),
+                db,
                 user_id="00000000-0000-0000-0000-000000000001",
             )
         )
         == "US"
     )
+    assert db.params["limit"] == 5
+
+
+def test_city_country_inference_uses_known_city_aliases() -> None:
+    assert city_country_from_text("I'm in Barcelona") == ("Barcelona", "ES")
+    assert city_country_from_text("near New York") == ("New York", "US")
+    assert city_country_from_text("a place you do not know") == (None, None)
 
 
 def test_age_extraction_accepts_explicit_user_age_only() -> None:

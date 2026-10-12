@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>全球情报仪表盘 2026</title>
+<style>
+  :root {
+    --bg: #0d0f12;
+    --bg2: #151820;
+    --bg3: #1c2028;
+    --border: rgba(255,255,255,0.08);
+    --border2: rgba(255,255,255,0.14);
+    --text: #e8eaf0;
+    --text2: #9aa0b0;
+    --text3: #5a6070;
+    --blue: #3b82f6;
+    --blue-dim: rgba(59,130,246,0.15);
+    --green: #22c55e;
+    --green-dim: rgba(34,197,94,0.12);
+    --amber: #f59e0b;
+    --amber-dim: rgba(245,158,11,0.12);
+    --purple: #a78bfa;
+    --purple-dim: rgba(167,139,250,0.12);
+    --red: #f87171;
+    --red-dim: rgba(248,113,113,0.12);
+    --teal: #2dd4bf;
+    --teal-dim: rgba(45,212,191,0.12);
+    --pink: #f472b6;
+    --pink-dim: rgba(244,114,182,0.12);
+    --orange: #fb923c;
+    --orange-dim: rgba(251,146,60,0.12);
+    --font: 'SF Pro Display', 'PingFang SC', 'Helvetica Neue', sans-serif;
+    --mono: 'SF Mono', 'Fira Code', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; }
+
+  /* TOP NAV */
+  .nav { display: flex; align-items: center; justify-content: space-between; padding: 14px 28px; border-bottom: 1px solid var(--border); background: var(--bg); position: sticky; top: 0; z-index: 100; backdrop-filter: blur(12px); }
+  .nav-logo { display: flex; align-items: center; gap: 10px; }
+  .nav-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  .nav-title { font-size: 15px; font-weight: 600; letter-spacing: 0.02em; }
+  .nav-sub { font-size: 11px; color: var(--text3); font-family: var(--mono); margin-top: 1px; }
+  .nav-right { display: flex; align-items: center; gap: 10px; }
+  .btn { font-size: 13px; padding: 7px 16px; border-radius: 8px; border: 1px solid var(--border2); background: transparent; color: var(--text); cursor: pointer; font-family: var(--font); transition: all 0.15s; display: inline-flex; align-items: center; gap: 6px; }
+  .btn:hover { background: var(--bg3); border-color: rgba(255,255,255,0.2); }
+  .btn-fetch { background: var(--blue); border-color: var(--blue); color: #fff; font-weight: 500; }
+  .btn-fetch:hover { background: #2563eb; border-color: #2563eb; }
+  .btn-fetch:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* API KEY MODAL */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 200; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+  .modal-overlay.hidden { display: none; }
+  .modal { background: var(--bg2); border: 1px solid var(--border2); border-radius: 16px; padding: 28px 32px; width: 420px; max-width: 95vw; }
+  .modal h2 { font-size: 17px; font-weight: 600; margin-bottom: 6px; }
+  .modal p { font-size: 13px; color: var(--text2); line-height: 1.6; margin-bottom: 18px; }
+  .modal input { width: 100%; background: var(--bg3); border: 1px solid var(--border2); border-radius: 8px; padding: 10px 14px; font-size: 13px; color: var(--text); font-family: var(--mono); outline: none; margin-bottom: 6px; }
+  .modal input:focus { border-color: var(--blue); }
+  .modal-hint { font-size: 11px; color: var(--text3); margin-bottom: 16px; }
+  .modal-hint a { color: var(--blue); }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+  /* MAIN LAYOUT */
+  .main { display: flex; max-width: 1440px; margin: 0 auto; }
+  .sidebar { width: 200px; flex-shrink: 0; padding: 20px 16px; border-right: 1px solid var(--border); min-height: calc(100vh - 57px); position: sticky; top: 57px; height: calc(100vh - 57px); overflow-y: auto; }
+  .content { flex: 1; padding: 20px 24px; min-width: 0; }
+
+  /* SIDEBAR TABS */
+  .sidebar-label { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; color: var(--text3); text-transform: uppercase; margin-bottom: 8px; padding-left: 10px; }
+  .tab-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; cursor: pointer; margin-bottom: 2px; transition: all 0.12s; font-size: 13px; color: var(--text2); border: 1px solid transparent; }
+  .tab-item:hover { background: var(--bg3); color: var(--text); }
+  .tab-item.active { background: var(--bg3); color: var(--text); border-color: var(--border2); }
+  .tab-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .tab-count { margin-left: auto; font-size: 11px; font-family: var(--mono); color: var(--text3); }
+  .tab-item.active .tab-count { color: var(--text2); }
+  .sidebar-divider { height: 1px; background: var(--border); margin: 12px 0; }
+
+  /* REGION FILTER */
+  .region-select, .history-select { width: 100%; background: var(--bg3); border: 1px solid var(--border2); border-radius: 8px; padding: 7px 10px; font-size: 12px; color: var(--text); font-family: var(--font); outline: none; cursor: pointer; }
+  .region-select { margin-bottom: 14px; }
+  .history-select { min-width: 220px; max-width: 280px; margin-left: -20px; }
+  .region-select:focus, .history-select:focus { border-color: var(--blue); }
+
+  /* STATUS BAR */
+  .status-bar { display: flex; align-items: center; gap: 10px; padding: 8px 14px; background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 16px; font-size: 12px; color: var(--text2); }
+  .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text3); }
+  .live-dot.active { background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse 1.5s infinite; }
+  .progress-wrap { flex: 1; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--blue); border-radius: 2px; width: 0%; transition: width 0.4s ease; }
+
+  /* STATS ROW */
+  .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px; }
+  .stat-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .stat-label { font-size: 11px; color: var(--text3); margin-bottom: 4px; font-family: var(--mono); }
+  .stat-value { font-size: 22px; font-weight: 600; color: var(--text); font-family: var(--mono); }
+
+  /* NEWS CARDS */
+  .news-grid { display: flex; flex-direction: column; gap: 10px; }
+  .news-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; transition: border-color 0.15s; }
+  .news-card:hover { border-color: var(--border2); }
+  .news-meta { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; flex-wrap: wrap; }
+  .badge { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 4px; letter-spacing: 0.04em; text-transform: uppercase; }
+  .subcat-tag { font-size: 10px; padding: 2px 7px; border-radius: 4px; background: var(--bg3); color: var(--text3); border: 1px solid var(--border); }
+  .region-tag { font-size: 10px; color: var(--text3); font-family: var(--mono); }
+  .time-tag { font-size: 10px; color: var(--text3); font-family: var(--mono); margin-left: auto; }
+  .news-title { font-size: 14px; font-weight: 500; color: var(--text); line-height: 1.55; margin-bottom: 6px; }
+  .news-title strong { color: var(--amber); font-weight: 600; }
+  .news-summary { font-size: 12px; color: var(--text2); line-height: 1.7; }
+  .news-keypoints { margin-top: 8px; padding: 8px 10px; background: var(--bg3); border-radius: 8px; border-left: 2px solid var(--amber); }
+  .news-keypoints-label { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; color: var(--amber); text-transform: uppercase; margin-bottom: 4px; }
+  .news-keypoints ul { margin: 0; padding-left: 16px; }
+  .news-keypoints li { font-size: 12px; color: var(--text); line-height: 1.6; margin-bottom: 2px; }
+  .news-link { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--blue); text-decoration: none; margin-top: 8px; font-family: var(--mono); }
+  .news-link:hover { text-decoration: underline; }
+  .news-link::after { content: '↗'; font-size: 10px; }
+
+  /* BADGE COLORS */
+  .b-tech { background: var(--purple-dim); color: var(--purple); }
+  .b-pay { background: var(--amber-dim); color: var(--amber); }
+  .b-social { background: var(--green-dim); color: var(--green); }
+  .b-fraud { background: var(--red-dim); color: var(--red); }
+  .b-tiktok { background: var(--pink-dim); color: var(--pink); }
+  .b-adult { background: var(--teal-dim); color: var(--teal); }
+  .b-traffic { background: var(--orange-dim); color: var(--orange); }
+
+  /* DOT COLORS */
+  .d-tech { background: var(--purple); }
+  .d-pay { background: var(--amber); }
+  .d-social { background: var(--green); }
+  .d-fraud { background: var(--red); }
+  .d-tiktok { background: var(--pink); }
+  .d-adult { background: var(--teal); }
+  .d-traffic { background: var(--orange); }
+
+  /* EMPTY / LOADING */
+  .empty { text-align: center; padding: 4rem 2rem; color: var(--text3); font-size: 14px; border: 1px dashed var(--border); border-radius: 12px; }
+  .empty .icon { font-size: 36px; margin-bottom: 12px; opacity: 0.4; }
+  .error-msg { background: var(--red-dim); border: 1px solid rgba(248,113,113,0.3); border-radius: 10px; padding: 12px 16px; font-size: 13px; color: var(--red); margin-bottom: 14px; font-family: var(--mono); white-space: pre-wrap; word-break: break-all; }
+
+  /* SCROLLBAR */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+  @media (max-width: 768px) {
+    .sidebar { display: none; }
+    .stats-row { grid-template-columns: repeat(2,1fr); }
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav class="nav">
+  <div class="nav-logo">
+    <div class="nav-dot" id="navDot"></div>
+    <div>
+      <div class="nav-title">全球情报仪表盘</div>
+      <div class="nav-sub">GLOBAL INTEL · 48H · 私域引流新增 · ≤3条/源 · 2026</div>
+    </div>
+  </div>
+  <div class="nav-right">
+    <select class="history-select" id="historySelect" onchange="onHistoryChange()" title="历史抓取记录">
+      <option value="latest">📚 历史记录</option>
+    </select>
+    <span id="updateTime" style="font-size:11px;color:var(--text3);font-family:var(--mono);"></span>
+    <button class="btn btn-fetch" id="fetchBtn" onclick="fetchNews()">⚡ 抓取最新情报</button>
+  </div>
+</nav>
+
+<!-- MAIN -->
+<div class="main">
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-label">地区筛选</div>
+    <select class="region-select" id="regionSelect" onchange="renderNews()">
+      <option value="all">🌐 全部地区</option>
+      <option value="北美">🇺🇸 北美（核心）</option>
+      <option value="中东">🕌 中东</option>
+      <option value="欧盟">🇪🇺 欧盟</option>
+      <option value="东南亚">🌏 东南亚</option>
+      <option value="拉美">🌎 拉美</option>
+    </select>
+    <div class="sidebar-divider"></div>
+    <div class="sidebar-label">板块</div>
+    <div class="tab-item active" data-cat="all" onclick="switchCat(this)">
+      <div class="tab-dot" style="background:var(--text3)"></div>全部
+      <span class="tab-count" id="tc-all">0</span>
+    </div>
+    <div class="tab-item" data-cat="Tech" onclick="switchCat(this)">
+      <div class="tab-dot d-tech"></div>Tech
+      <span class="tab-count" id="tc-tech">30</span>
+    </div>
+    <div class="tab-item" data-cat="支付" onclick="switchCat(this)">
+      <div class="tab-dot d-pay"></div>支付
+      <span class="tab-count" id="tc-pay">20</span>
+    </div>
+    <div class="tab-item" data-cat="陌生人社交" onclick="switchCat(this)">
+      <div class="tab-dot d-social"></div>陌生人社交
+      <span class="tab-count" id="tc-social">50</span>
+    </div>
+    <div class="tab-item" data-cat="诈骗" onclick="switchCat(this)">
+      <div class="tab-dot d-fraud"></div>Fraud / 诈骗
+      <span class="tab-count" id="tc-fraud">50</span>
+    </div>
+    <div class="tab-item" data-cat="TikTok" onclick="switchCat(this)">
+      <div class="tab-dot d-tiktok"></div>TikTok / 视频
+      <span class="tab-count" id="tc-tiktok">20</span>
+    </div>
+    <div class="tab-item" data-cat="成人与色情行业" onclick="switchCat(this)">
+      <div class="tab-dot d-adult"></div>成人与色情行业
+      <span class="tab-count" id="tc-adult">50</span>
+    </div>
+    <div class="tab-item" data-cat="私域引流" onclick="switchCat(this)">
+      <div class="tab-dot d-traffic"></div>私域引流
+      <span class="tab-count" id="tc-traffic">50</span>
+    </div>
+  </aside>
+
+  <!-- CONTENT -->
+  <main class="content">
+    <div class="status-bar">
+      <div class="live-dot" id="liveDot"></div>
+      <span id="statusText">就绪 — 点击"抓取最新情报"开始</span>
+      <div class="progress-wrap"><div class="progress-fill" id="progressFill"></div></div>
+    </div>
+
+    <div id="errorBox" style="display:none;" class="error-msg"></div>
+
+    <div class="stats-row" id="statsRow" style="display:none;">
+      <div class="stat-card"><div class="stat-label">TOTAL</div><div class="stat-value" id="s-total">—</div></div>
+      <div class="stat-card"><div class="stat-label">SOURCES</div><div class="stat-value" id="s-src">—</div></div>
+      <div class="stat-card"><div class="stat-label">REGIONS</div><div class="stat-value" id="s-reg">—</div></div>
+      <div class="stat-card"><div class="stat-label">SECTORS</div><div class="stat-value" id="s-sec">7</div></div>
+    </div>
+
+    <div id="newsFeed" class="news-grid">
+      <div class="empty">
+        <div class="icon">📡</div>
+        <div>尚无情报数据</div>
+        <div style="font-size:12px;margin-top:6px;color:var(--text3);">点击右上角「⚡ 抓取最新情报」开始</div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+let allNews = [];
+let currentCat = 'all';
+let pollTimer = null;
+let currentRunId = 'latest';
+let historyRuns = [];
+
+const SECTOR_ORDER = ['Tech', '支付', '陌生人社交', '诈骗', 'TikTok', '成人与色情行业', '私域引流'];
+
+const CAT_CONFIG = {
+  'Tech': { badge: 'b-tech', label: 'Tech', code: 'TECH' },
+  '支付': { badge: 'b-pay', label: '支付', code: 'PAY' },
+  '陌生人社交': { badge: 'b-social', label: '陌生人社交', code: 'SOCIAL' },
+  '诈骗': { badge: 'b-fraud', label: '诈骗', code: 'FRAUD' },
+  'TikTok': { badge: 'b-tiktok', label: 'TikTok', code: 'TIKTOK' },
+  '成人与色情行业': { badge: 'b-adult', label: '成人与色情', code: 'ADULT' },
+  '私域引流': { badge: 'b-traffic', label: '私域引流', code: 'PRIVATE' }
+};
+
+function esc(s) {
+  return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function stripHtml(s) {
+  const d = document.createElement('div');
+  d.innerHTML = s || '';
+  return d.textContent || '';
+}
+
+const CAT_ALIASES = {
+  'Tech': 'Tech', 'Technology': 'Tech',
+  'Payments': '支付', 'Payment': '支付', '支付': '支付',
+  '陌生人社交': '陌生人社交', 'Dating': '陌生人社交', 'Social Discovery': '陌生人社交',
+  '支付 / 陌生人社交': '陌生人社交', '支付·社交': '支付',
+  'Fraud': '诈骗', 'Scam': '诈骗', '诈骗': '诈骗',
+  'TikTok': 'TikTok', 'TikTok/视频/直播': 'TikTok', 'Video': 'TikTok',
+  '成人与色情行业': '成人与色情行业',
+  'Adults & Pornography': '成人与色情行业', 'Adult': '成人与色情行业', 'Pornography': '成人与色情行业'
+};
+
+function normalizeCat(raw) {
+  const c = String(raw || '').trim();
+  const mapped = CAT_ALIASES[c] || c;
+  return SECTOR_ORDER.includes(mapped) ? mapped : mapped;
+}
+
+function resolveSector(item) {
+  const raw = String(item.sector || item.category || '').trim();
+  const mapped = normalizeCat(raw);
+  return SECTOR_ORDER.includes(mapped) ? mapped : (mapped || '未分类');
+}
+
+function mapItem(item) {
+  const age = item.age_hours;
+  const sector = resolveSector(item);
+  const keyPoints = Array.isArray(item.key_points)
+    ? item.key_points.map(p => stripHtml(String(p || ''))).filter(Boolean)
+    : [];
+  return {
+    cat: sector,
+    sector,
+    region: item.region || '',
+    subcat: item.subcategory || '',
+    title: item.title || '',
+    summary: stripHtml(item.summary || ''),
+    keyPoints,
+    url: item.url || '',
+    source: item.source || '',
+    time: age != null ? `${age}小时前` : ''
+  };
+}
+
+function setStatus(txt, live) {
+  document.getElementById('statusText').textContent = txt;
+  document.getElementById('liveDot').className = 'live-dot' + (live ? ' active' : '');
+  document.getElementById('navDot').style.background = live ? 'var(--green)' : 'var(--text3)';
+}
+function setProgress(p) { document.getElementById('progressFill').style.width = p + '%'; }
+
+function switchCat(el) {
+  document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  currentCat = el.dataset.cat;
+  renderNews();
+}
+
+function updateStats() {
+  const regions = new Set(allNews.map(n => n.region).filter(Boolean));
+  const sources = new Set(allNews.map(n => {
+    if (n.source) return n.source;
+    try { return new URL(n.url).hostname; } catch (e) { return ''; }
+  }).filter(Boolean));
+  document.getElementById('s-total').textContent = allNews.length;
+  document.getElementById('s-src').textContent = sources.size;
+  document.getElementById('s-reg').textContent = regions.size;
+  document.getElementById('statsRow').style.display = allNews.length ? 'grid' : 'none';
+}
+
+function renderNews() {
+  const region = document.getElementById('regionSelect').value;
+  let list = allNews;
+  if (currentCat !== 'all') list = list.filter(n => n.cat === currentCat);
+  if (region !== 'all') list = list.filter(n => n.region === region);
+
+  document.getElementById('tc-all').textContent = allNews.length;
+  const counts = {};
+  allNews.forEach(n => counts[n.cat] = (counts[n.cat] || 0) + 1);
+  document.getElementById('tc-tech').textContent = counts['Tech'] || 0;
+  document.getElementById('tc-pay').textContent = counts['支付'] || 0;
+  document.getElementById('tc-social').textContent = counts['陌生人社交'] || 0;
+  document.getElementById('tc-fraud').textContent = counts['诈骗'] || 0;
+  document.getElementById('tc-tiktok').textContent = counts['TikTok'] || 0;
+  document.getElementById('tc-adult').textContent = counts['成人与色情行业'] || 0;
+  document.getElementById('tc-traffic').textContent = counts['私域引流'] || 0;
+
+  if (list.length === 0) {
+    document.getElementById('newsFeed').innerHTML = '<div class="empty"><div class="icon">🔍</div><div>该筛选条件下暂无数据</div></div>';
+    return;
+  }
+
+  document.getElementById('newsFeed').innerHTML = list.map(n => {
+    const cfg = CAT_CONFIG[n.sector] || { badge: 'b-pol', label: n.sector || '未分类', code: '?' };
+    const host = n.url ? n.url.replace(/^https?:\/\//, '').split('/')[0] : '';
+    return `<div class="news-card">
+      <div class="news-meta">
+        <span class="badge ${cfg.badge}" title="板块：${esc(cfg.label)}">${esc(cfg.label)}</span>
+        <span class="subcat-tag">${esc(cfg.code)}</span>
+        ${n.source ? `<span class="subcat-tag" title="来源 Feed">${esc(n.source)}</span>` : ''}
+        <span class="region-tag">${esc(n.region)}</span>
+        <span class="time-tag">${esc(n.time)}</span>
+      </div>
+      <div class="news-title">${esc(n.title)}</div>
+      ${n.keyPoints && n.keyPoints.length ? `<div class="news-keypoints"><div class="news-keypoints-label">重点</div><ul>${n.keyPoints.map(p => `<li>${esc(p)}</li>`).join('')}</ul></div>` : (n.summary ? `<div class="news-summary">${esc(n.summary)}</div>` : '')}
+      ${n.url ? `<a class="news-link" href="${esc(n.url)}" target="_blank" rel="noopener">${esc(host)}</a>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function formatRunLabel(run) {
+  const dt = new Date(run.generated_at);
+  const label = Number.isNaN(dt.getTime())
+    ? run.run_key
+    : dt.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+  return `${label} · ${run.total}/${run.target_total}`;
+}
+
+function applyPayload(data) {
+  allNews = (data.items || []).map(mapItem);
+  updateStats();
+  if (data.generated_at) {
+    const ts = new Date(data.generated_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    document.getElementById('updateTime').textContent = '更新 ' + ts;
+  }
+  const total = data.total || allNews.length;
+  const target = data.target_total || 220;
+  const runTag = data.id ? ` #${data.id}` : '';
+  setStatus(`情报就绪${runTag} · ${total}/${target} 条`, false);
+  renderNews();
+}
+
+async function loadHistoryList(selectRunId) {
+  const sel = document.getElementById('historySelect');
+  const keep = selectRunId || currentRunId || 'latest';
+  try {
+    const res = await fetch('/news/api/history');
+    if (!res.ok) return;
+    const data = await res.json();
+    historyRuns = data.runs || [];
+    sel.innerHTML = '<option value="latest">📚 历史记录</option>';
+    historyRuns.forEach(run => {
+      const opt = document.createElement('option');
+      opt.value = String(run.id);
+      opt.textContent = formatRunLabel(run);
+      sel.appendChild(opt);
+    });
+    if (keep === 'latest' || sel.querySelector(`option[value="${keep}"]`)) {
+      sel.value = keep;
+      currentRunId = keep;
+    } else if (historyRuns.length) {
+      sel.value = String(historyRuns[0].id);
+      currentRunId = sel.value;
+    }
+  } catch (_) {}
+}
+
+async function loadRun(runId) {
+  const url = runId === 'latest' ? '/news/api/latest' : `/news/api/runs/${runId}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    allNews = [];
+    renderNews();
+    return false;
+  }
+  const data = await res.json();
+  applyPayload(data);
+  return true;
+}
+
+async function onHistoryChange() {
+  currentRunId = document.getElementById('historySelect').value;
+  setStatus('加载历史抓取...', true);
+  const ok = await loadRun(currentRunId);
+  if (!ok) setStatus('加载失败', false);
+  setProgress(0);
+}
+
+async function loadLatest() {
+  return loadRun('latest');
+}
+
+async function pollStatus() {
+  const res = await fetch('/news/api/status');
+  const st = await res.json();
+  if (st.running) {
+    setProgress(55);
+    setStatus(st.message || '正在抓取海外 RSS/Atom 新闻源...', true);
+    return;
+  }
+  clearInterval(pollTimer);
+  pollTimer = null;
+  const btn = document.getElementById('fetchBtn');
+  btn.disabled = false;
+  btn.textContent = '⚡ 抓取最新情报';
+  setProgress(0);
+  if (st.status !== 'success') {
+    setStatus('抓取失败', false);
+    const eb = document.getElementById('errorBox');
+    eb.textContent = '❌ ' + (st.message || '抓取失败');
+    eb.style.display = 'block';
+    return;
+  }
+  document.getElementById('errorBox').style.display = 'none';
+  await loadHistoryList('latest');
+  currentRunId = 'latest';
+  document.getElementById('historySelect').value = 'latest';
+  await loadLatest();
+}
+
+async function fetchNews() {
+  const btn = document.getElementById('fetchBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ 抓取中...';
+  setStatus('正在抓取海外 RSS/Atom 新闻源...', true);
+  setProgress(12);
+  document.getElementById('errorBox').style.display = 'none';
+  document.getElementById('newsFeed').innerHTML = '<div class="empty"><div class="icon">📡</div><div style="color:var(--text2)">正在聚合海外 RSS/Atom 源，约需 30–180 秒...</div></div>';
+
+  try {
+    const res = await fetch('/news/api/fetch?allow_partial=1', { method: 'POST' });
+    if (!res.ok && res.status !== 202) {
+      throw new Error('启动抓取失败: HTTP ' + res.status);
+    }
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(pollStatus, 2000);
+    await pollStatus();
+  } catch (err) {
+    setProgress(0);
+    setStatus('抓取失败', false);
+    const eb = document.getElementById('errorBox');
+    eb.textContent = '❌ ' + err.message;
+    eb.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = '⚡ 抓取最新情报';
+  }
+}
+
+window.addEventListener('load', async () => {
+  setStatus('加载最新情报...', true);
+  await loadHistoryList('latest');
+  const ok = await loadLatest();
+  if (!ok) setStatus('就绪 — 点击「抓取最新情报」开始', false);
+  setProgress(0);
+});
+</script>
+</body>
+</html>

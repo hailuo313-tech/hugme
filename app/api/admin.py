@@ -7,11 +7,13 @@ D5-1 / D5-2: Admin 后台 API
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import bindparam, text
-from core.database import get_db
+from sqlalchemy.exc import ProgrammingError
+from core.database import AsyncSessionLocal, get_db
 from services.dashboard_integration import sql_order_clause_for_dashboard
 from core.config import settings
 from pydantic import BaseModel
@@ -21,13 +23,20 @@ from loguru import logger
 from decimal import Decimal
 from enum import Enum
 from datetime import date
-import hashlib, hmac, uuid, time, json, base64, re
+import asyncio, hashlib, hmac, uuid, time, json, base64, re, io
+import httpx
+from pathlib import Path
 
 from services.silent_reactivation_runner import run_silent_reactivation_scan
-from services.profile_intake import extract_age_from_text, normalize_country_code
+from services.profile_intake import (
+    apply_operator_country_correction,
+    extract_age_from_text,
+    normalize_country_code,
+)
 
 router = APIRouter()
 _bearer = HTTPBearer(auto_error=False)
+
 
 # ── JWT (HS256, pure stdlib — no external dep) ────────────────────────
 
@@ -90,6 +99,11 @@ class MeResponse(BaseModel):
 class ConversationOperatorReplyRequest(BaseModel):
     content: str
     used_script_id: Optional[str] = None
+
+
+class ConversationCountryUpdateRequest(BaseModel):
+    country_code: str
+    note: Optional[str] = None
 
 
 class MessageTranslationSaveItem(BaseModel):
@@ -227,6 +241,126 @@ def _serialize_row(row: Any) -> dict:
         else:
             out[k] = str(v)
     return out
+
+
+def _preferences_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            data = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        return data if isinstance(data, dict) else {}
+    return {}
+
+
+async def _list_route_countries(db: AsyncSession) -> list[str]:
+    try:
+        rows = (
+            await db.execute(
+                text(
+                    """
+                    SELECT UPPER(country_code) AS country_code
+                    FROM app_download_country_routes
+                    WHERE NULLIF(country_code, '') IS NOT NULL
+                    ORDER BY country_code
+                    """
+                )
+            )
+        ).fetchall()
+    except ProgrammingError:
+        rollback = getattr(db, "rollback", None)
+        if rollback is not None:
+            await rollback()
+        return []
+    codes: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        code = normalize_country_code(row[0] if row else None)
+        if not code or code in seen:
+            continue
+        seen.add(code)
+        codes.append(code)
+    return codes
+
+
+async def _conversation_country_preview(
+    db: AsyncSession,
+    *,
+    conversation_id: str,
+    proposed_code: str | None = None,
+) -> dict[str, Any]:
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT
+                  c.id AS conversation_id,
+                  u.id::text AS user_id,
+                  u.external_id,
+                  u.language,
+                  p.country_code,
+                  p.user_level,
+                  p.preferences
+                FROM conversations c
+                JOIN users u ON u.id = c.user_id
+                LEFT JOIN user_profiles p ON p.user_id = u.id
+                WHERE c.id = :cid
+                """
+            ),
+            {"cid": conversation_id},
+        )
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="conversation not found")
+    mapping = dict(row._mapping)
+    prefs = _preferences_dict(mapping.get("preferences"))
+    current = normalize_country_code(mapping.get("country_code")) or normalize_country_code(
+        prefs.get("country_code")
+    )
+    source = str(prefs.get("country_source") or "").strip() or None
+    stated = normalize_country_code(prefs.get("stated_country_code"))
+    phone = normalize_country_code(prefs.get("telegram_phone_country"))
+    mismatch_raw = prefs.get("country_mismatch")
+    mismatch = mismatch_raw is True or str(mismatch_raw).strip().lower() in {"true", "1", "t"}
+    proposed = normalize_country_code(proposed_code) or current
+    from services.level_engine import load_t1_countries
+    from services.app_download_platforms import resolve_app_download_url_for_country
+    from services.app_download_conversion import _early_link_fallback_reply
+
+    t1_countries = sorted(load_t1_countries())
+    is_t1 = bool(proposed and proposed in t1_countries)
+    destination_url = ""
+    if proposed:
+        destination_url = await resolve_app_download_url_for_country(
+            db,
+            proposed,
+            conversation_id=conversation_id,
+        )
+    suggested = ""
+    if destination_url:
+        suggested = _early_link_fallback_reply(
+            destination_url=destination_url,
+            language=mapping.get("language"),
+        )
+    return {
+        "conversation_id": str(mapping["conversation_id"]),
+        "user_id": str(mapping["user_id"]),
+        "external_id": mapping.get("external_id"),
+        "current_country_code": current,
+        "current_country_source": source,
+        "stated_country_code": stated,
+        "telegram_phone_country": phone,
+        "country_mismatch": mismatch,
+        "proposed_country_code": proposed,
+        "is_t1": is_t1,
+        "destination_url": destination_url,
+        "suggested_link_message": suggested,
+        "t1_countries": t1_countries,
+        "route_countries": await _list_route_countries(db),
+        "user_level": mapping.get("user_level"),
+    }
 
 
 _PROFILE_BACKFILL_MESSAGE_LIMIT = 80
@@ -556,6 +690,89 @@ def _require_uuid(value: str, field_name: str) -> str:
         raise HTTPException(status_code=400, detail=f"{field_name} must be a valid UUID")
 
 
+@router.get(
+    "/admin/messages/{message_id}/media",
+    summary="Admin: read a persisted inbound user image.",
+)
+async def admin_get_inbound_message_media(
+    message_id: str,
+    _payload: dict = Depends(require_operator),
+    db: AsyncSession = Depends(get_db),
+):
+    _require_uuid(message_id, "message_id")
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT
+                    m.sender_type,
+                    m.content_type,
+                    m.content,
+                    m.model_name,
+                    m.created_at,
+                    u.external_id
+                FROM messages m
+                JOIN conversations c ON c.id = m.conversation_id
+                JOIN users u ON u.id = c.user_id
+                WHERE m.id = CAST(:id AS uuid)
+                """
+            ),
+            {"id": message_id},
+        )
+    ).mappings().one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="inbound media not found")
+    sender_type = str(row.get("sender_type") or "")
+    if sender_type not in {"user", "operator"} and not (
+        sender_type == "assistant" and str(row.get("model_name") or "") == "fixed_auto_reply"
+    ):
+        raise HTTPException(status_code=404, detail="inbound media not found")
+    from services.mtproto.inbound_media import (
+        find_chat_media_file,
+        guess_inbound_photo_media_type,
+    )
+
+    path = find_chat_media_file(message_id)
+    if path is None and sender_type == "operator":
+        external_id = str(row.get("external_id") or "")
+        chat_id = external_id[3:] if external_id.startswith("tg_") else ""
+        if chat_id.isdigit():
+            legacy_media_path = (
+                await db.execute(
+                    text(
+                        """
+                        SELECT payload->>'media_path'
+                        FROM runtime_commands
+                        WHERE command_type = 'send_media'
+                          AND status = 'succeeded'
+                          AND payload->>'chat_id' = :chat_id
+                          AND created_at BETWEEN :created_at - INTERVAL '5 minutes'
+                                             AND :created_at + INTERVAL '5 minutes'
+                        ORDER BY abs(extract(epoch FROM (created_at - :created_at)))
+                        LIMIT 1
+                        """
+                    ),
+                    {"chat_id": chat_id, "created_at": row.get("created_at")},
+                )
+            ).scalar_one_or_none()
+            if legacy_media_path:
+                candidate = Path(str(legacy_media_path))
+                upload_root = Path(settings.MEDIA_UPLOAD_DIR).resolve()
+                try:
+                    candidate.resolve().relative_to(upload_root)
+                except ValueError:
+                    candidate = Path()
+                if candidate.is_file() and candidate.stat().st_size > 0:
+                    path = candidate
+    if path is None:
+        raise HTTPException(status_code=410, detail="media source file is no longer available")
+    return FileResponse(
+        path=str(path),
+        media_type=guess_inbound_photo_media_type(path),
+        filename=path.name,
+    )
+
+
 def _telegram_chat_id_from_external(external_id: str | None) -> int | None:
     if not external_id or not str(external_id).startswith("tg_"):
         return None
@@ -584,7 +801,7 @@ async def _send_operator_reply_to_telegram_real_user(
 
         resolved_account_id = account_id
         resolved_access_hash = access_hash
-        if db is not None:
+        if db is not None and not (resolved_account_id and resolved_access_hash):
             cached_peer = await resolve_cached_telegram_peer(
                 db,
                 conversation_id=conversation_id,
@@ -597,16 +814,8 @@ async def _send_operator_reply_to_telegram_real_user(
                 if resolved_access_hash is None and cached_peer.get("access_hash") is not None:
                     resolved_access_hash = int(cached_peer["access_hash"])
 
-        client = None
-        if resolved_account_id:
-            try:
-                client = await telegram_account_manager.get_client(uuid.UUID(resolved_account_id))
-            except (TypeError, ValueError):
-                client = None
-        if client is None:
-            client = await telegram_account_manager.get_any_connected_client()
-        if client is None:
-            return False, "telegram_real_user_account_missing"
+        if not resolved_account_id:
+            return False, "cannot_resolve_receiving_tg_account"
 
         # Operator-confirmed sends should happen immediately after click; keep
         # typing indication but avoid the long automated delay profile.
@@ -620,14 +829,46 @@ async def _send_operator_reply_to_telegram_real_user(
             minimum_inter_message_seconds=0.0,
         )
 
-        peer = await resolve_telethon_peer(
-            client,
-            chat_id,
-            access_hash=resolved_access_hash,
-        )
-        sent = await send_human_like_message(client, peer, content, policy=policy)
+        async def _legacy_send_text():
+            client = await telegram_account_manager.get_client(uuid.UUID(resolved_account_id))
+            if client is None:
+                raise RuntimeError("client_not_connected")
+            peer = await resolve_telethon_peer(
+                client,
+                chat_id,
+                access_hash=resolved_access_hash,
+            )
+            return await send_human_like_message(client, peer, content, policy=policy)
 
-        sent_id = getattr(sent, "id", None)
+        from services.telegram_command_gateway import submit_telegram_command, wait_for_runtime_command
+
+        gateway = await submit_telegram_command(
+            command_type="send_message",
+            account_id=resolved_account_id,
+            legacy_execute=_legacy_send_text,
+            payload={
+                "chat_id": chat_id,
+                "access_hash": resolved_access_hash,
+                "content": content,
+                "operator_confirmed": True,
+            },
+            idempotency_key=f"operator-text:{conversation_id or user_id}:{uuid.uuid4().hex}",
+            trace_id=trace_id,
+            priority=100,
+        )
+        if gateway.accepted_not_sent and gateway.command_id:
+            gateway = await wait_for_runtime_command(
+                gateway.command_id,
+                timeout_seconds=45,
+                poll_seconds=0.05,
+            )
+        if not gateway.executed:
+            return False, gateway.reason or "telegram_send_failed"
+        value = gateway.value
+        if isinstance(value, dict):
+            sent_id = value.get("message_id")
+        else:
+            sent_id = getattr(value, "id", None)
         return True, str(sent_id) if sent_id is not None else None
     except Exception as exc:
         logger.bind(
@@ -651,6 +892,7 @@ async def admin_list_conversations(
     state: Optional[str] = Query(None, description=f"按会话状态过滤；可选值：{sorted(_ALLOWED_CONV_STATES)}"),
     channel: Optional[str] = Query(None, description=f"按渠道过滤；可选值：{sorted(_ALLOWED_CHANNELS)}"),
     search: Optional[str] = Query(None, description="按用户 nickname / external_id 模糊搜索（ILIKE）"),
+    include_operator_status: bool = Query(False, description="是否计算人工回复和未读消息统计"),
     payload: dict = Depends(require_operator),
     db: AsyncSession = Depends(get_db),
 ):
@@ -663,11 +905,19 @@ async def admin_list_conversations(
     if tab_filter not in allowed_tabs:
         raise HTTPException(status_code=400, detail=f"tab must be one of {sorted(allowed_tabs)}")
 
+    # This report has several lateral aggregates. In the production container,
+    # PostgreSQL parallel workers can exhaust the small /dev/shm allocation,
+    # and JIT compilation of this statement often costs ~1s on first plan.
+    await db.execute(
+        text(
+            "SELECT set_config('max_parallel_workers_per_gather', '0', true), "
+            "set_config('jit', 'off', true)"
+        )
+    )
+
     search_like = f"%{search.strip()}%" if search and search.strip() else None
 
     from services.post_inbound_video_expert_gate import (
-        post_inbound_video_expert_only_enabled,
-        post_inbound_video_expert_threshold,
         post_inbound_video_release_review_calls,
     )
 
@@ -678,8 +928,6 @@ async def admin_list_conversations(
         "tab": tab_filter,
         "limit": page_size,
         "offset": (page - 1) * page_size,
-        "expert_only_enabled": post_inbound_video_expert_only_enabled(),
-        "expert_threshold": post_inbound_video_expert_threshold(),
         "release_review_calls": post_inbound_video_release_review_calls(),
     }
 
@@ -695,22 +943,25 @@ async def admin_list_conversations(
           AND {premium_sql}
         )
     """
+    release_review_chats_cte = """
+        release_review_chats AS MATERIALIZED (
+          SELECT chat_id
+          FROM telegram_inbound_call_events
+          GROUP BY chat_id
+          HAVING COUNT(*) >= :release_review_calls
+        )
+    """
     expert_pending_sql = """
         (
           c.state IN ('WAITING_OPERATOR', 'HUMAN_LOCKED')
           AND c.post_inbound_video_expert_waived_at IS NULL
           AND EXISTS (
-            SELECT 1 FROM users eu
+            SELECT 1
+            FROM users eu
+            JOIN release_review_chats rrc
+              ON eu.external_id ~ '^tg_[0-9]+$'
+             AND rrc.chat_id = CAST(SUBSTRING(eu.external_id FROM 4) AS BIGINT)
             WHERE eu.id = c.user_id
-              AND eu.external_id ~ '^tg_[0-9]+$'
-              AND (
-                SELECT COUNT(*) FROM telegram_inbound_call_events ice
-                WHERE ice.chat_id = CASE
-                  WHEN eu.external_id ~ '^tg_[0-9]+$'
-                  THEN CAST(SUBSTRING(eu.external_id FROM 4) AS BIGINT)
-                  ELSE NULL
-                END
-              ) >= :release_review_calls
           )
           AND EXISTS (
             SELECT 1
@@ -725,6 +976,26 @@ async def admin_list_conversations(
         )
     """
     not_frozen_sql = "(COALESCE(u.status, '') <> 'frozen' AND COALESCE(c.state, '') <> 'FROZEN')"
+    receiving_account_available_sql = """
+        COALESCE((
+          SELECT
+            ta.status = 'connected'
+            AND ta.is_active IS TRUE
+            AND (account_state.status IS NULL OR account_state.status = 'active')
+            AND (
+              account_state.health_check_status IS NULL
+              OR account_state.health_check_status = 'healthy'
+            )
+            AND (account_state.resume_at IS NULL OR account_state.resume_at <= NOW())
+          FROM messages account_message
+          JOIN telegram_accounts ta ON ta.id::text = account_message.sender_id
+          LEFT JOIN video_reinvite_account_state account_state ON account_state.account_id = ta.id
+          WHERE account_message.conversation_id = c.id
+            AND account_message.sender_type = 'assistant'
+          ORDER BY account_message.created_at DESC
+          LIMIT 1
+        ), FALSE)
+    """
     tab_where = {
         "all": "TRUE",
         "handoff": f"""
@@ -733,6 +1004,7 @@ async def admin_list_conversations(
               AND c.state = 'WAITING_OPERATOR'
               AND c.assigned_operator_id IS NULL
               AND NOT {expert_pending_sql}
+              AND {receiving_account_available_sql}
             )
         """,
         "released": f"""
@@ -760,6 +1032,7 @@ async def admin_list_conversations(
 
     total_row = (await db.execute(
         text(f"""
+            WITH {release_review_chats_cte}
             SELECT COUNT(*)
             FROM conversations c
             LEFT JOIN users u ON u.id = c.user_id
@@ -774,52 +1047,67 @@ async def admin_list_conversations(
     else:
         total = int(raw_total or 0)
 
+    operator_status_select = """
+              EXISTS (
+                SELECT 1
+                FROM messages operator_message
+                WHERE operator_message.conversation_id = c.id
+                  AND (
+                    operator_message.sender_type = 'operator'
+                    OR operator_message.is_operator_message IS TRUE
+                  )
+              ) AS operator_replied,
+              COALESCE((
+                SELECT COUNT(*)
+                FROM messages unread_message
+                WHERE unread_message.conversation_id = c.id
+                  AND unread_message.sender_type = 'user'
+                  AND unread_message.created_at > (
+                    SELECT MAX(operator_message.created_at)
+                    FROM messages operator_message
+                    WHERE operator_message.conversation_id = c.id
+                      AND (
+                        operator_message.sender_type = 'operator'
+                        OR operator_message.is_operator_message IS TRUE
+                      )
+                  )
+              ), 0) AS unread_user_count,
+    """ if include_operator_status else """
+              FALSE AS operator_replied,
+              0 AS unread_user_count,
+    """
+
+    from services.level_engine import load_t1_countries as _load_t1_for_list
+    _t1_list = sorted(_load_t1_for_list())
+    is_t1_select = (
+        "CASE WHEN COALESCE(NULLIF(p.country_code, ''), NULLIF(p.preferences->>'country_code', ''), NULLIF(p.preferences->>'country', ''), NULLIF(p.preferences->>'geo_country', ''), NULLIF(p.preferences->>'ip_country', '')) IN ("
+        + ", ".join("'" + code + "'" for code in _t1_list)
+        + ") THEN true ELSE false END AS is_t1_country,"
+        if _t1_list else
+        "false AS is_t1_country,"
+    )
+
     rows = (await db.execute(
         text(f"""
+            WITH {release_review_chats_cte},
+            paged_conversations AS MATERIALIZED (
+              SELECT c.id
+              FROM conversations c
+              LEFT JOIN users u ON u.id = c.user_id
+              LEFT JOIN user_profiles p ON p.user_id = u.id
+              {where}
+              {sql_order_clause_for_dashboard()}
+              LIMIT :limit OFFSET :offset
+            )
             SELECT
               c.id                                            AS conversation_id,
               c.state, c.handoff_count, c.channel,
               c.last_message_at, c.created_at,
               c.assigned_operator_id,
               c.post_inbound_video_expert_waived_at,
-              (
-                c.state IN ('WAITING_OPERATOR', 'HUMAN_LOCKED')
-                AND c.post_inbound_video_expert_waived_at IS NULL
-                AND EXISTS (
-                  SELECT 1
-                  FROM telegram_inbound_call_events ice
-                  WHERE ice.chat_id = CASE
-                    WHEN u.external_id ~ '^tg_[0-9]+$'
-                    THEN CAST(SUBSTRING(u.external_id FROM 4) AS BIGINT)
-                    ELSE NULL
-                  END
-                  GROUP BY ice.chat_id
-                  HAVING COUNT(*) >= :release_review_calls
-                )
-                AND EXISTS (
-                  SELECT 1
-                  FROM handoff_tasks ht
-                  WHERE ht.conversation_id = c.id
-                    AND ht.closed_at IS NULL
-                    AND ht.trigger_reason = 'post_inbound_video:auto_seq_complete'
-                    AND ht.status IN (
-                      'pending', 'PENDING', 'ESCALATED', 'HUMAN_LOCKED', 'WAITING_OPERATOR'
-                    )
-                )
-              ) AS post_inbound_video_expert_release_eligible,
-              (
-                CAST(:expert_only_enabled AS BOOLEAN)
-                AND c.post_inbound_video_expert_waived_at IS NOT NULL
-                AND u.external_id LIKE 'tg_%'
-                AND (
-                  SELECT COUNT(*)
-                  FROM call_broadcast_jobs j
-                  WHERE j.chat_id = CAST(SUBSTRING(u.external_id FROM 4) AS BIGINT)
-                    AND j.trigger_source = 'inbound_call'
-                    AND j.status = 'completed'
-                    AND COALESCE(j.metadata->>'source', '') = 'incoming_auto_answer'
-                ) >= :expert_threshold
-              ) AS post_inbound_video_expert_relock_eligible,
+              {expert_pending_sql} AS post_inbound_video_expert_release_eligible,
+              (c.post_inbound_video_expert_waived_at IS NOT NULL)
+                AS post_inbound_video_expert_relock_eligible,
               u.id          AS user_id,
               u.nickname,
               u.external_id,
@@ -833,6 +1121,7 @@ async def admin_list_conversations(
                 NULLIF(p.preferences->>'geo_country', ''),
                 NULLIF(p.preferences->>'ip_country', '')
               ) AS country_code,
+              {is_t1_select}
               COALESCE(
                 NULLIF(p.preferences->>'current_city', ''),
                 NULLIF(p.preferences->>'city', ''),
@@ -854,13 +1143,15 @@ async def admin_list_conversations(
               latest_message.latest_message_at,
               latest_message.latest_message_sender,
               latest_message.latest_message_content,
+{operator_status_select}
               CASE
                 WHEN latest_message.latest_message_sender = 'user' THEN 'unread'
                 WHEN latest_message.latest_message_sender IS NOT NULL THEN 'read'
                 ELSE NULL
               END AS message_status,
 {_TELEGRAM_ACCOUNT_SELECT}
-            FROM conversations c
+            FROM paged_conversations pc
+            JOIN conversations c ON c.id = pc.id
             LEFT JOIN users          u  ON u.id  = c.user_id
             LEFT JOIN user_profiles  p  ON p.user_id = u.id
             LEFT JOIN characters     ch ON ch.id = c.character_id
@@ -881,9 +1172,7 @@ async def admin_list_conversations(
               LIMIT 1
             ) latest_message ON TRUE
 {_TELEGRAM_ACCOUNT_JOINS}
-            {where}
             {sql_order_clause_for_dashboard()}
-            LIMIT :limit OFFSET :offset
         """),
         params,
     )).fetchall()
@@ -904,6 +1193,287 @@ async def admin_list_conversations(
         "page": page,
         "page_size": page_size,
     }
+
+
+_WORKBENCH_QUEUE_LIMIT = 200
+
+
+def _workbench_t1_country_sql() -> str:
+    from services.level_engine import load_t1_countries
+
+    codes = sorted(load_t1_countries())
+    if not codes:
+        return "FALSE"
+    quoted = ", ".join("'" + code.replace("'", "") + "'" for code in codes)
+    return f"""UPPER(COALESCE(
+        NULLIF(p.country_code, ''),
+        NULLIF(p.preferences->>'country_code', ''),
+        NULLIF(p.preferences->>'stated_country_code', ''),
+        NULLIF(p.preferences->>'country', ''),
+        NULLIF(p.preferences->>'geo_country', ''),
+        NULLIF(p.preferences->>'ip_country', '')
+    )) IN ({quoted})"""
+
+
+async def _fetch_workbench_queue(db: AsyncSession, kind: str) -> dict[str, Any]:
+    from services.post_inbound_video_expert_gate import (
+        post_inbound_video_release_review_calls,
+    )
+
+    premium_sql = """
+        (
+          UPPER(COALESCE(NULLIF(p.user_level, ''), '')) IN ('S', 'A')
+          OR COALESCE(p.vip_level, 0) >= 2
+        )
+    """
+    interest_sql = """
+        EXISTS (
+          SELECT 1 FROM handoff_tasks interest_task
+          WHERE interest_task.conversation_id = c.id
+            AND interest_task.trigger_reason LIKE 'fixed_campaign_interest:%'
+            AND interest_task.closed_at IS NULL
+            AND interest_task.status IN (
+              'pending', 'PENDING', 'ESCALATED', 'HUMAN_LOCKED', 'WAITING_OPERATOR'
+            )
+        )
+    """
+    not_frozen_sql = "(COALESCE(u.status, '') <> 'frozen' AND COALESCE(c.state, '') <> 'FROZEN')"
+    release_review_chats_cte = """
+        release_review_chats AS MATERIALIZED (
+          SELECT chat_id
+          FROM telegram_inbound_call_events
+          GROUP BY chat_id
+          HAVING COUNT(*) >= :release_review_calls
+        )
+    """
+    expert_pending_sql = """
+        (
+          c.state IN ('WAITING_OPERATOR', 'HUMAN_LOCKED')
+          AND c.post_inbound_video_expert_waived_at IS NULL
+          AND EXISTS (
+            SELECT 1
+            FROM users eu
+            JOIN release_review_chats rrc
+              ON eu.external_id ~ '^tg_[0-9]+$'
+             AND rrc.chat_id = CAST(SUBSTRING(eu.external_id FROM 4) AS BIGINT)
+            WHERE eu.id = c.user_id
+          )
+          AND EXISTS (
+            SELECT 1
+            FROM handoff_tasks ht
+            WHERE ht.conversation_id = c.id
+              AND ht.closed_at IS NULL
+              AND ht.trigger_reason = 'post_inbound_video:auto_seq_complete'
+              AND ht.status IN (
+                'pending', 'PENDING', 'ESCALATED', 'HUMAN_LOCKED', 'WAITING_OPERATOR'
+              )
+          )
+        )
+    """
+    account_ready_sql = """
+        EXISTS (
+          SELECT 1
+          FROM telegram_accounts ta
+          LEFT JOIN video_reinvite_account_state account_state
+            ON account_state.account_id = ta.id
+          WHERE ta.status = 'connected'
+            AND ta.is_active IS TRUE
+            AND (account_state.status IS NULL OR account_state.status = 'active')
+            AND (
+              account_state.health_check_status IS NULL
+              OR account_state.health_check_status = 'healthy'
+            )
+            AND (account_state.resume_at IS NULL OR account_state.resume_at <= NOW())
+            AND (
+              ta.id IN (
+                SELECT tpc.account_id
+                FROM telegram_peer_cache tpc
+                WHERE tpc.conversation_id = c.id
+                   OR tpc.user_id = c.user_id
+              )
+              OR ta.id::text = (
+                SELECT m.sender_id
+                FROM messages m
+                WHERE m.conversation_id = c.id
+                  AND m.sender_type = 'assistant'
+                ORDER BY m.created_at DESC
+                LIMIT 1
+              )
+            )
+        )
+    """
+    t1_sql = _workbench_t1_country_sql()
+    if kind == "interest":
+        count_where_sql = f"""
+            {not_frozen_sql}
+            AND NOT {premium_sql}
+            AND {interest_sql}
+        """
+        list_where_sql = count_where_sql
+        page_filter_sql = ""
+        fetch_limit = _WORKBENCH_QUEUE_LIMIT
+        use_review_cte = False
+    elif kind == "handoff":
+        count_where_sql = f"""
+            {not_frozen_sql}
+            AND c.state = 'WAITING_OPERATOR'
+            AND c.assigned_operator_id IS NULL
+            AND {t1_sql}
+            AND NOT {premium_sql}
+            AND NOT {interest_sql}
+        """
+        list_where_sql = count_where_sql
+        page_filter_sql = ""
+        fetch_limit = _WORKBENCH_QUEUE_LIMIT
+        use_review_cte = False
+    elif kind == "review":
+        count_where_sql = f"""
+            {not_frozen_sql}
+            AND NOT {premium_sql}
+            AND NOT {interest_sql}
+            AND {expert_pending_sql}
+        """
+        list_where_sql = count_where_sql
+        page_filter_sql = ""
+        fetch_limit = _WORKBENCH_QUEUE_LIMIT
+        use_review_cte = True
+    else:
+        count_where_sql = f"""
+            {not_frozen_sql}
+            AND c.state <> 'AI_ACTIVE'
+            AND {premium_sql}
+        """
+        list_where_sql = count_where_sql
+        page_filter_sql = ""
+        fetch_limit = _WORKBENCH_QUEUE_LIMIT
+        use_review_cte = False
+
+    await db.execute(
+        text(
+            "SELECT set_config('max_parallel_workers_per_gather', '0', true), "
+            "set_config('jit', 'off', true)"
+        )
+    )
+    params = {
+        "release_review_calls": post_inbound_video_release_review_calls(),
+        "limit": _WORKBENCH_QUEUE_LIMIT,
+        "fetch_limit": fetch_limit,
+    }
+    count_prefix = f"WITH {release_review_chats_cte}" if use_review_cte else ""
+    list_prefix = f"WITH {release_review_chats_cte}," if use_review_cte else "WITH"
+    expert_select_sql = expert_pending_sql if use_review_cte else "FALSE"
+    total_row = (
+        await db.execute(
+            text(
+                f"""
+                {count_prefix}
+                SELECT COUNT(*)
+                FROM conversations c
+                JOIN users u ON u.id = c.user_id
+                LEFT JOIN user_profiles p ON p.user_id = u.id
+                WHERE {count_where_sql}
+                """
+            ),
+            params,
+        )
+    ).fetchone()
+    total = int(total_row[0] or 0) if total_row else 0
+    rows = (
+        await db.execute(
+            text(
+                f"""
+                {list_prefix}
+                recent AS MATERIALIZED (
+                  SELECT c.id
+                  FROM conversations c
+                  JOIN users u ON u.id = c.user_id
+                  LEFT JOIN user_profiles p ON p.user_id = u.id
+                  WHERE {list_where_sql}
+                  ORDER BY COALESCE(c.last_message_at, c.updated_at, c.created_at) DESC
+                  LIMIT :fetch_limit
+                ),
+                paged AS MATERIALIZED (
+                  SELECT recent.id
+                  FROM recent
+                  JOIN conversations c ON c.id = recent.id
+                  WHERE TRUE
+                    {page_filter_sql}
+                  LIMIT :limit
+                )
+                SELECT
+                  c.id AS conversation_id,
+                  u.nickname,
+                  u.external_id,
+                  COALESCE(
+                    NULLIF(p.country_code, ''),
+                    NULLIF(p.preferences->>'country_code', ''),
+                    NULLIF(p.preferences->>'stated_country_code', ''),
+                    NULLIF(p.preferences->>'country', '')
+                  ) AS country_code,
+                  {t1_sql} AS is_t1_country,
+                  p.user_level,
+                  c.last_message_at,
+                  latest_message.latest_message_at,
+                  CASE
+                    WHEN latest_message.latest_message_sender = 'user' THEN 1
+                    ELSE 0
+                  END AS unread_user_count,
+                  CASE
+                    WHEN latest_message.latest_message_sender = 'operator'
+                      OR latest_message.latest_is_operator IS TRUE
+                    THEN TRUE
+                    ELSE FALSE
+                  END AS operator_replied,
+                  c.post_inbound_video_expert_waived_at,
+                  {expert_select_sql} AS post_inbound_video_expert_release_eligible
+                FROM paged
+                JOIN conversations c ON c.id = paged.id
+                JOIN users u ON u.id = c.user_id
+                LEFT JOIN user_profiles p ON p.user_id = u.id
+                LEFT JOIN LATERAL (
+                  SELECT
+                    m.created_at AS latest_message_at,
+                    m.sender_type AS latest_message_sender,
+                    m.is_operator_message AS latest_is_operator
+                  FROM messages m
+                  WHERE m.conversation_id = c.id
+                  ORDER BY m.created_at DESC
+                  LIMIT 1
+                ) latest_message ON TRUE
+                """
+            ),
+            params,
+        )
+    ).fetchall()
+    items = [_serialize_row(row) for row in rows]
+    return {"items": items, "total": total}
+
+
+@router.get(
+    "/admin/workbench/queues",
+    summary="处理台三队列轻量列表（T1 待人工 / 待放行 / 精聊）",
+)
+async def admin_workbench_queues(
+    payload: dict = Depends(require_operator),
+) -> dict[str, Any]:
+    async def _load(kind: str) -> dict[str, Any]:
+        async with AsyncSessionLocal() as session:
+            return await _fetch_workbench_queue(session, kind)
+
+    handoff, review, premium, interest = await asyncio.gather(
+        _load("handoff"),
+        _load("review"),
+        _load("premium"),
+        _load("interest"),
+    )
+    logger.bind(
+        operator_id=payload.get("sub"),
+        handoff=handoff["total"],
+        review=review["total"],
+        premium=premium["total"],
+        interest=interest["total"],
+    ).info("admin.workbench.queues")
+    return {"handoff": handoff, "review": review, "premium": premium, "interest": interest}
 
 
 @router.get(
@@ -1192,12 +1762,83 @@ async def admin_list_users(
     }
 
 
+@router.get("/admin/user-report/collection", summary="新用户信息收集完整度（北京时间）")
+async def admin_user_collection_report(
+    range: str = Query("today", description="today/yesterday/week/month/history"),
+    payload: dict = Depends(require_operator),
+    db: AsyncSession = Depends(get_db),
+):
+    from services.user_report import fetch_user_collection_report, validate_range
+
+    try:
+        range_key = validate_range(range)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    result = await fetch_user_collection_report(db, range_key)
+    logger.bind(operator_id=payload.get("sub"), range=range_key).info(
+        "admin.users.collection_report"
+    )
+    return {"range": range_key, "timezone": "Asia/Shanghai", **result}
+
+
+@router.get("/admin/user-report/collection-users", summary="用户信息收集明细列表")
+async def admin_user_collection_users(
+    range: str = Query("today", description="today/yesterday/week/month/history"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    search: str = Query("", max_length=100),
+    device_os: str = Query("ALL", pattern="^(ALL|iOS|Android|Desktop|Unknown)$"),
+    after_created_at: str | None = Query(
+        None,
+        description="只返回 created_at 新于此时间的用户，供前端增量缓存",
+    ),
+    payload: dict = Depends(require_operator),
+    db: AsyncSession = Depends(get_db),
+):
+    from services.user_report import fetch_user_collection_users, validate_range
+
+    try:
+        range_key = validate_range(range)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    result = await fetch_user_collection_users(
+        db,
+        range_key,
+        offset=(page - 1) * page_size,
+        limit=page_size,
+        search=search,
+        device_os=device_os,
+        after_created_at=after_created_at,
+    )
+    return {"range": range_key, "page": page, "page_size": page_size, **result}
+
+
+@router.get("/admin/user-report/collection-users/{user_id}", summary="单用户完整收集资料")
+async def admin_user_collection_user_detail(
+    user_id: uuid.UUID,
+    message_offset: int = Query(0, ge=0),
+    message_limit: int = Query(100, ge=1, le=200),
+    payload: dict = Depends(require_operator),
+    db: AsyncSession = Depends(get_db),
+):
+    from services.user_report import fetch_user_collection_user_detail
+
+    result = await fetch_user_collection_user_detail(
+        db, str(user_id), message_offset=message_offset, message_limit=message_limit
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail="user_not_found")
+    return result
+
+
 @router.get(
     "/admin/conversations/{conversation_id}",
-    summary="D5-2：会话详情（会话元信息 + 用户画像 + 最近 50 条消息；需要 operator JWT）",
+    summary="D5-2：会话详情（会话元信息 + 用户画像 + 可配置消息数量；需要 operator JWT）",
 )
 async def admin_get_conversation_detail(
     conversation_id: str,
+    message_limit: int = Query(50, ge=1, le=5000),
+    lite: bool = Query(False, description="处理台快速打开：跳过视频审核资格计算"),
     payload: dict = Depends(require_operator),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1220,6 +1861,16 @@ async def admin_get_conversation_detail(
               u.status      AS user_status,
               u.language,
               u.timezone,
+              COALESCE(
+                NULLIF(p.country_code, ''),
+                NULLIF(p.preferences->>'country_code', ''),
+                NULLIF(p.preferences->>'country', ''),
+                NULLIF(p.preferences->>'geo_country', ''),
+                NULLIF(p.preferences->>'ip_country', '')
+              ) AS country_code,
+              NULLIF(p.preferences->>'country_source', '') AS country_source,
+              NULLIF(p.preferences->>'stated_country_code', '') AS stated_country_code,
+              NULLIF(p.preferences->>'telegram_phone_country', '') AS telegram_phone_country,
               p.loneliness_score,
               p.vip_level,
               p.user_level,
@@ -1251,9 +1902,9 @@ async def admin_get_conversation_detail(
             FROM messages
             WHERE conversation_id = :cid
             ORDER BY created_at DESC
-            LIMIT 50
+            LIMIT :message_limit
         """),
-        {"cid": conversation_id},
+        {"cid": conversation_id, "message_limit": message_limit},
     )).fetchall()
 
     logger.bind(
@@ -1262,18 +1913,22 @@ async def admin_get_conversation_detail(
         messages_returned=len(msg_rows),
     ).info("admin.conversations.detail")
 
-    from services.post_inbound_video_expert_gate import (
-        conversation_release_eligible,
-        conversation_relock_eligible,
-    )
-
     conversation = _serialize_row(head_row)
-    conversation["post_inbound_video_expert_release_eligible"] = (
-        await conversation_release_eligible(db, conversation_id)
-    )
-    conversation["post_inbound_video_expert_relock_eligible"] = (
-        await conversation_relock_eligible(db, conversation_id)
-    )
+    if lite:
+        conversation["post_inbound_video_expert_release_eligible"] = False
+        conversation["post_inbound_video_expert_relock_eligible"] = False
+    else:
+        from services.post_inbound_video_expert_gate import (
+            conversation_release_eligible,
+            conversation_relock_eligible,
+        )
+
+        conversation["post_inbound_video_expert_release_eligible"] = (
+            await conversation_release_eligible(db, conversation_id)
+        )
+        conversation["post_inbound_video_expert_relock_eligible"] = (
+            await conversation_relock_eligible(db, conversation_id)
+        )
 
     return {
         "conversation": conversation,
@@ -1430,6 +2085,20 @@ async def admin_join_premium_chat(
                 "level_reason": json.dumps(level_reason, ensure_ascii=False),
             },
         )
+        await db.execute(
+            text(
+                """
+                UPDATE handoff_tasks
+                SET status = 'CLOSED', closed_at = NOW()
+                WHERE conversation_id = CAST(:cid AS uuid)
+                  AND closed_at IS NULL
+                  AND status IN (
+                    'pending', 'PENDING', 'ESCALATED', 'HUMAN_LOCKED', 'WAITING_OPERATOR'
+                  )
+                """
+            ),
+            {"cid": conversation_id},
+        )
         await db.commit()
     except Exception:
         await db.rollback()
@@ -1451,6 +2120,37 @@ async def admin_join_premium_chat(
         "user_level": next_level,
         "chat_route": "manual_premium",
     }
+
+
+async def _push_operator_reply_context(
+    conversation_id: str,
+    content: str,
+    msg_id: str,
+    trace_id: str | None,
+) -> None:
+    try:
+        redis = await __import__("api.messages", fromlist=["get_redis"]).get_redis()
+        entry = json.dumps(
+            {
+                "role": "assistant",
+                "content": content,
+                "msg_id": msg_id,
+                "ts": int(time.time()),
+                "operator": True,
+            },
+            ensure_ascii=False,
+        )
+        pipe = redis.pipeline()
+        pipe.rpush(f"ctx:{conversation_id}", entry)
+        pipe.ltrim(f"ctx:{conversation_id}", -200, -1)
+        pipe.expire(f"ctx:{conversation_id}", 86400 * 3)
+        await pipe.execute()
+    except Exception as exc:
+        logger.bind(
+            trace_id=trace_id,
+            conversation_id=conversation_id,
+            error_type=type(exc).__name__,
+        ).warning("admin.conversations.operator_reply.redis_ctx_failed")
 
 
 @router.post(
@@ -1502,13 +2202,31 @@ async def admin_send_conversation_operator_reply(
                     )
                   ) AS telegram_account_id,
                   (
-                    SELECT t.access_hash
-                    FROM telegram_peer_cache t
-                    WHERE t.conversation_id = c.id
-                    ORDER BY
-                      CASE WHEN t.access_hash IS NOT NULL THEN 0 ELSE 1 END,
-                      t.last_seen_at DESC
-                    LIMIT 1
+                    COALESCE(
+                      (
+                        SELECT t.access_hash
+                        FROM telegram_peer_cache t
+                        WHERE t.conversation_id = c.id
+                          AND t.account_id::text = (
+                            SELECT m.sender_id
+                            FROM messages m
+                            JOIN telegram_accounts ta ON ta.id::text = m.sender_id
+                            WHERE m.conversation_id = c.id
+                              AND m.sender_type = 'assistant'
+                            ORDER BY m.created_at DESC
+                            LIMIT 1
+                          )
+                        ORDER BY t.last_seen_at DESC
+                        LIMIT 1
+                      ),
+                      (
+                        SELECT t.access_hash
+                        FROM telegram_peer_cache t
+                        WHERE t.conversation_id = c.id
+                        ORDER BY t.last_seen_at DESC
+                        LIMIT 1
+                      )
+                    )
                   ) AS telegram_access_hash
                 FROM conversations c
                 JOIN users u ON u.id = c.user_id
@@ -1622,29 +2340,7 @@ async def admin_send_conversation_operator_reply(
     )
     await db.commit()
 
-    try:
-        redis = await __import__("api.messages", fromlist=["get_redis"]).get_redis()
-        entry = json.dumps(
-            {
-                "role": "assistant",
-                "content": content,
-                "msg_id": msg_id,
-                "ts": int(time.time()),
-                "operator": True,
-            },
-            ensure_ascii=False,
-        )
-        pipe = redis.pipeline()
-        pipe.rpush(f"ctx:{conversation_id}", entry)
-        pipe.ltrim(f"ctx:{conversation_id}", -200, -1)
-        pipe.expire(f"ctx:{conversation_id}", 86400 * 3)
-        await pipe.execute()
-    except Exception as exc:
-        logger.bind(
-            trace_id=trace_id,
-            conversation_id=conversation_id,
-            error_type=type(exc).__name__,
-        ).warning("admin.conversations.operator_reply.redis_ctx_failed")
+    await _push_operator_reply_context(conversation_id, content, msg_id, trace_id)
 
     logger.bind(
         trace_id=trace_id,
@@ -1661,6 +2357,324 @@ async def admin_send_conversation_operator_reply(
         "message_id": msg_id,
         "provider_message_id": provider_message_id,
     }
+
+
+@router.get(
+    "/admin/conversations/{conversation_id}/country-correction",
+    summary="Admin: preview an operator country correction and the matching download link.",
+)
+async def admin_preview_conversation_country_correction(
+    conversation_id: str,
+    country_code: Optional[str] = Query(None),
+    payload: dict = Depends(require_operator),
+    db: AsyncSession = Depends(get_db),
+):
+    _require_uuid(conversation_id, "conversation_id")
+    preview = await _conversation_country_preview(
+        db,
+        conversation_id=conversation_id,
+        proposed_code=country_code,
+    )
+    logger.bind(
+        operator_id=payload.get("sub"),
+        conversation_id=conversation_id,
+        current_country_code=preview.get("current_country_code"),
+        proposed_country_code=preview.get("proposed_country_code"),
+    ).info("admin.conversations.country_correction.preview")
+    return preview
+
+
+@router.put(
+    "/admin/conversations/{conversation_id}/country",
+    summary="Admin: overwrite grading country; non-T1 conversations return to AI.",
+)
+async def admin_update_conversation_country(
+    conversation_id: str,
+    data: ConversationCountryUpdateRequest,
+    payload: dict = Depends(require_operator),
+    db: AsyncSession = Depends(get_db),
+):
+    _require_uuid(conversation_id, "conversation_id")
+    code = normalize_country_code(data.country_code)
+    if not code:
+        raise HTTPException(status_code=400, detail="invalid_country_code")
+    preview = await _conversation_country_preview(db, conversation_id=conversation_id)
+    operator_id = str(payload.get("sub") or "")
+    try:
+        result = await apply_operator_country_correction(
+            db,
+            user_id=str(preview["user_id"]),
+            country_code=code,
+            operator_id=operator_id,
+            note=data.note,
+            external_user_id=str(preview.get("external_id") or "") or None,
+        )
+        released_to_ai = False
+        from services.level_engine import load_t1_countries
+        if code not in load_t1_countries():
+            from services.human_takeover_gate import release_human_takeover_to_ai
+            released_to_ai = await release_human_takeover_to_ai(
+                db,
+                conversation_id,
+                reason="operator_country_not_t1",
+            )
+            await db.execute(
+                text(
+                    """
+                    UPDATE conversations
+                    SET assigned_operator_id = NULL,
+                        updated_at = NOW()
+                    WHERE id = CAST(:cid AS uuid)
+                    """
+                ),
+                {"cid": conversation_id},
+            )
+        await db.commit()
+    except ValueError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception:
+        await db.rollback()
+        raise
+    updated = await _conversation_country_preview(
+        db,
+        conversation_id=conversation_id,
+        proposed_code=code,
+    )
+    logger.bind(
+        operator_id=operator_id,
+        conversation_id=conversation_id,
+        user_id=preview.get("user_id"),
+        previous_country_code=result.get("previous_country_code"),
+        country_code=code,
+        note=(data.note or "")[:200],
+    ).info("admin.conversations.country_corrected")
+    return {
+        "status": "updated",
+        **updated,
+        "previous_country_code": result.get("previous_country_code"),
+        "country_corrected_by": operator_id,
+        "released_to_ai": released_to_ai,
+    }
+
+
+@router.post(
+    "/admin/conversations/{conversation_id}/country-link",
+    summary="Admin: resend the download link for the current grading country.",
+)
+async def admin_resend_conversation_country_link(
+    conversation_id: str,
+    request: Request,
+    payload: dict = Depends(require_operator),
+    db: AsyncSession = Depends(get_db),
+):
+    _require_uuid(conversation_id, "conversation_id")
+    preview = await _conversation_country_preview(db, conversation_id=conversation_id)
+    if not preview.get("current_country_code"):
+        raise HTTPException(status_code=400, detail="country_code is required")
+    content = str(preview.get("suggested_link_message") or "").strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="destination_url is empty")
+    logger.bind(
+        operator_id=payload.get("sub"),
+        conversation_id=conversation_id,
+        country_code=preview.get("current_country_code"),
+        destination_url=preview.get("destination_url"),
+    ).info("admin.conversations.country_link.resend")
+    return await admin_send_conversation_operator_reply(
+        conversation_id,
+        ConversationOperatorReplyRequest(content=content),
+        request,
+        payload,
+        db,
+    )
+
+
+@router.post(
+    "/admin/conversations/{conversation_id}/operator-media",
+    summary="Admin: send an operator-confirmed image or video from a conversation.",
+)
+async def admin_send_conversation_operator_media(
+    conversation_id: str,
+    file: UploadFile = File(...),
+    caption: str = Form(""),
+    request: Request = None,
+    payload: dict = Depends(require_operator),
+    db: AsyncSession = Depends(get_db),
+):
+    _require_uuid(conversation_id, "conversation_id")
+    mime = (file.content_type or "").lower()
+    if mime.startswith("image/"):
+        media_type, max_bytes = "image", 20 * 1024 * 1024
+    elif mime.startswith("video/"):
+        media_type, max_bytes = "video", 100 * 1024 * 1024
+    elif mime.startswith("audio/"):
+        media_type, max_bytes = "audio", 50 * 1024 * 1024
+    else:
+        raise HTTPException(status_code=400, detail="only image, video and audio files are supported")
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="empty file")
+    if len(raw) > max_bytes:
+        raise HTTPException(status_code=413, detail=f"{media_type} file is too large")
+
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT c.channel AS conversation_channel, u.id AS user_id,
+                       u.channel AS user_channel, u.external_id,
+                       COALESCE(
+                         (SELECT m.sender_id FROM messages m
+                          JOIN telegram_accounts ta ON ta.id::text = m.sender_id
+                          WHERE m.conversation_id = c.id AND m.sender_type = 'assistant'
+                          ORDER BY m.created_at DESC LIMIT 1),
+                         (SELECT t.account_id::text FROM telegram_peer_cache t
+                          WHERE t.conversation_id = c.id ORDER BY t.last_seen_at DESC LIMIT 1)
+                       ) AS telegram_account_id,
+                       COALESCE(
+                         (SELECT t.access_hash FROM telegram_peer_cache t
+                          WHERE t.conversation_id = c.id
+                            AND t.account_id::text = (
+                              SELECT m.sender_id FROM messages m
+                              JOIN telegram_accounts ta ON ta.id::text = m.sender_id
+                              WHERE m.conversation_id = c.id AND m.sender_type = 'assistant'
+                              ORDER BY m.created_at DESC LIMIT 1
+                            )
+                          ORDER BY t.last_seen_at DESC LIMIT 1),
+                         (SELECT t.access_hash FROM telegram_peer_cache t
+                          WHERE t.conversation_id = c.id
+                          ORDER BY t.last_seen_at DESC LIMIT 1)
+                       ) AS telegram_access_hash
+                FROM conversations c JOIN users u ON u.id = c.user_id
+                WHERE c.id = :cid
+                """
+            ),
+            {"cid": conversation_id},
+        )
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="conversation not found")
+    mapping = dict(row._mapping)
+    chat_id = _telegram_chat_id_from_external(mapping.get("external_id"))
+    if chat_id is None:
+        raise HTTPException(status_code=400, detail="cannot resolve telegram chat_id")
+
+    channel = mapping.get("conversation_channel") or mapping.get("user_channel")
+    trace_id = getattr(request.state, "trace_id", None) if request else None
+    filename = file.filename or ("image.jpg" if media_type == "image" else "video.mp4")
+    clean_caption = caption.strip()
+    provider_message_id = None
+    msg_id = str(uuid.uuid4())
+    upload_dir = Path(settings.MEDIA_UPLOAD_DIR) / "operator-media"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    suffix = Path(filename).suffix or {"image": ".jpg", "video": ".mp4", "audio": ".mp3"}[media_type]
+    storage_path = upload_dir / f"{msg_id}{suffix}"
+    storage_path.write_bytes(raw)
+
+    if channel == "telegram":
+        token = settings.TELEGRAM_BOT_TOKEN
+        if not token:
+            storage_path.unlink(missing_ok=True)
+            raise HTTPException(status_code=502, detail="telegram bot token missing")
+        method = {"image": "sendPhoto", "video": "sendVideo", "audio": "sendAudio"}[media_type]
+        field = {"image": "photo", "video": "video", "audio": "audio"}[media_type]
+        data = {"chat_id": str(chat_id)}
+        if clean_caption:
+            data["caption"] = clean_caption
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(
+                f"https://api.telegram.org/bot{token}/{method}",
+                data=data,
+                files={field: (filename, raw, mime)},
+            )
+        result = response.json()
+        if not result.get("ok"):
+            storage_path.unlink(missing_ok=True)
+            raise HTTPException(status_code=502, detail=result.get("description") or "telegram media send failed")
+        provider_message_id = str(result["result"]["message_id"])
+    elif channel == "telegram_real_user":
+        account_id = mapping.get("telegram_account_id")
+        if not account_id:
+            storage_path.unlink(missing_ok=True)
+            raise HTTPException(status_code=502, detail="cannot resolve receiving TG account for this user")
+        access_hash = mapping.get("telegram_access_hash")
+
+        from services.telegram_command_gateway import submit_telegram_command, wait_for_runtime_command
+
+        async def _legacy_send_media():
+            from services.mtproto.peer_resolve import resolve_telethon_peer
+            from services.telegram_account_manager import telegram_account_manager
+
+            client = await telegram_account_manager.get_client(uuid.UUID(str(account_id)))
+            if client is None:
+                raise RuntimeError("client_not_connected")
+            peer = await resolve_telethon_peer(
+                client, chat_id, access_hash=int(access_hash) if access_hash else None,
+            )
+            return await client.send_file(
+                peer, str(storage_path), caption=clean_caption or None,
+                supports_streaming=media_type == "video",
+            )
+
+        gateway = await submit_telegram_command(
+            command_type="send_media",
+            account_id=str(account_id),
+            legacy_execute=_legacy_send_media,
+            payload={
+                "chat_id": chat_id,
+                "access_hash": int(access_hash) if access_hash else None,
+                "media_path": str(storage_path),
+                "media_type": media_type,
+                "caption": clean_caption,
+                "operator_confirmed": True,
+            },
+            idempotency_key=f"operator-media:{conversation_id}:{storage_path.name}",
+            trace_id=trace_id,
+            priority=100,
+        )
+        if gateway.accepted_not_sent and gateway.command_id:
+            gateway = await wait_for_runtime_command(gateway.command_id, timeout_seconds=120)
+        if not gateway.executed:
+            storage_path.unlink(missing_ok=True)
+            raise HTTPException(status_code=502, detail=gateway.reason or "telegram media send failed")
+        value = gateway.value
+        if isinstance(value, dict):
+            provider_message_id = str(value.get("message_id") or "") or None
+        else:
+            provider_message_id = str(getattr(value, "id", "")) or None
+    else:
+        storage_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail=f"operator media not supported for channel={channel}")
+
+    operator_id = str(payload.get("sub", ""))
+    stored_content = clean_caption or {"image": "[image]", "video": "[video]", "audio": "[audio]"}.get(media_type, "[media]")
+    await db.execute(
+        text(
+            """
+            INSERT INTO messages (
+              id, conversation_id, sender_type, sender_id, content, content_type,
+              is_operator_message
+            ) VALUES (:id, :cid, 'operator', :sid, :content, :content_type, true)
+            """
+        ),
+        {"id": msg_id, "cid": conversation_id, "sid": operator_id,
+         "content": stored_content, "content_type": media_type},
+    )
+    await db.execute(
+        text("UPDATE conversations SET last_message_at=NOW(), updated_at=NOW() WHERE id=:id"),
+        {"id": conversation_id},
+    )
+    await db.execute(
+        text("UPDATE handoff_tasks SET status='CLOSED', closed_at=NOW() WHERE conversation_id=:cid AND status IN ('pending', 'HUMAN_LOCKED', 'WAITING_OPERATOR')"),
+        {"cid": conversation_id},
+    )
+    await db.commit()
+    logger.bind(
+        trace_id=trace_id, operator_id=operator_id, conversation_id=conversation_id,
+        media_type=media_type, provider_message_id=provider_message_id,
+    ).info("admin.conversations.operator_media.sent")
+    return {"status": "sent", "message_id": msg_id, "provider_message_id": provider_message_id}
 
 
 @router.post(
@@ -2199,7 +3213,7 @@ async def admin_release_post_inbound_video_expert(
     except ValueError:
         raise HTTPException(
             status_code=400,
-            detail="conversation not eligible for post-inbound-video release",
+            detail="当前会话不符合放行条件（可能已经放行，或还没到待审核放行）。",
         )
     from services.post_release_ai_followup import schedule_post_release_ai_checks
 
